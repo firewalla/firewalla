@@ -147,7 +147,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -3179,8 +3179,7 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         const category = value.category
         let domain = value.domain
-        const regex = /^[-a-zA-Z0-9.*]+?/;
-        if (!regex.test(domain)) {
+        if (!isCategoryDomainValid(domain)) {
           throw { code: 400, msg: "Invalid domain." }
         }
 
@@ -3204,6 +3203,9 @@ class netBot extends ControllerBot {
       case "removeIncludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3223,6 +3225,9 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         const category = value.category
         let domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         domain = domain.toLowerCase();
         await categoryUpdater.addExcludedDomain(category, domain)
         const event = {
@@ -3243,6 +3248,9 @@ class netBot extends ControllerBot {
       case "removeExcludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeExcludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3262,6 +3270,11 @@ class netBot extends ControllerBot {
       case "updateIncludedElements": {
         const category = value.category;
         const elements = value.elements;
+        // elements end up in a dnsmasq config file parsed by root, a valid element (domain, address,
+        // port or regex) is printable ASCII without whitespace
+        if (_.isArray(elements) && elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
+          throw { code: 400, msg: "Invalid elements." }
+        }
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3274,11 +3287,19 @@ class netBot extends ControllerBot {
       case "createOrUpdateCustomizedCategory": {
         const category = value.category;
         const obj = value.obj;
+        // category becomes a dnsmasq config file name and an ipset name, a new one is a generated uuid
+        if (category && (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category))) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
         return c
       }
       case "removeCustomizedCategory": {
         const category = value.category;
+        // category becomes a dnsmasq config file name and an ipset name
+        if (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category)) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         await categoryUpdater.removeCustomizedCategory(category);
         return
       }

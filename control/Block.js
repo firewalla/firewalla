@@ -35,6 +35,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const { CategoryEntry } = require('./CategoryEntry.js');
+const { isDomainTargetValid } = require('../util/util.js');
 const VPN_CLIENT_WAN_PREFIX = Constants.ACL_VPN_CLIENT_WAN_PREFIX;
 const VIRT_WAN_GROUP_PREFIX = Constants.ACL_VIRT_WAN_GROUP_PREFIX;
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
@@ -1855,7 +1856,13 @@ async function manipulateFiveTupleRule(options) {
       rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`);
   }
   if (tlsHost) {
-    if (proto === "tcp" && platform.isTLSBlockSupport())
+    // the rule string is passed to a bash shell, a host that is not a plain domain can end the
+    // argument and start a command of its own
+    if (!isDomainTargetValid(tlsHost))
+      // fails open: only the match is dropped, the rule is still emitted — so an invalid host
+      // widens the rule, or issues a delete without the match that made it specific
+      log.error("Ignore invalid tls host", tlsHost);
+    else if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-host ${tlsHost}`)
     else if (proto === "udp" && platform.isUdpTLSBlockSupport())
       rule.mdl("udp_tls", `--tls-host ${tlsHost}`)

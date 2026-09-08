@@ -48,6 +48,7 @@ const CUSTOMIZED_CATEGORY_KEY_INDEX = "customized_category:key_index"
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
+const { isCategoryDomainValid, isHashDomain } = require('../util/util.js');
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
 const AsyncLock = require('../vendor_lib/async-lock');
 const customizedCategoryLock = new AsyncLock();
@@ -672,6 +673,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   async addPatternDomains(pattern, domain) {
+    if (!isCategoryDomainValid(domain)) {
+      log.warn(`Ignore invalid domain matched by pattern ${pattern}`, domain);
+      return;
+    }
     await rclient.saddAsync(this.getPatternDomainsKey(pattern), domain);
     await rclient.expireAsync(this.getPatternDomainsKey(pattern), EXPIRE_TIME);
   }
@@ -747,8 +752,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
   }
 
+  // category and target list content comes from the cloud and from msp lists, and redis is the
+  // first sink on every ingest path, so filtering here is what keeps a malformed member out of
+  // the dnsmasq match set, the tls hostset and the ipsets that are all built by reading it back
+  filterValid(category, items, what, validator) {
+    const valid = [], dropped = [];
+    for (const item of items)
+      (validator(item) ? valid : dropped).push(item);
+    if (dropped.length > 0)
+      log.warn(`Dropped ${dropped.length} invalid ${what} of category ${category}`, dropped.slice(0, 10));
+    return valid;
+  }
+
   async addCategoryData(category, domainObjs) {
-    const domainObjStrs = domainObjs.map(obj => JSON.stringify(obj));
+    // ipv4 and ipv6 members already passed an Address4/Address6 parse in CategoryEntry
+    const valid = this.filterValid(category, domainObjs, "entries", obj => obj.type !== "domain" || isCategoryDomainValid(obj.id));
+    const domainObjStrs = valid.map(obj => JSON.stringify(obj));
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
@@ -764,16 +783,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addDefaultDomains(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domains", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultDomainsOnly(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domainOnly", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultHashedDomains(category, domains) {
+    domains = this.filterValid(category, domains, "hashed domains", isHashDomain);
     await this.addSetMembers(this.getDefaultCategoryKeyHashed(category), domains);
   }
 
@@ -806,6 +828,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!regexList || regexList.length === 0) {
       return;
     }
+    regexList = this.filterValid(category, regexList, "regex domains", expr => CategoryEntry.isValidDomainRE(expr));
     await this.addSetMembers(this.getRegexCategoryKey(category), regexList);
     this._invalidateRegexCache(category);
   }
@@ -854,7 +877,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addIncludedDomain(category, domain) {
-    return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "included domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getIncludeCategoryKey(category), domains)
   }
 
   async removeIncludedDomain(category, domain) {
@@ -906,7 +932,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.flushIPv6Addresses(category);
     await this.flushIncludedDomains(category);
 
-    const domainRegex = /^[-a-zA-Z0-9\.\*]+?$/;
     let ipv4Addresses = [];
     let ipv6Addresses = [];
     switch (this.customizedCategories[category].type) {
@@ -921,7 +946,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipv6Addresses = elements.filter(e => new Address6(e).isValid());
     }
 
-    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e)).map(domain => domain.toLowerCase());
+    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && isCategoryDomainValid(e)).map(domain => domain.toLowerCase());
     if (ipv4Addresses.length > 0)
       await this.addIPv4Addresses(category, ipv4Addresses);
     if (ipv6Addresses.length > 0)
@@ -953,7 +978,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addExcludedDomain(category, domain) {
-    return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "excluded domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getExcludeCategoryKey(category), domains)
   }
 
   async removeExcludedDomain(category, domain) {

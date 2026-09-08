@@ -1099,3 +1099,181 @@ describe('test netbot handlers that run a program', function() {
     });
   });
 });
+
+// The values below reach a root shell (profileId becomes an interface name and a routing table
+// name) or a dnsmasq config file that root parses (domain, category). Every handler that takes one
+// must refuse a malformed value before anything else runs.
+describe('test netbot input validation', function() {
+  this.timeout(5000);
+
+  const cmd = (item, value) => netbot.cmdHandler(gid, {data: {item, value}});
+  const getItem = (item, value) => netbot.getHandler(gid, {data: {item, value}});
+
+  // the handlers throw {code, msg}, not an Error
+  const rejects = async (call, code, message) => {
+    let err = null;
+    try {
+      await call();
+    } catch (e) {
+      err = e;
+    }
+    expect(err, 'should have thrown').to.be.an('object');
+    expect(err.code).to.equal(code);
+    expect(err.msg).to.match(message);
+  };
+
+  // the value passed the check in netbot and was refused further down, which is what proves a
+  // legitimate value still gets through
+  const passesCheck = async (call, message) => {
+    let err = null;
+    try {
+      await call();
+    } catch (e) {
+      err = e;
+    }
+    expect(err, 'should have thrown').to.be.an('error');
+    expect(err.message).to.match(message);
+  };
+
+  describe('profileId', function() {
+
+    const badProfileId = [
+      'a$(id)',
+      'a`id`',
+      'a;id',
+      'a b',
+      'a\nb',
+      'a\ttab',
+      '../../etc',
+      'a/b',
+      'a.b',
+      'a-b',
+      'elevencharx', // 11 characters
+      42,
+      {},
+      ['vpn'],
+    ];
+
+    const setters = ['startVpnClient', 'stopVpnClient', 'deleteVpnProfile', 'deleteOvpnProfile',
+      'saveVpnProfile', 'saveOvpnProfile'];
+
+    for (const item of setters) {
+      for (const profileId of badProfileId) {
+        it(`${item} rejects ${JSON.stringify(profileId)}`, async () => {
+          await rejects(() => cmd(item, {type: 'openvpn', profileId}), 400, /^'profileId' should only contain/);
+        });
+      }
+
+      // an unknown type is refused only after profileId, so reaching that error proves a well
+      // formed id got through the check without starting or deleting anything
+      it(`${item} accepts a well formed profileId`, async () => {
+        await passesCheck(() => cmd(item, {type: 'no_such_type', profileId: 'vpn_1'}), /Unrecognized VPN client type/);
+      });
+    }
+
+    for (const item of ['vpnProfile', 'ovpnProfile']) {
+      for (const profileId of badProfileId) {
+        it(`${item} rejects ${JSON.stringify(profileId)}`, async () => {
+          await rejects(() => getItem(item, {type: 'openvpn', profileId}), 400, /^'profileId' should only contain/);
+        });
+      }
+
+      it(`${item} accepts a well formed profileId`, async () => {
+        await passesCheck(() => getItem(item, {type: 'no_such_type', profileId: 'vpn_1'}), /Unrecognized VPN client type/);
+      });
+    }
+  });
+
+  describe('category domain', function() {
+
+    // the old regex was neither anchored nor greedy, so it only ever looked at the first character
+    // and a newline could add a directive to the dnsmasq config file
+    const badDomain = [
+      'a\ndhcp-script=/tmp/x',
+      'a\rserver=1.2.3.4',
+      'a b',
+      'a;id',
+      'a$(id)',
+      'a/b',
+      'a:53',
+      '',
+      'x'.repeat(254),
+      42,
+      {},
+      ['example.com'],
+    ];
+
+    const items = ['addIncludeDomain', 'removeIncludeDomain', 'addExcludeDomain', 'removeExcludeDomain'];
+
+    for (const item of items) {
+      for (const domain of badDomain) {
+        it(`${item} rejects ${JSON.stringify(domain)}`, async () => {
+          await rejects(() => cmd(item, {category: 'no_such_category', domain}), 400, /^Invalid domain/);
+        });
+      }
+    }
+  });
+
+  describe('category included elements', function() {
+
+    const badElements = [
+      ['a\ndhcp-script=/tmp/x'],
+      ['example.com', 'a b'],
+      [''],
+      ['x'.repeat(1025)],
+      [42],
+      [null],
+      [['example.com']],
+    ];
+
+    for (const elements of badElements) {
+      it(`updateIncludedElements rejects ${JSON.stringify(elements)}`, async () => {
+        await rejects(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), 400, /^Invalid elements/);
+      });
+    }
+
+    // an unknown category is refused by the category updater, which runs only after the elements
+    // pass, so this proves the rich element syntax still gets through
+    it('accepts domains, addresses, ports and a regex', async () => {
+      const elements = ['example.com', '*.example.com', '1.2.3.0/24', '[::1]:443', 'example.com,tcp:80-90', 'regex:^ad[0-9]+\\.example\\.com$'];
+      await passesCheck(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), /is not found/);
+    });
+  });
+
+  describe('customized category', function() {
+
+    // the category becomes a dnsmasq config file name and an ipset name
+    const badCategory = [
+      'a\ndhcp-script=/tmp/x',
+      'a b',
+      'a;id',
+      'a$(id)',
+      '../../etc/passwd',
+      'a/b',
+      'a.b',
+      'x'.repeat(65),
+      42,
+      {},
+    ];
+
+    for (const category of badCategory) {
+      it(`createOrUpdateCustomizedCategory rejects ${JSON.stringify(category)}`, async () => {
+        await rejects(() => cmd('createOrUpdateCustomizedCategory', {category, obj: {name: 'test'}}), 400, /^Invalid category/);
+      });
+
+      it(`removeCustomizedCategory rejects ${JSON.stringify(category)}`, async () => {
+        await rejects(() => cmd('removeCustomizedCategory', {category}), 400, /^Invalid category/);
+      });
+    }
+
+    it('removeCustomizedCategory rejects a missing category', async () => {
+      await rejects(() => cmd('removeCustomizedCategory', {}), 400, /^Invalid category/);
+    });
+
+    // a uuid has to get through, that is what the app sends back for an existing category. the
+    // updater refuses the payload after the category check, so nothing is written
+    it('createOrUpdateCustomizedCategory accepts a uuid', async () => {
+      await passesCheck(() => cmd('createOrUpdateCustomizedCategory', {category: '3d0a201e-0b2f-4b0e-8e2f-0b2f4b0e8e2f', obj: {}}), /name is not specified/);
+    });
+  });
+});
