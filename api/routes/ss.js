@@ -39,8 +39,10 @@ router.get('/garbage', function (req, res) {
 //    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 //    res.set('Cache-Control', 'post-check=0, pre-check=0', false);
 //    res.set('Pragma', 'no-cache');
-    const requestedSize = (req.query.ckSize || 100);
-    
+    // each chunk is 1MiB and this endpoint is unauthenticated, keep the response bounded
+    const ckSize = Number(req.query.ckSize);
+    const requestedSize = Number.isInteger(ckSize) && ckSize > 0 ? Math.min(ckSize, 1024) : 100;
+
     const send = () => {
         for (let i = 0; i < requestedSize; i++)
             res.write(cache);
