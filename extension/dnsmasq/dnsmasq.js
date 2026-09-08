@@ -426,6 +426,9 @@ module.exports = class DNSMASQ {
     if (this.restartDHCPPromise)
       return this.restartDHCPPromise;
 
+    this.counter.restartDHCP++;
+    log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
+
     const restartPromise = (async () => {
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => {
         log.error(`Failed to stop ${DHCP_SERVICE_NAME} service`, err.message);
