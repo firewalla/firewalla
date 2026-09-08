@@ -564,6 +564,65 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     expect(dnsmasq.counter.restartDHCP).to.equal(1);
   });
 
+  for (const confChanged of [false, true]) {
+    it(`invalidates a rescheduled restart preflight when the old check returns ${confChanged}`, async function() {
+      let releaseCheck;
+      let checkStarted;
+      const checkPromise = new Promise(resolve => { releaseCheck = resolve; });
+      const checkStartPromise = new Promise(resolve => { checkStarted = resolve; });
+      const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+      this.test.ctx.dnsmasq = dnsmasq;
+      let restartChecks = 0;
+      dnsmasq.checkConfsChange = async (key) => {
+        if (key === 'dnsmasq:dhcp') {
+          if (++restartChecks === 1) {
+            checkStarted();
+            await checkPromise;
+            return confChanged;
+          }
+          // The newer request must retain its forced-restart flag even when
+          // the checksum was already updated by the older preflight.
+          return false;
+        }
+        return true;
+      };
+
+      dnsmasq.scheduleRestartDHCPService();
+      const oldTask = timers[0];
+      const oldExecution = oldTask.fn();
+      await checkStartPromise;
+      try {
+        dnsmasq.scheduleRestartDHCPService(true);
+        const newTask = timers[1];
+        dnsmasq.scheduleReloadDHCPService();
+        releaseCheck();
+        await oldExecution;
+
+        expect(oldTask.cleared).to.equal(true);
+        expect(dnsmasq.restartDHCPTask).to.equal(newTask);
+        expect(dnsmasq.restartDHCPIgnoreFileCheck).to.equal(true);
+        expect(dnsmasq.reloadDHCPAfterRestart).to.equal(true);
+        expect(dnsmasq.counter.restartDHCP).to.equal(0);
+        expect(commands.some(cmd => cmd.includes('systemctl'))).to.equal(false);
+        expect(timers).to.have.length(2);
+
+        await newTask.fn();
+        expect(commands.filter(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.have.length(1);
+        expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);
+        expect(dnsmasq.counter.restartDHCP).to.equal(1);
+        expect(dnsmasq.restartDHCPTask).to.equal(undefined);
+        expect(dnsmasq.restartDHCPIgnoreFileCheck).to.equal(undefined);
+        expect(dnsmasq.reloadDHCPAfterRestart).to.equal(undefined);
+        expect(timers).to.have.length(3);
+        await timers[2].fn();
+        expect(dnsmasq.counter.reloadDHCP).to.equal(1);
+      } finally {
+        releaseCheck();
+        await oldExecution;
+      }
+    });
+  }
+
   it('invalidates a restart preflight when reload fallback completes first', async function() {
     let releaseReload;
     let releaseCheck;

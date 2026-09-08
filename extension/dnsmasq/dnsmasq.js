@@ -412,11 +412,12 @@ module.exports = class DNSMASQ {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
-    const restartGeneration = this.restartDHCPGeneration || 0;
+    this.restartDHCPGeneration = (this.restartDHCPGeneration || 0) + 1;
+    const restartGeneration = this.restartDHCPGeneration;
     const restartTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
       const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
-      // A reload fallback can invalidate this callback while preflight awaits.
+      // Rescheduling or a reload fallback can invalidate this callback while preflight awaits.
       // Do not restart or consume state belonging to a later restart request.
       if (restartGeneration !== (this.restartDHCPGeneration || 0))
         return;
