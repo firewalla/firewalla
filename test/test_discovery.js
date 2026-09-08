@@ -145,9 +145,13 @@ describe('Discovery.discoverMac', () => {
 
   it('ignores an ARP match from an unmonitored interface', async () => {
     const scannedSubnets = [];
+    const nmapHost = {
+      ipv4Addr: '192.168.1.50',
+      mac: targetMac
+    };
     const discovery = createDiscovery(async (subnet) => {
       scannedSubnets.push(subnet);
-      return [];
+      return [nmapHost];
     });
 
     const unmonitoredArpHost = {
@@ -164,7 +168,7 @@ describe('Discovery.discoverMac', () => {
 
     const result = await discovery.discoverMac(targetMac);
 
-    expect(result).to.equal(null);
+    expect(result).to.deep.equal(nmapHost);
     expect(scannedSubnets).to.deep.equal(['192.168.1.0/24']);
   });
 
