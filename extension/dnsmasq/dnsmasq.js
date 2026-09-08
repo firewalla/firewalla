@@ -439,23 +439,24 @@ module.exports = class DNSMASQ {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
     })();
-    this.restartDHCPPromise = restartPromise;
-    restartPromise.then(() => {
-      if (this.restartDHCPPromise === restartPromise)
+    const trackedRestartPromise = restartPromise.finally(() => {
+      if (this.restartDHCPPromise === trackedRestartPromise)
         delete this.restartDHCPPromise;
     });
-    return restartPromise;
+    this.restartDHCPPromise = trackedRestartPromise;
+    return trackedRestartPromise;
   }
 
   scheduleReloadDHCPService() {
-    if (this.restartDHCPTask)
+    if (this.restartDHCPTask || this.restartDHCPPromise)
       return
     if (this.reloadDHCPTask)
       clearTimeout(this.reloadDHCPTask);
-    this.reloadDHCPTask = setTimeout(async () => {
+    const reloadTask = setTimeout(async () => {
       const confChanged = await this.checkConfsChange('dnsmasq:dhcphosts', [HOSTFILE_PATH]);
       if (!confChanged) {
-        delete this.reloadDHCPTask;
+        if (this.reloadDHCPTask === reloadTask)
+          delete this.reloadDHCPTask;
         return;
       }
       this.counter.reloadDHCP++;
@@ -478,8 +479,10 @@ module.exports = class DNSMASQ {
         await this.restartDHCPService();
       }
 
-      delete this.reloadDHCPTask
+      if (this.reloadDHCPTask === reloadTask)
+        delete this.reloadDHCPTask
     }, 5000);
+    this.reloadDHCPTask = reloadTask;
   }
 
   // in format 127.0.0.1#5353
