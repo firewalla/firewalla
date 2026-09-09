@@ -498,9 +498,8 @@ describe('VPNClient shell and path hardening', function () {
     });
   }
 
-  for (const [implementation, failedStartup] of [
-    ['stub', true], ['stub', false], ['openvpn', true], ['openvpn', false]
-  ]) {
+  for (const [implementation, failedStartup] of
+    ['stub', 'openvpn', 'ssl', 'wireguard', 'docker'].flatMap(protocol => [[protocol, true], [protocol, false]])) {
     it(`${implementation}: ${failedStartup ? 'blocks startup retries' : 'preserves ordinary stop behavior'} when the service stop rejects`, async function () {
       this.timeout(5000);
       const { VPNClient, state } = installVPNClientStubs();
@@ -547,6 +546,63 @@ describe('VPNClient shell and path hardening', function () {
         });
         // Exercise the real protocol method beneath the real stop wrapper.
         client._stop = OpenVPNClient.prototype._stop;
+      } else if (implementation === 'ssl' || implementation === 'wireguard') {
+        const ProtocolClient = proxyquire(
+          implementation === 'ssl' ? '../extension/vpnclient/OCVPNClient.js' : '../extension/vpnclient/WGVPNClient.js', {
+            ...applianceStubs(),
+            '../../net2/Firewalla.js': {},
+            './VPNClient.js': VPNClient,
+            'child-process-promise': {
+              exec: async command => {
+                if (command.endsWith(' down'))
+                  return;
+                // The old SSL implementation detached this rejection.
+                const result = rejectStop();
+                result.catch(() => {});
+                return result;
+              },
+              execFile: async (binary, args) => {
+                if (binary === 'ip') {
+                  expect(args).to.eql(['-j', 'link', 'show']);
+                  return { stdout: JSON.stringify([{ ifname: client.getInterfaceName() }]) };
+                }
+                expect(binary).to.equal('sudo');
+                if (implementation === 'ssl') {
+                  expect(args).to.eql(['systemctl', 'stop', 'openconnect_client@stop_retry']);
+                  return rejectStop();
+                }
+                if (args[2] === 'set')
+                  return;
+                expect(args).to.eql(['ip', 'link', 'del', 'dev', 'vpn_stop_retry']);
+                return rejectStop();
+              }
+            }
+          });
+        client._stop = ProtocolClient.prototype._stop;
+      } else if (implementation === 'docker') {
+        const DockerBaseVPNClient = proxyquire('../extension/vpnclient/docker/DockerBaseVPNClient.js', {
+          '../../../net2/logger.js': () => ({ error() {} }),
+          '../../../net2/Firewalla.js': {},
+          '../VPNClient.js': VPNClient,
+          '../../../net2/SysManager.js': {},
+          '../../../net2/Iptables.js': {},
+          '../../../control/IptablesControl.js': {},
+          '../../routing/routing.js': {},
+          '../../../util/scheduler.js': {},
+          '../../../util/IPUtil.js': {},
+          'child-process-promise': {
+            exec: async command => {
+              expect(command).to.equal('sudo systemctl stop docker-compose@stop_retry');
+              return rejectStop();
+            }
+          }
+        });
+        client._testAndStartDocker = async () => {};
+        client._getRemoteIP = async () => null;
+        client._getRemoteIP6 = async () => null;
+        client._removeNetwork = async () => {};
+        client._removeRsyslogConf = async () => {};
+        client._stop = DockerBaseVPNClient.prototype._stop;
       } else {
         client._stop = rejectStop;
       }
@@ -594,6 +650,94 @@ describe('VPNClient shell and path hardening', function () {
       }
     });
   }
+
+  it('waits for SSL service shutdown to finish before resolving', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const OCVPNClient = proxyquire('../extension/vpnclient/OCVPNClient.js', {
+      ...applianceStubs(),
+      '../../net2/Firewalla.js': {},
+      './VPNClient.js': VPNClient,
+      'child-process-promise': { execFile: () => pending }
+    });
+    const client = Object.create(OCVPNClient.prototype);
+    client.profileId = 'stop_wait';
+    let stopped = false;
+    const stopping = client._stop({ strict: true }).then(() => { stopped = true; });
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      expect(stopped).to.equal(false);
+    } finally {
+      release();
+      await stopping;
+    }
+    expect(stopped).to.equal(true);
+  });
+
+  for (const [scenario, output, queryFails, succeeds] of [
+    ['already absent', '[]', false, true],
+    ['other interfaces only', '[{"ifname":"lo"}]', false, true],
+    ['interface remains', '[{"ifname":"vpn_stop_edge"}]', false, false],
+    ['query rejects', '', true, false],
+    ['empty output', '', false, false],
+    ['malformed JSON', '[', false, false],
+    ['unexpected object', '{}', false, false],
+    ['invalid entries', '[null]', false, false]
+  ]) {
+    it(`WireGuard strict deletion: ${scenario}`, async () => {
+      const { VPNClient } = installVPNClientStubs();
+      const calls = [];
+      const deletionError = new Error('interface deletion failed');
+      const WGVPNClient = proxyquire('../extension/vpnclient/WGVPNClient.js', {
+        ...applianceStubs(),
+        '../../net2/Firewalla.js': {},
+        './VPNClient.js': VPNClient,
+        'child-process-promise': {
+          execFile: async (binary, args) => {
+            calls.push([binary, args]);
+            if (binary === 'sudo')
+              throw deletionError;
+            if (queryFails)
+              throw new Error('inspection failed');
+            return { stdout: output };
+          }
+        }
+      });
+      const client = Object.create(WGVPNClient.prototype);
+      client.profileId = 'stop_edge';
+      const error = await client._stop({ strict: true }).then(() => null, err => err);
+      expect(error).to.equal(succeeds ? null : deletionError);
+      expect(calls).to.eql([
+        ['sudo', ['ip', 'link', 'set', 'vpn_stop_edge', 'down']],
+        ['sudo', ['ip', 'link', 'del', 'dev', 'vpn_stop_edge']],
+        ['ip', ['-j', 'link', 'show']]
+      ]);
+    });
+  }
+
+  it('WireGuard strict cleanup succeeds when deletion succeeds after link-down fails', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    let calls = 0;
+    const WGVPNClient = proxyquire('../extension/vpnclient/WGVPNClient.js', {
+      ...applianceStubs(),
+      '../../net2/Firewalla.js': {},
+      './VPNClient.js': VPNClient,
+      'child-process-promise': {
+        execFile: async (binary, args) => {
+          calls++;
+          expect(binary).to.equal('sudo');
+          if (args[2] === 'set')
+            throw new Error('link-down failed');
+          expect(args).to.eql(['ip', 'link', 'del', 'dev', 'vpn_stop_edge']);
+        }
+      }
+    });
+    const client = Object.create(WGVPNClient.prototype);
+    client.profileId = 'stop_edge';
+    await client._stop({ strict: true });
+    expect(calls).to.equal(2);
+  });
 
   it('does not clean up a newer start after a cancelled finalization fails', async function () {
     this.timeout(5000);

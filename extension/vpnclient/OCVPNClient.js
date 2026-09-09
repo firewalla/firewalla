@@ -21,7 +21,7 @@ const f = require('../../net2/Firewalla.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const SERVICE_NAME = "openconnect_client";
 const _ = require('lodash');
@@ -136,9 +136,12 @@ class OCVPNClient extends VPNClient {
     exec(cmd);
   }
 
-  async _stop() {
-    const cmd = `sudo systemctl stop ${SERVICE_NAME}@${this.profileId}`;
-    exec(cmd);
+  async _stop({ strict = false } = {}) {
+    await execFile('sudo', ['systemctl', 'stop', `${SERVICE_NAME}@${this.profileId}`]).catch(err => {
+      log.error(`Failed to stop SSL VPN client ${this.profileId}`, err.message);
+      if (strict)
+        throw err;
+    });
   }
 
   async _autoReconnectNeeded() {

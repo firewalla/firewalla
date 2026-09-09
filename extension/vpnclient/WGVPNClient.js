@@ -21,7 +21,7 @@ const f = require('../../net2/Firewalla.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
 class WGVPNClient extends VPNClient {
@@ -236,10 +236,23 @@ class WGVPNClient extends VPNClient {
     }
   }
 
-  async _stop() {
+  async _stop({ strict = false } = {}) {
     const intf = this.getInterfaceName();
-    await exec(`sudo ip link set ${intf} down`).catch((err) => {});
-    await exec(`sudo ip link del dev ${intf}`).catch((err) => {});
+    // Still attempt deletion if bringing the interface down fails.
+    await execFile('sudo', ['ip', 'link', 'set', intf, 'down']).catch((err) => {});
+    await execFile('sudo', ['ip', 'link', 'del', 'dev', intf]).catch(async err => {
+      if (!strict)
+        return;
+      // An absent interface is already stopped. Do not mistake a permission,
+      // netlink or inspection failure for absence, or use handshake state.
+      const absent = await execFile('ip', ['-j', 'link', 'show']).then(result => {
+        const links = JSON.parse(result.stdout);
+        return Array.isArray(links) && links.every(link => link && typeof link.ifname === 'string') &&
+          !links.some(link => link.ifname === intf);
+      }).catch(() => false);
+      if (!absent)
+        throw err;
+    });
   }
 
   async checkAndSaveProfile(value) {
