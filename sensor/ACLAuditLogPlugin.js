@@ -806,9 +806,9 @@ class ACLAuditLogPlugin extends Sensor {
           const adblockTls = this.isAdblockTlsAuditRecord(record);
           if (adblockTls) {
             record.reason = 'adblock';
+            delete record.pid;
             this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
             this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
-            delete record.pid;
           }
 
           // pid backtrace
