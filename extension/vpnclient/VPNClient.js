@@ -493,7 +493,7 @@ class VPNClient {
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
-    // PBR soft ipset is populated here, after the link is up. Soft route rules fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
+    // PBR soft ipset is populated here, after the link is up. Soft routes fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
     // PBR hard ipset is the kill-switch bucket and is owned by _prepareRoutes (always populated, never flushed on disconnect, independent of strictVPN), so it is intentionally not touched here.
     if (rtId) {
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
@@ -1197,26 +1197,90 @@ class VPNClient {
   }
 
   async _startInternal() {
-    await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
-      if (this._startupCleanupRequired)
-        await this._cleanupFailedStartup();
-      if (!this._started) {
-      this._started = true;
-      sem.emitEvent({
-        type: "VPNClient:Started",
-        profileId: this.profileId,
-        toProcess: "FireMain"
+    let cancelStartup;
+    const startup = {
+      cancelled: false,
+      cancellation: new Promise((resolve) => {
+        cancelStartup = resolve;
+      }),
+      cancel: () => {
+        if (startup.cancelled)
+          return;
+        startup.cancelled = true;
+        cancelStartup();
+      }
+    };
+    this._startupOperation = startup;
+
+    try {
+      await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+        if (startup.cancelled)
+          return;
+        if (this._startupCleanupRequired)
+          await this._cleanupFailedStartup();
+        if (startup.cancelled)
+          return;
+        if (!this._started) {
+          this._started = true;
+          sem.emitEvent({
+            type: "VPNClient:Started",
+            profileId: this.profileId,
+            toProcess: "FireMain"
+          });
+        }
+
+        this._lastStartTime = Date.now();
+        await this._prepareRoutes();
+        if (startup.cancelled)
+          return;
+        await this.flushRemoteEndpointRoutes().catch((err) => { });
       });
+    } catch (err) {
+      if (this._startupOperation === startup)
+        this._startupOperation = null;
+      throw err;
     }
 
-    this._lastStartTime = Date.now();
-    await this._prepareRoutes();
-    await this.flushRemoteEndpointRoutes().catch((err) => { });
-    await this._start().catch((err) => {
-      log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
+    if (startup.cancelled || !this._started) {
+      if (this._startupOperation === startup)
+        this._startupOperation = null;
+      return { result: false, cancelled: true };
+    }
+
+    const protocolStart = Promise.resolve()
+      .then(() => this._start())
+      .catch((err) => {
+        log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
+      });
+
+    protocolStart.then(() => {
+      if (!startup.cancelled)
+        return;
+      return VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+        // A newer start intentionally supersedes this stale completion. Do not
+        // stop the shared protocol service/interface out from under the newer start.
+        if (this._startupOperation !== startup)
+          return;
+        await this._stop().catch((err) => {
+          log.error(`Failed to stop VPN client ${this.profileId} after cancelled startup completed`, err.message);
+        });
+        if (this._startupOperation === startup)
+          this._startupOperation = null;
+      }).catch((err) => {
+        log.error(`Failed to clean up cancelled protocol startup for VPN client ${this.profileId}`, err);
+      });
     });
+
+    // Protocol startup can block in systemctl, Docker, or interface setup. Do
+    // not keep the lifecycle lock held while waiting for it: stop() must be able
+    // to run protocol shutdown and enforcement cleanup immediately.
+    await Promise.race([protocolStart, startup.cancellation]);
+    if (startup.cancelled)
+      return { result: false, cancelled: true };
+
+    if (this._startupOperation === startup)
+      this._startupOperation = null;
     this.isFirstLaunch = false;
-    });
 
     if (!this._started) {
       return { result: false, cancelled: true };
@@ -1395,6 +1459,11 @@ class VPNClient {
     }
   }
 
+  _cancelStartup() {
+    if (this._startupOperation)
+      this._startupOperation.cancel();
+  }
+
   _cancelEstablishment() {
     if (this._establishment) {
       this._establishment.resolve({ result: false, cancelled: true });
@@ -1402,6 +1471,7 @@ class VPNClient {
   }
 
   async stop() {
+    this._cancelStartup();
     this._cancelEstablishment();
     return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
   }
