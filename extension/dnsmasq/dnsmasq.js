@@ -575,6 +575,57 @@ module.exports = class DNSMASQ {
     });
   }
 
+  // address-ip-only= is a Firewalla addition to dnsmasq: it behaves like
+  // address= but answers query types other than A/AAAA with NODATA instead of
+  // forwarding them upstream, which would leak an internal domain. The binary
+  // is versioned in firerouter rather than here, and both repos honour the
+  // ~/.firewalla/run/dnsmasq override, so it can be older than this code.
+  // An unknown option makes dnsmasq refuse to start, so probe before using it.
+  async isAddressIpOnlySupported() {
+    if (this._addressIpOnlySupported === undefined) {
+      this._addressIpOnlySupported = await this._probeAddressIpOnly().catch((err) => {
+        log.warn("Failed to probe address-ip-only support, falling back to address", err.message);
+        return false;
+      });
+      log.info(`dnsmasq address-ip-only supported: ${this._addressIpOnlySupported}`);
+    }
+    return this._addressIpOnlySupported;
+  }
+
+  // the binary actually in use. On FireRouter-managed platforms firerouter
+  // starts dnsmasq and resolves the path itself, so it may differ from
+  // platform.getDnsmasqBinaryPath(). argv[0] of a running instance is exact.
+  async _getRunningDnsmasqBinary() {
+    const pids = await this.getFireRouterDNSServicePids().catch(() => []);
+    for (const pid of pids) {
+      const cmdline = await fsp.readFile(`/proc/${pid}/cmdline`, "utf8").catch(() => null);
+      const argv0 = cmdline && cmdline.split("\0")[0];
+      if (argv0 && argv0.startsWith("/"))
+        return argv0;
+    }
+    return platform.getDnsmasqBinaryPath();
+  }
+
+  async _probeAddressIpOnly() {
+    const bin = await this._getRunningDnsmasqBinary();
+    const executable = bin && await fsp.access(bin, fs.constants.X_OK).then(() => true).catch(() => false);
+    if (!executable) {
+      log.warn(`dnsmasq binary ${bin} is not executable, cannot probe address-ip-only`);
+      return false;
+    }
+    // Baseline first: if the binary rejects even a plain address=, the probe
+    // itself is broken and "unsupported" would be the wrong conclusion to draw.
+    const probeDomain = "probe.firewalla.ipnly";
+    const baseline = await execFileAsync(bin, ["--test", `--address=/${probeDomain}/127.0.0.1`])
+      .then(() => true).catch(() => false);
+    if (!baseline) {
+      log.warn(`dnsmasq binary ${bin} rejected a plain address=, probe inconclusive`);
+      return false;
+    }
+    return await execFileAsync(bin, ["--test", `--address-ip-only=/${probeDomain}/127.0.0.1`])
+      .then(() => true).catch(() => false);
+  }
+
   async addPolicyFilterEntry(domains, options) {
     return await lock.acquire(LOCK_OPS, async () => {
       log.debug("addPolicyFilterEntry", domains, options)
@@ -618,10 +669,15 @@ module.exports = class DNSMASQ {
         case "resolve":
           directive = (options.matchType === "re" ? "re-match" : "server");
           break;
-        case "address":
+        case "address": {
           // re-match does not support literal address
-          directive = "address";
+          // Enabled unless the rule explicitly opts out: address-ip-only
+          // answers query types other than A/AAAA with NODATA rather than
+          // forwarding them upstream, which would leak an internal domain.
+          const ipOnly = options.ipOnly !== false && await this.isAddressIpOnlySupported();
+          directive = ipOnly ? "address-ip-only" : "address";
           break;
+        }
       }
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
@@ -2742,7 +2798,10 @@ module.exports = class DNSMASQ {
               }
             } else {
               for (const currentTxt of waitSearch) {
-                if (content.indexOf("address=/" + currentTxt + "/") > -1) {
+                // matches every literal-address directive, not just plain
+                // address=: address-high=, address-uhigh= and address-ip-only=
+                // do not contain "address=/" as a substring
+                if (new RegExp(`^\\s*address[a-z-]*=/${_.escapeRegExp(currentTxt)}/`, "m").test(content)) {
                   match = true;
                   break;
                 }
