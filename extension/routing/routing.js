@@ -70,6 +70,8 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
     // async-lock takes this as a callback-style task because of the done argument, so the promise it
     // returns is discarded: a throw or a rejected await would never release the lock and would leave
     // the outer promise pending for good, since this lock has no timeout. every path ends in done()
+    //
+    // FIXME: this lock is process local and the flock further down covers only the append
     lock.acquire(LOCK_RT_TABLES, async function(done) {
       try {
         // separate bits in fwmark for vpn client and regular WAN

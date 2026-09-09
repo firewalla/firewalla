@@ -20,6 +20,7 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const Block = require('../control/Block.js');
 const Constants = require('../net2/Constants.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const loggerManager = require('../net2/LoggerManager.js');
 
 
 describe('Test CategoryUpdater.processSignatureData', function() {
@@ -997,5 +998,50 @@ describe('Test CategoryUpdater.updateFlowSignatureList', function() {
     // Should not call removeSigDtServer since no signatures were removed
     expect(callCounts.removeSigDtServer).to.equal(0);
     expect(categoryUpdater.flowSignatureConfig).to.deep.equal(newConfig);
+  });
+});
+
+// a regex member ends up in a dnsmasq re-match directive, one line of a config file root parses,
+// and redis is the first sink on the ingest path, so the filter has to hold at the write
+describe('Test CategoryUpdater.addRegexDomains', function() {
+  this.timeout(10000);
+
+  const CAT = 'zz_test_regex_category';
+  const GOOD = '^ad[0-9]+\\.example\\.com$';
+  const categoryUpdater = new CategoryUpdater();
+
+  // filterValid warns for every member it drops, which is the expected outcome here; keep it out
+  // of the run output so a passing run does not read like a failing one
+  let prevLevel;
+  before(() => {
+    prevLevel = loggerManager.loggers['CategoryUpdater'] && loggerManager.loggers['CategoryUpdater'].effectiveLogLevel;
+    loggerManager.setLogLevel('CategoryUpdater', 'none');
+  });
+  after(() => {
+    loggerManager.setLogLevel('CategoryUpdater', prevLevel);
+  });
+
+  afterEach(async () => {
+    await rclient.unlinkAsync(categoryUpdater.getRegexCategoryKey(CAT));
+  });
+
+  for (const [label, ch] of [['a line break', '\n'], ['a carriage return', '\r'], ['a NUL', '\x00']]) {
+    it(`should not store a regex holding ${label}`, async () => {
+      await categoryUpdater.addRegexDomains(CAT, [GOOD, `^ad${ch}\\.example\\.com$`]);
+      const stored = await rclient.smembersAsync(categoryUpdater.getRegexCategoryKey(CAT));
+      expect(stored).to.deep.equal([GOOD]);
+    });
+  }
+
+  it('should store nothing when every member is invalid', async () => {
+    await categoryUpdater.addRegexDomains(CAT, ['a\nlog-queries', 'b\rc']);
+    const stored = await rclient.smembersAsync(categoryUpdater.getRegexCategoryKey(CAT));
+    expect(stored).to.deep.equal([]);
+  });
+
+  it('should store an ordinary regex untouched', async () => {
+    await categoryUpdater.addRegexDomains(CAT, [GOOD]);
+    const stored = await rclient.smembersAsync(categoryUpdater.getRegexCategoryKey(CAT));
+    expect(stored).to.deep.equal([GOOD]);
   });
 });

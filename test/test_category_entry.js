@@ -128,3 +128,38 @@ describe.skip('Test category update sensor', function () {
     });
 
 });
+
+// a regex member of a target list is written into a dnsmasq re-match directive, which is one line
+// of a config file that root parses, so a control character in it has to be refused here
+describe('Test isValidDomainRE control characters', function () {
+
+  const rejected = {
+    'a line break': String.fromCharCode(10),
+    'a carriage return': String.fromCharCode(13),
+    'a NUL': String.fromCharCode(0),
+    'a tab': String.fromCharCode(9),
+    'a DEL': String.fromCharCode(127),
+  };
+
+  for (const label in rejected) {
+    it(`should reject a pattern holding ${label}`, function () {
+      expect(CategoryEntry.isValidDomainRE(`^ad${rejected[label]}\\.example\\.com$`)).to.be.false;
+    });
+  }
+
+  // the fragment before a line break can never form a valid directive on its own because '/' is
+  // already refused, so a leading control character is the same problem, not a lesser one
+  it('should reject a pattern that is only a line break', function () {
+    expect(CategoryEntry.isValidDomainRE(String.fromCharCode(10))).to.be.false;
+  });
+
+  it('should still accept an ordinary domain pattern', function () {
+    expect(CategoryEntry.isValidDomainRE('^ad[0-9]+\\.example\\.com$')).to.be.true;
+  });
+
+  // parse() is the ingest path for a "regex:" target list member and shares the validator
+  it('should refuse a regex entry with a line break through parse', function () {
+    expect(() => CategoryEntry.parse(`regex:^ad${String.fromCharCode(10)}\\.example\\.com$`))
+      .to.throw('Invalid regex entry');
+  });
+});

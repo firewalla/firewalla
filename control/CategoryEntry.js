@@ -16,6 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const { Address4, Address6 } = require('ip-address');
+const Constants = require('../net2/Constants.js');
 
 class CategoryEntry {
   static parse(item) {
@@ -225,6 +226,12 @@ class CategoryEntry {
     }
     // slash is a dnsmasq config separator and not useful for domain matching
     if (expr.includes("/")) {
+      return false;
+    }
+    // new RegExp() accepts a control character, but the expression is written into a line oriented
+    // dnsmasq re-match directive, so a CR or LF splits it in two and dnsmasq then refuses the whole
+    // file. none of them mean anything in a domain pattern either
+    if (Constants.REGEX_CONTROL_CHARS.test(expr)) {
       return false;
     }
     // lookaround and non-capturing groups are disallowed
