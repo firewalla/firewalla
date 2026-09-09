@@ -49,12 +49,11 @@ const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const LOCK_APPLY_INTERNAL_SCAN_POLICY = "LOCK_APPLY_INTERNAL_SCAN_POLICY";
 const MAX_CONCURRENT_TASKS = 3;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const moment = require('moment-timezone/moment-timezone.js');
-moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const era = require('../event/EventRequestApi.js');
 const {Address4, Address6} = require('ip-address');
 const crypto = require('crypto');
 
@@ -346,6 +345,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async scheduleTask() {
+    const startedTasks = [];
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
       while (Object.keys(this.subTaskRunning).length < MAX_CONCURRENT_TASKS && !_.isEmpty(this.subTaskWaitingQueue)) {
         const hostId = this.subTaskWaitingQueue.shift();
@@ -355,8 +355,12 @@ class InternalScanSensor extends Sensor {
           const subscribers = subTask.subscribers;
           for (const key of Object.keys(subscribers)) {
             const task = this.scheduledScanTasks[key];
-            if (task)
+            if (task) {
+              // a task is considered started on its first transition from queued to scanning
+              if (task.state === STATE_QUEUED)
+                startedTasks.push({key: key, numOfHosts: Object.keys(task.pendingHosts || {}).length});
               task.state = STATE_SCANNING;
+            }
           }
         }
         this.scanHost(hostId).catch((err) => {
@@ -368,6 +372,11 @@ class InternalScanSensor extends Sensor {
         await this._updateRunningStatus(STATE_COMPLETE);
       }
     });
+    for (const startedTask of startedTasks) {
+      const {key, numOfHosts} = startedTask;
+      log.info(`Scan started on ${key} with ${numOfHosts} host(s)`);
+      await this.addScanStartEvent(key, numOfHosts);
+    }
   }
 
   async scanHost(hostId) {
@@ -425,7 +434,7 @@ class InternalScanSensor extends Sensor {
             if (_.isEmpty(task.pendingHosts)) {
               log.info(`All hosts on ${key} have been scanned, scan complete on ${key}`);
               const ets = Date.now() / 1000;
-              await this.sendNotification(key, ets, task.results);
+              await this.addScanCompleteEvent(key, task, ets);
               task.state = STATE_COMPLETE;
               task.ets = ets;
             }
@@ -437,22 +446,51 @@ class InternalScanSensor extends Sensor {
     });
   }
 
-  async sendNotification(key, ets, results) {
-    const numOfWeakPasswords = results.map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
-    const timezone = sysManager.getTimezone();
-    const time = (timezone ? moment.unix(ets).tz(timezone) : moment.unix(ets)).format("hh:mm A");
+  // scan tasks scheduled by the cron job use "cron_<ts>" as key, others are triggered from app
+  _getTaskTrigger(key) {
+    return _.isString(key) && key.startsWith("cron_") ? "cron" : "manual";
+  }
+
+  _countWeakPasswords(results) {
+    return (results || []).map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
+  }
+
+  /*
+   * Fire an action event of the scan task, notification is composed and sent by netbot in FireApi,
+   * see getNotifEvent() there. Labels carry raw values only, formatting belongs to the notification.
+   * No timestamp in labels, the event itself is already stamped in milliseconds by addActionEvent.
+   */
+  async _emitScanEvent(eventType, labels) {
+    log.info(`Fire ${eventType} event`, labels);
+    await era.addActionEvent(eventType, 1, labels);
     sem.sendEventToFireApi({
-      type: 'FW_NOTIFICATION',
-      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
-      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
-      titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
-      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
-      bodyLocalArgs: [numOfWeakPasswords, time],
-      payload: {
-        weakPasswordCount: numOfWeakPasswords,
-        time
+      type: "Event:NewEvent",
+      message: "A new event is generated",
+      event: {
+        "event_type": "action",
+        "action_type": eventType,
+        "action_value": 1,
+        "labels": labels
       },
-      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
+    });
+  }
+
+  async addScanStartEvent(key, numOfHosts) {
+    await this._emitScanEvent("weak_password_scan_start", {
+      key: key,
+      trigger: this._getTaskTrigger(key),
+      numOfHosts: numOfHosts
+    });
+  }
+
+  async addScanCompleteEvent(key, task, ets) {
+    const results = task && task.results || [];
+    await this._emitScanEvent("weak_password_scan_complete", {
+      key: key,
+      trigger: this._getTaskTrigger(key),
+      numOfHosts: results.length,
+      numOfWeakPasswords: this._countWeakPasswords(results),
+      duration: task && task.ts ? Math.round(ets - task.ts) : 0
     });
   }
 

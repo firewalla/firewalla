@@ -450,7 +450,7 @@ class ACLAuditLogPlugin extends Sensor {
         // resolve destination device mac address
         const dstHost = hostManager.getHostFast(record.dh, fam)
         if (dstHost) {
-          record.dmac = dstHost.o.mac
+          record.dmac = dstHost.getUniqueId();
         } else {
           const identity = IdentityManager.getIdentityByIP(record.dh);
           if (identity) {
@@ -509,8 +509,13 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
-      mac = await hostTool.getMacByIPWithCache(localIP)
-        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      const host = hostManager.getHostFast(localIP)
+      if (host) {
+        mac = host.getUniqueId();
+      } else {
+        mac = await hostTool.getMacByIPWithCache(localIP)
+          || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      }
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
@@ -801,9 +806,9 @@ class ACLAuditLogPlugin extends Sensor {
           const adblockTls = this.isAdblockTlsAuditRecord(record);
           if (adblockTls) {
             record.reason = 'adblock';
+            delete record.pid;
             this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
             this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
-            delete record.pid;
           }
 
           // pid backtrace
@@ -979,6 +984,8 @@ class ACLAuditLogPlugin extends Sensor {
                 dest,
                 bType: record.bType,
                 bTarget: record.bTarget,
+                fd: fd || 'in',
+                ct: ct || 1,
                 _ts
               });
             }

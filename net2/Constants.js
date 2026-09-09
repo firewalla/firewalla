@@ -50,6 +50,7 @@ module.exports = {
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
   REDIS_KEY_EPT_MEMBER_EMAILS: "sys:ept:memberEmails",
+  REDIS_KEY_EPT_PAIRED_PENDING: "sys:ept:pairedPending",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
