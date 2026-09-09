@@ -49,8 +49,13 @@ async function removeCustomizedRoutingTable(tableName) {
     log.error(`Invalid routing table name: ${tableName}`);
     throw new Error(`Invalid routing table name: ${tableName}`);
   }
+  // the name goes into a sed address, where it is a regex rather than a literal. '.' is the only
+  // character isValidTableName admits that a basic regular expression treats specially, so escape
+  // it - without this, removing eth0.100_local would take eth0X100_local with it. widening the
+  // allowlist above means revisiting this line.
+  const pattern = tableName.replace(/\./g, '\\.');
   await execFile('sudo', ['flock', LOCK_FILE, 'sed', '-i', '-e',
-    `/^[[:digit:]]\\+\\s\\+${tableName}$/d`, '/etc/iproute2/rt_tables']);
+    `/^[[:digit:]]\\+\\s\\+${pattern}$/d`, '/etc/iproute2/rt_tables']);
   delete rtIdCache[tableName];
 }
 

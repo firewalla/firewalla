@@ -245,7 +245,8 @@ function objHasControlChar(policy) {
       return;
     }
     if (_.isString(value)) {
-      const regex = key === "notes" // user input for policy rules
+      // notes is user input for policy rules and may hold a line break
+      const regex = key === "notes" && this === policy
         ? Constants.REGEX_CONTROL_CHARS_MULTILINE : Constants.REGEX_CONTROL_CHARS;
       if (regex.test(value)) found = true;
       return;

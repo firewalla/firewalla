@@ -157,7 +157,8 @@ describe('Test customized routing table lifecycle', function() {
   this.timeout(30000);
 
   after(async function() {
-    for (const name of [REG_NAME, VC_NAME, `${REG_NAME}_del`, `${REG_NAME}_noshell`]) {
+    for (const name of [REG_NAME, VC_NAME, `${REG_NAME}_del`, `${REG_NAME}_noshell`,
+                        `${REG_NAME}.100_x`, `${REG_NAME}X100_x`]) {
       run('sudo', ['ip', 'route', 'flush', 'table', name]);
       try { await routing.removeCustomizedRoutingTable(name); } catch (e) {}
     }
@@ -267,5 +268,20 @@ describe('Test customized routing table lifecycle', function() {
     const before = run('sudo', ['cat', RT_TABLES]).stdout;
     await routing.removeCustomizedRoutingTable(`${REG_NAME}_absent`);
     expect(run('sudo', ['cat', RT_TABLES]).stdout).to.equal(before);
+  });
+
+  // the name goes into a sed address, so an unescaped '.' would match any character there and take
+  // a sibling row with it. VLAN table names carry a dot, so this is a shape that really occurs
+  it('should not let a dot in the name match a neighbouring row', async function() {
+    if (!boxOnly(this)) return;
+    const dotted = `${REG_NAME}.100_x`;
+    const sibling = `${REG_NAME}X100_x`;
+    await routing.createCustomizedRoutingTable(dotted);
+    await routing.createCustomizedRoutingTable(sibling);
+
+    await routing.removeCustomizedRoutingTable(dotted);
+
+    expect(rowInTables(dotted)).to.be.undefined;
+    expect(rowInTables(sibling)).to.not.be.undefined;
   });
 });
