@@ -181,7 +181,7 @@ class PcapPlugin extends Sensor {
       } else {
         // remove "WAN" interface so there's less duplication of internet traffic
         // assuming every bridge has gateway on the same parent interface
-        if (sysManager.isBridgeMode()) {
+        if (await sysManager.isBridgeMode()) {
           let gatewayIntf = null
           for (const intfName of monitoringInterfaces) {
             const intf = intfNameMap[intfName];

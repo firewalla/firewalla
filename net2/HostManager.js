@@ -1771,7 +1771,7 @@ module.exports = class HostManager extends Monitorable {
   // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
   // record set, and caps the returned records to the top 5 by cnt
   summarizeBlockStatsEntry(entry) {
-    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device));
+    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device) || IdentityManager.getIdentityByGUID(r.device));
     const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
     const fieldCounts = {};
     for (const field of fields) {
@@ -1781,39 +1781,53 @@ module.exports = class HostManager extends Monitorable {
     return Object.assign({}, entry, { records: topRecords }, fieldCounts);
   }
 
-  async recentBlockStatsForInit(json) {
-    json.recentBlockStats = [];
-    // read the actually-existing bucket timestamps from the index rather than guessing them from
-    // the current slotSecs config - slotSecs may have changed since older buckets were written,
-    // so recomputing boundaries from today's config would miss or mis-key historical buckets
-    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
-    const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
+  // reads raw persisted block stats bucket payloads for index entries with score in
+  // [minScore, maxScore] (redis score syntax - prefix a bound with "(" for exclusive),
+  // newest bucket first. Reads the index rather than guessing bucket timestamps from the
+  // current slotSecs config, since slotSecs may have changed since older buckets were written
+  async _getBlockStatsBuckets(minScore, maxScore) {
     let bucketTimestamps;
     try {
-      // descending (newest bucket first), matching ZREVRANGEBYSCORE's max-then-min argument order
-      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, '+inf', cutoff);
+      // ZREVRANGEBYSCORE takes max before min
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, maxScore, minScore);
     } catch (err) {
-      log.error(`Failed to load recent block stats index: ${err.message}`);
-      return;
+      log.error(`Failed to load block stats index: ${err.message}`);
+      return [];
     }
-    if (_.isEmpty(bucketTimestamps)) return;
+    if (_.isEmpty(bucketTimestamps)) return [];
     const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
+    const buckets = [];
     try {
       const values = await rclient.mgetAsync(keys);
       values.forEach((v, i) => {
         if (!v) return;
         try {
-          const payload = JSON.parse(v);
-          if (Array.isArray(payload.blockStats))
-            payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
-          json.recentBlockStats.push(payload);
+          buckets.push(JSON.parse(v));
         } catch (err) {
           log.error(`Failed to parse block stats bucket ${bucketTimestamps[i]}`, err.message);
         }
       });
     } catch (err) {
-      log.error(`Failed to load recent block stats for init: ${err.message}`);
+      log.error(`Failed to load block stats buckets: ${err.message}`);
     }
+    return buckets;
+  }
+
+  async recentBlockStatsForInit(json) {
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
+    const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
+    const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
+    json.recentBlockStats = buckets.map(payload => {
+      if (Array.isArray(payload.blockStats))
+        payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
+      return payload;
+    });
+  }
+
+  // raw (unsummarized - no device filtering, no top-N truncation, no derived counts) block
+  // stats buckets whose ts falls in [begin, end), newest first
+  async getBlockStatsInRange(begin, end) {
+    return this._getBlockStatsBuckets(begin, `(${end}`);
   }
 
   async miscForInit(json) {
