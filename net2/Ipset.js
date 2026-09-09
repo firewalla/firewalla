@@ -27,7 +27,7 @@ const ipsetInterval = 3000;
 const f = require('./Firewalla.js');
 const _ = require('lodash');
 
-const REGEX_SETNAME = /^[A-Za-z0-9_:/+-]{1,31}$/;
+const REGEX_SETNAME = /^[A-Za-z0-9_][A-Za-z0-9_:/+-]{0,30}$/;
 
 let ipsetQueue = [];
 let ipsetTimerSet = false;

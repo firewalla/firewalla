@@ -3271,8 +3271,8 @@ class netBot extends ControllerBot {
         const category = value.category;
         const elements = value.elements;
         // elements end up in a dnsmasq config file parsed by root, a valid element (domain, address,
-        // port or regex) is printable ASCII without whitespace
-        if (_.isArray(elements) && elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
+        // port or regex) is printable ASCII without whitespace. anything but an array is refused
+        if (!_.isArray(elements) || elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
           throw { code: 400, msg: "Invalid elements." }
         }
         await categoryUpdater.updateIncludedElements(category, elements);

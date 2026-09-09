@@ -757,16 +757,26 @@ class CategoryUpdater extends CategoryUpdaterBase {
   // the dnsmasq match set, the tls hostset and the ipsets that are all built by reading it back
   filterValid(category, items, what, validator) {
     const valid = [], dropped = [];
-    for (const item of items)
-      (validator(item) ? valid : dropped).push(item);
+    for (const item of items) {
+      let ok = false;
+      // a member shaped differently from what the validator reads is exactly what this filter is
+      // here to remove, so a throw drops that member instead of aborting the whole update
+      try {
+        ok = validator(item);
+      } catch (err) {}
+      (ok ? valid : dropped).push(item);
+    }
     if (dropped.length > 0)
       log.warn(`Dropped ${dropped.length} invalid ${what} of category ${category}`, dropped.slice(0, 10));
     return valid;
   }
 
   async addCategoryData(category, domainObjs) {
-    // ipv4 and ipv6 members already passed an Address4/Address6 parse in CategoryEntry
-    const valid = this.filterValid(category, domainObjs, "entries", obj => obj.type !== "domain" || isCategoryDomainValid(obj.id));
+    // ipv4 and ipv6 members already passed an Address4/Address6 parse in CategoryEntry. the object
+    // test is not redundant with the catch in filterValid: a primitive member does not throw, its
+    // .type just reads undefined, so without it a bare string would be written through as valid
+    const valid = this.filterValid(category, domainObjs, "entries",
+      obj => _.isPlainObject(obj) && (obj.type !== "domain" || isCategoryDomainValid(obj.id)));
     const domainObjStrs = valid.map(obj => JSON.stringify(obj));
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
@@ -924,7 +934,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
     
     for (const element of elements) {
-      const entries = CategoryEntry.parse(element);
+      // parse throws on a malformed element, and the two flushes above have already run, so letting
+      // it out would leave the category emptied. the element stays in the included list either way
+      let entries;
+      try {
+        entries = CategoryEntry.parse(element);
+      } catch (err) {
+        log.warn(`Ignore invalid element of category ${category}`, element, err.message);
+        continue;
+      }
       await this.addCategoryData(category, entries);
     }
     // following code is for backward compatibility, will be removed in the future

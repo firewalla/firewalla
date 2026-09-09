@@ -1232,11 +1232,25 @@ describe('test netbot input validation', function() {
       });
     }
 
+    // a payload that is not a list at all has to be refused rather than passed on, where the
+    // category updater ignores it and the caller is told the update completed
+    for (const elements of [undefined, null, 'example.com', 42, {list: ['example.com']}]) {
+      it(`updateIncludedElements rejects ${JSON.stringify(elements)} as the whole payload`, async () => {
+        await shouldReject(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), 400, /^Invalid elements/);
+      });
+    }
+
     // an unknown category is refused by the category updater, which runs only after the elements
     // pass, so this proves the rich element syntax still gets through
     it('accepts domains, addresses, ports and a regex', async () => {
       const elements = ['example.com', '*.example.com', '1.2.3.0/24', '[::1]:443', 'example.com,tcp:80-90', 'regex:^ad[0-9]+\\.example\\.com$'];
       await shouldPass(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), /is not found/);
+    });
+
+    // clearing the list is an empty array, which is the form a caller has to use now that omitting
+    // elements is refused instead of quietly doing nothing
+    it('accepts an empty array', async () => {
+      await shouldPass(() => cmd('updateIncludedElements', {category: 'no_such_category', elements: []}), /is not found/);
     });
   });
 

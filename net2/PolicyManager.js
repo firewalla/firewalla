@@ -395,7 +395,7 @@ class PolicyManager {
 
     const policyKeys = Object.keys(policy);
 
-    // policy content might end up in command line or config file, filtering it here as a safty guard
+    // policy content might end up in command line or config file, filtering it here as a safety guard
     const invalidPolicyKeys = new Set();
     for (const p of policyKeys) {
       // wrap in an object so the walk sees the policy name as the key, which decides whether a
