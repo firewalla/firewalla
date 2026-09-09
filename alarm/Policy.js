@@ -83,6 +83,19 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
 
+    // ipOnly defaults to true in enforcement, only rules that explicitly opt out carry it.
+    // keep it undefined when absent so old rules are not treated as changed
+    if (raw.ipOnly === undefined || raw.ipOnly === "") {
+      delete this.ipOnly;
+    } else {
+      try {
+        this.ipOnly = !!JSON.parse(raw.ipOnly);
+      } catch (e) {
+        log.error("Failed to parse policy ipOnly:", raw.ipOnly, e);
+        delete this.ipOnly;
+      }
+    }
+
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
