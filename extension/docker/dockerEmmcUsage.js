@@ -95,11 +95,10 @@ function getUpperDir(inspectObj) {
 }
 
 // a container with zero host-visible mounts writes 100% of its data into its own
-// writable layer, so that layer landing on eMMC matters even though there's no mount to report
-async function isOwnStorageOnEmmc(inspectObj, emmcDevice) {
-  const upperDir = getUpperDir(inspectObj);
-  if (!upperDir) return false;
-  const device = await resolveRealDevice(upperDir);
+// writable layer, so that layer landing on eMMC matters even though there's no mount to report.
+async function isOwnStorageOnEmmc(inspectObj, emmcDevice, dockerRootDir) {
+  const layerPath = getUpperDir(inspectObj) || dockerRootDir;
+  const device = await resolveRealDevice(layerPath);
   return matchesEmmcDevice(device, emmcDevice);
 }
 
@@ -138,7 +137,7 @@ async function getEmmcUsage() {
       }
     }
 
-    const ownLayerOnEmmc = await isOwnStorageOnEmmc(inspectObj, emmcDevice);
+    const ownLayerOnEmmc = await isOwnStorageOnEmmc(inspectObj, emmcDevice, dockerRoot);
 
     if (emmcMounts.length > 0 || ownLayerOnEmmc) {
       result.push({
