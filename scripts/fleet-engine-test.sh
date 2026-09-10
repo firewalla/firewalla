@@ -191,12 +191,13 @@ echo "== behaviour: the drop-ins are staged and committed together"
 setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 sudo -E "$ENGINE" apply >/dev/null
 before=$(cat "$B")
+sudo rm -rf "$SYSTEMD_DIR/suricata.service.d"
 : > "$SYSTEMD_DIR/suricata.service.d"     # a file where the directory must go
 setf 1 0                                  # brofish drop-in must change (--no-suricata)
 out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
 check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
-rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
 echo "== behaviour: apply rewrites a stale drop-in"
 setf 1 1; sudo -E "$ENGINE" apply >/dev/null
