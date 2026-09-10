@@ -1168,6 +1168,7 @@
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,
+    "gcm_downgrade_protection": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
     "local_flow": false,
