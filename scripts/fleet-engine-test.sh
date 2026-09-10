@@ -322,6 +322,13 @@ check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.fai
 check "a backup that fails aborts before the destination is touched" 'sed -n "/commit_one()/,/^  }/p" "$ENGINE" | grep -q "cp -f \"\$dst\" \"\$backup/\$name\" 2>/dev/null; then"'
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
+echo "== unit: the two-process arrangement"
+check "the IDS is restarted whatever the flow role is doing" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then"'
+check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "pgrep -x suricata >/dev/null 2>&1; then"'
+check "each cron entry checks one role" 'grep -q "fleet-ping.sh brofish" "$FIREWALLA_HOME/etc/crontab.fleet" && grep -q "fleet-ping.sh suricata" "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids"'
+check "the watchdog probes the IDS with suricata interfaces" 'grep -q "ids_status_args" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
+check "the retry flag is owned by apply()" 'grep -q "this.applyFailed = true;" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+
 echo "== behaviour: two applies do not interleave"
 setf 1 1
 ( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &

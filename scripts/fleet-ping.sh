@@ -35,10 +35,29 @@ fi
 # fleet can own both roles at once, in two processes: brofish for the flows and
 # suricata for the IDS. Check each one it owns; a role the box has switched off
 # is not ours to watch.
+# One role per invocation, so the two cron entries (crontab.fleet for the flow
+# role, suricata/crontab.fleet-ids for the IDS) do not both check everything:
+#   fleet-ping.sh [brofish|suricata]    default: every role fleet owns
+WANT=${1:-all}
 ROLES=()
-[[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled && ROLES+=("brofish:127.0.0.1:8927")
-[[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && ROLES+=("suricata:127.0.0.1:8928")
-[[ ${#ROLES[@]} -gt 0 ]] || exit 0   # nothing of ours is running
+if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled && [[ $WANT == all || $WANT == brofish ]]; then
+  ROLES+=("brofish:127.0.0.1:8927")
+fi
+if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && [[ $WANT == all || $WANT == suricata ]]; then
+  ROLES+=("suricata:127.0.0.1:8928")
+fi
+[[ ${#ROLES[@]} -gt 0 ]] || exit 0   # nothing of ours to check
+
+# the IDS process is launched with suricata's interface list (node.cfg is only
+# refreshed while the zeek role runs, so it can be stale or absent); --status
+# has to ask about the same interfaces or it would judge the wrong ones
+ids_status_args=()
+if [[ -r $FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc ]]; then
+  source "$FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc"
+  for intf in $LISTEN_INTERFACES; do
+    ids_status_args+=(-i "$intf")
+  done
+fi
 
 # only fleet's own service is ours to restart: if the unit currently runs
 # something else (drop-in missing after a switch), leave it to FireMain
@@ -75,9 +94,13 @@ for role in "${ROLES[@]}"; do
     [[ -n "$result" ]]
   }
 
-  # the process is answering and every interface is still publishing
+  # the process is answering and every interface it captures is publishing
   check_status() {
-    sudo "$FLEET" --zeekctl-compat --http "$HTTP" --status >/dev/null 2>&1
+    local args=(--zeekctl-compat)
+    if [[ $SERVICE == suricata && ${#ids_status_args[@]} -gt 0 ]]; then
+      args+=("${ids_status_args[@]}")
+    fi
+    sudo "$FLEET" "${args[@]}" --http "$HTTP" --status >/dev/null 2>&1
   }
 
   result_hb="OK"
