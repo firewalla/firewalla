@@ -313,7 +313,7 @@ module.exports = class DNSMASQ {
     let reloaded = true;
     for (const pid of pids) {
       const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
-        // ESRCH means the process already exited — not a failure, the service will restart a fresh instance
+        // ESRCH means the process already exited - not a failure, the service will restart a fresh instance
         if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
           return true;
         log.error(`Failed to reload ${SERVICE_NAME} config on pid ${pid}`, err.message);
@@ -397,6 +397,13 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
+  _schedulePendingDHCPReload() {
+    if (!this.reloadDHCPAfterRestart || this.restartDHCPTask || this.restartDHCPPromise)
+      return;
+    delete this.reloadDHCPAfterRestart;
+    this.scheduleReloadDHCPService();
+  }
+
   scheduleRestartDHCPService(ignoreFileCheck = false) {
     if (this.reloadDHCPTask) {
       clearTimeout(this.reloadDHCPTask);
@@ -405,47 +412,120 @@ module.exports = class DNSMASQ {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
-    this.restartDHCPTask = setTimeout(async () => {
+    // Debounced timers share one pending request. Preflights update Redis, so
+    // serialize them and retain positive results even when their timer is stale.
+    // Generation selects the timer allowed to act; request state is retired
+    // when that timer finishes preflight or a reload fallback supersedes it.
+    const restartRequest = this.restartDHCPRequest || {
+      preflight: Promise.resolve(),
+      changed: false
+    };
+    this.restartDHCPRequest = restartRequest;
+    this.restartDHCPGeneration = (this.restartDHCPGeneration || 0) + 1;
+    const restartGeneration = this.restartDHCPGeneration;
+    const restartTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+      const preflight = restartRequest.preflight.then(async () => {
+        if (this.restartDHCPRequest !== restartRequest || restartGeneration !== this.restartDHCPGeneration)
+          return;
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
+        restartRequest.changed = restartRequest.changed || confChanged;
+      });
+      restartRequest.preflight = preflight;
+      await preflight;
+      // Rescheduling or a reload fallback can invalidate this callback while preflight awaits.
+      // Do not restart or consume state belonging to a later restart request.
+      if (this.restartDHCPRequest !== restartRequest || restartGeneration !== (this.restartDHCPGeneration || 0))
+        return;
+      delete this.restartDHCPRequest;
+      if (!this.restartDHCPIgnoreFileCheck && !restartRequest.changed) {
         delete this.restartDHCPIgnoreFileCheck;
-        delete this.restartDHCPTask;
+        if (this.restartDHCPTask === restartTask)
+          delete this.restartDHCPTask;
+        this._schedulePendingDHCPReload();
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
-      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
-      this.counter.restartDHCP++;
-      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
+      await this.restartDHCPService();
+      if (this.restartDHCPTask === restartTask)
+        delete this.restartDHCPTask;
+      this._schedulePendingDHCPReload();
+    }, 5000);
+    this.restartDHCPTask = restartTask;
+  }
+
+  async restartDHCPService() {
+    if (this.restartDHCPPromise)
+      return this.restartDHCPPromise;
+
+    this.counter.restartDHCP++;
+    log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
+
+    const restartPromise = (async () => {
+      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => {
+        log.error(`Failed to stop ${DHCP_SERVICE_NAME} service`, err.message);
+      });
       await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
-      delete this.restartDHCPTask
-    }, 5000);
+    })();
+    const trackedRestartPromise = restartPromise.finally(() => {
+      if (this.restartDHCPPromise === trackedRestartPromise) {
+        delete this.restartDHCPPromise;
+        this._schedulePendingDHCPReload();
+      }
+    });
+    this.restartDHCPPromise = trackedRestartPromise;
+    return trackedRestartPromise;
   }
 
   scheduleReloadDHCPService() {
-    if (this.restartDHCPTask)
-      return
+    // A scheduled or active restart can race with a hosts-file update. Preserve
+    // one coalesced reload request until all restart state has settled so a
+    // hosts-file change cannot be lost across the restart preflight or restart.
+    if (this.restartDHCPTask || this.restartDHCPPromise) {
+      this.reloadDHCPAfterRestart = true;
+      return;
+    }
     if (this.reloadDHCPTask)
       clearTimeout(this.reloadDHCPTask);
-    this.reloadDHCPTask = setTimeout(async () => {
+    const reloadTask = setTimeout(async () => {
       const confChanged = await this.checkConfsChange('dnsmasq:dhcphosts', [HOSTFILE_PATH]);
       if (!confChanged) {
-        delete this.reloadDHCPTask;
+        if (this.reloadDHCPTask === reloadTask)
+          delete this.reloadDHCPTask;
         return;
       }
       this.counter.reloadDHCP++;
       log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
-      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+
+      const reloaded = await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
+        return true;
       }).catch((err) => {
         log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
+        return false;
       });
-      delete this.reloadDHCPTask
+
+      if (!reloaded) {
+        // clearTimeout cannot cancel callbacks already awaiting preflight.
+        this.restartDHCPGeneration = (this.restartDHCPGeneration || 0) + 1;
+        delete this.restartDHCPRequest;
+        if (this.restartDHCPTask) {
+          clearTimeout(this.restartDHCPTask);
+          delete this.restartDHCPTask;
+          delete this.restartDHCPIgnoreFileCheck;
+        }
+        log.warn(`${DHCP_SERVICE_NAME} reload failed, falling back to service restart`);
+        await this.restartDHCPService();
+      }
+
+      if (this.reloadDHCPTask === reloadTask)
+        delete this.reloadDHCPTask
     }, 5000);
+    this.reloadDHCPTask = reloadTask;
   }
 
   // in format 127.0.0.1#5353
