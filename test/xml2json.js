@@ -16,6 +16,7 @@
 
 const chai = require('chai');
 const expect = chai.expect;
+const proxyquire = require('proxyquire').noPreserveCache();
 
 const xml2json = require('../extension/xml2json/xml2json.js')
 
@@ -79,3 +80,119 @@ describe('xml2json binary wrapper', () => {
     expect(result).to.be.empty
   });
 })
+
+
+describe('xml2json output bounds', () => {
+  const { EventEmitter } = require('events');
+  const { Writable } = require('stream');
+
+  function createFakeChild() {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stdin = new Writable({
+      write: (chunk, encoding, callback) => {
+        callback();
+      }
+    });
+    child.killCalled = false;
+    child.kill = () => {
+      child.killCalled = true;
+    };
+    return child;
+  }
+
+  function loadWithChild(child) {
+    return proxyquire('../extension/xml2json/xml2json.js', {
+      'child_process': {
+        spawn: () => child
+      }
+    });
+  }
+
+  it('rejects and kills the child when stdout exceeds 1 MiB', async () => {
+    const child = createFakeChild();
+    const parser = loadWithChild(child);
+
+    const promise = parser.parse('<root/>');
+    child.stdout.emit('data', Buffer.alloc(1024 * 1024 + 1));
+
+    let error;
+    try {
+      await promise;
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
+    expect(child.killCalled).to.equal(true);
+  });
+
+  it('does not reject output at the 1 MiB boundary', async () => {
+    const child = createFakeChild();
+    const parser = loadWithChild(child);
+
+    const jsonPrefix = '{"root":{"value":"';
+    const jsonSuffix = '"}}';
+    const valueSize = 1024 * 1024 - Buffer.byteLength(jsonPrefix) - Buffer.byteLength(jsonSuffix);
+    const output = jsonPrefix + 'x'.repeat(valueSize) + jsonSuffix;
+
+    const promise = parser.parse('<root/>');
+    child.stdout.emit('data', Buffer.from(output));
+    child.stdout.emit('close');
+
+    const result = await promise;
+
+    expect(result.root.value).to.have.length(valueSize);
+    expect(child.killCalled).to.equal(true);
+  });
+
+  it('ignores stdout after the output limit has already rejected the parse', async () => {
+    const child = createFakeChild();
+    const parser = loadWithChild(child);
+
+    const promise = parser.parse('<root/>');
+    child.stdout.emit('data', Buffer.alloc(1024 * 1024 + 1));
+    child.stdout.emit('data', Buffer.from('{"unexpected":"result"}'));
+    child.stdout.emit('close');
+
+    let error;
+    try {
+      await promise;
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
+  });
+
+  it('ignores stdin errors after the output limit has already rejected the parse', async () => {
+    const child = createFakeChild();
+    const parser = loadWithChild(child);
+
+    const promise = parser.parse('<root/>');
+    child.stdout.emit('data', Buffer.alloc(1024 * 1024 + 1));
+
+    let error;
+    try {
+      await promise;
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
+
+    expect(() => child.stdin.emit('error', new Error('write EPIPE'))).to.not.throw();
+
+    let secondError;
+    try {
+      await promise;
+    } catch (err) {
+      secondError = err;
+    }
+
+    expect(secondError).to.equal(error);
+  });
+});
