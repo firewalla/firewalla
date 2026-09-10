@@ -33,6 +33,8 @@ RELOAD_PENDING=/dev/shm/fleet-engine.reload-pending
 # same path, and BroControl / SuricataControl refuse to start a service while
 # it exists
 FAILED_MARKER=/dev/shm/fleet-engine.failed
+# the brofish drop-in launches fleet through this wrapper (preparation hooks)
+FLEET_RUN=$FIREWALLA_HOME/scripts/fleet-run
 # tests point SYSTEMD_DIR at a scratch directory: render and check files, never
 # reload systemd or touch a running service
 LIVE=false
@@ -254,11 +256,11 @@ verify() {
   local real=$LIVE
   if [[ $ZEEK_ENGINE == fleet ]]; then
     [[ -f $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN missing" || return 1
-    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]] \
-      || fail "verify: brofish.service does not resolve to $FLEET_BIN" || return 1
+    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" == *"$FLEET_RUN"* ]] \
+      || fail "verify: brofish.service does not resolve to $FLEET_RUN" || return 1
   else
     [[ ! -e $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN still present" || return 1
-    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]] \
+    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" != *"$FLEET_RUN"* ]] \
       || fail "verify: brofish.service still resolves to fleet" || return 1
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
@@ -337,7 +339,7 @@ apply_and_switch()  { apply && switch_roles; }
 # shared hold marker. status needs no lock.
 LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock}
 run_locked() {
-  if command -v flock >/dev/null 2>&1 && exec 9>"$LOCK" 2>/dev/null; then
+  if command -v flock >/dev/null 2>&1 && { exec 9>"$LOCK"; } 2>/dev/null; then
     flock -w 180 9 || { log "FAILED: another flow engine apply holds $LOCK"; return 1; }
   fi
   "$@"
