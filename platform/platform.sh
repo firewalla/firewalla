@@ -6,6 +6,7 @@ UNAME=$(uname -m)
 
 # by default no
 MANAGED_BY_FIREBOOT=no
+NTP_SVC="ntp"
 export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
@@ -15,7 +16,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
-XT_UDP_TLS_SUPPORTED=no
+XT_UDP_TLS_SUPPORTED=yes
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
 HAVE_FWDAP=no
@@ -97,11 +98,9 @@ FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/fleet-engine.features}
 
 function _fw_feature_on {
   local name=$1 v
-  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
-  case "$v" in
-    1) return 0 ;;
-    0) return 1 ;;
-  esac
+  # What net2/config.js decided, first: it merges cloud, MSP and version
+  # configuration and drops anything in hiddenFeatures, so a feature hidden by
+  # a release while sys:features still says 1 must resolve to off here too.
   if [[ -r $FW_EFFECTIVE_FEATURES ]]; then
     v=$(jq -r --arg n "$name" 'if has($n) then (.[$n] | tostring) else empty end' "$FW_EFFECTIVE_FEATURES" 2>/dev/null)
     case "$v" in
@@ -109,6 +108,12 @@ function _fw_feature_on {
       false) return 1 ;;
     esac
   fi
+  # before FireMain has published (early boot), the runtime override in redis
+  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
+  case "$v" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
   # then the same file precedence as net2/config.js: user config, the platform
   # default, the checked-in default. `has` keeps an explicit false, which
   # `// empty` would have thrown away.
@@ -187,6 +192,27 @@ function get_tls_ko_path {
   echo $ko_path
 }
 
+# module identity helpers, see scripts/tls_module_id.sh. Builds without MODULE_VERSION and
+# without CONFIG_MODULE_SRCVERSION_ALL (orange's aarch64 6.6.104) expose no version at all,
+# neither in modinfo nor under /sys/module/<m>/, so identity comes from the GNU build-id
+# which both the loaded module and the .ko still carry.
+TLS_MODULE_ID_SCRIPT="$(dirname "$FW_PLATFORM_DIR")/scripts/tls_module_id.sh"
+
+# id of the bundled .ko, for recording which module was loaded (empty if undeterminable)
+function get_tls_ko_id {
+  "$TLS_MODULE_ID_SCRIPT" file "$1"
+}
+
+# id of the module currently loaded in the kernel (empty if undeterminable)
+function get_loaded_tls_module_id {
+  "$TLS_MODULE_ID_SCRIPT" loaded "$1"
+}
+
+# 0 the loaded module is the one built from this .ko, 1 it is not, 2 cannot tell
+function tls_module_matches_ko {
+  "$TLS_MODULE_ID_SCRIPT" same "$1" "$2"
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -257,6 +283,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=orange
         ;;
+      goldplus2)
+        source $FW_PLATFORM_DIR/goldplus2/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldplus2
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=goldplus2
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
@@ -297,6 +331,37 @@ if [ "$branch" = "master" ]; then
 fi
 
 
+# bundled path of the iptables userspace extension of a tls module, empty if none is
+# available for this platform/distro. Kept in one place so the install and the
+# "does it need an update" check always look at the same file.
+function get_tls_so_path {
+  local module_name=$1 arch so_path so_path_alt
+  arch=$(uname -m)
+  so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
+  so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+  if [[ -f $so_path ]]; then
+    echo "$so_path"
+  elif [[ -f $so_path_alt ]]; then
+    echo "$so_path_alt"
+  fi
+}
+
+function get_tls_so_installed_path {
+  echo "/usr/lib/$(uname -m)-linux-gnu/xtables/lib$1.so"
+}
+
+# install the userspace .so only. Unlike the kernel module this touches neither the
+# loaded module nor existing iptables rules, so it needs no rmmod/reload cycle.
+function installTLSSharedObject {
+  local module_name=$1 so_path
+  so_path=$(get_tls_so_path "${module_name}")
+  if [[ -z $so_path ]]; then
+    echo "Error: no lib${module_name}.so available for this platform"
+    return 1
+  fi
+  sudo install -D -v -m 644 "${so_path}" "$(dirname "$(get_tls_so_installed_path "${module_name}")")"
+}
+
 function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)
@@ -308,6 +373,14 @@ function installTLSModule() {
   if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
     # xt_udp_tls is not supported on this platform ingore
     return 0
+  fi
+  if [[ ${module_name} = "xt_udp_tls" ]]; then
+    local should_disable
+    should_disable=$(redis-cli --raw get kernel_crash_info 2>/dev/null | jq -r '.shouldDisableUdpTls // false' 2>/dev/null)
+    if [[ "$should_disable" == "true" ]]; then
+      echo "Skipping xt_udp_tls: disabled due to prior kernel crash with same module version"
+      return 0
+    fi
   fi
   if ! lsmod | grep -wq "${module_name}"; then
 
@@ -322,16 +395,32 @@ function installTLSModule() {
     else
       sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi
-    arch=$(uname -m)
-    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
-    so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+    installTLSSharedObject ${module_name}
 
-    if [[ -f $so_path ]]; then
-      sudo install -D -v -m 644 ${so_path} /usr/lib/${arch}-linux-gnu/xtables
-    elif [[ -f $so_path_alt ]]; then
-      sudo install -D -v -m 644 ${so_path_alt} /usr/lib/${arch}-linux-gnu/xtables
+  fi
+  if [[ ${module_name} = "xt_udp_tls" ]] && lsmod | grep -wq "xt_udp_tls"; then
+    local ko_path version srcversion ko_id described crash_info updated
+    ko_path=$(get_tls_ko_path xt_udp_tls)
+    version=""; srcversion=""; ko_id=""
+    if [[ -f "$ko_path" ]]; then
+      # read it from the module image rather than through modinfo: the bundled .ko may be
+      # compressed, and on gse it is xt_udp_tls.ko.<kernel checksum> (or a .ko.<compiler>
+      # symlink to it), a name modinfo refuses - which used to leave this record empty
+      described=$("$TLS_MODULE_ID_SCRIPT" describe "$ko_path")
+      version=$(awk -F= '/^version=/{print $2; exit}' <<< "$described")
+      srcversion=$(awk -F= '/^srcversion=/{print $2; exit}' <<< "$described")
+      ko_id=$(awk -F= '/^id=/{print $2; exit}' <<< "$described")
+    else
+      # loaded by name, there is no bundled .ko to look at
+      version=$(modinfo xt_udp_tls 2>/dev/null | awk '/^version:/{print $2}')
+      srcversion=$(modinfo xt_udp_tls 2>/dev/null | awk '/^srcversion:/{print $2}')
     fi
-    
+    crash_info=$(redis-cli --raw get kernel_crash_info 2>/dev/null)
+    [[ -z "$crash_info" ]] && crash_info='{}'
+    updated=$(echo "$crash_info" | jq \
+      --arg v "$version" --arg sv "$srcversion" --arg ki "$ko_id" \
+      '.udpModuleVersion = {"version": $v, "srcversion": $sv, "koId": $ki} | .shouldDisableUdpTls = false' 2>/dev/null | jq -c )
+    [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
   fi
   return
 }
