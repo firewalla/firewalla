@@ -111,6 +111,16 @@ check "BroControl picks the cron template from the applied engine" 'grep -q "app
 check "SuricataControl uses the applied engines" 'grep -q "appliedSuricataEngine" "$FIREWALLA_HOME/net2/SuricataControl.js"'
 check "ZeekDPISensor uses the applied engine" 'grep -q "appliedZeekEngine" "$FIREWALLA_HOME/sensor/ZeekDPISensor.js"'
 
+echo "== the failed-apply hold is honoured everywhere"
+check "BroControl refuses to start brofish while held" 'grep -q "applyHeld" "$FIREWALLA_HOME/net2/BroControl.js"'
+check "SuricataControl refuses to start suricata while held" 'grep -q "applyHeld" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+check "fleet-engine restart refuses while held" 'grep -q "not starting the pcap services" "$ENGINE"'
+check "a successful apply lifts the hold" 'grep -q "rm -f \"\$FAILED_MARKER\"" "$ENGINE"'
+
+echo "== zeek is stopped even without zeekctl, and restart failures propagate"
+check "the pkill is not gated on zeekctl" '[[ $(grep -c "pkill -x" "$ENGINE") -ge 1 ]] && ! grep -q "pgrep -x .* && \[\[ -x \$ZEEKCTL \]\]" "$ENGINE"'
+check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
+
 echo "== scratch mode never touches live services"
 setf 1 1
 out=$(sudo -E "$ENGINE" apply 2>&1)
