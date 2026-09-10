@@ -119,14 +119,16 @@ sudo rm -f /dev/shm/fleet-engine.failed
 sudo mkdir -p /etc/systemd/system/brofish.service.d
 sudo chattr +i /etc/systemd/system/brofish.service.d 2>/dev/null
 if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
+  # the live checks run against the box's real paths: the sandbox FLEET_BIN
+  # would make verify compare systemd's ExecStart with the scratch binary
   live_before=$(systemctl show brofish -p ExecStart --value)
-  out=$(sudo -E env -u SYSTEMD_DIR "$ENGINE" apply 2>&1); rc=$?
+  out=$(sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" apply 2>&1); rc=$?
   check "live apply fails" '[[ $rc -ne 0 ]]'
   check "hold marker is left behind" '[[ -e /dev/shm/fleet-engine.failed ]]'
-  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR "$ENGINE" restart >/dev/null 2>&1'
+  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" restart >/dev/null 2>&1'
   check "brofish was not restarted" '[[ "$(systemctl show brofish -p ExecStart --value)" == "$live_before" ]]'
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
-  sudo -E env -u SYSTEMD_DIR "$ENGINE" apply >/dev/null 2>&1
+  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" apply >/dev/null 2>&1
   check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
 else
   echo "  skip live marker checks (cannot make the drop-in dir immutable here)"
