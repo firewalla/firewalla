@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ var fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 var util = require('util');
-const cp = require('child_process');
 var key = require('../common/key.js');
 
 let f = require('../../net2/Firewalla.js');
@@ -34,7 +33,6 @@ var RSAComment = "firewalla";
 
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
-const execAsync = util.promisify(cp.exec);
 const { execFile } = require('child-process-promise');
 const readFileAsync = util.promisify(fs.readFile);
 
