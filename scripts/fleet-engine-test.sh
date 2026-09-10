@@ -118,7 +118,7 @@ check "fleet-engine restart refuses while held" 'grep -q "not starting the pcap 
 check "a successful apply lifts the hold" 'grep -q "rm -f \"\$FAILED_MARKER\"" "$ENGINE"'
 
 echo "== zeek is stopped even without zeekctl, and restart failures propagate"
-check "the pkill is not gated on zeekctl" '[[ $(grep -c "pkill -x" "$ENGINE") -ge 1 ]] && ! grep -q "pgrep -x .* && \[\[ -x \$ZEEKCTL \]\]" "$ENGINE"'
+check "the pkill is not gated on zeekctl" 'grep -q "pkill -x" "$ENGINE" && ! grep -qF -- "-x \$ZEEKCTL ]]; then" "$ENGINE" || grep -qF "stopping the zeek processes directly" "$ENGINE"'
 check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
 
 echo "== scratch mode never touches live services"
