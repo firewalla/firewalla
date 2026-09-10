@@ -20,7 +20,7 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
-source ${FIREWALLA_HOME}/platform/platform.sh
+source "${FIREWALLA_HOME}/platform/platform.sh"
 
 : ${SYSTEMD_DIR:=/etc/systemd/system}
 # FLEET_BIN comes from platform.sh (overridable in the environment for tests)
@@ -51,20 +51,22 @@ resolve() {
   fi
 }
 
-install_dropin() { # src dst
-  sudo install -d "$(dirname "$2")"
-  sudo install -m 0644 -o root -g root "$1" "$2"
-}
-
 fail() { log "FAILED: $1"; return 1; }
 
-# Install or remove the drop-ins per the effective roles. Every state-changing
-# step is checked and a failure returns nonzero without touching the rest, and
-# the result is verified against what systemd will actually run, so a caller
-# (FleetEnginePlugin, main-start) never restarts services on stale drop-ins.
+install_dropin() { # src dst
+  sudo install -d "$(dirname "$2")" || return 1
+  sudo install -m 0644 -o root -g root "$1" "$2" || return 1
+}
+
+# Install or remove the drop-ins per the effective roles.
+#
+# Both desired files are rendered and validated first, then committed
+# together; if the second commit fails the first is put back, so no caller
+# ever sees one role updated and the other stale. Every state-changing step
+# is checked, the hold marker covers the window regardless, and the result is
+# verified against what systemd will actually run.
 apply() {
   resolve
-  local changed=false
   # Transactional hold: from here until verification succeeds the drop-ins may
   # be partial, so nothing may start brofish or suricata. Every caller gets
   # this, and a crash mid-apply leaves the hold in place rather than a box
@@ -76,30 +78,25 @@ apply() {
   # no reload and a stale systemd view it could never recover from
   $LIVE && sudo touch "$RELOAD_PENDING" 2>/dev/null
 
+  local stage
+  stage=$(mktemp -d) || fail "mktemp -d" || return 1
+  local want_brofish="" want_suricata=""
+
+  # ---- render and validate every wanted file before touching anything ----
   if [[ $ZEEK_ENGINE == fleet ]]; then
     local opts="--no-suricata"
     # the brofish fleet evaluates the rules only when it owns the IDS role and
     # the box wants an IDS at all; otherwise it must not write alerts
     [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && opts=""
-    local tmp
-    tmp=$(mktemp) || fail "mktemp" || return 1
-    if ! sed "s#@FLEET_OPTS@#$opts#" "$FIREWALLA_HOME/etc/brofish-fleet.conf" > "$tmp"; then
-      rm -f "$tmp"; fail "rendering brofish drop-in from $FIREWALLA_HOME/etc/brofish-fleet.conf"; return 1
+    [[ -f $FIREWALLA_HOME/etc/brofish-fleet.conf ]] \
+      || { rm -rf "$stage"; fail "missing $FIREWALLA_HOME/etc/brofish-fleet.conf"; return 1; }
+    want_brofish=$stage/brofish.conf
+    if ! sed "s#@FLEET_OPTS@#$opts#" "$FIREWALLA_HOME/etc/brofish-fleet.conf" > "$want_brofish"; then
+      rm -rf "$stage"; fail "rendering the brofish drop-in"; return 1
     fi
-    if ! sudo cmp -s "$tmp" "$BROFISH_DROPIN" 2>/dev/null; then
-      if ! install_dropin "$tmp" "$BROFISH_DROPIN"; then
-        rm -f "$tmp"; fail "installing $BROFISH_DROPIN"; return 1
-      fi
-      changed=true
-      log "brofish.service -> fleet${opts:+ ($opts)}"
-    fi
-    rm -f "$tmp"
-  elif [[ -e $BROFISH_DROPIN ]]; then
-    sudo rm -f "$BROFISH_DROPIN" || fail "removing $BROFISH_DROPIN" || return 1
-    changed=true
-    log "brofish.service -> zeek (drop-in removed)"
+    grep -q '^ExecStart=' "$want_brofish" \
+      || { rm -rf "$stage"; fail "rendered brofish drop-in has no ExecStart"; return 1; }
   fi
-
   if [[ $SURICATA_ENGINE == fleet ]]; then
     local src
     # the brofish fleet can only do IDS while it is actually running, i.e. the
@@ -109,27 +106,65 @@ apply() {
     else
       src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"   # fleet in ids-only mode
     fi
-    [[ -f $src ]] || fail "missing $src" || return 1
-    if ! sudo cmp -s "$src" "$SURICATA_DROPIN" 2>/dev/null; then
-      install_dropin "$src" "$SURICATA_DROPIN" || fail "installing $SURICATA_DROPIN" || return 1
-      changed=true
-      log "suricata.service -> $(basename "$src" .conf | sed 's/suricata-//')"
-    fi
-  elif [[ -e $SURICATA_DROPIN ]]; then
-    sudo rm -f "$SURICATA_DROPIN" || fail "removing $SURICATA_DROPIN" || return 1
-    changed=true
-    log "suricata.service -> suricata (drop-in removed)"
+    [[ -f $src ]] || { rm -rf "$stage"; fail "missing $src"; return 1; }
+    want_suricata=$stage/suricata.conf
+    cp -f "$src" "$want_suricata" || { rm -rf "$stage"; fail "staging $src"; return 1; }
   fi
 
+  # ---- commit: install or remove, keeping copies to roll back with ----
+  local changed=false rolled=""
+  local backup=$stage/backup; mkdir -p "$backup"
+  commit_one() { # want dst name
+    local want=$1 dst=$2 name=$3
+    if [[ -n $want ]]; then
+      sudo cmp -s "$want" "$dst" 2>/dev/null && return 0
+      [[ -e $dst ]] && sudo cp -f "$dst" "$backup/$name" 2>/dev/null
+      install_dropin "$want" "$dst" || return 1
+      rolled="$rolled $name:$dst"
+      changed=true
+      return 0
+    fi
+    [[ -e $dst ]] || return 0
+    sudo cp -f "$dst" "$backup/$name" 2>/dev/null
+    sudo rm -f "$dst" || return 1
+    rolled="$rolled $name:$dst"
+    changed=true
+    return 0
+  }
+  rollback() {
+    local entry name dst
+    for entry in $rolled; do
+      name=${entry%%:*}; dst=${entry#*:}
+      if [[ -f $backup/$name ]]; then
+        install_dropin "$backup/$name" "$dst" 2>/dev/null || true
+      else
+        sudo rm -f "$dst" 2>/dev/null || true
+      fi
+    done
+  }
+
+  if ! commit_one "$want_brofish" "$BROFISH_DROPIN" brofish; then
+    rollback; rm -rf "$stage"; fail "installing $BROFISH_DROPIN"; return 1
+  fi
+  if ! commit_one "$want_suricata" "$SURICATA_DROPIN" suricata; then
+    rollback; rm -rf "$stage"; fail "installing $SURICATA_DROPIN"; return 1
+  fi
+  $changed && log "brofish.service -> $ZEEK_ENGINE, suricata.service -> $SURICATA_ENGINE"
+
   if $LIVE; then
-    sudo systemctl daemon-reload || fail "systemctl daemon-reload" || return 1
+    if ! sudo systemctl daemon-reload; then
+      rollback; rm -rf "$stage"; fail "systemctl daemon-reload"; return 1
+    fi
     sudo rm -f "$RELOAD_PENDING" 2>/dev/null || true
   fi
 
-  # Only once every file change is in place and verified: stop the stock
-  # engines fleet has taken over from. A failure above returns before this, so
-  # an unsuccessful apply leaves the running services alone.
-  verify || return 1
+  if ! verify; then
+    rollback
+    $LIVE && sudo systemctl daemon-reload 2>/dev/null
+    rm -rf "$stage"
+    return 1
+  fi
+  rm -rf "$stage"
   # verified: the drop-ins match the features, so lift the hold (this also
   # clears one left by an earlier failed apply or by main-start)
   $LIVE && sudo rm -f "$FAILED_MARKER" 2>/dev/null

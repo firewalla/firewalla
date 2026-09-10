@@ -55,9 +55,17 @@ class FleetEnginePlugin extends Sensor {
     // without main-start (a plain `systemctl restart firemain`). If
     // main-start's own apply failed it stopped the pcap services, so start
     // them once this one succeeds.
+    // an ordinary `systemctl restart firemain` reconciles stale drop-ins here;
+    // the services keep running the old engine unless they are restarted, so
+    // restart when the applied state actually changed (or was held back)
     const heldBack = fs.existsSync(FAILED_MARKER);
-    await this.apply(heldBack).then(() => {
-      if (heldBack) log.info('flow engine applied after main-start held the pcap services back');
+    const before = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
+    await this.apply(false).then(() => {
+      const after = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
+      if (heldBack || after !== before) {
+        log.info(`flow engine reconciled at startup: ${before} -> ${after}${heldBack ? ' (was held back)' : ''}`);
+        sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+      }
     }).catch((err) => {
       log.error('Initial flow engine apply failed', err.message);
     });
@@ -99,9 +107,14 @@ class FleetEnginePlugin extends Sensor {
   publishFeatures() {
     const state = {};
     for (const name of FEATURES) state[name] = fc.isFeatureOn(name);
+    // atomically: a shell reader must never see a truncated document, or it
+    // would fall through to the config files and pick different roles
+    const tmp = `${EFFECTIVE_FEATURES}.${process.pid}`;
     try {
-      fs.writeFileSync(EFFECTIVE_FEATURES, JSON.stringify(state));
+      fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o644 });
+      fs.renameSync(tmp, EFFECTIVE_FEATURES);
     } catch (err) {
+      try { fs.unlinkSync(tmp); } catch (e) {}
       log.error('Failed to publish effective flow engine features', err.message);
     }
   }

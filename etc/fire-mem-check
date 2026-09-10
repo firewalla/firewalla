@@ -30,7 +30,7 @@ fi
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Disk Delete "+$disk
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-source ${FIREWALLA_HOME}/platform/platform.sh
+source "${FIREWALLA_HOME}/platform/platform.sh"
 if [[ $(get_flow_engine_zeek) == fleet ]]; then
   : # fleet runs as brofish; zeekctl cron would restart zeek beside it
 elif [[ -x "/usr/local/zeek/bin/zeekctl" ]]; then

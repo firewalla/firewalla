@@ -12,7 +12,7 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
-source ${FIREWALLA_HOME}/platform/platform.sh
+source "${FIREWALLA_HOME}/platform/platform.sh"
 
 FLEET=${FLEET:-$FIREWALLA_HIDDEN/run/assets/fleet}
 HEARTBEAT_DIR=${HEARTBEAT_DIR:-$(get_zeek_log_dir)}
