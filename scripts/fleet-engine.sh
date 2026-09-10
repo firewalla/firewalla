@@ -29,6 +29,10 @@ SURICATA_DROPIN=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 ZEEKCTL=/usr/local/${BRO_PROC_NAME:-zeek}/bin/${BRO_PROC_NAME:-zeek}ctl
 # a reload owed to systemd from an earlier apply whose daemon-reload failed
 RELOAD_PENDING=/dev/shm/fleet-engine.reload-pending
+# main-start writes this when its apply failed; net2/FlowEngine.js reads the
+# same path, and BroControl / SuricataControl refuse to start a service while
+# it exists
+FAILED_MARKER=/dev/shm/fleet-engine.failed
 # tests point SYSTEMD_DIR at a scratch directory: render and check files, never
 # reload systemd or touch a running service
 LIVE=false
@@ -117,6 +121,9 @@ apply() {
   # engines fleet has taken over from. A failure above returns before this, so
   # an unsuccessful apply leaves the running services alone.
   verify || return 1
+  # the drop-ins match the features again: lift a hold left by an earlier
+  # failure (main-start, or a previous apply) so the services may start
+  $LIVE && sudo rm -f "$FAILED_MARKER" 2>/dev/null
   $LIVE && stop_replaced_engines
   return 0
 }
@@ -125,10 +132,21 @@ apply() {
 # must record its nodes as stopped or `zeekctl cron` restarts them; the suricata
 # processes must not run while fleet evaluates the rules
 stop_replaced_engines() {
-  if [[ $ZEEK_ENGINE == fleet ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1 && [[ -x $ZEEKCTL ]]; then
-    log "stopping zeek through zeekctl"
-    sudo timeout 60 "$ZEEKCTL" stop >/dev/null 2>&1 || true
+  if [[ $ZEEK_ENGINE == fleet ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
+    # zeekctl first when it is there, so its state says "stopped" and
+    # `zeekctl cron` does not restart the nodes; the processes have to go
+    # either way, or zeek and fleet would write the same spool
+    if [[ -x $ZEEKCTL ]]; then
+      log "stopping zeek through zeekctl"
+      sudo timeout 60 "$ZEEKCTL" stop >/dev/null 2>&1 || true
+    else
+      log "zeekctl not at $ZEEKCTL, stopping the zeek processes directly"
+    fi
     sudo pkill -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
+    sleep 1
+    if pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
+      sudo pkill -9 -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
+    fi
   fi
   if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled \
      && systemctl is-active -q suricata 2>/dev/null \
@@ -178,19 +196,27 @@ switch_roles() {
 restart_fleet_services() {
   resolve
   $LIVE || return 0
+  # a failed apply holds the services stopped on purpose (main-start's marker,
+  # honoured by BroControl / SuricataControl too): do not start them here
+  if [[ -e $FAILED_MARKER ]]; then
+    log "FAILED: apply has not succeeded yet, not starting the pcap services"
+    return 1
+  fi
+  local rc=0
   # `restart` starts an inactive or failed unit too, so fleet ends up running
   # the role it owns (the asset can arrive while a unit is down) -- but only
   # while the box wants that role at all: pcap_zeek / pcap_suricata off means
   # the pcap plugin has stopped the service on purpose
   if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled; then
     sudo systemctl reset-failed brofish 2>/dev/null || true
-    sudo systemctl restart brofish || log "FAILED: restarting brofish"
+    sudo systemctl restart brofish || { log "FAILED: restarting brofish"; rc=1; }
   fi
   if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled \
      && { [[ $ZEEK_ENGINE != fleet ]] || ! pcap_zeek_enabled; }; then
     sudo systemctl reset-failed suricata 2>/dev/null || true
-    sudo systemctl restart suricata || log "FAILED: restarting suricata"
+    sudo systemctl restart suricata || { log "FAILED: restarting suricata"; rc=1; }
   fi
+  return $rc
 }
 
 status() {
