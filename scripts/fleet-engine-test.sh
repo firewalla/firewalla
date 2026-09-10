@@ -32,7 +32,9 @@ restore() {
     if [[ -n $v ]]; then redis-cli hset sys:features "$n" "$v" >/dev/null; else redis-cli hdel sys:features "$n" >/dev/null; fi
   done
 }
-trap 'restore; rm -rf "$T"' EXIT
+# always leave the box's own configuration consistent, whatever the test did
+relive() { sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$FIREWALLA_HOME/scripts/fleet-engine.sh" apply >/dev/null 2>&1 || true; }
+trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; restore; relive; rm -rf "$T"' EXIT
 setf() { redis-cli hset sys:features pcap_zeek_fleet "$1" pcap_zeek_suricata "$2" >/dev/null; }
 
 B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
@@ -117,6 +119,9 @@ echo "== a failed apply leaves the hold marker (live mode)"
 setf 1 1
 sudo rm -f /dev/shm/fleet-engine.failed
 sudo mkdir -p /etc/systemd/system/brofish.service.d
+# the drop-in must actually need installing, or apply has nothing to fail at:
+# remove it, then make the directory immutable so the install cannot succeed
+sudo rm -f /etc/systemd/system/brofish.service.d/fleet.conf
 sudo chattr +i /etc/systemd/system/brofish.service.d 2>/dev/null
 if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
   # the live checks run against the box's real paths: the sandbox FLEET_BIN
@@ -130,6 +135,7 @@ if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
   sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" apply >/dev/null 2>&1
   check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
+  check "the live drop-in is back" '[[ -f /etc/systemd/system/brofish.service.d/fleet.conf ]]'
 else
   echo "  skip live marker checks (cannot make the drop-in dir immutable here)"
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
