@@ -2057,7 +2057,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
   
   async updateFlowSignatureList(force = false) {
-    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60 * 1000) {
+    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60) {
       return;
     }
     const flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
@@ -2136,7 +2136,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if (sigConfig.timeout != null) {
             options.timeout = sigConfig.timeout;
           }
-          await Block.batchBlockConnection([sigData], connSet, options)
+          await Block.batchBlockConnection([sigData], connSet, options).catch((err) => {
+            log.error(`Failed to block connection for category ${category} and signature ${sigId}`, err.message);
+          });
           break;
         case "ipPort":
           await this.addSigDetectedServer(category, sigData).catch((err) => {
