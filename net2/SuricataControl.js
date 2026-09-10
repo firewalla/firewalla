@@ -61,12 +61,10 @@ class SuricataControl {
     });
     log.info("Adding suricata related cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    // fleet in ids-only mode under this unit (zeek keeps brofish) gets its own
-    // watchdog entry; when fleet also runs brofish, crontab.fleet covers it
-    // fleet runs the IDS on its own (under this unit) when it owns the role
-    // and the brofish fleet is not providing it, either because zeek has the
-    // flow role or because the flow role is switched off entirely
-    const idsOnlyFleet = FlowEngine.appliedSuricataMode() === 'fleet-ids';
+    // fleet always runs the IDS as its own process under this unit (never on
+    // the brofish fleet: zeek's restrict_filters would cost IDS coverage), so
+    // it needs the watchdog entry whenever it owns the role
+    const idsOnlyFleet = FlowEngine.appliedSuricataEngine() === 'fleet';
     const crontab = idsOnlyFleet ? 'crontab.fleet-ids' : 'crontab';
     await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
