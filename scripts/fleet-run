@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# Launcher for fleet when it owns the zeek role (brofish.service through
+# etc/brofish-fleet.conf). scripts/bro-run does more than start zeek: it
+# mounts /bspool, runs the platform's before_bro hooks, which refresh
+# ~/.firewalla/run/zeek/scripts and regenerate
+# /usr/local/zeek/share/zeek/site/local.zeek from the platform local.bro plus
+# additional_options.bro, and applies the sysctl profile. fleet reads
+# local.zeek and additional_options.bro, so the same preparation has to happen
+# before it starts, or it would run on whatever the last zeek deploy left.
+#
+#   fleet-run              prepare, then exec fleet with the arguments given
+#   fleet-run --after-bro  run the platform's after_bro hooks (ExecStartPost)
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+source "${FIREWALLA_HOME}/platform/platform.sh"
+
+FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+
+if [[ ${1:-} == --after-bro ]]; then
+  after_bro
+  exit 0
+fi
+
+logger "FIREWALLA:FLEET-RUN preparing"
+# bro-run normally mounts this; fleet writes its live logs there
+mountpoint -q /bspool || { mkdir -p /bspool && mount -t tmpfs -o size=30m tmpfs /bspool; }
+# the hooks copy the runtime scripts and rebuild local.zeek; they are what
+# folds additional_options.bro (restrict_filters, @load-sigs) into it
+before_bro
+sysctl_conf=$(get_sysctl_conf_path 2>/dev/null)
+if [[ -n $sysctl_conf && -f $sysctl_conf ]]; then
+  cp -f "$sysctl_conf" /etc/sysctl.conf && sysctl -p >/dev/null 2>&1
+fi
+
+[[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-RUN $FLEET_BIN is not executable"; exit 1; }
+logger "FIREWALLA:FLEET-RUN exec $FLEET_BIN $*"
+exec "$FLEET_BIN" "$@"
