@@ -14,7 +14,21 @@
  */
 'use strict';
 
-// Which program handles each pcap role, decided by two features:
+// Which program handles each pcap role.
+//
+// Two answers, and they are not the same thing:
+//   zeekEngine() / suricataEngine()  what the features ask for (intent)
+//   appliedZeekEngine() / appliedSuricataEngine()  what the units will run
+//
+// The applied answer comes from the systemd drop-ins scripts/fleet-engine.sh
+// installs, so it is right from the first line of code in a process: the
+// feature table is filled in asynchronously (redis), and anything reading it
+// early would answer 'zeek' while fleet is in fact running. Consumers that
+// care about the running program (the watchdog cron template, whether to
+// restart for a signature change, whether to fetch the suricata binary) use
+// the applied answer.
+//
+// The features:
 //   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
 //   pcap_zeek_suricata   fleet evaluates the suricata rule set instead of suricata
 // Defaults come from the platform's files/config.json (userFeatures), the
@@ -52,6 +66,27 @@ function suricataEngine() {
   return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && fleetAvailable() ? 'fleet' : 'suricata';
 }
 
+const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/fleet.conf';
+const SURICATA_DROPIN = '/etc/systemd/system/suricata.service.d/fleet.conf';
+
+function dropinPresent(path) {
+  try {
+    fs.accessSync(path);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// what brofish.service / suricata.service will actually run right now
+function appliedZeekEngine() {
+  return dropinPresent(BROFISH_DROPIN) ? 'fleet' : 'zeek';
+}
+
+function appliedSuricataEngine() {
+  return dropinPresent(SURICATA_DROPIN) ? 'fleet' : 'suricata';
+}
+
 // true while the systemd drop-ins are known not to match the features
 function applyHeld() {
   try {
@@ -62,4 +97,8 @@ function applyHeld() {
   }
 }
 
-module.exports = { zeekEngine, suricataEngine, fleetAvailable, applyHeld, FLEET_BIN, APPLY_FAILED_MARKER };
+module.exports = {
+  zeekEngine, suricataEngine,
+  appliedZeekEngine, appliedSuricataEngine,
+  fleetAvailable, applyHeld, FLEET_BIN, APPLY_FAILED_MARKER,
+};

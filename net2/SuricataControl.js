@@ -63,7 +63,7 @@ class SuricataControl {
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     // fleet in ids-only mode under this unit (zeek keeps brofish) gets its own
     // watchdog entry; when fleet also runs brofish, crontab.fleet covers it
-    const idsOnlyFleet = FlowEngine.suricataEngine() === 'fleet' && FlowEngine.zeekEngine() !== 'fleet';
+    const idsOnlyFleet = FlowEngine.appliedSuricataEngine() === 'fleet' && FlowEngine.appliedZeekEngine() !== 'fleet';
     const crontab = idsOnlyFleet ? 'crontab.fleet-ids' : 'crontab';
     await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
@@ -96,7 +96,7 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
-      if (FlowEngine.suricataEngine() === 'fleet') {
+      if (FlowEngine.appliedSuricataEngine() === 'fleet') {
         log.info("Suricata rules are evaluated by fleet, not updating the suricata binary");
         return;
       }

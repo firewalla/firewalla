@@ -46,7 +46,7 @@ class ZeekDPISensor extends Sensor {
     const watcher = fs.watch(ZEEK_SIG_DIR, async (eventType, filename) => {
       const sha256 = await this.loadSigFileHash(filename);
       if (sha256 !== this.sigSha256s[filename]) {
-        if (FlowEngine.zeekEngine() === 'fleet') {
+        if (FlowEngine.appliedZeekEngine() === 'fleet') {
           log.info(`zeek sig file ${filename} is updated, fleet reloads it in place`);
         } else {
           log.info(`zeek sig file ${filename} is updated, will restart zeek ...`);
