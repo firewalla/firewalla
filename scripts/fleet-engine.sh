@@ -335,19 +335,31 @@ apply_and_switch()  { apply && switch_roles; }
 # the background) can all land here at once: without a lock two applies could
 # resolve different engines and interleave their commits, rollbacks and the
 # shared hold marker. status needs no lock.
-LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock}
+# A directory is the lock: mkdir is atomic and, unlike a lock file, needs no
+# shared permissions (main-start runs as pi, the asset hook as root, and
+# /dev/shm is world-writable). An apply that cannot take the lock fails rather
+# than proceeding unlocked.
+LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d}
 run_locked() {
-  command -v flock >/dev/null 2>&1 || { "$@"; return $?; }
-  # main-start runs as pi, the asset hook as root: the lock has to be openable
-  # by both, and an apply that cannot take it must not proceed unlocked
-  [[ -e $LOCK ]] || { : > "$LOCK" 2>/dev/null || sudo install -m 0666 /dev/null "$LOCK" 2>/dev/null; }
-  [[ -w $LOCK ]] || sudo chmod 0666 "$LOCK" 2>/dev/null
-  if ! { exec 9>"$LOCK"; } 2>/dev/null; then
-    fail "cannot open the apply lock $LOCK"
-    return 1
-  fi
-  flock -w 180 9 || { fail "another flow engine apply holds $LOCK"; return 1; }
+  local waited=0
+  until mkdir "$LOCK" 2>/dev/null; do
+    # a lock left behind by a killed apply is stale after three minutes
+    if [[ -d $LOCK ]] && [[ $(( $(date +%s) - $(stat -c %Y "$LOCK" 2>/dev/null || echo 0) )) -gt 180 ]]; then
+      log "removing the stale apply lock $LOCK"
+      rmdir "$LOCK" 2>/dev/null || sudo rm -rf "$LOCK" 2>/dev/null
+      continue
+    fi
+    waited=$((waited + 2))
+    if [[ $waited -gt 180 ]]; then
+      fail "another flow engine apply holds $LOCK"
+      return 1
+    fi
+    sleep 2
+  done
   "$@"
+  local rc=$?
+  rmdir "$LOCK" 2>/dev/null || sudo rm -rf "$LOCK" 2>/dev/null
+  return $rc
 }
 
 case "${1:-apply}" in
