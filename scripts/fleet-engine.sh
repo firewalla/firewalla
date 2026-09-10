@@ -35,6 +35,8 @@ RELOAD_PENDING=/dev/shm/fleet-engine.reload-pending
 FAILED_MARKER=/dev/shm/fleet-engine.failed
 # the brofish drop-in launches fleet through this wrapper (preparation hooks)
 FLEET_RUN=$FIREWALLA_HOME/scripts/fleet-run
+# the suricata drop-in launches the ids-only fleet through this one
+FLEET_IDS_RUN=$FIREWALLA_HOME/scripts/fleet-ids-run
 # tests point SYSTEMD_DIR at a scratch directory: render and check files, never
 # reload systemd or touch a running service
 LIVE=false
@@ -96,10 +98,9 @@ apply() {
 
   # ---- render and validate every wanted file before touching anything ----
   if [[ $ZEEK_ENGINE == fleet ]]; then
+    # the IDS runs as its own process under the suricata unit (see below), so
+    # the brofish fleet never evaluates the suricata rules
     local opts="--no-suricata"
-    # the brofish fleet evaluates the rules only when it owns the IDS role and
-    # the box wants an IDS at all; otherwise it must not write alerts
-    [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && opts=""
     [[ -f $FIREWALLA_HOME/etc/brofish-fleet.conf ]] \
       || { rm -rf "$stage"; fail "missing $FIREWALLA_HOME/etc/brofish-fleet.conf"; return 1; }
     want_brofish=$stage/brofish.conf
@@ -110,14 +111,13 @@ apply() {
       || { rm -rf "$stage"; fail "rendered brofish drop-in has no ExecStart"; return 1; }
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
-    local src
-    # the brofish fleet can only do IDS while it is actually running, i.e. the
-    # pcap_zeek feature is on as well; otherwise this unit runs fleet ids-only
-    if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled; then
-      src="$FIREWALLA_HOME/etc/suricata-fleet-off.conf"   # the brofish fleet does IDS
-    else
-      src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"   # fleet in ids-only mode
-    fi
+    # The IDS always gets a fleet of its own under the suricata unit, never a
+    # ride on the brofish one: --zeekctl-compat installs zeek's
+    # restrict_filters as the capture BPF, and those deliberately drop and
+    # sample LAN traffic, so a shared capture path would silently cost IDS
+    # coverage. This unit captures suricata's interfaces with suricata's own
+    # filter, exactly as the suricata process did.
+    local src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"
     [[ -f $src ]] || { rm -rf "$stage"; fail "missing $src"; return 1; }
     want_suricata=$stage/suricata.conf
     cp -f "$src" "$want_suricata" || { rm -rf "$stage"; fail "staging $src"; return 1; }
@@ -235,15 +235,15 @@ stop_replaced_engines() {
       rc=1
     fi
   fi
-  if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled \
-     && systemctl is-active -q suricata 2>/dev/null \
-     && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
-    log "stopping suricata (fleet evaluates its rules)"
-    if ! sudo systemctl stop suricata; then
-      log "FAILED: stopping suricata"
-      rc=1
-    elif systemctl is-active -q suricata 2>/dev/null; then
-      log "FAILED: suricata is still active"
+  # the suricata unit now runs fleet itself (ids-only), so the suricata
+  # processes go when systemd restarts the unit; a stray one is still stopped
+  if [[ $SURICATA_ENGINE == fleet ]] && pgrep -x suricata >/dev/null 2>&1 \
+     && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]]; then
+    log "stopping leftover suricata processes"
+    sudo pkill -x suricata 2>/dev/null || true
+    sleep 1
+    if pgrep -x suricata >/dev/null 2>&1; then
+      log "FAILED: suricata is still running"
       rc=1
     fi
   fi
@@ -265,10 +265,8 @@ verify() {
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
     [[ -f $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN missing" || return 1
-    if [[ $ZEEK_ENGINE != fleet ]]; then
-      ! $real || [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]] \
-        || fail "verify: suricata.service does not resolve to $FLEET_BIN" || return 1
-    fi
+    ! $real || [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_IDS_RUN"* ]] \
+      || fail "verify: suricata.service does not resolve to $FLEET_IDS_RUN" || return 1
   else
     [[ ! -e $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN still present" || return 1
   fi
@@ -339,9 +337,16 @@ apply_and_switch()  { apply && switch_roles; }
 # shared hold marker. status needs no lock.
 LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock}
 run_locked() {
-  if command -v flock >/dev/null 2>&1 && { exec 9>"$LOCK"; } 2>/dev/null; then
-    flock -w 180 9 || { log "FAILED: another flow engine apply holds $LOCK"; return 1; }
+  command -v flock >/dev/null 2>&1 || { "$@"; return $?; }
+  # main-start runs as pi, the asset hook as root: the lock has to be openable
+  # by both, and an apply that cannot take it must not proceed unlocked
+  [[ -e $LOCK ]] || { : > "$LOCK" 2>/dev/null || sudo install -m 0666 /dev/null "$LOCK" 2>/dev/null; }
+  [[ -w $LOCK ]] || sudo chmod 0666 "$LOCK" 2>/dev/null
+  if ! { exec 9>"$LOCK"; } 2>/dev/null; then
+    fail "cannot open the apply lock $LOCK"
+    return 1
   fi
+  flock -w 180 9 || { fail "another flow engine apply holds $LOCK"; return 1; }
   "$@"
 }
 
