@@ -24,6 +24,10 @@ const CACHE_PROPERTIES = {
   ifBlock: 'ifBlockCache'
 };
 
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function createSensor() {
   const sensor = Object.create(FlowAggregationSensor.prototype);
   sensor.config = {keySpan: 600};
@@ -64,7 +68,7 @@ describe('FlowAggregationSensor cache bounds', () => {
     expect(rejected).to.equal(null);
     expect(sensor.cacheEntryCounts.traffic).to.equal(10000);
     expect(sensor.cacheDropCounts.traffic).to.equal(1);
-    expect(Object.hasOwn(cache, 'mac-over-limit')).to.equal(false);
+    expect(hasOwn(cache, 'mac-over-limit')).to.equal(false);
   });
 
   it('continues updating an existing entry after the cache limit is reached', () => {
@@ -125,14 +129,40 @@ describe('FlowAggregationSensor cache bounds', () => {
       );
 
       expect(entry).to.deep.equal({key: entryKey});
-      expect(Object.hasOwn(cache, bucketKey)).to.equal(true);
-      expect(Object.hasOwn(cache[bucketKey], entryKey)).to.equal(true);
+      expect(hasOwn(cache, bucketKey)).to.equal(true);
+      expect(hasOwn(cache[bucketKey], entryKey)).to.equal(true);
       expect(cache[bucketKey][entryKey]).to.equal(entry);
     }
 
     expect(Object.getPrototypeOf(cache)).to.equal(null);
     expect(Object.getPrototypeOf(cache[bucketKey])).to.equal(null);
     expect(sensor.cacheEntryCounts.app).to.equal(2);
+  });
+
+  it('does not depend on Object.hasOwn being available', () => {
+    const sensor = createSensor();
+    const cache = Object.create(null);
+    const originalHasOwn = Object.hasOwn;
+
+    try {
+      Object.hasOwn = undefined;
+      const entry = sensor._getCacheEntry(
+        'traffic',
+        cache,
+        '__proto__',
+        'constructor',
+        () => ({value: 1})
+      );
+
+      expect(entry).to.deep.equal({value: 1});
+      expect(hasOwn(cache, '__proto__')).to.equal(true);
+      expect(hasOwn(cache.__proto__, 'constructor')).to.equal(true);
+    } finally {
+      if (originalHasOwn === undefined)
+        delete Object.hasOwn;
+      else
+        Object.hasOwn = originalHasOwn;
+    }
   });
 
   it('routes all six production call sites to the matching bounded cache', async () => {
@@ -200,8 +230,8 @@ describe('FlowAggregationSensor cache bounds', () => {
       expect(seen[name], `${name} cache call site was not exercised`).to.equal(true);
     }
 
-    expect(Object.hasOwn(sensor.categoryFlowCache[mac], 'constructor')).to.equal(true);
-    expect(Object.hasOwn(sensor.appFlowCache[mac], '__proto__')).to.equal(true);
+    expect(hasOwn(sensor.categoryFlowCache[mac], 'constructor')).to.equal(true);
+    expect(hasOwn(sensor.appFlowCache[mac], '__proto__')).to.equal(true);
     expect(Object.getPrototypeOf(sensor.categoryFlowCache[mac])).to.equal(null);
     expect(Object.getPrototypeOf(sensor.appFlowCache[mac])).to.equal(null);
   });
@@ -214,6 +244,52 @@ describe('FlowAggregationSensor cache bounds', () => {
     sensor._resetCurrentCacheBounds();
 
     for (const name of CACHE_NAMES) {
+      expect(sensor.cacheEntryCounts[name]).to.equal(0);
+      expect(sensor.cacheDropCounts[name]).to.equal(0);
+    }
+  });
+
+  it('rotates caches and counters together during scheduledJob', async () => {
+    const sensor = createSensor();
+    const previousCaches = {};
+
+    for (const name of CACHE_NAMES) {
+      const cache = sensor[CACHE_PROPERTIES[name]];
+      cache.bucket = Object.create(null);
+      cache.bucket.entry = {name};
+      previousCaches[name] = cache;
+      sensor.cacheEntryCounts[name] = 3;
+      sensor.cacheDropCounts[name] = 2;
+    }
+
+    let aggrArgs;
+    let hourlyArgs;
+    let sumFlowTs;
+    sensor.aggrAll = async (...args) => {
+      aggrArgs = args;
+    };
+    sensor.updateAllHourlySummedFlows = async (...args) => {
+      hourlyArgs = args;
+    };
+    sensor.sumFlowRange = async (ts) => {
+      sumFlowTs = ts;
+    };
+
+    await sensor.scheduledJob();
+
+    expect(aggrArgs[0]).to.equal(previousCaches.category);
+    expect(aggrArgs[1]).to.equal(previousCaches.app);
+    expect(hourlyArgs[1]).to.equal(previousCaches.traffic);
+    expect(hourlyArgs[2]).to.equal(previousCaches.ipBlock);
+    expect(hourlyArgs[3]).to.equal(previousCaches.dnsBlock);
+    expect(hourlyArgs[4]).to.equal(previousCaches.ifBlock);
+    expect(hourlyArgs[0]).to.equal(sumFlowTs);
+
+    for (const name of CACHE_NAMES) {
+      const currentCache = sensor[CACHE_PROPERTIES[name]];
+      expect(currentCache).to.not.equal(previousCaches[name]);
+      expect(Object.getPrototypeOf(currentCache)).to.equal(null);
+      expect(Object.keys(currentCache)).to.deep.equal([]);
       expect(sensor.cacheEntryCounts[name]).to.equal(0);
       expect(sensor.cacheDropCounts[name]).to.equal(0);
     }

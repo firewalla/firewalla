@@ -83,8 +83,8 @@ class FlowAggregationSensor extends Sensor {
   }
 
   _getCacheEntry(cacheName, cache, bucketKey, entryKey, createEntry, createArg) {
-    const bucket = Object.hasOwn(cache, bucketKey) ? cache[bucketKey] : null;
-    if (bucket && Object.hasOwn(bucket, entryKey))
+    const bucket = Object.prototype.hasOwnProperty.call(cache, bucketKey) ? cache[bucketKey] : null;
+    if (bucket && Object.prototype.hasOwnProperty.call(bucket, entryKey))
       return bucket[entryKey];
 
     if (this.cacheEntryCounts[cacheName] >= MAX_CACHE_ENTRIES) {
