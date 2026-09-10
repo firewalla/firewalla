@@ -13,6 +13,9 @@ FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
+# PSE runs fleet for flows and for the suricata rule set (scripts/fleet-engine.sh)
+FW_FLOW_ENGINE_ZEEK=fleet
+FW_FLOW_ENGINE_SURICATA=fleet
 STATUS_LED_PATH='/sys/class/leds/sys_led/'
 IFB_SUPPORTED=yes
 XT_TLS_SUPPORTED=yes

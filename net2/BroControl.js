@@ -123,7 +123,9 @@ class BroControl {
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/crontab.zeek`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    // fleet-ping.sh replaces brofish-ping.sh when fleet runs as brofish
+    const crontab = platform.getFlowEngineZeek() === 'fleet' ? 'crontab.fleet' : 'crontab.zeek';
+    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/${crontab}`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
     });

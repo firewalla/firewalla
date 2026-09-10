@@ -150,6 +150,34 @@ class Platform {
     return "zeek";
   }
 
+  // flow engines, the node side of platform.sh's FW_FLOW_ENGINE_ZEEK /
+  // FW_FLOW_ENGINE_SURICATA: which program runs as brofish.service (zeek |
+  // fleet) and which evaluates the suricata rules (suricata | fleet). A box
+  // overrides the platform default in ~/.firewalla/config/flow_engine_<which>.
+  _flowEngineOverride(which) {
+    try {
+      const v = fs.readFileSync(`${f.getUserConfigFolder()}/flow_engine_${which}`, 'utf8').trim();
+      if (v === 'fleet' || v === which) return v;
+    } catch (err) {}
+    return null;
+  }
+
+  getFlowEngineZeek() {
+    return this._flowEngineOverride('zeek') || this.getDefaultFlowEngineZeek();
+  }
+
+  getFlowEngineSuricata() {
+    return this._flowEngineOverride('suricata') || this.getDefaultFlowEngineSuricata();
+  }
+
+  getDefaultFlowEngineZeek() {
+    return 'zeek';
+  }
+
+  getDefaultFlowEngineSuricata() {
+    return 'suricata';
+  }
+
   async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {

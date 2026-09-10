@@ -91,6 +91,10 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
+      if (platform.getFlowEngineSuricata() === 'fleet') {
+        log.info("Suricata rules are evaluated by fleet, not updating the suricata binary");
+        return;
+      }
       // Check if the current platform supports suricata from assets
       
       const isSupported = await platform.isSuricataFromAssetsSupported();
