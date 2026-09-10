@@ -15,6 +15,7 @@
 'use strict';
 
 const net = require('net')
+const dgram = require('dgram')
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -35,6 +36,8 @@ const hostManager = new HostManager();
 const _ = require('lodash')
 
 const lastProcessTimeMap = {};
+
+const MDNS_MULTICAST_ADDR = '224.0.0.251';
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
@@ -66,27 +69,78 @@ class BonjourSensor extends Sensor {
 
       // do not initialize bonjour if there is no interface with IP address
       // otherwise dgram.addMembership will emit error and crash the process
-      if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
+      const ifaceIPs = _.uniq(sysManager.getMonitoringInterfaces()
+        .filter(i => i.ip_address && !['wg', 'awg', 'tun'].some(vpnPrefix => i.name.startsWith(vpnPrefix)))
+        .map(i => i.ip_address));
+      if (ifaceIPs.length == 0)
         return;
-      let bound = false;
-      // create new bonjour listeners
-      for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
-        if (['wg', 'awg', 'tun'].some(vpnPrefix => iface.name.startsWith(vpnPrefix))) continue
-        const opts = {interface: iface.ip_address};
-        if (!bound) {
-          // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
-          opts.bind = "0.0.0.0";
-          bound = true;
-        } else {
-          // no need to bind on any address, multicast query can still be sent via interface in opts
-          opts.bind = false;
+
+      // One socket bound to 0.0.0.0:5353 serves every monitoring interface. The source
+      // port matters: avahi treats a query from any other port as "legacy unicast" and
+      // holds one of its 100 reflection slots for it. One instance per interface left
+      // all but the first socket unbound, i.e. on an ephemeral port, draining the slots.
+      const socket = dgram.createSocket({type: 'udp4', reuseAddr: true});
+
+      // Queries still have to leave on every interface, so IP_MULTICAST_IF is moved
+      // before each send. They go one at a time on purpose: dgram.send() only hands the
+      // packet to the kernel a tick later, so a plain loop sends them all on the last
+      // interface set.
+      const queue = [];
+      let sending = false;
+      let listening = false;
+      let query = null;
+      const drain = () => {
+        if (sending || !query)
+          return;
+        const job = queue.shift();
+        if (!job)
+          return;
+        sending = true;
+        let settled = false;
+        const done = () => {
+          if (settled)
+            return;
+          settled = true;
+          sending = false;
+          drain();
+        };
+        try {
+          socket.setMulticastInterface(job.ip);
+          query.call(mdns, job.name, job.type, null, done);
+        } catch (err) {
+          log.warn(`Failed to send mDNS query for ${job.name} via ${job.ip}`, err.message);
+          done();
         }
-        const instance = Bonjour(opts);
-        instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
-        instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
-        const browser = instance.find({}, (service) => this.bonjourParse(service));
-        this.bonjourListeners.push({browser, instance});
-      }
+      };
+
+      socket.on('listening', () => {
+        listening = true;
+        // multicast-dns only joins the group on opts.interface, join the rest here
+        for (const ip of ifaceIPs.slice(1)) {
+          try {
+            socket.addMembership(MDNS_MULTICAST_ADDR, ip);
+          } catch (err) {
+            log.warn(`Failed to join ${MDNS_MULTICAST_ADDR} on ${ip}`, err.message);
+          }
+        }
+        drain();
+      });
+
+      const instance = Bonjour({socket, bind: "0.0.0.0", interface: ifaceIPs[0]});
+      const mdns = instance._server.mdns;
+      mdns.on('warning', (err) => log.warn("Warning from mDNS server", err));
+      mdns.on('error', (err) => log.error("Error from mDNS server", err));
+
+      query = mdns.query;
+      mdns.query = function (name, type) {
+        for (const ip of ifaceIPs)
+          queue.push({ip, name, type});
+        if (listening)
+          drain();
+      };
+
+      const browser = instance.find({}, (service) => this.bonjourParse(service));
+      this.bonjourListeners.push({browser, instance});
 
       this.updateTask = setInterval(() => {
         log.info("Bonjour Watch Updating");
