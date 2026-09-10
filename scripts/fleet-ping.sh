@@ -44,8 +44,10 @@ fi
 
 # only fleet's own service is ours to restart: if the unit currently runs
 # something else (drop-in missing after a switch), leave it to FireMain
+# brofish runs fleet through scripts/fleet-run; the ids-only unit runs the
+# binary directly
 exec_now=$(systemctl show $SERVICE -p ExecStart --value 2>/dev/null)
-if [[ "$exec_now" != *"$FLEET"* ]]; then
+if [[ "$exec_now" != *"$FLEET"* && "$exec_now" != *fleet-run* ]]; then
   logger "fleet-ping: $SERVICE does not run fleet (${exec_now:0:100}); not checking"
   exit 0
 fi
