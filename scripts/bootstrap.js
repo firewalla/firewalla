@@ -12,9 +12,7 @@
 // Don't assume the env is ready: verify deps/redis/network up front and exit
 // non-zero with a clear message instead of crashing on a require.
 
-const { exec } = require('child_process');
-const util = require('util');
-const execAsync = util.promisify(exec);
+const { execFile } = require('child-process-promise');
 const fs = require('fs');
 const uuid = require('uuid');
 const rp = require('request-promise');
@@ -189,7 +187,7 @@ async function markBootingComplete() {
 }
 
 async function restartFireApi() {
-  await execAsync('sudo systemctl restart fireapi');
+  await execFile('sudo', ['systemctl', 'restart', 'fireapi']);
 }
 
 const STATE_FILE = '/home/pi/.firewalla/bootstrap.json';

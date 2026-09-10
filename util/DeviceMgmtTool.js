@@ -52,9 +52,9 @@ class DeviceMgmtTool {
   async bluetoothReset() {
     log.info("Resetting box via firereset...");
     try {
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
       return true;
     } catch(err) {
       log.error("Got error when resetting box via firereset, err:", err);
@@ -65,9 +65,9 @@ class DeviceMgmtTool {
   async bluetoothResetAndShutdown() {
     log.info("Resetting box and Shutdown via firereset...")
     try {
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
       return true;
     } catch(err) {
       log.error("Got error when resetting box and shutdown via firereset, err:", err);

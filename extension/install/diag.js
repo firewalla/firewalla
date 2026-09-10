@@ -17,7 +17,7 @@
 
 let instance = null;
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const fConfig = require('../../net2/config.js').getConfig();
 const log = require('../../net2/logger.js')(__filename);
 
@@ -72,7 +72,7 @@ class FWDiag {
   }
 
   async getBranchInfo() {
-    const result = await exec("git rev-parse --abbrev-ref HEAD");
+    const result = await execFile("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
@@ -81,7 +81,7 @@ class FWDiag {
   }
 
   async getLongVersion() {
-    const result = await exec("git describe --tags");
+    const result = await execFile("git", ["describe", "--tags"]);
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 
@@ -91,7 +91,7 @@ class FWDiag {
   }
 
   async getGID() {
-    const result = await exec("redis-cli hget sys:ept gid");
+    const result = await execFile("redis-cli", ["hget", "sys:ept", "gid"]);
     return result && result.stdout && result.stdout.replace(/\n$/, '')
   }
 

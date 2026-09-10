@@ -19,7 +19,7 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const dns = require('dns');
@@ -54,7 +54,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     if(_.isEmpty(config)) return;
 
     // prepare the log file in advance, otherwise, it will be created as a directory when docker container starts up
-    await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
+    await execFile("touch", [`${f.getUserHome()}/.forever/clash.log`]);
     await this._prepareDockerCompose();
     await this.prepareConfig(config);
   }
@@ -90,7 +90,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
   async getStatistics() {
     // a self-made hy_stats.sh script to get the stats
-    const result = await exec(`sudo docker exec ${this.getContainerName()} trojan_stats.sh`)
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "trojan_stats.sh"])
     .then(output => output.stdout.trim())
     .catch((err) => {
       log.error(`Failed to check trojan stats on ${this.profileId}`, err.message);

@@ -51,7 +51,7 @@ const fireRouter = require('../net2/FireRouter.js')
 
 const fs = require('fs');
 const cp = require('child_process');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const cloud = require('../encipher');
 const program = require('commander');
 const storage = require('node-persist');
@@ -437,7 +437,7 @@ async function login() {
 
   process.removeAllListeners('SIGTERM')
 
-  exec("sudo systemctl stop firekick").catch(() => {
+  execFile("sudo", ["systemctl", "stop", "firekick"]).catch(() => {
     // this command will kill the program itself, catch this error silently
   })
 
