@@ -196,6 +196,9 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
   // fleet takes the zeek / suricata role (net2/FlowEngine.js, scripts/fleet-engine.sh)
   FEATURE_PCAP_ZEEK_FLEET: "pcap_zeek_fleet",
   FEATURE_PCAP_SURICATA_FLEET: "pcap_zeek_suricata",
