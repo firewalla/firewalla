@@ -30,6 +30,8 @@ const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const FlowEngine = require('./FlowEngine.js');
+const fc = require('./config.js');
+const Constants = require('./Constants.js');
 
 class SuricataControl {
   constructor() {
@@ -63,7 +65,11 @@ class SuricataControl {
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     // fleet in ids-only mode under this unit (zeek keeps brofish) gets its own
     // watchdog entry; when fleet also runs brofish, crontab.fleet covers it
-    const idsOnlyFleet = FlowEngine.appliedSuricataEngine() === 'fleet' && FlowEngine.appliedZeekEngine() !== 'fleet';
+    // fleet runs the IDS on its own (under this unit) when it owns the role
+    // and the brofish fleet is not providing it, either because zeek has the
+    // flow role or because the flow role is switched off entirely
+    const idsOnlyFleet = FlowEngine.appliedSuricataEngine() === 'fleet'
+      && (FlowEngine.appliedZeekEngine() !== 'fleet' || !fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK));
     const crontab = idsOnlyFleet ? 'crontab.fleet-ids' : 'crontab';
     await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {

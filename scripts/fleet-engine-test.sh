@@ -32,9 +32,17 @@ restore() {
     if [[ -n $v ]]; then redis-cli hset sys:features "$n" "$v" >/dev/null; else redis-cli hdel sys:features "$n" >/dev/null; fi
   done
 }
-# always leave the box's own configuration consistent, whatever the test did
-relive() { sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$FIREWALLA_HOME/scripts/fleet-engine.sh" apply >/dev/null 2>&1 || true; }
-trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; restore; relive; rm -rf "$T"' EXIT
+# the live checks can stop the engines this box was running; remember what was
+# active and put the box back exactly as it was, configuration and services
+brofish_was=$(systemctl is-active brofish 2>/dev/null)
+suricata_was=$(systemctl is-active suricata 2>/dev/null)
+relive() {
+  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$FIREWALLA_HOME/scripts/fleet-engine.sh" apply >/dev/null 2>&1 || true
+  [[ $brofish_was == active ]] && [[ $(systemctl is-active brofish) != active ]] && sudo systemctl start brofish >/dev/null 2>&1
+  [[ $suricata_was == active ]] && [[ $(systemctl is-active suricata) != active ]] && sudo systemctl start suricata >/dev/null 2>&1
+  return 0
+}
+trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; sudo rm -f /dev/shm/fleet-engine.failed; restore; relive; rm -rf "$T"' EXIT
 setf() { redis-cli hset sys:features pcap_zeek_fleet "$1" pcap_zeek_suricata "$2" >/dev/null; }
 
 B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
@@ -154,6 +162,28 @@ check "a successful apply lifts the hold" 'grep -q "rm -f \"\$FAILED_MARKER\"" "
 echo "== zeek is stopped even without zeekctl, and restart failures propagate"
 check "the pkill is not gated on zeekctl" 'grep -q "pkill -x" "$ENGINE" && ! grep -qF -- "-x \$ZEEKCTL ]]; then" "$ENGINE" || grep -qF "stopping the zeek processes directly" "$ENGINE"'
 check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
+
+echo "== the pcap roles are respected"
+check "brofish gets --no-suricata unless fleet owns an enabled IDS role" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "pcap_suricata_enabled && opts="'
+check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+check "the suricata watchdog choice accounts for the flow role" 'grep -q "FEATURE_PCAP_ZEEK" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+check "fleet-ping honours the hold" 'grep -q "held back, not checking" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
+check "fleet-ping skips a role the box switched off" 'grep -q "pcap_zeek_enabled" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
+
+echo "== an explicit false in a config file wins over a later default"
+cfgdir=$T/hidden/config; mkdir -p "$cfgdir"
+printf '{"userFeatures":{"pcap_zeek_fleet":false}}' > "$cfgdir/config.json"
+redis-cli hdel sys:features pcap_zeek_fleet >/dev/null
+roles=$(FIREWALLA_HIDDEN=$T/hidden FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+check "user config false is honoured (not swallowed by // empty)" '[[ $roles == zeek ]]'
+setf 1 1
+
+echo "== the effective-features file written by node is read first"
+printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false}' > "$T/eff.json"
+redis-cli hdel sys:features pcap_zeek_fleet pcap_zeek_suricata >/dev/null
+roles=$(FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)")
+check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
+setf 1 1
 
 echo "== scratch mode never touches live services"
 setf 1 1
