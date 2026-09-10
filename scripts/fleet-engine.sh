@@ -184,6 +184,18 @@ apply() {
     fail "stopping the engines fleet replaces"
     return 1
   fi
+  # /etc/cron.hourly/bro-cron runs `zeekctl cron`, which restarts nodes zeekctl
+  # believes crashed: with fleet as brofish that would put zeek back beside it
+  # on the same spool. bro-run reinstalls it when zeek owns the role again.
+  if $LIVE; then
+    if [[ $ZEEK_ENGINE == fleet ]]; then
+      if [[ -e /etc/cron.hourly/bro-cron ]]; then
+        sudo rm -f /etc/cron.hourly/bro-cron && log "removed /etc/cron.hourly/bro-cron"
+      fi
+    elif [[ ! -e /etc/cron.hourly/bro-cron && -f $FIREWALLA_HOME/etc/bro-cron ]] && ${FW_SCHEDULE_BRO:-true}; then
+      sudo install -m 0755 "$FIREWALLA_HOME/etc/bro-cron" /etc/cron.hourly/bro-cron 2>/dev/null || true
+    fi
+  fi
   # verified, and nothing else is running: lift the hold (this also clears one
   # left by an earlier failed apply or by main-start)
   if $LIVE && { ! sudo rm -f "$FAILED_MARKER" 2>/dev/null || [[ -e $FAILED_MARKER ]]; }; then
