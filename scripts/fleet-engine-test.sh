@@ -87,7 +87,7 @@ check "reports the failure" '[[ "$out" == *FAILED* ]]'
 check "switch does not restart after a failed apply" '! sudo -E "$ENGINE" switch >/dev/null 2>&1'
 rm -f "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
-echo "== a failure after the first drop-in leaves the stock engines running"
+echo "== a failed apply rolls back and leaves the stock engines running"
 # both features on, brofish drop-in installable, suricata one not: apply must
 # fail before stopping anything
 setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
@@ -95,7 +95,7 @@ setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 zeek_before=$(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true)
 out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
 check "apply returns nonzero" '[[ $rc -ne 0 ]]'
-check "brofish drop-in was written before the failure" '[[ -f $B ]]'
+check "nothing was left half-written (the commit rolled back)" '[[ ! -e $B ]]'
 check "zeek was not stopped" '[[ $(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true) == "$zeek_before" ]]'
 check "no \"stopping zeek\" in the output" '[[ "$out" != *"stopping zeek"* ]]'
 rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
