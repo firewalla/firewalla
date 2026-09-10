@@ -352,6 +352,24 @@ check "the effective state wins over the redis override" '[[ $roles == zeek ]]'
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
 setf 1 1
 
+echo "== unit: rollback hands the roles back, ordering, lock ownership"
+check "fleet-run hands back when the checkout loses fleet-engine.sh" 'grep -q "hand_back" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "scripts/bro-run" "$FIREWALLA_HOME/scripts/fleet-run"'
+check "fleet-ids-run hands back to suricata-run" 'grep -q "scripts/suricata-run" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "preparation runs in ExecStartPre, after_bro in ExecStartPost" 'grep -q "^ExecStartPre=$RUNNER --prepare" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStartPost=$RUNNER --after-bro" "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
+check "the lock records its owner and only a dead owner is stale" 'grep -q "LOCK/pid" "$ENGINE" && grep -q "kill -0" "$ENGINE"'
+
+echo "== behaviour: a live lock owner is not stolen from"
+setf 1 1
+mkdir -p "$T/lock.d"; sleep 600 & sleeper=$!
+echo $sleeper > "$T/lock.d/pid"
+rc=0
+FLEET_ENGINE_LOCK=$T/lock.d timeout 20 "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE" apply >/dev/null 2>&1 || rc=$?
+check "a live owner keeps the lock" '[[ $rc -ne 0 ]] && [[ -d $T/lock.d ]]'
+kill $sleeper 2>/dev/null; wait $sleeper 2>/dev/null
+FLEET_ENGINE_LOCK=$T/lock.d "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE" apply >/dev/null 2>&1
+check "a dead owner's lock is taken over" '[[ ! -d $T/lock.d ]]'
+sudo rm -rf "$T/lock.d"
+
 echo "== behaviour: two applies do not interleave"
 setf 1 1
 ( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
