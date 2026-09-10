@@ -91,13 +91,16 @@ echo "== fleet/fleet"
 setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
 # the templates name the asset path; FLEET_BIN here only stands in for its presence
 ASSET=/home/pi/.firewalla/run/assets/fleet
-check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$ASSET .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
+# the brofish drop-in launches through the wrapper, the ids-only unit runs the
+# binary directly
+RUNNER=/home/pi/firewalla/scripts/fleet-run
+check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$RUNNER .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
 check "suricata drop-in holds the unit off" 'grep -q "^ConditionPathExists=" "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
 echo "== fleet/suricata"
 setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
-check "brofish drop-in carries --no-suricata" 'grep -q "^ExecStart=$ASSET .*--no-suricata" "$B"'
+check "brofish drop-in carries --no-suricata" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
 check "no suricata drop-in" '[[ ! -e $S ]]'
 
 echo "== zeek/fleet"
@@ -248,7 +251,7 @@ echo "== behaviour: apply rewrites a stale drop-in"
 setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 printf '[Service]\nExecStart=/bin/false\n' > "$B"
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-check "a hand-edited drop-in is corrected" 'grep -q "^ExecStart=$ASSET " "$B"'
+check "a hand-edited drop-in is corrected" 'grep -q "^ExecStart=$RUNNER " "$B"'
 check "FireMain startup restarts when the applied state changed" 'grep -q "flow engine reconciled at startup" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
 echo "== behaviour: readers never see a partial effective-features file"
@@ -322,7 +325,7 @@ p1=$!
 p2=$!
 wait $p1; r1=$?; wait $p2; r2=$?
 check "both concurrent applies ended cleanly" '[[ $r1 -eq 0 && $r2 -eq 0 ]]'
-check "the drop-ins are consistent afterwards" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$B" && [[ -f $S ]]'
+check "the drop-ins are consistent afterwards" 'grep -q "^ExecStart=$RUNNER " "$B" && [[ -f $S ]]'
 
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
