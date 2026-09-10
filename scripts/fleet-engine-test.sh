@@ -18,6 +18,7 @@
 # Needs bash, jq and a FIREWALLA_HOME checkout.
 
 : ${FIREWALLA_HOME:=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+export FIREWALLA_HOME
 set -u
 LIVE_CHECKS=false
 [[ ${1:-} == --live ]] && LIVE_CHECKS=true
@@ -31,8 +32,9 @@ mkdir -p "$SYSTEMD_DIR" "$T/bin"
 # the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
 # not answer: a stub on PATH keeps the box's own values out of the way
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
+printf '#!/bin/sh\nexec "$@"\n' > "$T/bin/sudo"; chmod 755 "$T/bin/sudo"
 ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
-SANDBOX=(sudo -E env "PATH=$T/bin:$PATH")
+SANDBOX=(env "PATH=$T/bin:$PATH")
 pass=0; failn=0
 ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; failn=$((failn+1)); }
@@ -71,7 +73,16 @@ if $LIVE_CHECKS; then
     return 0
   }
 fi
-trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; sudo rm -f /dev/shm/fleet-engine.failed; restore; relive; sudo rm -rf "$T"' EXIT
+cleanup() {
+  if $LIVE_CHECKS; then
+    sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
+    sudo rm -f /dev/shm/fleet-engine.failed
+    restore
+    relive
+  fi
+  if $LIVE_CHECKS; then sudo rm -rf "$T"; else rm -rf "$T"; fi
+}
+trap cleanup EXIT
 
 B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
@@ -82,7 +93,7 @@ setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[
 ASSET=/home/pi/.firewalla/run/assets/fleet
 check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$ASSET .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
 check "suricata drop-in holds the unit off" 'grep -q "^ConditionPathExists=" "$S"'
-check "drop-ins are root-owned 0644" '[[ $(stat -c "%a %U" "$B") == "644 root" ]]'
+check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
 echo "== fleet/suricata"
 setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
@@ -197,7 +208,7 @@ check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && gr
 echo "== the pcap roles are respected"
 check "brofish gets --no-suricata unless fleet owns an enabled IDS role" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "pcap_suricata_enabled && opts="'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
-check "the suricata watchdog choice accounts for the flow role" 'grep -q "FEATURE_PCAP_ZEEK" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+check "the suricata watchdog choice reads the applied mode" 'grep -q "appliedSuricataMode" "$FIREWALLA_HOME/net2/SuricataControl.js"'
 check "fleet-ping honours the hold" 'grep -q "held back, not checking" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "fleet-ping skips a role the box switched off" 'grep -q "pcap_zeek_enabled" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 
@@ -217,25 +228,25 @@ setf 1 1
 echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated
-setf 1 1; sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 setf 1 1 1 1
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 before=$(cat "$B")
 # the suricata drop-in now has to be installed (its location is gone) and
 # cannot be (a file sits where the directory belongs), while the brofish
 # drop-in has to change (pcap_suricata off adds --no-suricata)
-sudo rm -rf "$SYSTEMD_DIR/suricata.service.d"
+rm -rf "$SYSTEMD_DIR/suricata.service.d"
 : > "$SYSTEMD_DIR/suricata.service.d"
 setf 1 1 1 0
 out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
 check "the failure is reported" '[[ "$out" == *FAILED* ]]'
 check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
-sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
 echo "== behaviour: apply rewrites a stale drop-in"
 setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-printf '[Service]\nExecStart=/bin/false\n' | sudo tee "$B" >/dev/null
+printf '[Service]\nExecStart=/bin/false\n' > "$B"
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 check "a hand-edited drop-in is corrected" 'grep -q "^ExecStart=$ASSET " "$B"'
 check "FireMain startup restarts when the applied state changed" 'grep -q "flow engine reconciled at startup" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -284,6 +295,11 @@ echo "== unit: the hold survives a failed shutdown"
 stop_line=$(grep -n "if \$LIVE && ! stop_replaced_engines" "$ENGINE" | head -1 | cut -d: -f1)
 lift_line=$(grep -n 'rm -f "\$FAILED_MARKER"' "$ENGINE" | tail -1 | cut -d: -f1)
 check "apply lifts the hold only after stop_replaced_engines succeeds" '[[ -n $stop_line && -n $lift_line && $stop_line -lt $lift_line ]]'
+
+echo "== unit: the live hold is mandatory"
+check "apply aborts when the failed marker cannot be created" 'grep -q "if \$LIVE && ! sudo touch \"\$FAILED_MARKER\"" "$ENGINE"'
+check "apply aborts when the reload marker cannot be created" 'grep -q "if \$LIVE && ! sudo touch \"\$RELOAD_PENDING\"" "$ENGINE"'
+check "apply verifies that the failed marker was removed" 'grep -q "\[\[ -e \$FAILED_MARKER \]\]" "$ENGINE"'
 
 echo "== unit: a failed feature publication aborts the apply"
 check "publishFeatures throws instead of logging" 'grep -q "throw new Error(\`publishing the effective flow engine features failed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
