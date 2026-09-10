@@ -16,6 +16,7 @@
 'use strict';
 
 const net = require('net')
+const path = require('path');
 const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
@@ -44,6 +45,7 @@ const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2;
+const legacyProfileIdOption = Symbol('legacyProfileIdOption');
 
 const instances = {};
 
@@ -53,6 +55,8 @@ class VPNClient {
     this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
+    if (!options[legacyProfileIdOption])
+      VPNClient.validateProfileId(profileId);
     if (!instances[profileId]) {
       instances[profileId] = this;
       this.profileId = profileId;
@@ -92,11 +96,91 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static createLegacyClient(ClientClass, profileId) {
+    if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId))
+      throw new Error(`Refusing to create VPN client with unsafe profile ID: ${profileId}`);
+    const existing = VPNClient.getInstance(profileId);
+    if (existing)
+      return existing;
+    return new ClientClass({ profileId, [legacyProfileIdOption]: true });
+  }
+
+  static validateProfileId(profileId) {
+    // vpn_ plus 11 profile-ID characters fits the 15-character interface-name limit.
+    if (!_.isString(profileId) || profileId.length === 0 || profileId.length > 11 || /[^a-zA-Z0-9_]/.test(profileId)) {
+      throw new Error("'profileId' should only contain alphanumeric letters or underscore and no longer than 11 characters");
+    }
+    return profileId;
+  }
+
+  static isValidFirewallaDDNSDomain(domain) {
+    if (!_.isString(domain) || domain.length === 0 || domain.length > 253)
+      return false;
+
+    const labels = domain.split('.');
+    if (labels.some(label => label.length === 0 || label.length > 63))
+      return false;
+
+    return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:firewalla\.org|firewalla\.com)$/i.test(domain);
+  }
+
   static getInstance(profileId) {
     if (instances.hasOwnProperty(profileId))
       return instances[profileId];
     else
       return null;
+  }
+
+  static async isProfileActive(profileId, ClientClass) {
+    const instance = VPNClient.getInstance(profileId);
+    if (instance && instance.isStarted())
+      return true;
+
+    if (ClientClass) {
+      const runtimeState = typeof ClientClass.getRuntimeActive === 'function'
+        ? await ClientClass.getRuntimeActive(profileId)
+        : null;
+      if (runtimeState === true)
+        return true;
+    } else {
+      const cachedState = await rclient.getAsync(VPNClient.getStateCacheKey(profileId)).catch(() => null);
+      if (cachedState === "true")
+        return true;
+    }
+
+    // Derive the interface name exactly as production clients do when creating the interface.
+    const interfaceName = `${Constants.VC_INTF_PREFIX}${profileId}`;
+
+    if (/^[A-Za-z0-9_.-]{1,15}$/.test(interfaceName)) {
+      return execFile('ip', ['link', 'show', 'dev', interfaceName])
+        .then(() => true)
+        .catch((err) => {
+          const stderr = err && typeof err.stderr === 'string' ? err.stderr : '';
+          if (err && err.code === 1 && /(?:device .* does not exist|cannot find device)/i.test(stderr))
+            return false;
+          return null;
+        });
+    }
+
+    // Legacy TUN/TAP profiles may have been created through an API that copied an
+    // overlength ifr_name into Linux's 15-character interface-name field. Preserve the
+    // exact-name check, and also treat the historical 15-character form as active.
+    const legacyInterfaceName = interfaceName.slice(0, 15);
+    return execFile('ip', ['-o', 'link', 'show'])
+      .then(result => {
+        return result.stdout
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean)
+          .some(line => {
+            const match = line.match(/^\d+:\s+([^:]+):/);
+            if (!match)
+              return false;
+            const actualName = match[1].split('@', 1)[0];
+            return actualName === interfaceName || actualName === legacyInterfaceName;
+          });
+      })
+      .catch(() => null);
   }
 
   static async getVPNProfilesForInit() {
@@ -107,11 +191,49 @@ class VPNClient {
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
-        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId: profileId }).getAttributes())));
+        const profileResults = await Promise.all(profileIds.map(async (profileId) => {
+          try {
+            VPNClient.validateProfileId(profileId);
+          } catch (err) {
+            log.error(`Retaining invalid VPN client profile ${profileId} during initialization`, err.message);
+            return {
+              profileId: profileId,
+              type: c.getProtocol(),
+              invalidProfileId: true,
+              message: "This VPN profile has an invalid ID and requires administrator remediation."
+            };
+          }
+
+          return await new c({ profileId: profileId }).getAttributes();
+        }));
+        Array.prototype.push.apply(profiles, profileResults.filter(Boolean));
         results[c.getKeyNameForInit()] = profiles;
       }
     }));
     return results
+  }
+
+  static getRuntimeServiceName(profileId) {
+    return null;
+  }
+
+  static async getRuntimeActive(profileId) {
+    const serviceName = this.getRuntimeServiceName(profileId);
+    if (!serviceName)
+      return null;
+    const parseStatus = (result) => {
+      const status = result && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+      // Transitions do not prove inactivity: startup may create resources and
+      // shutdown may still be using them. Keep destructive cleanup blocked.
+      if (status === 'active' || status === 'reloading' || status === 'activating' || status === 'deactivating')
+        return true;
+      if (status === 'inactive' || status === 'failed' || status === 'dead')
+        return false;
+      return null;
+    };
+    return execFile('sudo', ['systemctl', 'is-active', serviceName])
+      .then(parseStatus)
+      .catch(err => parseStatus(err));
   }
 
   static getClass(type) {
@@ -371,7 +493,7 @@ class VPNClient {
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
-    // PBR soft ipset is populated here, after the link is up. Soft route rules fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
+    // PBR soft ipset is populated here, after the link is up. Soft routes fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
     // PBR hard ipset is the kill-switch bucket and is owned by _prepareRoutes (always populated, never flushed on disconnect, independent of strictVPN), so it is intentionally not touched here.
     if (rtId) {
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
@@ -1060,67 +1182,225 @@ class VPNClient {
   }
 
 
-  async start() {
-    if (!this._started) {
-      this._started = true;
-      sem.emitEvent({
-        type: "VPNClient:Started",
-        profileId: this.profileId,
-        toProcess: "FireMain"
-      });
+  start() {
+    if (this._startPromise) {
+      return this._startPromise;
     }
-
-    this._lastStartTime = Date.now();
-    await this._prepareRoutes();
-    await this.flushRemoteEndpointRoutes().catch((err) => { });
-    await this._start().catch((err) => {
-      log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
+    const startPromise = this._startInternal();
+    const trackedPromise = startPromise.finally(() => {
+      if (this._startPromise === trackedPromise) {
+        this._startPromise = null;
+      }
     });
-    this.isFirstLaunch = false;
+    this._startPromise = trackedPromise;
+    return trackedPromise;
+  }
 
-    return new Promise((resolve, reject) => {
-      let establishmentTask = null;
-      // function to handle successful tunnel establishment
-      const handleSuccessfulEstablishment = async () => {
-        if (establishmentTask) {
-          clearInterval(establishmentTask);
-          establishmentTask = null;
-        }
-        await this._setCachedState(true);
-        this._scheduleRefreshRoutes();
-        await this.addRemoteEndpointRoutes().catch((err) => { });
-        if (f.isMain()) {
-          // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
-          setTimeout(() => {
-            this._checkConnectivity(true).catch((err) => {
-              log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
-            });
-          }, 20000);
-        }
-        if (!f.isMain()) {
+  async _startInternal() {
+    let cancelStartup;
+    const startup = {
+      cancelled: false,
+      cancellation: new Promise((resolve) => {
+        cancelStartup = resolve;
+      }),
+      cancel: () => {
+        if (startup.cancelled)
+          return;
+        startup.cancelled = true;
+        cancelStartup();
+      }
+    };
+    this._startupOperation = startup;
+
+    try {
+      await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+        if (startup.cancelled)
+          return;
+        if (this._startupCleanupRequired)
+          await this._cleanupFailedStartup();
+        if (startup.cancelled)
+          return;
+        if (!this._started) {
+          this._started = true;
           sem.emitEvent({
             type: "VPNClient:Started",
             profileId: this.profileId,
             toProcess: "FireMain"
           });
         }
-        const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
-        log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
-        resolve({ result: true });
+
+        this._lastStartTime = Date.now();
+        await this._prepareRoutes();
+        if (startup.cancelled)
+          return;
+        await this.flushRemoteEndpointRoutes().catch((err) => { });
+      });
+    } catch (err) {
+      if (this._startupOperation === startup)
+        this._startupOperation = null;
+      throw err;
+    }
+
+    if (startup.cancelled || !this._started) {
+      if (this._startupOperation === startup)
+        this._startupOperation = null;
+      return { result: false, cancelled: true };
+    }
+
+    const protocolStart = Promise.resolve()
+      .then(() => this._start())
+      .catch((err) => {
+        log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
+      });
+
+    protocolStart.then(() => {
+      if (!startup.cancelled)
+        return;
+      return VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+        // A newer start intentionally supersedes this stale completion. Do not
+        // stop the shared protocol service/interface out from under the newer start.
+        if (this._startupOperation !== startup)
+          return;
+        await this._stop().catch((err) => {
+          log.error(`Failed to stop VPN client ${this.profileId} after cancelled startup completed`, err.message);
+        });
+        if (this._startupOperation === startup)
+          this._startupOperation = null;
+      }).catch((err) => {
+        log.error(`Failed to clean up cancelled protocol startup for VPN client ${this.profileId}`, err);
+      });
+    });
+
+    // Protocol startup can block in systemctl, Docker, or interface setup. Do
+    // not keep the lifecycle lock held while waiting for it: stop() must be able
+    // to run protocol shutdown and enforcement cleanup immediately.
+    await Promise.race([protocolStart, startup.cancellation]);
+    if (startup.cancelled)
+      return { result: false, cancelled: true };
+
+    if (this._startupOperation === startup)
+      this._startupOperation = null;
+    this.isFirstLaunch = false;
+
+    if (!this._started) {
+      return { result: false, cancelled: true };
+    }
+
+    return new Promise((resolve, reject) => {
+      const establishment = {
+        task: null,
+        timeout: null,
+        settled: false,
+        settling: false,
+        resolve: (result) => {
+          if (establishment.settled) {
+            return;
+          }
+          establishment.settled = true;
+          if (establishment.task) {
+            clearInterval(establishment.task);
+          }
+          if (establishment.timeout) {
+            clearTimeout(establishment.timeout);
+          }
+          if (this._establishment === establishment) {
+            this._establishment = null;
+          }
+          resolve(result);
+        }
+      };
+      this._establishment = establishment;
+
+      // function to handle successful tunnel establishment
+      const handleSuccessfulEstablishment = async () => {
+        // Clearing the interval does not cancel link checks already in flight.
+        if (establishment.settled || establishment.settling) {
+          return;
+        }
+        if (!this._started) {
+          establishment.resolve({ result: false, cancelled: true });
+          return;
+        }
+        establishment.settling = true;
+        if (establishment.task) {
+          clearInterval(establishment.task);
+          establishment.task = null;
+        }
+        try {
+          await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+            if (establishment.settled || !this._started) {
+              return;
+            }
+            await this._setCachedState(true);
+            if (establishment.settled || !this._started) {
+              establishment.resolve({ result: false, cancelled: true });
+              return;
+            }
+            await this.addRemoteEndpointRoutes().catch((err) => { });
+            if (establishment.settled || !this._started) {
+              establishment.resolve({ result: false, cancelled: true });
+              return;
+            }
+            this._scheduleRefreshRoutes();
+            if (f.isMain()) {
+              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+              setTimeout(() => {
+                this._checkConnectivity(true).catch((err) => {
+                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+                });
+              }, 20000);
+            }
+            if (!f.isMain()) {
+              sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
+              });
+            }
+            const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
+            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
+            establishment.resolve({ result: true });
+          });
+        } catch (err) {
+          log.error(`Failed to finalize VPN client startup ${this.profileId}`, err);
+          await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+            // A stop may have cancelled this establishment while we reacquired
+            // the lock. Never clean up a newer start on behalf of an old one.
+            if (establishment.settled || this._establishment !== establishment)
+              return;
+            this._startupCleanupRequired = true;
+            await this._cleanupFailedStartup();
+          }).catch(cleanupErr => {
+            log.error(`Failed to clean up VPN client startup ${this.profileId}`, cleanupErr);
+          });
+          establishment.resolve({ result: false, errMsg: err.message });
+        } finally {
+          establishment.settling = false;
+        }
       };
 
       // function to handle failed tunnel establishment
       const handleFailedEstablishment = async (reason) => {
-        if (establishmentTask) {
-          clearInterval(establishmentTask);
-          establishmentTask = null;
+        if (establishment.settled || establishment.settling) {
+          return;
         }
-        const errMsg = await this.getMessage();
-        log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
-        resolve({ result: false, errMsg: errMsg });
+        establishment.settling = true;
+        let errMsg = reason || 'Unknown error';
+        try {
+          errMsg = await this.getMessage() || errMsg;
+        } catch (err) {
+          log.error(`Failed to retrieve VPN client error message ${this.profileId}`, err);
+        } finally {
+          log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
+          establishment.resolve({ result: false, errMsg: errMsg });
+          establishment.settling = false;
+        }
       };
 
-      setTimeout(async () => {
+      establishment.timeout = setTimeout(async () => {
+        if (establishment.settled || establishment.settling) {
+          return;
+        }
         try {
           const isUpInitial = await this._isLinkUp();
           if (isUpInitial) {
@@ -1132,8 +1412,19 @@ class VPNClient {
           return;
         }
 
+        if (establishment.settled || establishment.settling) {
+          return;
+        }
+        if (!this._started) {
+          establishment.resolve({ result: false, cancelled: true });
+          return;
+        }
+
         const startTime = Date.now();
-        establishmentTask = setInterval(async () => {
+        establishment.task = setInterval(async () => {
+          if (establishment.settled || establishment.settling) {
+            return;
+          }
           try {
             const isUp = await this._isLinkUp();
             if (isUp) {
@@ -1149,10 +1440,47 @@ class VPNClient {
           }
         }, 2000);
       }, 500);
-    });
+      });
+  }
+
+  // Caller holds the profile lifecycle lock. Retain the retry guard on any
+  // cleanup failure; changing flags alone cannot establish that resources stopped.
+  async _cleanupFailedStartup() {
+    try {
+      await this._stopWithoutLifecycleLock({ strict: true });
+      this._startupCleanupRequired = false;
+    } catch (err) {
+      // SET may have succeeded before EXPIRE or a later finalization step failed.
+      // Unknown is safer than retaining a cached successful establishment.
+      await rclient.unlinkAsync(VPNClient.getStateCacheKey(this.profileId)).catch(cacheErr => {
+        log.error(`Failed to invalidate VPN client state ${this.profileId}`, cacheErr);
+      });
+      throw err;
+    }
+  }
+
+  _cancelStartup() {
+    if (this._startupOperation)
+      this._startupOperation.cancel();
+  }
+
+  _cancelEstablishment() {
+    if (this._establishment) {
+      this._establishment.resolve({ result: false, cancelled: true });
+    }
   }
 
   async stop() {
+    this._cancelStartup();
+    this._cancelEstablishment();
+    return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
+  }
+
+  async _stopWithoutLifecycleLock({ strict = false } = {}) {
+    if (this.refreshRoutesTask) {
+      clearTimeout(this.refreshRoutesTask);
+      this.refreshRoutesTask = null;
+    }
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
@@ -1173,8 +1501,12 @@ class VPNClient {
       await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
     }
     await this.flushRemoteEndpointRoutes().catch((err) => { });
-    await this._stop().catch((err) => {
+    await this._stop({ strict }).catch((err) => {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
+      // Failed-startup cleanup must not report inactivity or release the
+      // remaining enforcement state while the service may still be running.
+      if (strict)
+        throw err;
     });
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
     await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
@@ -1338,6 +1670,94 @@ class VPNClient {
     });
   }
 
+  static getProfileLifecycleLockKey(profileId) {
+    return `VC_LIFECYCLE_${profileId}`;
+  }
+
+  static async withProfileLifecycleLock(profileId, callback) {
+    return lock.acquire(VPNClient.getProfileLifecycleLockKey(profileId), callback);
+  }
+
+  static getStoredProfileArtifacts(profileId) {
+    const configDirectory = this.getConfigDirectory();
+    return [
+      { root: configDirectory, path: `${profileId}.json` },
+      { root: configDirectory, path: `${profileId}.endpoint_routes` }
+    ];
+  }
+
+  static async destroyStoredProfile(profileId, beforeDestroy = null) {
+    return VPNClient.withProfileLifecycleLock(profileId, async () => {
+      if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
+        throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
+      }
+      const active = await VPNClient.isProfileActive(profileId, this);
+      if (active !== false) {
+        throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
+      }
+
+      if (beforeDestroy)
+        await beforeDestroy();
+
+      await vpnClientEnforcer.destroyRtId(`${Constants.VC_INTF_PREFIX}${profileId}`);
+
+      const configDirectory = path.resolve(this.getConfigDirectory());
+
+      const removeArtifact = async ({
+        root,
+        path: artifactPath,
+        recursive = false,
+        privileged = false
+      }) => {
+        const resolvedRoot = path.resolve(root);
+        const resolvedPath = path.resolve(resolvedRoot, artifactPath);
+        if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) {
+          throw new Error(`Refusing to clean VPN client artifact outside allowed root: ${profileId}`);
+        }
+
+        try {
+          if (recursive) {
+            if (privileged)
+              await execFile('sudo', ['rm', '-rf', resolvedPath]);
+            else
+              await execFile('rm', ['-rf', resolvedPath]);
+          } else if (privileged) {
+            await execFile('sudo', ['rm', '-f', resolvedPath]);
+          } else {
+            await fs.unlinkAsync(resolvedPath);
+          }
+        } catch (err) {
+          if (err && err.code === 'ENOENT')
+            return;
+          throw err;
+        }
+      };
+
+      // Remove dependent/protocol-specific files first and .settings last.
+      // Keeping .settings on failure preserves discoverability for retry.
+      const artifacts = this.getStoredProfileArtifacts(profileId);
+      for (const artifact of artifacts)
+        await removeArtifact(artifact);
+
+      await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId));
+      await rclient.delAsync(VPNClient.getStateCacheKey(profileId));
+
+      const settingsPath = path.resolve(configDirectory, `${profileId}.settings`);
+      if (settingsPath !== configDirectory && !settingsPath.startsWith(`${configDirectory}${path.sep}`)) {
+        throw new Error(`Refusing to clean VPN client settings outside config directory: ${profileId}`);
+      }
+      await removeArtifact({
+        root: configDirectory,
+        path: `${profileId}.settings`
+      });
+
+      delete instances[profileId];
+    });
+  }
+
+  static getPrimaryProfilePath(profileId) {
+    return null;
+  }
   static async profileExists(profileId) {
     const profileIds = await this.listProfileIds();
     return profileIds && profileIds.includes(profileId);
@@ -1408,32 +1828,61 @@ class VPNClient {
   }
 
   async resolveFirewallaDDNS(domain) {
-    if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
+    if (!VPNClient.isValidFirewallaDDNSDomain(domain))
       return;
-    // first, find DNS zone from AUTHORITY SECTION
-    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
-      log.error(`Failed to find zone of ${domain}`, err.message);
-      return null;
-    });
-    if (!zone)
-      return;
-    // then, find authoritative DNS server on zone
-    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
-      log.error(`Failed to get servers of zone ${zone}`, err.message);
-      return [];
-    });
-    // finally, send DNS query to authoritative DNS server
-    for (const server of servers) {
-      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
-        log.error(`Failed to resolve ${domain} using ${server}`, err.message);
+
+    const runDig = async (args, description) => {
+      return execFile("dig", args).then(result => result.stdout.trim()).catch((err) => {
+        log.error(description, err.message);
         return null;
       });
-      if (ip && ip !== "0.0.0.0") // 0.0.0.0 is a placeholder if IPv4 is disabled in DDNS
+    };
+
+    // first, find DNS zone from AUTHORITY SECTION
+    const soaOutput = await runDig(
+      ["+time=3", "+tries=2", "SOA", domain],
+      `Failed to find zone of ${domain}`
+    );
+    if (!soaOutput)
+      return;
+
+    const authorityIndex = soaOutput.indexOf(";; AUTHORITY SECTION:");
+    if (authorityIndex < 0)
+      return;
+
+    const authoritySection = soaOutput.substring(authorityIndex + ";; AUTHORITY SECTION:".length);
+    const authorityBody = authoritySection.split(/^;; [A-Z ]+ SECTION:\s*$/m, 1)[0];
+    const authorityLines = authorityBody
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith(";;"));
+    const zone = authorityLines.length ? authorityLines[0].split(/\s+/)[0] : null;
+    if (!zone)
+      return;
+
+    // then, find authoritative DNS server on zone
+    const nsOutput = await runDig(
+      ["+time=3", "+tries=2", "+short", "NS", zone],
+      `Failed to get servers of zone ${zone}`
+    );
+    const servers = nsOutput
+      ? nsOutput.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith(";;"))
+      : [];
+
+    // finally, send DNS query to authoritative DNS server
+    for (const server of servers) {
+      const output = await runDig(
+        ["+short", "+time=3", "+tries=1", `@${server}`, "A", domain],
+        `Failed to resolve ${domain} using ${server}`
+      );
+      const ip = output
+        ? output.split("\n").map(line => line.trim()).find(line => new Address4(line).isValid())
+        : null;
+      if (ip && ip !== "0.0.0.0")
         return ip;
     }
     return null;
   }
-
   // do more evaluation other than ping tests in this function and return boolean
   async _checkInternetAvailability() {
     return true;
