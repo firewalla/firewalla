@@ -3,10 +3,8 @@
     "threshold": {
       "maxSpeed": 1000000000,
       "missedBytesRatio": 0.98,
-
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
-
       "logLargeBytesResp": 100000000,
       "logLargeBytesOrig": 100000000
     }
@@ -14,6 +12,8 @@
   "userFeatures": {
     "dap": false,
     "dap_bg_task": false,
-    "local_flow": true
+    "local_flow": true,
+    "pcap_zeek_fleet": true,
+    "pcap_zeek_suricata": true
   }
 }

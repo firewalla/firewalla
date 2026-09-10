@@ -29,6 +29,7 @@ const BASIC_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_basi
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const FlowEngine = require('./FlowEngine.js');
 
 class SuricataControl {
   constructor() {
@@ -91,7 +92,7 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
-      if (platform.getFlowEngineSuricata() === 'fleet') {
+      if (FlowEngine.suricataEngine() === 'fleet') {
         log.info("Suricata rules are evaluated by fleet, not updating the suricata binary");
         return;
       }
