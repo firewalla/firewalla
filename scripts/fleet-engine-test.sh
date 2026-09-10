@@ -307,6 +307,9 @@ check "apply verifies that the failed marker was removed" 'grep -q "\[\[ -e \$FA
 echo "== unit: a failed feature publication aborts the apply"
 check "publishFeatures throws instead of logging" 'grep -q "throw new Error(\`publishing the effective flow engine features failed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
+echo "== unit: verify accepts the wrapper for brofish"
+check "verify checks for fleet-run under brofish" 'sed -n "/^verify()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN"'
+
 echo "== unit: zeek preparation and legacy cron"
 check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
 check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
