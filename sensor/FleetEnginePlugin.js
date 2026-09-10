@@ -98,10 +98,11 @@ class FleetEnginePlugin extends Sensor {
     // apply leaves the services held back, so keep retrying that too.
     this.fleetAvailable = FlowEngine.fleetAvailable();
     setInterval(() => {
+      // apply() owns this flag: UpdateJob.exec() resolves even when the
+      // underlying apply threw, so clearing it here could stop the retries
+      // while the drop-ins are still stale
       if (this.applyFailed || fs.existsSync(FAILED_MARKER)) {
-        this.applyJob.exec()
-          .then(() => { this.applyFailed = false; })
-          .catch((err) => log.error('Retrying flow engine apply', err.message));
+        this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
         return;
       }
       const available = FlowEngine.fleetAvailable();
@@ -135,6 +136,8 @@ class FleetEnginePlugin extends Sensor {
   }
 
   async apply(restart = true) {
+    // any failure below leaves this set, and only a completed apply clears it
+    this.applyFailed = true;
     // the shell side reads these; a stale file would make it apply the
     // opposite engine, so this throws rather than continue
     this.publishFeatures();
