@@ -11,6 +11,13 @@ export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
+# flow engines: which program runs as brofish.service and writes the zeek logs
+# (zeek | fleet), and which evaluates the suricata rules and writes eve.json
+# (suricata | fleet). Platforms override these in their own platform.sh; a box
+# overrides them in ~/.firewalla/config/flow_engine_zeek / flow_engine_suricata.
+# See scripts/fleet-engine.sh.
+FW_FLOW_ENGINE_ZEEK=zeek
+FW_FLOW_ENGINE_SURICATA=suricata
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
@@ -82,6 +89,27 @@ function get_node_bin_path {
 
 function get_zeek_log_dir {
   echo "/log/blog/"
+}
+
+# per-box override of a flow-engine knob: the first line of
+# ~/.firewalla/config/flow_engine_<zeek|suricata>, if it names a valid engine
+function _flow_engine_override {
+  local f=/home/pi/.firewalla/config/flow_engine_$1
+  [[ -r $f ]] || return 0
+  local v; v=$(head -1 "$f" | tr -d '[:space:]')
+  case "$1:$v" in
+    zeek:zeek|zeek:fleet|suricata:suricata|suricata:fleet) echo "$v" ;;
+  esac
+}
+
+function get_flow_engine_zeek {
+  local v; v=$(_flow_engine_override zeek)
+  echo "${v:-${FW_FLOW_ENGINE_ZEEK:-zeek}}"
+}
+
+function get_flow_engine_suricata {
+  local v; v=$(_flow_engine_override suricata)
+  echo "${v:-${FW_FLOW_ENGINE_SURICATA:-suricata}}"
 }
 
 function heartbeatLED {
