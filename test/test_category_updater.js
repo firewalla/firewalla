@@ -516,6 +516,10 @@ describe('Test CategoryUpdater.updateFlowSignatureList', function() {
     
     // Reset effectiveCategorySigDtSrvs
     categoryUpdater.effectiveCategorySigDtSrvs = new Map();
+
+    // CategoryUpdater is a singleton, so the update timestamp survives across cases.
+    // Reset it, otherwise updateFlowSignatureList is throttled and returns early.
+    categoryUpdater.lastFlowSignatureConfigUpdate = 0;
     
     // Reset call counts
     callCounts = {
