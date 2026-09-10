@@ -23,23 +23,21 @@
 source ${FIREWALLA_HOME}/platform/platform.sh
 
 : ${SYSTEMD_DIR:=/etc/systemd/system}
-FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+# FLEET_BIN comes from platform.sh (overridable in the environment for tests)
 BROFISH_DROPIN=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 SURICATA_DROPIN=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 ZEEKCTL=/usr/local/${BRO_PROC_NAME:-zeek}/bin/${BRO_PROC_NAME:-zeek}ctl
 
 log() { logger "FIREWALLA:FLEET-ENGINE $1"; echo "$1"; }
 
-# the knobs, downgraded to the stock engine when the fleet binary is missing
-# (the asset has not been downloaded yet): a drop-in pointing at a missing
-# binary would leave the box without any flow logging
+# the effective roles: platform.sh already folds the binary's availability in
+# (a missing asset means the stock engines), so bro-run, fire-mem-check,
+# fleet-ping.sh and the node side all agree with what is applied here
 resolve() {
   ZEEK_ENGINE=$(get_flow_engine_zeek)
   SURICATA_ENGINE=$(get_flow_engine_suricata)
-  if [[ $ZEEK_ENGINE == fleet || $SURICATA_ENGINE == fleet ]] && [[ ! -x $FLEET_BIN ]]; then
-    log "fleet binary $FLEET_BIN not present, keeping zeek/suricata for now"
-    ZEEK_ENGINE=zeek
-    SURICATA_ENGINE=suricata
+  if ! fleet_available && { _fw_feature_on pcap_zeek_fleet || _fw_feature_on pcap_zeek_suricata; }; then
+    log "fleet binary $FLEET_BIN not present, keeping zeek/suricata until the asset arrives"
   fi
 }
 
