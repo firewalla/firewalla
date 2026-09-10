@@ -98,11 +98,9 @@ FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/fleet-engine.features}
 
 function _fw_feature_on {
   local name=$1 v
-  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
-  case "$v" in
-    1) return 0 ;;
-    0) return 1 ;;
-  esac
+  # What net2/config.js decided, first: it merges cloud, MSP and version
+  # configuration and drops anything in hiddenFeatures, so a feature hidden by
+  # a release while sys:features still says 1 must resolve to off here too.
   if [[ -r $FW_EFFECTIVE_FEATURES ]]; then
     v=$(jq -r --arg n "$name" 'if has($n) then (.[$n] | tostring) else empty end' "$FW_EFFECTIVE_FEATURES" 2>/dev/null)
     case "$v" in
@@ -110,6 +108,12 @@ function _fw_feature_on {
       false) return 1 ;;
     esac
   fi
+  # before FireMain has published (early boot), the runtime override in redis
+  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
+  case "$v" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
   # then the same file precedence as net2/config.js: user config, the platform
   # default, the checked-in default. `has` keeps an explicit false, which
   # `// empty` would have thrown away.
