@@ -235,10 +235,10 @@ stop_replaced_engines() {
       rc=1
     fi
   fi
-  # the suricata unit now runs fleet itself (ids-only), so the suricata
-  # processes go when systemd restarts the unit; a stray one is still stopped
-  if [[ $SURICATA_ENGINE == fleet ]] && pgrep -x suricata >/dev/null 2>&1 \
-     && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]]; then
+  # the suricata unit runs fleet itself now (ids-only), so any real suricata
+  # process left over from before the switch has to go: it would keep writing
+  # the same eve.json
+  if [[ $SURICATA_ENGINE == fleet ]] && pgrep -x suricata >/dev/null 2>&1; then
     log "stopping leftover suricata processes"
     sudo pkill -x suricata 2>/dev/null || true
     sleep 1
@@ -307,8 +307,9 @@ restart_fleet_services() {
     sudo systemctl reset-failed brofish 2>/dev/null || true
     sudo systemctl restart brofish || { log "FAILED: restarting brofish"; rc=1; }
   fi
-  if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled \
-     && { [[ $ZEEK_ENGINE != fleet ]] || ! pcap_zeek_enabled; }; then
+  # the IDS always has its own process under the suricata unit, whatever the
+  # flow role is doing, so it is restarted whenever fleet owns that role
+  if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then
     sudo systemctl reset-failed suricata 2>/dev/null || true
     sudo systemctl restart suricata || { log "FAILED: restarting suricata"; rc=1; }
   fi
