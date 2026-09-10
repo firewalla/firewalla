@@ -188,15 +188,22 @@ setf 1 1
 echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated
-setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+setf 1 1; sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+saved_ps=$(redis-cli hget sys:features pcap_suricata)
+redis-cli hset sys:features pcap_suricata 1 >/dev/null
 sudo -E "$ENGINE" apply >/dev/null
 before=$(cat "$B")
+# the suricata drop-in now has to be installed (its location is gone) and
+# cannot be (a file sits where the directory belongs), while the brofish
+# drop-in has to change (pcap_suricata off adds --no-suricata)
 sudo rm -rf "$SYSTEMD_DIR/suricata.service.d"
-: > "$SYSTEMD_DIR/suricata.service.d"     # a file where the directory must go
-setf 1 0                                  # brofish drop-in must change (--no-suricata)
+: > "$SYSTEMD_DIR/suricata.service.d"
+redis-cli hset sys:features pcap_suricata 0 >/dev/null
 out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
+check "the failure is reported" '[[ "$out" == *FAILED* ]]'
 check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
+if [[ -n $saved_ps ]]; then redis-cli hset sys:features pcap_suricata "$saved_ps" >/dev/null; else redis-cli hdel sys:features pcap_suricata >/dev/null; fi
 sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
 echo "== behaviour: apply rewrites a stale drop-in"
