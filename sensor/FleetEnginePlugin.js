@@ -37,8 +37,8 @@ const fs = require('fs');
 const FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
 // main-start leaves this behind when its apply failed: it stopped brofish and
 // suricata rather than start them on drop-ins that do not match the features,
-// so a successful apply here has to start them again
-const FAILED_MARKER = '/dev/shm/fleet-engine.failed';
+// and BroControl / SuricataControl refuse to start them while it is there
+const FAILED_MARKER = FlowEngine.APPLY_FAILED_MARKER;
 
 class FleetEnginePlugin extends Sensor {
   async run() {
@@ -49,10 +49,7 @@ class FleetEnginePlugin extends Sensor {
     // them once this one succeeds.
     const heldBack = fs.existsSync(FAILED_MARKER);
     await this.apply(heldBack).then(() => {
-      if (heldBack) {
-        log.info('flow engine applied after main-start held the pcap services back');
-        fs.unlinkSync(FAILED_MARKER);
-      }
+      if (heldBack) log.info('flow engine applied after main-start held the pcap services back');
     }).catch((err) => {
       log.error('Initial flow engine apply failed', err.message);
     });
@@ -61,10 +58,16 @@ class FleetEnginePlugin extends Sensor {
     // so watch for that and re-apply, which also re-picks the cron templates
     this.fleetAvailable = FlowEngine.fleetAvailable();
     setInterval(() => {
+      // an apply that failed leaves the pcap services held back; keep trying
+      // so a transient failure recovers without a reboot
+      if (fs.existsSync(FAILED_MARKER)) {
+        this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
+        return;
+      }
       const available = FlowEngine.fleetAvailable();
       if (available === this.fleetAvailable) return;
       this.fleetAvailable = available;
-      if (FEATURES.some(name => fc.isFeatureOn(name)) || fs.existsSync(FAILED_MARKER)) {
+      if (FEATURES.some(name => fc.isFeatureOn(name))) {
         log.info(`fleet binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
         this.applyJob.exec().catch((err) => {
           log.error('Failed to apply flow engine change', err.message);
@@ -89,6 +92,9 @@ class FleetEnginePlugin extends Sensor {
     let applied = false;
     await exec(`sudo ${script} apply`).then((r) => {
       applied = true;
+      // the drop-ins match the features again: let the pcap plugins start
+      // their services (BroControl / SuricataControl check this marker)
+      try { fs.unlinkSync(FAILED_MARKER); } catch (err) {}
       if (r.stdout && r.stdout.trim()) log.info('fleet-engine:', r.stdout.trim().replace(/\n/g, '; '));
     }).catch((err) => {
       // the drop-ins are not what the features say: restarting now would
