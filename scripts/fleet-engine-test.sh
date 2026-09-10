@@ -294,7 +294,7 @@ unit() { # stub-body expected-rc name
   [[ $rc == "$want" ]] && ok "$name" || bad "$name (rc=$rc want=$want)"
 }
 unit 'pgrep() { return 0; }; sudo() { return 0; }; systemctl() { return 1; }; sleep() { :; }; pcap_zeek_enabled() { return 0; }' 1 "an unkillable zeek fails the shutdown"
-unit 'pgrep() { case "$*" in *suricata*) return 0;; esac; return 1; }; sudo() { return 0; }; sleep() { :; }; systemctl() { case "$*" in *ExecStart*) echo "path=$FLEET_BIN";; esac; return 0; }; pcap_zeek_enabled() { return 0; }' 1 "a suricata that survives the kill fails the shutdown"
+unit 'pgrep() { case "$*" in *Suricata-Main*) return 0;; esac; return 1; }; sudo() { return 0; }; sleep() { :; }; systemctl() { return 0; }; pcap_zeek_enabled() { return 0; }' 1 "a Suricata-Main that survives the kill fails the shutdown"
 unit 'pgrep() { return 1; }; sudo() { return 0; }; systemctl() { return 1; }; pcap_zeek_enabled() { return 0; }' 0 "nothing to stop succeeds"
 
 echo "== unit: the hold survives a failed shutdown"
@@ -328,6 +328,8 @@ check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "
 check "each cron entry checks one role" 'grep -q "fleet-ping.sh brofish" "$FIREWALLA_HOME/etc/crontab.fleet" && grep -q "fleet-ping.sh suricata" "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids"'
 check "the watchdog probes the IDS with suricata interfaces" 'grep -q "ids_status_args" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "the retry flag is owned by apply()" 'grep -q "this.applyFailed = true;" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+
+check "the stock suricata daemon name is matched" 'grep -q "pkill -x Suricata-Main" "$ENGINE" && grep -q "pgrep -x Suricata-Main" "$ENGINE"'
 
 echo "== behaviour: two applies do not interleave"
 setf 1 1
