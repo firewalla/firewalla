@@ -316,10 +316,25 @@ status() {
 # tests source this file to exercise single functions with stubs
 [[ -n ${FLEET_ENGINE_SOURCE_ONLY:-} ]] && return 0
 
+apply_and_restart() { apply && restart_fleet_services; }
+apply_and_switch()  { apply && switch_roles; }
+
+# main-start, FleetEnginePlugin and the asset hook (which main-run launches in
+# the background) can all land here at once: without a lock two applies could
+# resolve different engines and interleave their commits, rollbacks and the
+# shared hold marker. status needs no lock.
+LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock}
+run_locked() {
+  if command -v flock >/dev/null 2>&1 && exec 9>"$LOCK" 2>/dev/null; then
+    flock -w 180 9 || { log "FAILED: another flow engine apply holds $LOCK"; return 1; }
+  fi
+  "$@"
+}
+
 case "${1:-apply}" in
-  apply)   apply ;;
-  restart) apply && restart_fleet_services ;;
-  switch)  apply && switch_roles ;;
+  apply)   run_locked apply ;;
+  restart) run_locked apply_and_restart ;;
+  switch)  run_locked apply_and_switch ;;
   status)  status ;;
   *) echo "usage: $0 apply|restart|switch|status" >&2; exit 2 ;;
 esac

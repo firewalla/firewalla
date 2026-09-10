@@ -51,31 +51,50 @@ const FAILED_MARKER = FlowEngine.APPLY_FAILED_MARKER;
 class FleetEnginePlugin extends Sensor {
   async run() {
     this.applyJob = new scheduler.UpdateJob(this.apply.bind(this), 3000);
-    // make sure the drop-ins match the features even if FireMain started
-    // without main-start (a plain `systemctl restart firemain`). If
-    // main-start's own apply failed it stopped the pcap services, so start
-    // them once this one succeeds.
-    // an ordinary `systemctl restart firemain` reconciles stale drop-ins here;
-    // the services keep running the old engine unless they are restarted, so
-    // restart when the applied state actually changed (or was held back)
+
+    // Subscribe before the first apply: a feature that moves while that apply
+    // is running would never be replayed to a listener registered afterwards,
+    // leaving stale drop-ins with nothing to trigger a retry.
+    for (const feature of FEATURES) {
+      fc.onFeature(feature, (name, status) => {
+        if (name !== feature) return;
+        log.info(`Feature ${name} is now ${status ? 'on' : 'off'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
+        this.applyJob.exec().catch((err) => {
+          log.error('Failed to apply flow engine change', err.message);
+        });
+      });
+    }
+
+    // Reconcile the drop-ins with the features, for the case where FireMain
+    // started without main-start (a plain `systemctl restart firemain`). The
+    // services keep running the previous engine unless they are restarted, so
+    // restart when the applied state changed, or when main-start's own apply
+    // failed and left the services held back.
     const heldBack = fs.existsSync(FAILED_MARKER);
     const before = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
+    const wanted = () => FEATURES.map(name => `${name}=${fc.isFeatureOn(name)}`).join(',');
+    const wantedBefore = wanted();
     await this.apply(false).then(() => {
       const after = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
       if (heldBack || after !== before) {
         log.info(`flow engine reconciled at startup: ${before} -> ${after}${heldBack ? ' (was held back)' : ''}`);
         sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
       }
+      // a feature that changed while that ran is applied now
+      if (wanted() !== wantedBefore) {
+        log.info('features changed during the initial apply, applying again');
+        this.applyJob.exec().catch((err) => log.error('Failed to re-apply flow engine', err.message));
+      }
     }).catch((err) => {
       log.error('Initial flow engine apply failed', err.message);
     });
-    // the binary is an asset: when it first arrives (or disappears) with a
-    // feature on, the effective engines change without any feature event,
-    // so watch for that and re-apply, which also re-picks the cron templates
+
+    // The binary is an asset: when it first arrives (or disappears) with a
+    // feature on, the effective engines change with no feature event, so watch
+    // for that and re-apply, which also re-picks the cron templates. A failed
+    // apply leaves the services held back, so keep retrying that too.
     this.fleetAvailable = FlowEngine.fleetAvailable();
     setInterval(() => {
-      // an apply that failed leaves the pcap services held back; keep trying
-      // so a transient failure recovers without a reboot
       if (fs.existsSync(FAILED_MARKER)) {
         this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
         return;
@@ -90,19 +109,8 @@ class FleetEnginePlugin extends Sensor {
         });
       }
     }, 30000);
-    for (const feature of FEATURES) {
-      fc.onFeature(feature, (name, status) => {
-        if (name !== feature) return;
-        log.info(`Feature ${name} is now ${status ? 'on' : 'off'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
-        this.applyJob.exec().catch((err) => {
-          log.error('Failed to apply flow engine change', err.message);
-        });
-      });
-    }
   }
 
-  // restart = true: the features changed while running, so the pcap plugins
-  // must restart brofish and suricata for the new drop-ins to take effect
   // hand the shell side the effective feature values before it decides
   publishFeatures() {
     const state = {};

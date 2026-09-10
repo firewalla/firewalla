@@ -304,5 +304,25 @@ check "apply verifies that the failed marker was removed" 'grep -q "\[\[ -e \$FA
 echo "== unit: a failed feature publication aborts the apply"
 check "publishFeatures throws instead of logging" 'grep -q "throw new Error(\`publishing the effective flow engine features failed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
+echo "== unit: zeek preparation and legacy cron"
+check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
+check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
+check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
+check "the hourly zeekctl cron is removed while fleet owns the role" 'grep -q "cron.hourly/bro-cron" "$ENGINE"'
+check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.failed || /home/pi/firewalla/scripts/flow-check.sh" "$FIREWALLA_HOME/etc/crontab.fleet"'
+check "applies are serialized by a lock" 'grep -q "flock -w" "$ENGINE"'
+check "a backup that fails aborts before the destination is touched" 'sed -n "/commit_one()/,/^  }/p" "$ENGINE" | grep -q "cp -f \"\$dst\" \"\$backup/\$name\" 2>/dev/null; then"'
+check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+
+echo "== behaviour: two applies do not interleave"
+setf 1 1
+( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
+p1=$!
+( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
+p2=$!
+wait $p1; r1=$?; wait $p2; r2=$?
+check "both concurrent applies ended cleanly" '[[ $r1 -eq 0 && $r2 -eq 0 ]]'
+check "the drop-ins are consistent afterwards" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$B" && [[ -f $S ]]'
+
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
