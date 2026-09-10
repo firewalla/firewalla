@@ -71,7 +71,7 @@ if $LIVE_CHECKS; then
     return 0
   }
 fi
-trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; sudo rm -f /dev/shm/fleet-engine.failed; restore; relive; rm -rf "$T"' EXIT
+trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; sudo rm -f /dev/shm/fleet-engine.failed; restore; relive; sudo rm -rf "$T"' EXIT
 
 B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
@@ -204,13 +204,13 @@ check "fleet-ping skips a role the box switched off" 'grep -q "pcap_zeek_enabled
 echo "== an explicit false in a config file wins over a later default"
 cfgdir=$T/hidden/config; mkdir -p "$cfgdir"
 printf '{"userFeatures":{"pcap_zeek_fleet":false}}' > "$cfgdir/config.json"
-roles=$(FIREWALLA_HIDDEN=$T/hidden FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+roles=$(PATH=$T/bin:$PATH FIREWALLA_HIDDEN=$T/hidden FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
 check "user config false is honoured (not swallowed by // empty)" '[[ $roles == zeek ]]'
 setf 1 1
 
 echo "== the effective-features file written by node is read first"
 printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false}' > "$T/eff.json"
-roles=$(FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)")
+roles=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)")
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
 
@@ -250,7 +250,7 @@ printf '{"pcap_zeek_fleet":true,"pcap_zeek_suricata":true}' > "$eff"
 writer=$!
 bad=0
 for i in $(seq 1 25); do
-  r=$(FW_EFFECTIVE_FEATURES=$eff bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+  r=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$eff bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
   [[ $r == fleet || $r == zeek ]] || bad=$((bad+1))
 done
 wait $writer
@@ -281,7 +281,9 @@ unit 'pgrep() { return 1; }; sudo() { case "$*" in *"systemctl stop suricata"*) 
 unit 'pgrep() { return 1; }; sudo() { return 0; }; systemctl() { return 1; }; pcap_zeek_enabled() { return 0; }' 0 "nothing to stop succeeds"
 
 echo "== unit: the hold survives a failed shutdown"
-check "apply lifts the hold only after stop_replaced_engines succeeds" 'sed -n "/rm -rf \"\$stage\"/,/^}/p" "$ENGINE" | grep -B4 "rm -f \"\$FAILED_MARKER\"" | grep -q "stop_replaced_engines"'
+stop_line=$(grep -n "if \$LIVE && ! stop_replaced_engines" "$ENGINE" | head -1 | cut -d: -f1)
+lift_line=$(grep -n 'rm -f "\$FAILED_MARKER"' "$ENGINE" | tail -1 | cut -d: -f1)
+check "apply lifts the hold only after stop_replaced_engines succeeds" '[[ -n $stop_line && -n $lift_line && $stop_line -lt $lift_line ]]'
 
 echo "== unit: a failed feature publication aborts the apply"
 check "publishFeatures throws instead of logging" 'grep -q "throw new Error(\`publishing the effective flow engine features failed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
