@@ -106,6 +106,11 @@ check "restart_fleet_services does not gate on is-active" '! grep -q "is-active 
 check "restart_fleet_services resets a failed unit" 'grep -q "reset-failed brofish" "$ENGINE"'
 check "restarts respect the pcap role features" 'grep -q "pcap_zeek_enabled" "$ENGINE" && grep -q "pcap_suricata_enabled" "$ENGINE"'
 
+echo "== node reads the applied drop-ins, not the async feature table"
+check "BroControl picks the cron template from the applied engine" 'grep -q "appliedZeekEngine" "$FIREWALLA_HOME/net2/BroControl.js"'
+check "SuricataControl uses the applied engines" 'grep -q "appliedSuricataEngine" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+check "ZeekDPISensor uses the applied engine" 'grep -q "appliedZeekEngine" "$FIREWALLA_HOME/sensor/ZeekDPISensor.js"'
+
 echo "== scratch mode never touches live services"
 setf 1 1
 out=$(sudo -E "$ENGINE" apply 2>&1)
