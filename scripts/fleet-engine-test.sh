@@ -324,7 +324,7 @@ check "the feature listeners are registered before the initial apply" 'awk "/onF
 
 echo "== unit: the two-process arrangement"
 check "the IDS is restarted whatever the flow role is doing" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then"'
-check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "pgrep -x suricata >/dev/null 2>&1; then"'
+check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && suricata_running; then"'
 check "each cron entry checks one role" 'grep -q "fleet-ping.sh brofish" "$FIREWALLA_HOME/etc/crontab.fleet" && grep -q "fleet-ping.sh suricata" "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids"'
 check "the watchdog probes the IDS with suricata interfaces" 'grep -q "ids_status_args" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "the retry flag is owned by apply()" 'grep -q "this.applyFailed = true;" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
