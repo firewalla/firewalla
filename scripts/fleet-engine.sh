@@ -165,17 +165,25 @@ apply() {
     return 1
   fi
   rm -rf "$stage"
-  # verified: the drop-ins match the features, so lift the hold (this also
-  # clears one left by an earlier failed apply or by main-start)
+  # the engines fleet has taken over from must be gone before anything may
+  # start fleet, or both would write the same spool: the hold stays until they
+  # are verified stopped
+  if $LIVE && ! stop_replaced_engines; then
+    fail "stopping the engines fleet replaces"
+    return 1
+  fi
+  # verified, and nothing else is running: lift the hold (this also clears one
+  # left by an earlier failed apply or by main-start)
   $LIVE && sudo rm -f "$FAILED_MARKER" 2>/dev/null
-  $LIVE && stop_replaced_engines
   return 0
 }
 
 # zeek must not run beside fleet (both would write the same spool), and zeekctl
 # must record its nodes as stopped or `zeekctl cron` restarts them; the suricata
 # processes must not run while fleet evaluates the rules
+# Returns nonzero unless every engine fleet replaces is verified gone.
 stop_replaced_engines() {
+  local rc=0
   if [[ $ZEEK_ENGINE == fleet ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
     # zeekctl first when it is there, so its state says "stopped" and
     # `zeekctl cron` does not restart the nodes; the processes have to go
@@ -187,18 +195,30 @@ stop_replaced_engines() {
       log "zeekctl not at $ZEEKCTL, stopping the zeek processes directly"
     fi
     sudo pkill -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
-    sleep 1
-    if pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
+    local i
+    for i in 1 2 3 4 5; do
+      pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1 || break
+      sleep 1
       sudo pkill -9 -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
+    done
+    if pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
+      log "FAILED: ${BRO_PROC_NAME:-zeek} is still running"
+      rc=1
     fi
   fi
   if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled \
      && systemctl is-active -q suricata 2>/dev/null \
      && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
     log "stopping suricata (fleet evaluates its rules)"
-    sudo systemctl stop suricata 2>/dev/null || true
+    if ! sudo systemctl stop suricata; then
+      log "FAILED: stopping suricata"
+      rc=1
+    elif systemctl is-active -q suricata 2>/dev/null; then
+      log "FAILED: suricata is still active"
+      rc=1
+    fi
   fi
-  return 0
+  return $rc
 }
 
 # What is on disk and what systemd resolved must match the roles just applied.
@@ -277,6 +297,9 @@ status() {
       "$(systemctl show $u -p ExecStart --value 2>/dev/null | sed -n 's/.*argv\[\]=\([^;]*\);.*/\1/p' | head -1 | cut -c1-90)"
   done
 }
+
+# tests source this file to exercise single functions with stubs
+[[ -n ${FLEET_ENGINE_SOURCE_ONLY:-} ]] && return 0
 
 case "${1:-apply}" in
   apply)   apply ;;

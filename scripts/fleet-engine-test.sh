@@ -1,55 +1,83 @@
 #!/bin/bash
 #
-# Sandbox test for scripts/fleet-engine.sh: renders the drop-ins for all four
-# pcap_zeek_fleet / pcap_zeek_suricata combinations into a scratch directory
-# (SYSTEMD_DIR), checks the binary-missing fallback, and checks that a failed
-# install returns nonzero. Runs on a box (needs redis for the feature values)
-# or anywhere with bash, jq and a FIREWALLA_HOME checkout; no service is
-# touched: with SYSTEMD_DIR overridden the script neither reloads nor
-# restarts anything.
+# Tests for scripts/fleet-engine.sh.
 #
-#   sudo ./scripts/fleet-engine-test.sh          # on a box
+#   ./scripts/fleet-engine-test.sh          sandbox only: renders the drop-ins
+#                                           for every feature combination into a
+#                                           scratch directory and unit-tests the
+#                                           failure paths with stubs. Touches no
+#                                           service, no /etc/systemd/system and
+#                                           not the box's redis features.
+#   ./scripts/fleet-engine-test.sh --live   additionally exercises the live
+#                                           paths (hold marker, rollback under
+#                                           /etc/systemd/system, recovery). This
+#                                           changes real state; it restores the
+#                                           feature values and restarts whatever
+#                                           was running when it finishes.
+#
+# Needs bash, jq and a FIREWALLA_HOME checkout.
 
-: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HOME:=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 set -u
+LIVE_CHECKS=false
+[[ ${1:-} == --live ]] && LIVE_CHECKS=true
+
 T=$(mktemp -d)
-trap 'rm -rf "$T"' EXIT
 export SYSTEMD_DIR=$T/systemd
 export FLEET_BIN=$T/fleet
+export FW_EFFECTIVE_FEATURES=$T/features.json
 printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
+mkdir -p "$SYSTEMD_DIR" "$T/bin"
+# the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
+# not answer: a stub on PATH keeps the box's own values out of the way
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
 ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
+SANDBOX=(sudo -E env "PATH=$T/bin:$PATH")
 pass=0; failn=0
 ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; failn=$((failn+1)); }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
-# the features are read from redis; save and restore the box's values
-saved_zf=$(redis-cli hget sys:features pcap_zeek_fleet 2>/dev/null)
-saved_zs=$(redis-cli hget sys:features pcap_zeek_suricata 2>/dev/null)
-restore() {
-  for k in pcap_zeek_fleet:"$saved_zf" pcap_zeek_suricata:"$saved_zs"; do
-    n=${k%%:*}; v=${k#*:}
-    if [[ -n $v ]]; then redis-cli hset sys:features "$n" "$v" >/dev/null; else redis-cli hdel sys:features "$n" >/dev/null; fi
-  done
+# feature values for the sandbox: pcap_zeek_fleet, pcap_zeek_suricata, and the
+# roles themselves (default on, as the checked-in config has them)
+setf() {
+  cat > "$FW_EFFECTIVE_FEATURES" <<JSON
+{"pcap_zeek_fleet": $([[ $1 == 1 ]] && echo true || echo false),
+ "pcap_zeek_suricata": $([[ $2 == 1 ]] && echo true || echo false),
+ "pcap_zeek": $([[ ${3:-1} == 1 ]] && echo true || echo false),
+ "pcap_suricata": $([[ ${4:-1} == 1 ]] && echo true || echo false)}
+JSON
 }
-# the live checks can stop the engines this box was running; remember what was
-# active and put the box back exactly as it was, configuration and services
-brofish_was=$(systemctl is-active brofish 2>/dev/null)
-suricata_was=$(systemctl is-active suricata 2>/dev/null)
-relive() {
-  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$FIREWALLA_HOME/scripts/fleet-engine.sh" apply >/dev/null 2>&1 || true
-  [[ $brofish_was == active ]] && [[ $(systemctl is-active brofish) != active ]] && sudo systemctl start brofish >/dev/null 2>&1
-  [[ $suricata_was == active ]] && [[ $(systemctl is-active suricata) != active ]] && sudo systemctl start suricata >/dev/null 2>&1
-  return 0
-}
+
+# --live only: the box's own feature values and service state, restored on exit
+saved_zf=""; saved_zs=""; brofish_was=""; suricata_was=""
+restore() { :; }
+relive() { :; }
+if $LIVE_CHECKS; then
+  saved_zf=$(redis-cli hget sys:features pcap_zeek_fleet 2>/dev/null)
+  saved_zs=$(redis-cli hget sys:features pcap_zeek_suricata 2>/dev/null)
+  brofish_was=$(systemctl is-active brofish 2>/dev/null)
+  suricata_was=$(systemctl is-active suricata 2>/dev/null)
+  restore() {
+    for k in pcap_zeek_fleet:"$saved_zf" pcap_zeek_suricata:"$saved_zs"; do
+      n=${k%%:*}; v=${k#*:}
+      if [[ -n $v ]]; then redis-cli hset sys:features "$n" "$v" >/dev/null; else redis-cli hdel sys:features "$n" >/dev/null; fi
+    done
+  }
+  relive() {
+    sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1 || true
+    [[ $brofish_was == active ]] && [[ $(systemctl is-active brofish) != active ]] && sudo systemctl start brofish >/dev/null 2>&1
+    [[ $suricata_was == active ]] && [[ $(systemctl is-active suricata) != active ]] && sudo systemctl start suricata >/dev/null 2>&1
+    return 0
+  }
+fi
 trap 'sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null; sudo rm -f /dev/shm/fleet-engine.failed; restore; relive; rm -rf "$T"' EXIT
-setf() { redis-cli hset sys:features pcap_zeek_fleet "$1" pcap_zeek_suricata "$2" >/dev/null; }
 
 B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 
 echo "== fleet/fleet"
-setf 1 1; sudo -E "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
+setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
 # the templates name the asset path; FLEET_BIN here only stands in for its presence
 ASSET=/home/pi/.firewalla/run/assets/fleet
 check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$ASSET .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
@@ -57,21 +85,21 @@ check "suricata drop-in holds the unit off" 'grep -q "^ConditionPathExists=" "$S
 check "drop-ins are root-owned 0644" '[[ $(stat -c "%a %U" "$B") == "644 root" ]]'
 
 echo "== fleet/suricata"
-setf 1 0; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
+setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
 check "brofish drop-in carries --no-suricata" 'grep -q "^ExecStart=$ASSET .*--no-suricata" "$B"'
 check "no suricata drop-in" '[[ ! -e $S ]]'
 
 echo "== zeek/fleet"
-setf 0 1; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
+setf 0 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
 check "no brofish drop-in" '[[ ! -e $B ]]'
 check "suricata drop-in runs fleet --ids-only" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
 
 echo "== zeek/suricata"
-setf 0 0; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
+setf 0 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
 check "no drop-ins at all" '[[ ! -e $B && ! -e $S ]]'
 
 echo "== binary missing with both features on"
-setf 1 1; rm -f "$FLEET_BIN"; out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+setf 1 1; rm -f "$FLEET_BIN"; out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply returns 0 (stock engines)" '[[ $rc -eq 0 ]]'
 check "reports the missing binary" '[[ "$out" == *"not present"* ]]'
 check "no drop-ins at all" '[[ ! -e $B && ! -e $S ]]'
@@ -81,19 +109,20 @@ printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
 echo "== failed install returns nonzero and does not restart"
 # SYSTEMD_DIR as a plain file: creating the drop-in directory fails even for root
 setf 1 1; rm -rf "$SYSTEMD_DIR"; : > "$SYSTEMD_DIR"
-out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply returns nonzero" '[[ $rc -ne 0 ]]'
 check "reports the failure" '[[ "$out" == *FAILED* ]]'
-check "switch does not restart after a failed apply" '! sudo -E "$ENGINE" switch >/dev/null 2>&1'
+check "switch does not restart after a failed apply" '! "${SANDBOX[@]}" "$ENGINE" switch >/dev/null 2>&1'
 rm -f "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
-echo "== a failed apply rolls back and leaves the stock engines running"
+if $LIVE_CHECKS; then
+echo "== [live] a failed apply rolls back and leaves the stock engines running"
 # both features on, brofish drop-in installable, suricata one not: apply must
 # fail before stopping anything
 setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 : > "$SYSTEMD_DIR/suricata.service.d"          # a file where the directory must go
 zeek_before=$(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true)
-out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply returns nonzero" '[[ $rc -ne 0 ]]'
 check "nothing was left half-written (the commit rolled back)" '[[ ! -e $B ]]'
 check "zeek was not stopped" '[[ $(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true) == "$zeek_before" ]]'
@@ -103,11 +132,11 @@ rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTE
 echo "== pcap roles switched off"
 # pcap_zeek off with both fleet features on: the suricata unit must run fleet
 # ids-only, not be held off, or the box would have no IDS at all
-setf 1 1; saved_pz=$(redis-cli hget sys:features pcap_zeek); redis-cli hset sys:features pcap_zeek 0 >/dev/null
-sudo -E "$ENGINE" apply >/dev/null
+setf 1 1; setf 1 1 0 1
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 check "suricata unit runs fleet --ids-only when pcap_zeek is off" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
-if [[ -n $saved_pz ]]; then redis-cli hset sys:features pcap_zeek "$saved_pz" >/dev/null; else redis-cli hdel sys:features pcap_zeek >/dev/null; fi
-sudo -E "$ENGINE" apply >/dev/null
+setf 1 1 1 1
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 check "back to held-off once pcap_zeek is on again" 'grep -q "^ConditionPathExists=" "$S"'
 
 echo "== restart starts a fleet-owned unit that is inactive"
@@ -135,19 +164,21 @@ if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
   # the live checks run against the box's real paths: the sandbox FLEET_BIN
   # would make verify compare systemd's ExecStart with the scratch binary
   live_before=$(systemctl show brofish -p ExecStart --value)
-  out=$(sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" apply 2>&1); rc=$?
+  out=$(sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply 2>&1); rc=$?
   check "live apply fails" '[[ $rc -ne 0 ]]'
   check "hold marker is left behind" '[[ -e /dev/shm/fleet-engine.failed ]]'
-  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" restart >/dev/null 2>&1'
+  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" restart >/dev/null 2>&1'
   check "brofish was not restarted" '[[ "$(systemctl show brofish -p ExecStart --value)" == "$live_before" ]]'
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
-  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN "$ENGINE" apply >/dev/null 2>&1
+  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1
   check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
   check "the live drop-in is back" '[[ -f /etc/systemd/system/brofish.service.d/fleet.conf ]]'
 else
   echo "  skip live marker checks (cannot make the drop-in dir immutable here)"
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
 fi
+
+fi   # LIVE_CHECKS
 
 echo "== switch reports a restart failure"
 check "switch_roles tracks failures and returns them" 'sed -n "/^switch_roles()/,/^}/p" "$ENGINE" | grep -q "rc=1" && sed -n "/^switch_roles()/,/^}/p" "$ENGINE" | grep -q "return \$rc"'
@@ -173,14 +204,12 @@ check "fleet-ping skips a role the box switched off" 'grep -q "pcap_zeek_enabled
 echo "== an explicit false in a config file wins over a later default"
 cfgdir=$T/hidden/config; mkdir -p "$cfgdir"
 printf '{"userFeatures":{"pcap_zeek_fleet":false}}' > "$cfgdir/config.json"
-redis-cli hdel sys:features pcap_zeek_fleet >/dev/null
 roles=$(FIREWALLA_HIDDEN=$T/hidden FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
 check "user config false is honoured (not swallowed by // empty)" '[[ $roles == zeek ]]'
 setf 1 1
 
 echo "== the effective-features file written by node is read first"
 printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false}' > "$T/eff.json"
-redis-cli hdel sys:features pcap_zeek_fleet pcap_zeek_suricata >/dev/null
 roles=$(FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source $FIREWALLA_HOME/platform/platform.sh; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)")
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
@@ -189,27 +218,25 @@ echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated
 setf 1 1; sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
-saved_ps=$(redis-cli hget sys:features pcap_suricata)
-redis-cli hset sys:features pcap_suricata 1 >/dev/null
-sudo -E "$ENGINE" apply >/dev/null
+setf 1 1 1 1
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 before=$(cat "$B")
 # the suricata drop-in now has to be installed (its location is gone) and
 # cannot be (a file sits where the directory belongs), while the brofish
 # drop-in has to change (pcap_suricata off adds --no-suricata)
 sudo rm -rf "$SYSTEMD_DIR/suricata.service.d"
 : > "$SYSTEMD_DIR/suricata.service.d"
-redis-cli hset sys:features pcap_suricata 0 >/dev/null
-out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+setf 1 1 1 0
+out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
 check "the failure is reported" '[[ "$out" == *FAILED* ]]'
 check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
-if [[ -n $saved_ps ]]; then redis-cli hset sys:features pcap_suricata "$saved_ps" >/dev/null; else redis-cli hdel sys:features pcap_suricata >/dev/null; fi
 sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
 echo "== behaviour: apply rewrites a stale drop-in"
-setf 1 1; sudo -E "$ENGINE" apply >/dev/null
+setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 printf '[Service]\nExecStart=/bin/false\n' | sudo tee "$B" >/dev/null
-sudo -E "$ENGINE" apply >/dev/null
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 check "a hand-edited drop-in is corrected" 'grep -q "^ExecStart=$ASSET " "$B"'
 check "FireMain startup restarts when the applied state changed" 'grep -q "flow engine reconciled at startup" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
@@ -232,9 +259,32 @@ check "node publishes the file atomically (temp + rename)" 'grep -q "renameSync"
 
 echo "== scratch mode never touches live services"
 setf 1 1
-out=$(sudo -E "$ENGINE" apply 2>&1)
+out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1)
 check "no service was stopped" '[[ "$out" != *stopping* ]]'
-check "switch restarts nothing in scratch mode" '[[ -z "$(sudo -E "$ENGINE" switch 2>&1 | grep -i restart)" ]]'
+check "switch restarts nothing in scratch mode" '[[ -z "$("${SANDBOX[@]}" "$ENGINE" switch 2>&1 | grep -i restart)" ]]'
+
+echo "== unit: shutdown failures are failures"
+# source the functions and stub the world: a zeek that never dies, and a
+# suricata whose stop fails, must both make stop_replaced_engines return 1
+unit() { # stub-body expected-rc name
+  local body=$1 want=$2 name=$3 rc
+  rc=$(FLEET_ENGINE_SOURCE_ONLY=1 bash -c "
+    FIREWALLA_HOME=$FIREWALLA_HOME
+    source \"$ENGINE\" >/dev/null 2>&1
+    $body
+    ZEEK_ENGINE=fleet; SURICATA_ENGINE=fleet; BRO_PROC_NAME=zeek; FLEET_BIN=$FLEET_BIN
+    stop_replaced_engines >/dev/null 2>&1; echo \$?")
+  [[ $rc == "$want" ]] && ok "$name" || bad "$name (rc=$rc want=$want)"
+}
+unit 'pgrep() { return 0; }; sudo() { return 0; }; systemctl() { return 1; }; sleep() { :; }; pcap_zeek_enabled() { return 0; }' 1 "an unkillable zeek fails the shutdown"
+unit 'pgrep() { return 1; }; sudo() { case "$*" in *"systemctl stop suricata"*) return 1;; esac; return 0; }; systemctl() { case "$*" in *is-active*) return 0;; *ExecStart*) echo "path=/usr/bin/suricata";; esac; return 0; }; pcap_zeek_enabled() { return 0; }' 1 "a failed suricata stop fails the shutdown"
+unit 'pgrep() { return 1; }; sudo() { return 0; }; systemctl() { return 1; }; pcap_zeek_enabled() { return 0; }' 0 "nothing to stop succeeds"
+
+echo "== unit: the hold survives a failed shutdown"
+check "apply lifts the hold only after stop_replaced_engines succeeds" 'sed -n "/rm -rf \"\$stage\"/,/^}/p" "$ENGINE" | grep -B4 "rm -f \"\$FAILED_MARKER\"" | grep -q "stop_replaced_engines"'
+
+echo "== unit: a failed feature publication aborts the apply"
+check "publishFeatures throws instead of logging" 'grep -q "throw new Error(\`publishing the effective flow engine features failed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
