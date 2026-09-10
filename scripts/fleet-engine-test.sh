@@ -185,6 +185,43 @@ roles=$(FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source $FIREWALLA_HOME/platfo
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
 
+echo "== behaviour: the drop-ins are staged and committed together"
+# a wanted suricata template that cannot be installed must leave the brofish
+# drop-in as it was, not half-updated
+setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+sudo -E "$ENGINE" apply >/dev/null
+before=$(cat "$B")
+: > "$SYSTEMD_DIR/suricata.service.d"     # a file where the directory must go
+setf 1 0                                  # brofish drop-in must change (--no-suricata)
+out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+check "apply fails" '[[ $rc -ne 0 ]]'
+check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
+rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+
+echo "== behaviour: apply rewrites a stale drop-in"
+setf 1 1; sudo -E "$ENGINE" apply >/dev/null
+printf '[Service]\nExecStart=/bin/false\n' | sudo tee "$B" >/dev/null
+sudo -E "$ENGINE" apply >/dev/null
+check "a hand-edited drop-in is corrected" 'grep -q "^ExecStart=$ASSET " "$B"'
+check "FireMain startup restarts when the applied state changed" 'grep -q "flow engine reconciled at startup" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+
+echo "== behaviour: readers never see a partial effective-features file"
+eff=$T/eff-concurrent.json
+printf '{"pcap_zeek_fleet":true,"pcap_zeek_suricata":true}' > "$eff"
+( for i in $(seq 1 40); do
+    printf '{"pcap_zeek_fleet":true,"pcap_zeek_suricata":true}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
+    printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
+  done ) &
+writer=$!
+bad=0
+for i in $(seq 1 25); do
+  r=$(FW_EFFECTIVE_FEATURES=$eff bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+  [[ $r == fleet || $r == zeek ]] || bad=$((bad+1))
+done
+wait $writer
+check "every read answered a valid engine" '[[ $bad -eq 0 ]]'
+check "node publishes the file atomically (temp + rename)" 'grep -q "renameSync" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
+
 echo "== scratch mode never touches live services"
 setf 1 1
 out=$(sudo -E "$ENGINE" apply 2>&1)
