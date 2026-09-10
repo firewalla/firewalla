@@ -93,9 +93,10 @@ setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[
 ASSET=/home/pi/.firewalla/run/assets/fleet
 # the brofish drop-in launches through the wrapper, the ids-only unit runs the
 # binary directly
-RUNNER=/home/pi/firewalla/scripts/fleet-run
+RUNNER=/home/pi/.firewalla/run/assets/fleet-run
+IDS_RUNNER=/home/pi/.firewalla/run/assets/fleet-ids-run
 check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
-check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
+check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
 echo "== fleet/suricata"
@@ -106,7 +107,7 @@ check "no suricata drop-in" '[[ ! -e $S ]]'
 echo "== zeek/fleet"
 setf 0 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
 check "no brofish drop-in" '[[ ! -e $B ]]'
-check "suricata drop-in runs the ids launcher" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
+check "suricata drop-in runs the ids launcher" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 
 echo "== zeek/suricata"
 setf 0 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
@@ -148,10 +149,10 @@ echo "== pcap roles switched off"
 # ids-only, not be held off, or the box would have no IDS at all
 setf 1 1; setf 1 1 0 1
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-check "suricata unit runs the ids launcher when pcap_zeek is off" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
+check "suricata unit runs the ids launcher when pcap_zeek is off" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 setf 1 1 1 1
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-check "the ids unit is used whatever the flow role" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
+check "the ids unit is used whatever the flow role" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 
 echo "== restart starts a fleet-owned unit that is inactive"
 # not run against the live units: check the code path instead
@@ -316,6 +317,7 @@ check "verify checks for fleet-run under brofish" 'sed -n "/^verify()/,/^}/p" "$
 echo "== unit: zeek preparation and legacy cron"
 check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
 check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
+check "the launcher copies are installed beside the asset" '[[ -x $RUNNER && -x $IDS_RUNNER ]]'
 check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "the hourly zeekctl cron is removed while fleet owns the role" 'grep -q "cron.hourly/bro-cron" "$ENGINE"'
 check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.failed || /home/pi/firewalla/scripts/flow-check.sh" "$FIREWALLA_HOME/etc/crontab.fleet"'
@@ -332,7 +334,7 @@ check "the retry flag is owned by apply()" 'grep -q "this.applyFailed = true;" "
 check "the stock suricata daemon name is matched" 'grep -q "pkill -x Suricata-Main" "$ENGINE" && grep -q "pgrep -x Suricata-Main" "$ENGINE"'
 
 echo "== unit: rollback safety and the hidden-feature kill switch"
-check "the drop-ins point outside the git checkout" 'grep -q "^ExecStart=/home/pi/.firewalla/run/assets/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStart=/home/pi/.firewalla/run/assets/fleet-ids-run " "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
+check "the drop-ins point outside the git checkout" 'grep -q "^ExecStart=$RUNNER " "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStart=$IDS_RUNNER " "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "apply refreshes the launcher copies" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN_DIR/\$l"'
 check "the published effective state is read before redis" 'awk "/FW_EFFECTIVE_FEATURES/{e=NR} /redis-cli hget sys:features/{r=NR} END{exit !(e && r && e<r)}" "$FIREWALLA_HOME/platform/platform.sh"'
 
