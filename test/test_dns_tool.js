@@ -11,10 +11,12 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   let redisClient;
   let operations;
   let warnings;
+  let metricIncrements;
 
   beforeEach(() => {
     operations = [];
     warnings = [];
+    metricIncrements = [];
     redisClient = {
       zaddAsync: () => Promise.resolve(),
       zremAsync: () => Promise.resolve(),
@@ -35,6 +37,12 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       }),
       './SysManager.js': {},
       '../util/redis_manager.js': {getRedisClient: () => redisClient},
+      '../extension/metrics/metrics.js': {
+        incr: (key, increment) => {
+          metricIncrements.push([key, increment]);
+          return Promise.resolve();
+        }
+      },
       '../control/DomainUpdater.js': class { updateDomainMapping() {} },
       '../control/CategoryUpdater.js': class {},
       '../net2/Firewalla.js': {
@@ -112,22 +120,25 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     assertBound(1);
   });
 
-  it('bounds 60000 admissions and aggregates overload warnings', async () => {
+  it('bounds 60000 admissions and aggregates overload warnings and metrics', async () => {
     fill(60000);
     expect(dnsTool.dnsExpirePending.size).to.equal(MAIN_LIMIT);
     expect(dnsTool.dnsExpireOverflow.size).to.equal(1000);
     expect(dnsTool.dnsExpireDroppedCount).to.equal(10000);
     expect(operations).to.deep.equal([]);
     expect(warnings).to.deep.equal([]);
+    expect(metricIncrements).to.deep.equal([]);
     assertBound(MAX_PENDING);
     await dnsTool._drainDnsTTL();
     expect(warnings.length).to.equal(1);
     expect(warnings[0]).to.contain('10000');
+    expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 10000]]);
     expect(dnsTool.dnsExpireDroppedCount).to.equal(0);
     assertBound(1000);
     await dnsTool._drainDnsTTL();
     expect(operations.length).to.equal(MAX_PENDING);
     expect(warnings.length).to.equal(1);
+    expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 10000]]);
     assertBound(0);
   });
 

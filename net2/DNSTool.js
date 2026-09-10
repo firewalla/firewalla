@@ -27,11 +27,17 @@ const _ = require('lodash');
 const util = require('util');
 
 const LRU = require('lru-cache');
+const metrics = require('../extension/metrics/metrics.js');
 
 // rdns TTL refresh throttle: one EXPIRE per key per period. Throttled refreshes are deferred
 // while bounded capacity remains. Under sustained overload, excess refreshes are dropped rather
 // than adding unbounded deferred state or saturation-triggered Redis writes.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
+// Keep the combined deferred-state cap aligned with the existing 50k timestamp LRU cardinality.
+// Reserve 1k entries (2%) outside the 49k main queue for late arrivals and active-key updates
+// while a main batch is draining. The reserve is drained separately without expanding the 50k
+// combined bound. These are safety guardrails, not appliance-specific memory or Redis-latency
+// values derived from benchmarks; changing them should be backed by appliance profiling.
 const MAX_DNS_EXPIRE_PENDING = 50000;
 const MAX_DNS_EXPIRE_OVERFLOW = 1000;
 const DNS_EXPIRE_PENDING_LIMIT = MAX_DNS_EXPIRE_PENDING - MAX_DNS_EXPIRE_OVERFLOW;
@@ -178,8 +184,9 @@ class DNSTool {
     this.dnsExpireActive = pending;
 
     this.dnsExpireDrainPromise = (async () => {
-      if (this.dnsExpireDroppedCount > 0) {
-        log.warn(`Dropped ${this.dnsExpireDroppedCount} rdns TTL refreshes after deferred capacity reached ${MAX_DNS_EXPIRE_PENDING}`);
+      const droppedCount = this.dnsExpireDroppedCount;
+      if (droppedCount > 0) {
+        log.warn(`Dropped ${droppedCount} rdns TTL refreshes after deferred capacity reached ${MAX_DNS_EXPIRE_PENDING}`);
         this.dnsExpireDroppedCount = 0;
       }
       const drainBatch = async (batch) => {
@@ -212,6 +219,11 @@ class DNSTool {
           this.dnsExpirePending.set(key, expr);
         }
         log.error("Failed to flush deferred rdns TTL refreshes", err.message);
+      }
+      if (droppedCount > 0) {
+        metrics.incr('dnsExpireDroppedCount', droppedCount).catch((err) => {
+          log.error("Failed to record dropped rdns TTL refresh metric", err.message);
+        });
       }
     })().finally(() => {
       this.dnsExpireActive = null;
