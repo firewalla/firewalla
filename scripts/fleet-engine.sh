@@ -55,7 +55,11 @@ fail() { log "FAILED: $1"; return 1; }
 
 install_dropin() { # src dst
   sudo install -d "$(dirname "$2")" || return 1
-  sudo install -m 0644 -o root -g root "$1" "$2" || return 1
+  if $LIVE; then
+    sudo install -m 0644 -o root -g root "$1" "$2" || return 1
+  else
+    sudo install -m 0644 "$1" "$2" || return 1
+  fi
 }
 
 # Install or remove the drop-ins per the effective roles.
@@ -72,11 +76,17 @@ apply() {
   # this, and a crash mid-apply leaves the hold in place rather than a box
   # running the wrong engine. net2/FlowEngine.js reads the same marker, and
   # BroControl.restart / SuricataControl.restart honour it.
-  $LIVE && sudo touch "$FAILED_MARKER" 2>/dev/null
+  if $LIVE && ! sudo touch "$FAILED_MARKER" 2>/dev/null; then
+    fail "creating $FAILED_MARKER"
+    return 1
+  fi
   # and the reload obligation, before any file changes: an apply interrupted
   # after writing a drop-in would otherwise leave a retry with matching files,
   # no reload and a stale systemd view it could never recover from
-  $LIVE && sudo touch "$RELOAD_PENDING" 2>/dev/null
+  if $LIVE && ! sudo touch "$RELOAD_PENDING" 2>/dev/null; then
+    fail "creating $RELOAD_PENDING"
+    return 1
+  fi
 
   local stage
   stage=$(mktemp -d) || fail "mktemp -d" || return 1
@@ -118,16 +128,18 @@ apply() {
     local want=$1 dst=$2 name=$3
     if [[ -n $want ]]; then
       sudo cmp -s "$want" "$dst" 2>/dev/null && return 0
-      [[ -e $dst ]] && sudo cp -f "$dst" "$backup/$name" 2>/dev/null
-      install_dropin "$want" "$dst" || return 1
+      if [[ -e $dst ]] && ! sudo cp -f "$dst" "$backup/$name" 2>/dev/null; then
+        return 1
+      fi
       rolled="$rolled $name:$dst"
+      install_dropin "$want" "$dst" || return 1
       changed=true
       return 0
     fi
     [[ -e $dst ]] || return 0
-    sudo cp -f "$dst" "$backup/$name" 2>/dev/null
-    sudo rm -f "$dst" || return 1
+    sudo cp -f "$dst" "$backup/$name" 2>/dev/null || return 1
     rolled="$rolled $name:$dst"
+    sudo rm -f "$dst" || return 1
     changed=true
     return 0
   }
@@ -174,7 +186,10 @@ apply() {
   fi
   # verified, and nothing else is running: lift the hold (this also clears one
   # left by an earlier failed apply or by main-start)
-  $LIVE && sudo rm -f "$FAILED_MARKER" 2>/dev/null
+  if $LIVE && { ! sudo rm -f "$FAILED_MARKER" 2>/dev/null || [[ -e $FAILED_MARKER ]]; }; then
+    fail "clearing $FAILED_MARKER"
+    return 1
+  fi
   return 0
 }
 

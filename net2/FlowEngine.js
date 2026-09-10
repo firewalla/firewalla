@@ -87,6 +87,19 @@ function appliedSuricataEngine() {
   return dropinPresent(SURICATA_DROPIN) ? 'fleet' : 'suricata';
 }
 
+// The Fleet suricata drop-in has two forms: it either runs an ids-only Fleet
+// process, or holds the unit off because the brofish Fleet owns IDS as well.
+// Reading the installed form is safe during early startup, before config.js
+// has populated its asynchronous feature table.
+function appliedSuricataMode() {
+  try {
+    const dropin = fs.readFileSync(SURICATA_DROPIN, 'utf8');
+    return dropin.includes('--ids-only') ? 'fleet-ids' : 'fleet-off';
+  } catch (err) {
+    return 'suricata';
+  }
+}
+
 // true while the systemd drop-ins are known not to match the features
 function applyHeld() {
   try {
@@ -99,6 +112,6 @@ function applyHeld() {
 
 module.exports = {
   zeekEngine, suricataEngine,
-  appliedZeekEngine, appliedSuricataEngine,
+  appliedZeekEngine, appliedSuricataEngine, appliedSuricataMode,
   fleetAvailable, applyHeld, FLEET_BIN, APPLY_FAILED_MARKER,
 };
