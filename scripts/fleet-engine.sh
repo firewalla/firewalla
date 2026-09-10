@@ -46,6 +46,12 @@ install_dropin() { # src dst
   sudo install -m 0644 -o root -g root "$1" "$2"
 }
 
+fail() { log "FAILED: $1"; return 1; }
+
+# Install or remove the drop-ins per the effective roles. Every state-changing
+# step is checked and a failure returns nonzero without touching the rest, and
+# the result is verified against what systemd will actually run, so a caller
+# (FleetEnginePlugin, main-start) never restarts services on stale drop-ins.
 apply() {
   resolve
   local changed=false
@@ -53,10 +59,15 @@ apply() {
   if [[ $ZEEK_ENGINE == fleet ]]; then
     local opts=""
     [[ $SURICATA_ENGINE == fleet ]] || opts="--no-suricata"
-    local tmp; tmp=$(mktemp)
-    sed "s#@FLEET_OPTS@#$opts#" "$FIREWALLA_HOME/etc/brofish-fleet.conf" > "$tmp"
+    local tmp
+    tmp=$(mktemp) || fail "mktemp" || return 1
+    if ! sed "s#@FLEET_OPTS@#$opts#" "$FIREWALLA_HOME/etc/brofish-fleet.conf" > "$tmp"; then
+      rm -f "$tmp"; fail "rendering brofish drop-in from $FIREWALLA_HOME/etc/brofish-fleet.conf"; return 1
+    fi
     if ! sudo cmp -s "$tmp" "$BROFISH_DROPIN" 2>/dev/null; then
-      install_dropin "$tmp" "$BROFISH_DROPIN"
+      if ! install_dropin "$tmp" "$BROFISH_DROPIN"; then
+        rm -f "$tmp"; fail "installing $BROFISH_DROPIN"; return 1
+      fi
       changed=true
       log "brofish.service -> fleet${opts:+ ($opts)}"
     fi
@@ -69,7 +80,7 @@ apply() {
       sudo pkill -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
     fi
   elif [[ -e $BROFISH_DROPIN ]]; then
-    sudo rm -f "$BROFISH_DROPIN"
+    sudo rm -f "$BROFISH_DROPIN" || fail "removing $BROFISH_DROPIN" || return 1
     changed=true
     log "brofish.service -> zeek (drop-in removed)"
   fi
@@ -81,26 +92,55 @@ apply() {
     else
       src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"   # fleet in ids-only mode beside zeek
     fi
+    [[ -f $src ]] || fail "missing $src" || return 1
     if ! sudo cmp -s "$src" "$SURICATA_DROPIN" 2>/dev/null; then
-      install_dropin "$src" "$SURICATA_DROPIN"
+      install_dropin "$src" "$SURICATA_DROPIN" || fail "installing $SURICATA_DROPIN" || return 1
       changed=true
       log "suricata.service -> $(basename "$src" .conf | sed 's/suricata-//')"
     fi
-    # the suricata processes must not run while fleet evaluates the rules
-    if [[ $ZEEK_ENGINE == fleet ]] && systemctl is-active -q suricata 2>/dev/null \
-       && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
-      log "stopping suricata (fleet evaluates its rules)"
-      sudo systemctl daemon-reload
-      sudo systemctl stop suricata 2>/dev/null || true
-      changed=false
-    fi
   elif [[ -e $SURICATA_DROPIN ]]; then
-    sudo rm -f "$SURICATA_DROPIN"
+    sudo rm -f "$SURICATA_DROPIN" || fail "removing $SURICATA_DROPIN" || return 1
     changed=true
     log "suricata.service -> suricata (drop-in removed)"
   fi
 
-  $changed && sudo systemctl daemon-reload
+  if $changed && [[ $SYSTEMD_DIR == /etc/systemd/system ]]; then
+    sudo systemctl daemon-reload || fail "systemctl daemon-reload" || return 1
+  fi
+
+  # the suricata processes must not run while fleet evaluates the rules
+  if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && systemctl is-active -q suricata 2>/dev/null \
+     && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
+    log "stopping suricata (fleet evaluates its rules)"
+    sudo systemctl stop suricata 2>/dev/null || true
+  fi
+
+  verify
+}
+
+# What is on disk and what systemd resolved must match the roles just applied.
+# With SYSTEMD_DIR pointed elsewhere (tests) only the files can be checked.
+verify() {
+  local real=true
+  [[ $SYSTEMD_DIR == /etc/systemd/system ]] || real=false
+  if [[ $ZEEK_ENGINE == fleet ]]; then
+    [[ -f $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN missing" || return 1
+    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]] \
+      || fail "verify: brofish.service does not resolve to $FLEET_BIN" || return 1
+  else
+    [[ ! -e $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN still present" || return 1
+    ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]] \
+      || fail "verify: brofish.service still resolves to fleet" || return 1
+  fi
+  if [[ $SURICATA_ENGINE == fleet ]]; then
+    [[ -f $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN missing" || return 1
+    if [[ $ZEEK_ENGINE != fleet ]]; then
+      ! $real || [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]] \
+        || fail "verify: suricata.service does not resolve to $FLEET_BIN" || return 1
+    fi
+  else
+    [[ ! -e $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN still present" || return 1
+  fi
   return 0
 }
 
@@ -135,8 +175,8 @@ status() {
 
 case "${1:-apply}" in
   apply)   apply ;;
-  restart) apply; restart_fleet_services ;;
-  switch)  apply; switch_roles ;;
+  restart) apply && restart_fleet_services ;;
+  switch)  apply && switch_roles ;;
   status)  status ;;
   *) echo "usage: $0 apply|restart|switch|status" >&2; exit 2 ;;
 esac
