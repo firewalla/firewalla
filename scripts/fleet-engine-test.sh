@@ -77,5 +77,23 @@ check "reports the failure" '[[ "$out" == *FAILED* ]]'
 check "switch does not restart after a failed apply" '! sudo -E "$ENGINE" switch >/dev/null 2>&1'
 rm -f "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
+echo "== a failure after the first drop-in leaves the stock engines running"
+# both features on, brofish drop-in installable, suricata one not: apply must
+# fail before stopping anything
+setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+: > "$SYSTEMD_DIR/suricata.service.d"          # a file where the directory must go
+zeek_before=$(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true)
+out=$(sudo -E "$ENGINE" apply 2>&1); rc=$?
+check "apply returns nonzero" '[[ $rc -ne 0 ]]'
+check "brofish drop-in was written before the failure" '[[ -f $B ]]'
+check "zeek was not stopped" '[[ $(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true) == "$zeek_before" ]]'
+check "no \"stopping zeek\" in the output" '[[ "$out" != *"stopping zeek"* ]]'
+rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+
+echo "== restart starts a fleet-owned unit that is inactive"
+# not run against the live units: check the code path instead
+check "restart_fleet_services does not gate on is-active" '! grep -q "is-active -q brofish" "$ENGINE"'
+check "restart_fleet_services resets a failed unit" 'grep -q "reset-failed brofish" "$ENGINE"'
+
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
