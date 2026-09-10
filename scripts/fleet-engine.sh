@@ -71,10 +71,16 @@ apply() {
   # running the wrong engine. net2/FlowEngine.js reads the same marker, and
   # BroControl.restart / SuricataControl.restart honour it.
   $LIVE && sudo touch "$FAILED_MARKER" 2>/dev/null
+  # and the reload obligation, before any file changes: an apply interrupted
+  # after writing a drop-in would otherwise leave a retry with matching files,
+  # no reload and a stale systemd view it could never recover from
+  $LIVE && sudo touch "$RELOAD_PENDING" 2>/dev/null
 
   if [[ $ZEEK_ENGINE == fleet ]]; then
-    local opts=""
-    [[ $SURICATA_ENGINE == fleet ]] || opts="--no-suricata"
+    local opts="--no-suricata"
+    # the brofish fleet evaluates the rules only when it owns the IDS role and
+    # the box wants an IDS at all; otherwise it must not write alerts
+    [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && opts=""
     local tmp
     tmp=$(mktemp) || fail "mktemp" || return 1
     if ! sed "s#@FLEET_OPTS@#$opts#" "$FIREWALLA_HOME/etc/brofish-fleet.conf" > "$tmp"; then
@@ -115,10 +121,7 @@ apply() {
     log "suricata.service -> suricata (drop-in removed)"
   fi
 
-  if $LIVE && { $changed || [[ -e $RELOAD_PENDING ]]; }; then
-    # an owed reload from an earlier failure is retried here: without this a
-    # second apply would find matching files, skip the reload and fail verify
-    sudo touch "$RELOAD_PENDING" 2>/dev/null || true
+  if $LIVE; then
     sudo systemctl daemon-reload || fail "systemctl daemon-reload" || return 1
     sudo rm -f "$RELOAD_PENDING" 2>/dev/null || true
   fi

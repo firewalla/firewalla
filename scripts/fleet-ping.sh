@@ -24,10 +24,19 @@ SURICATA_ENGINE=$(get_flow_engine_suricata)
 
 log() { "$FIREWALLA_HOME/scripts/firelog" -t cloud -m "$1"; }
 
-# which service runs fleet, and on which API port
-if [[ $ZEEK_ENGINE == fleet ]]; then
+# a failed or interrupted apply holds the pcap services stopped on purpose
+# (net2/FlowEngine.js and both control classes honour the same marker): do not
+# restart anything on a configuration nobody verified
+if [[ -e /dev/shm/fleet-engine.failed ]]; then
+  logger "fleet-ping: flow engine configuration is held back, not checking"
+  exit 0
+fi
+
+# which service runs fleet, and on which API port; a role the box has switched
+# off is not ours to watch
+if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled; then
   SERVICE=brofish; HTTP=127.0.0.1:8927
-elif [[ $SURICATA_ENGINE == fleet ]]; then
+elif [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then
   SERVICE=suricata; HTTP=127.0.0.1:8928
 else
   exit 0   # nothing of ours is running
@@ -44,7 +53,7 @@ fi
 # zeek must not run beside fleet: `zeekctl cron` (fire-mem-check) restarts
 # nodes zeekctl believes crashed, so stop it through zeekctl, which records
 # them as stopped, and log who launched it so the trigger can be found
-if [[ $ZEEK_ENGINE == fleet ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
+if [[ $SERVICE == brofish ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
   zpid=$(pgrep -o -x "${BRO_PROC_NAME:-zeek}")
   log "fleet-ping: zeek running beside fleet, stopping it: $(ps -o ppid=,lstart=,cmd= -p "$zpid" | cut -c1-120) cgroup=$(cat /proc/$zpid/cgroup 2>/dev/null | tr '\n' ' ')"
   sudo timeout 60 /usr/local/${BRO_PROC_NAME:-zeek}/bin/${BRO_PROC_NAME:-zeek}ctl stop >/dev/null 2>&1 || true

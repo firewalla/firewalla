@@ -34,7 +34,14 @@ const exec = require('child-process-promise').exec;
 const FlowEngine = require('../net2/FlowEngine.js');
 const fs = require('fs');
 
-const FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
+// the engine selectors, plus the pcap roles themselves: switching the flow
+// role off moves the IDS from the shared brofish fleet to a fleet of its own
+// under the suricata unit, which is another apply
+const ENGINE_FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
+const FEATURES = [...ENGINE_FEATURES, Constants.FEATURE_PCAP_ZEEK, Constants.FEATURE_PCAP_SURICATA];
+// net2/config.js merges cloud, MSP and version configuration, which
+// platform.sh cannot; the effective values are written here for it to read
+const EFFECTIVE_FEATURES = '/dev/shm/fleet-engine.features';
 // fleet-engine.sh holds this from the first change it makes until verification
 // succeeds, so a failed or interrupted apply leaves it behind. While it is
 // there BroControl.restart, SuricataControl.restart and the script's own
@@ -68,7 +75,7 @@ class FleetEnginePlugin extends Sensor {
       const available = FlowEngine.fleetAvailable();
       if (available === this.fleetAvailable) return;
       this.fleetAvailable = available;
-      if (FEATURES.some(name => fc.isFeatureOn(name))) {
+      if (ENGINE_FEATURES.some(name => fc.isFeatureOn(name))) {
         log.info(`fleet binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
         this.applyJob.exec().catch((err) => {
           log.error('Failed to apply flow engine change', err.message);
@@ -88,7 +95,19 @@ class FleetEnginePlugin extends Sensor {
 
   // restart = true: the features changed while running, so the pcap plugins
   // must restart brofish and suricata for the new drop-ins to take effect
+  // hand the shell side the effective feature values before it decides
+  publishFeatures() {
+    const state = {};
+    for (const name of FEATURES) state[name] = fc.isFeatureOn(name);
+    try {
+      fs.writeFileSync(EFFECTIVE_FEATURES, JSON.stringify(state));
+    } catch (err) {
+      log.error('Failed to publish effective flow engine features', err.message);
+    }
+  }
+
   async apply(restart = true) {
+    this.publishFeatures();
     const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
     let applied = false;
     await exec(`sudo ${script} apply`).then((r) => {
