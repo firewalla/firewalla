@@ -34,9 +34,15 @@ RELOAD_PENDING=/dev/shm/fleet-engine.reload-pending
 # it exists
 FAILED_MARKER=/dev/shm/fleet-engine.failed
 # the brofish drop-in launches fleet through this wrapper (preparation hooks)
-FLEET_RUN=$FIREWALLA_HOME/scripts/fleet-run
-# the suricata drop-in launches the ids-only fleet through this one
-FLEET_IDS_RUN=$FIREWALLA_HOME/scripts/fleet-ids-run
+# The drop-ins point at these, and they live beside the asset rather than in
+# the git checkout: a soft-downgrade to a revision without this patch leaves
+# the drop-ins in place (its main-start only rewrites the base units), and
+# launchers that had vanished with the checkout would leave brofish and
+# suricata pointing at missing executables, i.e. no capture at all. apply()
+# refreshes these copies from the checkout while it is there.
+FLEET_RUN_DIR=${FLEET_RUN_DIR:-$FIREWALLA_HIDDEN/run/assets}
+FLEET_RUN=$FLEET_RUN_DIR/fleet-run
+FLEET_IDS_RUN=$FLEET_RUN_DIR/fleet-ids-run
 # tests point SYSTEMD_DIR at a scratch directory: render and check files, never
 # reload systemd or touch a running service
 LIVE=false
@@ -90,6 +96,17 @@ apply() {
   if $LIVE && ! sudo touch "$RELOAD_PENDING" 2>/dev/null; then
     fail "creating $RELOAD_PENDING"
     return 1
+  fi
+
+  # keep the launchers the drop-ins name up to date, outside the checkout
+  if [[ $ZEEK_ENGINE == fleet || $SURICATA_ENGINE == fleet ]]; then
+    sudo install -d "$FLEET_RUN_DIR" 2>/dev/null || true
+    for l in fleet-run fleet-ids-run; do
+      if [[ -f $FIREWALLA_HOME/scripts/$l ]] && ! sudo cmp -s "$FIREWALLA_HOME/scripts/$l" "$FLEET_RUN_DIR/$l"; then
+        sudo install -m 0755 "$FIREWALLA_HOME/scripts/$l" "$FLEET_RUN_DIR/$l" || { fail "installing $FLEET_RUN_DIR/$l"; return 1; }
+      fi
+    done
+    [[ -x $FLEET_RUN && -x $FLEET_IDS_RUN ]] || { fail "launchers missing under $FLEET_RUN_DIR"; return 1; }
   fi
 
   local stage
