@@ -40,19 +40,21 @@ S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 
 echo "== fleet/fleet"
 setf 1 1; sudo -E "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
-check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$FLEET_BIN .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
+# the templates name the asset path; FLEET_BIN here only stands in for its presence
+ASSET=/home/pi/.firewalla/run/assets/fleet
+check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$ASSET .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
 check "suricata drop-in holds the unit off" 'grep -q "^ConditionPathExists=" "$S"'
 check "drop-ins are root-owned 0644" '[[ $(stat -c "%a %U" "$B") == "644 root" ]]'
 
 echo "== fleet/suricata"
 setf 1 0; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
-check "brofish drop-in carries --no-suricata" 'grep -q "^ExecStart=$FLEET_BIN .*--no-suricata" "$B"'
+check "brofish drop-in carries --no-suricata" 'grep -q "^ExecStart=$ASSET .*--no-suricata" "$B"'
 check "no suricata drop-in" '[[ ! -e $S ]]'
 
 echo "== zeek/fleet"
 setf 0 1; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
 check "no brofish drop-in" '[[ ! -e $B ]]'
-check "suricata drop-in runs fleet --ids-only" 'grep -q "^ExecStart=$FLEET_BIN .*--ids-only" "$S"'
+check "suricata drop-in runs fleet --ids-only" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
 
 echo "== zeek/suricata"
 setf 0 0; sudo -E "$ENGINE" apply >/dev/null || bad "apply"
