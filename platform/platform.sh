@@ -97,8 +97,12 @@ function _fw_feature_on {
     1) return 0 ;;
     0) return 1 ;;
   esac
+  # same precedence as net2/config.js: user config, then the platform default,
+  # then the checked-in default
   local cfg
-  for cfg in "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+  for cfg in "${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/config.json" \
+             "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" \
+             "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
     [[ -f $cfg ]] || continue
     v=$(jq -r --arg n "$name" '.userFeatures[$n] // empty' "$cfg" 2>/dev/null)
     case "$v" in
@@ -124,6 +128,16 @@ function get_flow_engine_zeek {
 
 function get_flow_engine_suricata {
   if _fw_feature_on pcap_zeek_suricata && fleet_available; then echo fleet; else echo suricata; fi
+}
+
+# the roles themselves can be switched off by the box: pcap_zeek governs flow
+# capture and pcap_suricata the IDS, whichever program provides them
+function pcap_zeek_enabled {
+  _fw_feature_on pcap_zeek
+}
+
+function pcap_suricata_enabled {
+  _fw_feature_on pcap_suricata
 }
 
 function heartbeatLED {

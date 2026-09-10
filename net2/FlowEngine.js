@@ -28,6 +28,10 @@ const Constants = require('./Constants.js');
 const fs = require('fs');
 
 const FLEET_BIN = `${f.getRuntimeInfoFolder()}/assets/fleet`;
+// main-start leaves this behind when its fleet-engine.sh apply failed: the
+// drop-ins do not match the features, so brofish / suricata must not be
+// started until an apply succeeds (FleetEnginePlugin clears it)
+const APPLY_FAILED_MARKER = '/dev/shm/fleet-engine.failed';
 
 // the binary arrives as an asset; until it is there (or if it goes missing)
 // both roles resolve to the stock engines, the same rule platform.sh applies
@@ -48,4 +52,14 @@ function suricataEngine() {
   return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && fleetAvailable() ? 'fleet' : 'suricata';
 }
 
-module.exports = { zeekEngine, suricataEngine, fleetAvailable, FLEET_BIN };
+// true while the systemd drop-ins are known not to match the features
+function applyHeld() {
+  try {
+    fs.accessSync(APPLY_FAILED_MARKER);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+module.exports = { zeekEngine, suricataEngine, fleetAvailable, applyHeld, FLEET_BIN, APPLY_FAILED_MARKER };

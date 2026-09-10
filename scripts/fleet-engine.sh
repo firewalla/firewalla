@@ -27,6 +27,12 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 BROFISH_DROPIN=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 SURICATA_DROPIN=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 ZEEKCTL=/usr/local/${BRO_PROC_NAME:-zeek}/bin/${BRO_PROC_NAME:-zeek}ctl
+# a reload owed to systemd from an earlier apply whose daemon-reload failed
+RELOAD_PENDING=/dev/shm/fleet-engine.reload-pending
+# tests point SYSTEMD_DIR at a scratch directory: render and check files, never
+# reload systemd or touch a running service
+LIVE=false
+[[ $SYSTEMD_DIR == /etc/systemd/system ]] && LIVE=true
 
 log() { logger "FIREWALLA:FLEET-ENGINE $1"; echo "$1"; }
 
@@ -80,10 +86,12 @@ apply() {
 
   if [[ $SURICATA_ENGINE == fleet ]]; then
     local src
-    if [[ $ZEEK_ENGINE == fleet ]]; then
+    # the brofish fleet can only do IDS while it is actually running, i.e. the
+    # pcap_zeek feature is on as well; otherwise this unit runs fleet ids-only
+    if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled; then
       src="$FIREWALLA_HOME/etc/suricata-fleet-off.conf"   # the brofish fleet does IDS
     else
-      src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"   # fleet in ids-only mode beside zeek
+      src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"   # fleet in ids-only mode
     fi
     [[ -f $src ]] || fail "missing $src" || return 1
     if ! sudo cmp -s "$src" "$SURICATA_DROPIN" 2>/dev/null; then
@@ -97,15 +105,20 @@ apply() {
     log "suricata.service -> suricata (drop-in removed)"
   fi
 
-  if $changed && [[ $SYSTEMD_DIR == /etc/systemd/system ]]; then
+  if $LIVE && { $changed || [[ -e $RELOAD_PENDING ]]; }; then
+    # an owed reload from an earlier failure is retried here: without this a
+    # second apply would find matching files, skip the reload and fail verify
+    sudo touch "$RELOAD_PENDING" 2>/dev/null || true
     sudo systemctl daemon-reload || fail "systemctl daemon-reload" || return 1
+    sudo rm -f "$RELOAD_PENDING" 2>/dev/null || true
   fi
 
   # Only once every file change is in place and verified: stop the stock
   # engines fleet has taken over from. A failure above returns before this, so
   # an unsuccessful apply leaves the running services alone.
   verify || return 1
-  stop_replaced_engines
+  $LIVE && stop_replaced_engines
+  return 0
 }
 
 # zeek must not run beside fleet (both would write the same spool), and zeekctl
@@ -117,7 +130,8 @@ stop_replaced_engines() {
     sudo timeout 60 "$ZEEKCTL" stop >/dev/null 2>&1 || true
     sudo pkill -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
   fi
-  if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && systemctl is-active -q suricata 2>/dev/null \
+  if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled \
+     && systemctl is-active -q suricata 2>/dev/null \
      && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
     log "stopping suricata (fleet evaluates its rules)"
     sudo systemctl stop suricata 2>/dev/null || true
@@ -128,8 +142,7 @@ stop_replaced_engines() {
 # What is on disk and what systemd resolved must match the roles just applied.
 # With SYSTEMD_DIR pointed elsewhere (tests) only the files can be checked.
 verify() {
-  local real=true
-  [[ $SYSTEMD_DIR == /etc/systemd/system ]] || real=false
+  local real=$LIVE
   if [[ $ZEEK_ENGINE == fleet ]]; then
     [[ -f $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN missing" || return 1
     ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" == *"$FLEET_BIN"* ]] \
@@ -154,21 +167,27 @@ verify() {
 # after a feature flip: both units restart so whatever the drop-ins now say
 # takes effect (fleet in, zeek/suricata out, or the reverse)
 switch_roles() {
-  sudo systemctl restart brofish 2>/dev/null || true
-  sudo systemctl restart suricata 2>/dev/null || true
+  $LIVE || return 0
+  pcap_zeek_enabled && { sudo systemctl restart brofish 2>/dev/null || true; }
+  pcap_suricata_enabled && { sudo systemctl restart suricata 2>/dev/null || true; }
+  return 0
 }
 
 # restart whichever services now run fleet (after the asset was updated, or
 # after a knob changed); the stock services are left to FireMain
 restart_fleet_services() {
   resolve
-  # `restart` starts an inactive or failed unit too, so fleet always ends up
-  # running the role it owns (the asset can arrive while a unit is down)
-  if [[ $ZEEK_ENGINE == fleet ]]; then
+  $LIVE || return 0
+  # `restart` starts an inactive or failed unit too, so fleet ends up running
+  # the role it owns (the asset can arrive while a unit is down) -- but only
+  # while the box wants that role at all: pcap_zeek / pcap_suricata off means
+  # the pcap plugin has stopped the service on purpose
+  if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled; then
     sudo systemctl reset-failed brofish 2>/dev/null || true
     sudo systemctl restart brofish || log "FAILED: restarting brofish"
   fi
-  if [[ $SURICATA_ENGINE == fleet && $ZEEK_ENGINE != fleet ]]; then
+  if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled \
+     && { [[ $ZEEK_ENGINE != fleet ]] || ! pcap_zeek_enabled; }; then
     sudo systemctl reset-failed suricata 2>/dev/null || true
     sudo systemctl restart suricata || log "FAILED: restarting suricata"
   fi

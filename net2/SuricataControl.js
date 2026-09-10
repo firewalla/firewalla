@@ -178,6 +178,10 @@ class SuricataControl {
   }
 
   async restart() {
+    if (FlowEngine.applyHeld()) {
+      log.warn('Flow engine configuration is not applied, not starting suricata');
+      return;
+    }
     if (this.restarting) {
       // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
       if (!this.pendingRestart) {

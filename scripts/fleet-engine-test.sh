@@ -90,10 +90,27 @@ check "zeek was not stopped" '[[ $(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true)
 check "no \"stopping zeek\" in the output" '[[ "$out" != *"stopping zeek"* ]]'
 rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
+echo "== pcap roles switched off"
+# pcap_zeek off with both fleet features on: the suricata unit must run fleet
+# ids-only, not be held off, or the box would have no IDS at all
+setf 1 1; saved_pz=$(redis-cli hget sys:features pcap_zeek); redis-cli hset sys:features pcap_zeek 0 >/dev/null
+sudo -E "$ENGINE" apply >/dev/null
+check "suricata unit runs fleet --ids-only when pcap_zeek is off" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
+if [[ -n $saved_pz ]]; then redis-cli hset sys:features pcap_zeek "$saved_pz" >/dev/null; else redis-cli hdel sys:features pcap_zeek >/dev/null; fi
+sudo -E "$ENGINE" apply >/dev/null
+check "back to held-off once pcap_zeek is on again" 'grep -q "^ConditionPathExists=" "$S"'
+
 echo "== restart starts a fleet-owned unit that is inactive"
 # not run against the live units: check the code path instead
 check "restart_fleet_services does not gate on is-active" '! grep -q "is-active -q brofish" "$ENGINE"'
 check "restart_fleet_services resets a failed unit" 'grep -q "reset-failed brofish" "$ENGINE"'
+check "restarts respect the pcap role features" 'grep -q "pcap_zeek_enabled" "$ENGINE" && grep -q "pcap_suricata_enabled" "$ENGINE"'
+
+echo "== scratch mode never touches live services"
+setf 1 1
+out=$(sudo -E "$ENGINE" apply 2>&1)
+check "no service was stopped" '[[ "$out" != *stopping* ]]'
+check "switch restarts nothing in scratch mode" '[[ -z "$(sudo -E "$ENGINE" switch 2>&1 | grep -i restart)" ]]'
 
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
