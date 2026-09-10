@@ -412,8 +412,13 @@ else
 fi
 cd ..
 
-sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
-sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
+# `zeekctl cron` restarts nodes ZeekControl believes crashed: skip it when
+# fleet owns the zeek role, and while a failed flow-engine apply holds the
+# pcap services off, or zeek would come back beside fleet on the same spool
+if [[ $(get_flow_engine_zeek) != fleet && ! -e /dev/shm/fleet-engine.failed ]]; then
+  sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
+  sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
+fi
 sync
 
 cd api

@@ -86,6 +86,9 @@ class FleetEnginePlugin extends Sensor {
         this.applyJob.exec().catch((err) => log.error('Failed to re-apply flow engine', err.message));
       }
     }).catch((err) => {
+      // publishing or spawning can fail before fleet-engine.sh writes its
+      // marker; remember it so the poll below keeps retrying
+      this.applyFailed = true;
       log.error('Initial flow engine apply failed', err.message);
     });
 
@@ -95,8 +98,10 @@ class FleetEnginePlugin extends Sensor {
     // apply leaves the services held back, so keep retrying that too.
     this.fleetAvailable = FlowEngine.fleetAvailable();
     setInterval(() => {
-      if (fs.existsSync(FAILED_MARKER)) {
-        this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
+      if (this.applyFailed || fs.existsSync(FAILED_MARKER)) {
+        this.applyJob.exec()
+          .then(() => { this.applyFailed = false; })
+          .catch((err) => log.error('Retrying flow engine apply', err.message));
         return;
       }
       const available = FlowEngine.fleetAvailable();
@@ -143,6 +148,7 @@ class FleetEnginePlugin extends Sensor {
       // apply stale ones, so leave the services alone and try again next time
       log.error('fleet-engine.sh apply failed, services left as they are', err.message);
     });
+    this.applyFailed = !applied;
     if (restart && applied) {
       sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
     }

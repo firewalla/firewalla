@@ -1,0 +1,30 @@
+#!/bin/bash
+#
+# Launcher for fleet in IDS-only mode, under suricata.service (see
+# etc/suricata-fleet-ids.conf). It replaces scripts/suricata-run, so it takes
+# the same interface list: PcapSuricataPlugin writes it to
+# ~/.firewalla/run/suricata/listen_interfaces.rc, and that list is authoritative
+# whether or not the zeek role is enabled (node.cfg is only refreshed while
+# PcapZeekPlugin runs, so it can be stale or absent here).
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+source "${FIREWALLA_HOME}/platform/platform.sh"
+
+FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+RC=$FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc
+
+args=()
+if [[ -r $RC ]]; then
+  source "$RC"
+  for intf in $LISTEN_INTERFACES; do
+    args+=(-i "$intf")
+  done
+fi
+if [[ ${#args[@]} -eq 0 ]]; then
+  logger "FIREWALLA:FLEET-IDS-RUN no interfaces in $RC, falling back to node.cfg"
+fi
+
+[[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-IDS-RUN $FLEET_BIN is not executable"; exit 1; }
+logger "FIREWALLA:FLEET-IDS-RUN exec $FLEET_BIN --ids-only ${args[*]} $*"
+exec "$FLEET_BIN" --zeekctl-compat --ids-only "${args[@]}" "$@"

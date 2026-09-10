@@ -94,8 +94,8 @@ ASSET=/home/pi/.firewalla/run/assets/fleet
 # the brofish drop-in launches through the wrapper, the ids-only unit runs the
 # binary directly
 RUNNER=/home/pi/firewalla/scripts/fleet-run
-check "brofish drop-in runs fleet without --no-suricata" 'grep -q "^ExecStart=$RUNNER .* --http 127.0.0.1:8927  \$FLEET_OPTS" "$B"'
-check "suricata drop-in holds the unit off" 'grep -q "^ConditionPathExists=" "$S"'
+check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
+check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
 echo "== fleet/suricata"
@@ -106,7 +106,7 @@ check "no suricata drop-in" '[[ ! -e $S ]]'
 echo "== zeek/fleet"
 setf 0 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
 check "no brofish drop-in" '[[ ! -e $B ]]'
-check "suricata drop-in runs fleet --ids-only" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
+check "suricata drop-in runs the ids launcher" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
 
 echo "== zeek/suricata"
 setf 0 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
@@ -148,10 +148,10 @@ echo "== pcap roles switched off"
 # ids-only, not be held off, or the box would have no IDS at all
 setf 1 1; setf 1 1 0 1
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-check "suricata unit runs fleet --ids-only when pcap_zeek is off" 'grep -q "^ExecStart=$ASSET .*--ids-only" "$S"'
+check "suricata unit runs the ids launcher when pcap_zeek is off" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
 setf 1 1 1 1
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-check "back to held-off once pcap_zeek is on again" 'grep -q "^ConditionPathExists=" "$S"'
+check "the ids unit is used whatever the flow role" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-ids-run " "$S"'
 
 echo "== restart starts a fleet-owned unit that is inactive"
 # not run against the live units: check the code path instead
@@ -209,9 +209,14 @@ check "the pkill is not gated on zeekctl" 'grep -q "pkill -x" "$ENGINE" && ! gre
 check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
 
 echo "== the pcap roles are respected"
-check "brofish gets --no-suricata unless fleet owns an enabled IDS role" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "pcap_suricata_enabled && opts="'
+check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
+check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
+check "the apply lock is openable by pi and root" 'grep -q "chmod 0666" "$ENGINE"'
+check "the watchdog checks both roles" 'grep -q "ROLES+=" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
+check "any apply failure is retried" 'grep -q "this.applyFailed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
-check "the suricata watchdog choice reads the applied mode" 'grep -q "appliedSuricataMode" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+check "the suricata watchdog is used whenever fleet owns the IDS" 'grep -q "appliedSuricataEngine() === .fleet." "$FIREWALLA_HOME/net2/SuricataControl.js"'
 check "fleet-ping honours the hold" 'grep -q "held back, not checking" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "fleet-ping skips a role the box switched off" 'grep -q "pcap_zeek_enabled" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 
