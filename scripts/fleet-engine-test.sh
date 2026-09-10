@@ -315,7 +315,7 @@ echo "== unit: verify accepts the wrapper for brofish"
 check "verify checks for fleet-run under brofish" 'sed -n "/^verify()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN"'
 
 echo "== unit: zeek preparation and legacy cron"
-check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=/home/pi/firewalla/scripts/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
+check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=$RUNNER " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
 check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
 check "the launcher copies are installed beside the asset" '[[ -x $RUNNER && -x $IDS_RUNNER ]]'
 check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
