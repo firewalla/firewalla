@@ -44,12 +44,19 @@ const _ = require('lodash');
 const net2Config = require('../../net2/config.js');
 
 const USER_AGENT_HISTORY_LUA = [
-  'local keep = tonumber(ARGV[3])',
-  'redis.call("ZADD", KEYS[1], ARGV[1], ARGV[4])',
+  'redis.replicate_commands()',
+  'local keep = tonumber(ARGV[2])',
+  'local now = redis.call("TIME")',
+  'local score = tonumber(now[1]) * 1000000 + tonumber(now[2])',
+  'local newest = redis.call("ZREVRANGE", KEYS[1], 0, 0, "WITHSCORES")',
+  'if newest[2] and score <= tonumber(newest[2]) then',
+  '  score = tonumber(newest[2]) + 1',
+  'end',
+  'redis.call("ZADD", KEYS[1], score, ARGV[3])',
   'if keep > 0 then',
   '  redis.call("ZREMRANGEBYRANK", KEYS[1], 0, -keep - 1)',
   'end',
-  'local expire = tonumber(ARGV[2])',
+  'local expire = tonumber(ARGV[1])',
   'if expire and expire > 0 then',
   '  redis.call("EXPIRE", KEYS[1], expire)',
   'end',
@@ -114,7 +121,6 @@ class HttpFlow {
       USER_AGENT_HISTORY_LUA,
       1,
       key,
-      Date.now() / 1000,
       expireTime,
       count,
       value
@@ -150,12 +156,12 @@ class HttpFlow {
           short_name: 'CM',           // client short code name (only browser, format A-Z0-9{2,3})
           version: '43.0.2357.78',    // client version
           engine: 'Blink',            // client engine name (only browser)
-          engine_version: '',         // client engine version (only browser)
-          family: 'Chrome'            // client family (only browser)
+          engine_version: '',         // client engine version
+          family: 'Chrome'            // client family
         },
         device: {
           id: 'ZT',                   // short code device brand name (format A-Z0-9{2,3})
-          type: 'smartphone',         // device type
+          type: 'smartphone',          // device type
           brand: 'ZTE',               // device brand name
           model: 'Nubia Z7 max'       // device model name
           code: 'NX505J'              // device model code  (only result for enable detector.deviceAliasCode)

@@ -26,26 +26,24 @@ const broConfig = new Getter('bro');
 
 describe('HttpFlow User-Agent history retention', function () {
   let originalEvalAsync;
-  let originalZaddAsync;
-  let originalExpireAsync;
   let originalDetector;
+  let originalCount;
 
   beforeEach(() => {
     originalEvalAsync = rclient.evalAsync;
-    originalZaddAsync = rclient.zaddAsync;
-    originalExpireAsync = rclient.expireAsync;
     originalDetector = httpFlow.detector;
+    originalCount = configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count;
   });
 
   afterEach(() => {
     rclient.evalAsync = originalEvalAsync;
-    rclient.zaddAsync = originalZaddAsync;
-    rclient.expireAsync = originalExpireAsync;
     httpFlow.detector = originalDetector;
+    configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = originalCount;
   });
 
-  it('uses the configured user_agent2 count when saving a new User-Agent', async () => {
+  it('uses a configured non-default positive user_agent2 count when saving a new User-Agent', async () => {
     let args;
+    configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = 7;
 
     rclient.evalAsync = async (...callArgs) => {
       args = callArgs;
@@ -64,25 +62,29 @@ describe('HttpFlow User-Agent history retention', function () {
       user_agent: 'test-agent-1',
     });
 
-    expect(args).to.be.an('array').with.length(7);
+    expect(args).to.be.an('array').with.length(6);
+    expect(args[0]).to.contain('redis.call("TIME")');
+    expect(args[0]).to.contain('ZREVRANGE');
     expect(args[1]).to.equal(1);
     expect(args[2]).to.equal('host:user_agent2:00:11:22:33:44:55');
-    expect(args[3]).to.be.a('number');
-    expect(args[4]).to.equal(2592000);
-    expect(args[5]).to.equal(100);
-    expect(args[6]).to.be.a('string');
+    expect(args[3]).to.equal(2592000);
+    expect(args[4]).to.equal(7);
+    expect(args[5]).to.be.a('string');
+  });
+
+  it('handles user_agent2 count boundary values 0 and 1', () => {
+    const config = configModule.getConfig();
+
+    config.sensors.OldDataCleanSensor.user_agent2.count = 0;
+    expect(httpFlow.getUserAgentHistoryCount()).to.equal(100);
+
+    config.sensors.OldDataCleanSensor.user_agent2.count = 1;
+    expect(httpFlow.getUserAgentHistoryCount()).to.equal(1);
   });
 
   it('preserves a negative user_agent2 count as unlimited', () => {
-    const config = configModule.getConfig();
-    const originalCount = config.sensors.OldDataCleanSensor.user_agent2.count;
-    config.sensors.OldDataCleanSensor.user_agent2.count = -1;
-
-    try {
-      expect(httpFlow.getUserAgentHistoryCount()).to.equal(-1);
-    } finally {
-      config.sensors.OldDataCleanSensor.user_agent2.count = originalCount;
-    }
+    configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = -1;
+    expect(httpFlow.getUserAgentHistoryCount()).to.equal(-1);
   });
 
   it('uses the same bounded write path for cached User-Agents', async () => {
@@ -110,25 +112,23 @@ describe('HttpFlow User-Agent history retention', function () {
     expect(calls.length).to.equal(2);
     expect(calls[0][0]).to.contain('ZREMRANGEBYRANK');
     expect(calls[1][0]).to.contain('ZREMRANGEBYRANK');
-    expect(calls[1][5]).to.equal(100);
-    expect(calls[1][6]).to.be.a('string');
+    expect(calls[1][4]).to.equal(100);
+    expect(calls[1][5]).to.be.a('string');
   });
 
-  it('enforces the configured retention limit, keeps the newest entries, and refreshes the TTL in Redis', async function () {
+  it('enforces a non-default retention limit, keeps the newest entries, and refreshes the TTL in Redis', async function () {
     this.timeout(30000);
 
     const key = `host:user_agent2:test-retention:${process.pid}:${Date.now()}`;
-    const limit = httpFlow.getUserAgentHistoryCount();
     const expireTime = broConfig.get('userAgent.expires');
+    const limit = 3;
     const totalEntries = limit + 5;
-    const originalDateNow = Date.now;
-    const baseTimestamp = Math.floor(originalDateNow() / 1000);
+    configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = limit;
 
     try {
       await rclient.delAsync(key);
 
       for (let i = 0; i < totalEntries; i++) {
-        Date.now = () => (baseTimestamp + i) * 1000;
         await httpFlow.saveUserAgentHistory(key, `user-agent-${i}`, expireTime);
       }
 
@@ -136,16 +136,33 @@ describe('HttpFlow User-Agent history retention', function () {
       expect(count).to.equal(limit);
 
       const members = await rclient.zrangeAsync(key, 0, -1);
-      const expectedMembers = Array.from(
-        { length: limit },
-        (_, index) => `user-agent-${totalEntries - limit + index}`
-      );
-      expect(members).to.eql(expectedMembers);
+      expect(members).to.eql(['user-agent-5', 'user-agent-6', 'user-agent-7']);
 
       const ttl = await rclient.ttlAsync(key);
       expect(ttl).to.be.within(expireTime - 1, expireTime);
     } finally {
-      Date.now = originalDateNow;
+      await rclient.delAsync(key);
+    }
+  });
+
+  it('keeps a newly written entry when the generated server-time score does not exceed the current max score', async function () {
+    this.timeout(30000);
+
+    const key = `host:user_agent2:test-score-collision:${process.pid}:${Date.now()}`;
+    const expireTime = broConfig.get('userAgent.expires');
+    const futureScore = (Date.now() + 60000) * 1000;
+    configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = 1;
+
+    try {
+      await rclient.delAsync(key);
+      // Force the same score-collision/clock-rollback path deterministically without replacing Date.now globally.
+      await rclient.zaddAsync([key, futureScore, 'existing-agent']);
+
+      await httpFlow.saveUserAgentHistory(key, 'newest-agent', expireTime);
+
+      const members = await rclient.zrangeAsync(key, 0, -1);
+      expect(members).to.eql(['newest-agent']);
+    } finally {
       await rclient.delAsync(key);
     }
   });
