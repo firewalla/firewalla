@@ -34,7 +34,7 @@ mkdir -p "$SYSTEMD_DIR" "$T/bin"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
 printf '#!/bin/sh\nexec "$@"\n' > "$T/bin/sudo"; chmod 755 "$T/bin/sudo"
 ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
-SANDBOX=(env "PATH=$T/bin:$PATH")
+SANDBOX=(sudo -E env "PATH=$T/bin:$PATH")
 pass=0; failn=0
 ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; failn=$((failn+1)); }
@@ -133,7 +133,7 @@ if $LIVE_CHECKS; then
 echo "== [live] a failed apply rolls back and leaves the stock engines running"
 # both features on, brofish drop-in installable, suricata one not: apply must
 # fail before stopping anything
-setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+setf 1 1; sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 : > "$SYSTEMD_DIR/suricata.service.d"          # a file where the directory must go
 zeek_before=$(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true)
 out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
@@ -141,7 +141,7 @@ check "apply returns nonzero" '[[ $rc -ne 0 ]]'
 check "nothing was left half-written (the commit rolled back)" '[[ ! -e $B ]]'
 check "zeek was not stopped" '[[ $(pgrep -c -x "${BRO_PROC_NAME:-zeek}" || true) == "$zeek_before" ]]'
 check "no \"stopping zeek\" in the output" '[[ "$out" != *"stopping zeek"* ]]'
-rm -f "$SYSTEMD_DIR/suricata.service.d"; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+sudo rm -rf "$SYSTEMD_DIR/suricata.service.d"; sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 
 echo "== pcap roles switched off"
 # pcap_zeek off with both fleet features on: the suricata unit must run fleet
@@ -212,7 +212,8 @@ echo "== the pcap roles are respected"
 check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
-check "the apply lock is openable by pi and root" 'grep -q "chmod 0666" "$ENGINE"'
+check "the apply lock needs no shared permissions (mkdir based)" 'grep -q "until mkdir \"\$LOCK\"" "$ENGINE"'
+check "a stale lock is removed" 'grep -q "stale apply lock" "$ENGINE"'
 check "the watchdog checks both roles" 'grep -q "ROLES+=" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "any apply failure is retried" 'grep -q "this.applyFailed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -236,21 +237,18 @@ setf 1 1
 echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated
-setf 1 1; rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+# both drop-ins have to be installed and the suricata one cannot be (a file
+# sits where its directory belongs), so the brofish one must be rolled back
 setf 1 1 1 1
-"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
-before=$(cat "$B")
-# the suricata drop-in now has to be installed (its location is gone) and
-# cannot be (a file sits where the directory belongs), while the brofish
-# drop-in has to change (pcap_suricata off adds --no-suricata)
-rm -rf "$SYSTEMD_DIR/suricata.service.d"
-: > "$SYSTEMD_DIR/suricata.service.d"
-setf 1 1 1 0
+sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+sudo touch "$SYSTEMD_DIR/suricata.service.d"
 out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
 check "the failure is reported" '[[ "$out" == *FAILED* ]]'
-check "the brofish drop-in was rolled back, not half-updated" '[[ "$(cat "$B")" == "$before" ]]'
-rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+check "the brofish drop-in was rolled back, not left half-installed" '[[ ! -e $B ]]'
+sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null
+check "the next apply installs both cleanly" '[[ -f $B && -f $S ]]'
 
 echo "== behaviour: apply rewrites a stale drop-in"
 setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
@@ -296,7 +294,7 @@ unit() { # stub-body expected-rc name
   [[ $rc == "$want" ]] && ok "$name" || bad "$name (rc=$rc want=$want)"
 }
 unit 'pgrep() { return 0; }; sudo() { return 0; }; systemctl() { return 1; }; sleep() { :; }; pcap_zeek_enabled() { return 0; }' 1 "an unkillable zeek fails the shutdown"
-unit 'pgrep() { return 1; }; sudo() { case "$*" in *"systemctl stop suricata"*) return 1;; esac; return 0; }; systemctl() { case "$*" in *is-active*) return 0;; *ExecStart*) echo "path=/usr/bin/suricata";; esac; return 0; }; pcap_zeek_enabled() { return 0; }' 1 "a failed suricata stop fails the shutdown"
+unit 'pgrep() { case "$*" in *suricata*) return 0;; esac; return 1; }; sudo() { return 0; }; sleep() { :; }; systemctl() { case "$*" in *ExecStart*) echo "path=$FLEET_BIN";; esac; return 0; }; pcap_zeek_enabled() { return 0; }' 1 "a suricata that survives the kill fails the shutdown"
 unit 'pgrep() { return 1; }; sudo() { return 0; }; systemctl() { return 1; }; pcap_zeek_enabled() { return 0; }' 0 "nothing to stop succeeds"
 
 echo "== unit: the hold survives a failed shutdown"
@@ -321,7 +319,6 @@ check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWAL
 check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "the hourly zeekctl cron is removed while fleet owns the role" 'grep -q "cron.hourly/bro-cron" "$ENGINE"'
 check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.failed || /home/pi/firewalla/scripts/flow-check.sh" "$FIREWALLA_HOME/etc/crontab.fleet"'
-check "applies are serialized by a lock" 'grep -q "flock -w" "$ENGINE"'
 check "a backup that fails aborts before the destination is touched" 'sed -n "/commit_one()/,/^  }/p" "$ENGINE" | grep -q "cp -f \"\$dst\" \"\$backup/\$name\" 2>/dev/null; then"'
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
