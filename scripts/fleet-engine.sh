@@ -210,6 +210,11 @@ apply() {
 # zeek must not run beside fleet (both would write the same spool), and zeekctl
 # must record its nodes as stopped or `zeekctl cron` restarts them; the suricata
 # processes must not run while fleet evaluates the rules
+# the stock daemon runs as "Suricata-Main", the binary is "suricata"
+suricata_running() {
+  pgrep -x Suricata-Main >/dev/null 2>&1 || pgrep -x suricata >/dev/null 2>&1
+}
+
 # Returns nonzero unless every engine fleet replaces is verified gone.
 stop_replaced_engines() {
   local rc=0
@@ -237,12 +242,20 @@ stop_replaced_engines() {
   fi
   # the suricata unit runs fleet itself now (ids-only), so any real suricata
   # process left over from before the switch has to go: it would keep writing
-  # the same eve.json
-  if [[ $SURICATA_ENGINE == fleet ]] && pgrep -x suricata >/dev/null 2>&1; then
+  # the same eve.json. suricata-run daemonizes it as "Suricata-Main" (see
+  # scripts/suricata-reload), which `pgrep -x suricata` never matches.
+  if [[ $SURICATA_ENGINE == fleet ]] && suricata_running; then
     log "stopping leftover suricata processes"
+    sudo pkill -x Suricata-Main 2>/dev/null || true
     sudo pkill -x suricata 2>/dev/null || true
-    sleep 1
-    if pgrep -x suricata >/dev/null 2>&1; then
+    local i
+    for i in 1 2 3 4 5; do
+      suricata_running || break
+      sleep 1
+      sudo pkill -9 -x Suricata-Main 2>/dev/null || true
+      sudo pkill -9 -x suricata 2>/dev/null || true
+    done
+    if suricata_running; then
       log "FAILED: suricata is still running"
       rc=1
     fi
