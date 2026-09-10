@@ -32,15 +32,28 @@ const sem = require('./SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
 const exec = require('child-process-promise').exec;
 const FlowEngine = require('../net2/FlowEngine.js');
+const fs = require('fs');
 
 const FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
+// main-start leaves this behind when its apply failed: it stopped brofish and
+// suricata rather than start them on drop-ins that do not match the features,
+// so a successful apply here has to start them again
+const FAILED_MARKER = '/dev/shm/fleet-engine.failed';
 
 class FleetEnginePlugin extends Sensor {
   async run() {
     this.applyJob = new scheduler.UpdateJob(this.apply.bind(this), 3000);
     // make sure the drop-ins match the features even if FireMain started
-    // without main-start (a plain `systemctl restart firemain`)
-    await this.apply(false).catch((err) => {
+    // without main-start (a plain `systemctl restart firemain`). If
+    // main-start's own apply failed it stopped the pcap services, so start
+    // them once this one succeeds.
+    const heldBack = fs.existsSync(FAILED_MARKER);
+    await this.apply(heldBack).then(() => {
+      if (heldBack) {
+        log.info('flow engine applied after main-start held the pcap services back');
+        fs.unlinkSync(FAILED_MARKER);
+      }
+    }).catch((err) => {
       log.error('Initial flow engine apply failed', err.message);
     });
     // the binary is an asset: when it first arrives (or disappears) with a
@@ -51,7 +64,7 @@ class FleetEnginePlugin extends Sensor {
       const available = FlowEngine.fleetAvailable();
       if (available === this.fleetAvailable) return;
       this.fleetAvailable = available;
-      if (FEATURES.some(name => fc.isFeatureOn(name))) {
+      if (FEATURES.some(name => fc.isFeatureOn(name)) || fs.existsSync(FAILED_MARKER)) {
         log.info(`fleet binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
         this.applyJob.exec().catch((err) => {
           log.error('Failed to apply flow engine change', err.message);
