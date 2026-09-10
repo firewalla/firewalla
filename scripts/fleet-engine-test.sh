@@ -331,6 +331,25 @@ check "the retry flag is owned by apply()" 'grep -q "this.applyFailed = true;" "
 
 check "the stock suricata daemon name is matched" 'grep -q "pkill -x Suricata-Main" "$ENGINE" && grep -q "pgrep -x Suricata-Main" "$ENGINE"'
 
+echo "== unit: rollback safety and the hidden-feature kill switch"
+check "the drop-ins point outside the git checkout" 'grep -q "^ExecStart=/home/pi/.firewalla/run/assets/fleet-run " "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStart=/home/pi/.firewalla/run/assets/fleet-ids-run " "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
+check "apply refreshes the launcher copies" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN_DIR/\$l"'
+check "the published effective state is read before redis" 'awk "/FW_EFFECTIVE_FEATURES/{e=NR} /redis-cli hget sys:features/{r=NR} END{exit !(e && r && e<r)}" "$FIREWALLA_HOME/platform/platform.sh"'
+
+echo "== behaviour: a hidden feature beats a stale redis override"
+printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false,"pcap_zeek":true,"pcap_suricata":true}' > "$T/hidden.json"
+cat > "$T/bin/redis-cli" <<'RC'
+#!/bin/sh
+# pretend the runtime override still says the feature is on
+case "$*" in *pcap_zeek_fleet*) echo 1 ;; esac
+exit 0
+RC
+chmod 755 "$T/bin/redis-cli"
+roles=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$T/hidden.json bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+check "the effective state wins over the redis override" '[[ $roles == zeek ]]'
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
+setf 1 1
+
 echo "== behaviour: two applies do not interleave"
 setf 1 1
 ( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
