@@ -40,7 +40,24 @@ class FleetEnginePlugin extends Sensor {
     this.applyJob = new scheduler.UpdateJob(this.apply.bind(this), 3000);
     // make sure the drop-ins match the features even if FireMain started
     // without main-start (a plain `systemctl restart firemain`)
-    await this.apply(false);
+    await this.apply(false).catch((err) => {
+      log.error('Initial flow engine apply failed', err.message);
+    });
+    // the binary is an asset: when it first arrives (or disappears) with a
+    // feature on, the effective engines change without any feature event,
+    // so watch for that and re-apply, which also re-picks the cron templates
+    this.fleetAvailable = FlowEngine.fleetAvailable();
+    setInterval(() => {
+      const available = FlowEngine.fleetAvailable();
+      if (available === this.fleetAvailable) return;
+      this.fleetAvailable = available;
+      if (FEATURES.some(name => fc.isFeatureOn(name))) {
+        log.info(`fleet binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
+        this.applyJob.exec().catch((err) => {
+          log.error('Failed to apply flow engine change', err.message);
+        });
+      }
+    }, 30000);
     for (const feature of FEATURES) {
       fc.onFeature(feature, (name, status) => {
         if (name !== feature) return;
@@ -56,14 +73,19 @@ class FleetEnginePlugin extends Sensor {
   // must restart brofish and suricata for the new drop-ins to take effect
   async apply(restart = true) {
     const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
+    let applied = false;
     await exec(`sudo ${script} apply`).then((r) => {
+      applied = true;
       if (r.stdout && r.stdout.trim()) log.info('fleet-engine:', r.stdout.trim().replace(/\n/g, '; '));
     }).catch((err) => {
-      log.error('fleet-engine.sh apply failed', err.message);
+      // the drop-ins are not what the features say: restarting now would
+      // apply stale ones, so leave the services alone and try again next time
+      log.error('fleet-engine.sh apply failed, services left as they are', err.message);
     });
-    if (restart) {
+    if (restart && applied) {
       sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
     }
+    if (!applied) throw new Error('fleet-engine.sh apply failed');
   }
 }
 

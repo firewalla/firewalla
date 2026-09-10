@@ -23,14 +23,29 @@
 // two sources; scripts/fleet-engine.sh turns the answers into systemd drop-ins.
 
 const fc = require('./config.js');
+const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
+const fs = require('fs');
+
+const FLEET_BIN = `${f.getRuntimeInfoFolder()}/assets/fleet`;
+
+// the binary arrives as an asset; until it is there (or if it goes missing)
+// both roles resolve to the stock engines, the same rule platform.sh applies
+function fleetAvailable() {
+  try {
+    fs.accessSync(FLEET_BIN, fs.constants.X_OK);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
 
 function zeekEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) ? 'fleet' : 'zeek';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) && fleetAvailable() ? 'fleet' : 'zeek';
 }
 
 function suricataEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) ? 'fleet' : 'suricata';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && fleetAvailable() ? 'fleet' : 'suricata';
 }
 
-module.exports = { zeekEngine, suricataEngine };
+module.exports = { zeekEngine, suricataEngine, fleetAvailable, FLEET_BIN };

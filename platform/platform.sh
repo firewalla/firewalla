@@ -109,12 +109,21 @@ function _fw_feature_on {
   return 1
 }
 
+# the fleet binary arrives as an asset; until it is there (or if it goes
+# missing) the roles resolve to the stock engines so the box never ends up
+# with neither. Everything shell-side asks these, never the raw feature.
+FLEET_BIN=${FLEET_BIN:-/home/pi/.firewalla/run/assets/fleet}
+
+function fleet_available {
+  [[ -x $FLEET_BIN ]]
+}
+
 function get_flow_engine_zeek {
-  _fw_feature_on pcap_zeek_fleet && echo fleet || echo zeek
+  if _fw_feature_on pcap_zeek_fleet && fleet_available; then echo fleet; else echo zeek; fi
 }
 
 function get_flow_engine_suricata {
-  _fw_feature_on pcap_zeek_suricata && echo fleet || echo suricata
+  if _fw_feature_on pcap_zeek_suricata && fleet_available; then echo fleet; else echo suricata; fi
 }
 
 function heartbeatLED {
