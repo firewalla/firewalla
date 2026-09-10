@@ -1,38 +1,65 @@
 #!/bin/bash
 #
 # Launcher for fleet when it owns the zeek role (brofish.service through
-# etc/brofish-fleet.conf). scripts/bro-run does more than start zeek: it
-# mounts /bspool, runs the platform's before_bro hooks, which refresh
-# ~/.firewalla/run/zeek/scripts and regenerate
-# /usr/local/zeek/share/zeek/site/local.zeek from the platform local.bro plus
-# additional_options.bro, and applies the sysctl profile. fleet reads
-# local.zeek and additional_options.bro, so the same preparation has to happen
-# before it starts, or it would run on whatever the last zeek deploy left.
+# etc/brofish-fleet.conf). Installed beside the asset, not in the git
+# checkout, so a rollback cannot leave the unit pointing at a missing file.
 #
-#   fleet-run              prepare, then exec fleet with the arguments given
-#   fleet-run --after-bro  run the platform's after_bro hooks (ExecStartPost)
+#   fleet-run --prepare     what bro-run does before starting zeek: mount
+#                           /bspool, run the platform before_bro hooks (they
+#                           refresh ~/.firewalla/run/zeek/scripts and rebuild
+#                           local.zeek from additional_options.bro, which fleet
+#                           reads) and apply the sysctl profile
+#   fleet-run <args...>     exec fleet with those arguments
+#   fleet-run --after-bro   run the platform after_bro hooks
+#
+# If the checkout no longer knows about the flow engine (a soft downgrade to a
+# revision without scripts/fleet-engine.sh), this hands the role back to the
+# stock engine: the older code would otherwise revive zeek from its unguarded
+# zeekctl cron paths and restart brofish from brofish-ping.sh while fleet ran.
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source "${FIREWALLA_HOME}/platform/platform.sh"
 
 FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
+DROPINS=(/etc/systemd/system/brofish.service.d/fleet.conf /etc/systemd/system/suricata.service.d/fleet.conf)
 
-if [[ ${1:-} == --after-bro ]]; then
-  after_bro
-  exit 0
+# the checkout has no flow-engine support: give the units back and let systemd
+# start the stock ones on the next attempt
+hand_back() {
+  logger "FIREWALLA:FLEET-RUN $ENGINE is gone (rollback?); handing brofish and suricata back to zeek/suricata"
+  sudo rm -f "${DROPINS[@]}" 2>/dev/null
+  sudo rm -f /dev/shm/fleet-engine.failed 2>/dev/null
+  sudo systemctl daemon-reload 2>/dev/null
+}
+
+if [[ ! -x $ENGINE ]]; then
+  hand_back
+  # run what the stock unit would have run, so this start still yields capture
+  if [[ ${1:-} == --after-bro ]]; then
+    exit 0
+  fi
+  exec "$FIREWALLA_HOME/scripts/bro-run"
 fi
 
-logger "FIREWALLA:FLEET-RUN preparing"
-# bro-run normally mounts this; fleet writes its live logs there
-mountpoint -q /bspool || { mkdir -p /bspool && mount -t tmpfs -o size=30m tmpfs /bspool; }
-# the hooks copy the runtime scripts and rebuild local.zeek; they are what
-# folds additional_options.bro (restrict_filters, @load-sigs) into it
-before_bro
-sysctl_conf=$(get_sysctl_conf_path 2>/dev/null)
-if [[ -n $sysctl_conf && -f $sysctl_conf ]]; then
-  cp -f "$sysctl_conf" /etc/sysctl.conf && sysctl -p >/dev/null 2>&1
-fi
+case "${1:-}" in
+  --after-bro)
+    after_bro
+    exit 0
+    ;;
+  --prepare)
+    logger "FIREWALLA:FLEET-RUN preparing"
+    # bro-run normally mounts this; fleet writes its live logs there
+    mountpoint -q /bspool || { mkdir -p /bspool && mount -t tmpfs -o size=30m tmpfs /bspool; }
+    before_bro
+    sysctl_conf=$(get_sysctl_conf_path 2>/dev/null)
+    if [[ -n $sysctl_conf && -f $sysctl_conf ]]; then
+      cp -f "$sysctl_conf" /etc/sysctl.conf && sysctl -p >/dev/null 2>&1
+    fi
+    exit 0
+    ;;
+esac
 
 [[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-RUN $FLEET_BIN is not executable"; exit 1; }
 logger "FIREWALLA:FLEET-RUN exec $FLEET_BIN $*"

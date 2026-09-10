@@ -374,22 +374,28 @@ LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d}
 run_locked() {
   local waited=0
   until mkdir "$LOCK" 2>/dev/null; do
-    # a lock left behind by a killed apply is stale after three minutes
-    if [[ -d $LOCK ]] && [[ $(( $(date +%s) - $(stat -c %Y "$LOCK" 2>/dev/null || echo 0) )) -gt 180 ]]; then
-      log "removing the stale apply lock $LOCK"
-      rmdir "$LOCK" 2>/dev/null || sudo rm -rf "$LOCK" 2>/dev/null
+    # Only a lock whose owner is gone is stale. Age alone is not enough: a
+    # switch back to zeek waits on `systemctl restart brofish`, and the stock
+    # unit allows 250 s to start, so a live holder can hold the lock longer
+    # than any timeout worth waiting.
+    local owner
+    owner=$(cat "$LOCK/pid" 2>/dev/null)
+    if [[ -z $owner ]] || ! kill -0 "$owner" 2>/dev/null; then
+      log "removing the apply lock $LOCK left by ${owner:-an unknown process}"
+      sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
       continue
     fi
     waited=$((waited + 2))
-    if [[ $waited -gt 180 ]]; then
-      fail "another flow engine apply holds $LOCK"
+    if [[ $waited -gt 600 ]]; then
+      fail "another flow engine apply (pid $owner) still holds $LOCK"
       return 1
     fi
     sleep 2
   done
+  echo $$ | sudo tee "$LOCK/pid" >/dev/null 2>&1 || echo $$ > "$LOCK/pid" 2>/dev/null
   "$@"
   local rc=$?
-  rmdir "$LOCK" 2>/dev/null || sudo rm -rf "$LOCK" 2>/dev/null
+  sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
   return $rc
 }
 
