@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Watchdog for fleet, the brofish-ping.sh counterpart used when
-# FW_FLOW_ENGINE_ZEEK and/or FW_FLOW_ENGINE_SURICATA is fleet.
+# Watchdog for fleet, the brofish-ping.sh counterpart used when the
+# pcap_zeek_fleet and/or pcap_zeek_suricata feature is on.
 #
 # brofish-ping.sh decides whether workers are alive by running `zeekctl top`,
 # which cannot see fleet. This asks fleet itself: `fleet --status` checks the

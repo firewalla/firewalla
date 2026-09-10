@@ -328,7 +328,7 @@ if [[ ! -f /.dockerenv ]]; then
     fi
 
     # flow engines: install or remove the fleet drop-ins beside the unit files
-    # just copied, per FW_FLOW_ENGINE_ZEEK / FW_FLOW_ENGINE_SURICATA
+    # just copied, per the pcap_zeek_fleet / pcap_zeek_suricata features
     ${FIREWALLA_HOME}/scripts/fleet-engine.sh apply
 
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/. && sudo systemctl enable firestatus

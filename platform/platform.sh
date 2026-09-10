@@ -11,13 +11,6 @@ export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
-# flow engines: which program runs as brofish.service and writes the zeek logs
-# (zeek | fleet), and which evaluates the suricata rules and writes eve.json
-# (suricata | fleet). Platforms override these in their own platform.sh; a box
-# overrides them in ~/.firewalla/config/flow_engine_zeek / flow_engine_suricata.
-# See scripts/fleet-engine.sh.
-FW_FLOW_ENGINE_ZEEK=zeek
-FW_FLOW_ENGINE_SURICATA=suricata
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
@@ -91,25 +84,37 @@ function get_zeek_log_dir {
   echo "/log/blog/"
 }
 
-# per-box override of a flow-engine knob: the first line of
-# ~/.firewalla/config/flow_engine_<zeek|suricata>, if it names a valid engine
-function _flow_engine_override {
-  local f=/home/pi/.firewalla/config/flow_engine_$1
-  [[ -r $f ]] || return 0
-  local v; v=$(head -1 "$f" | tr -d '[:space:]')
-  case "$1:$v" in
-    zeek:zeek|zeek:fleet|suricata:suricata|suricata:fleet) echo "$v" ;;
+# Flow engines: which program handles each pcap role, decided by two features
+#   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
+#   pcap_zeek_suricata   fleet evaluates the suricata rule set instead of suricata
+# Same sources as net2/config.js: the runtime value in redis sys:features (set
+# by the app / enableDynamicFeature), else the platform's files/config.json
+# userFeatures, else net2/config.json, else off. See scripts/fleet-engine.sh.
+function _fw_feature_on {
+  local name=$1 v
+  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
+  case "$v" in
+    1) return 0 ;;
+    0) return 1 ;;
   esac
+  local cfg
+  for cfg in "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+    [[ -f $cfg ]] || continue
+    v=$(jq -r --arg n "$name" '.userFeatures[$n] // empty' "$cfg" 2>/dev/null)
+    case "$v" in
+      true) return 0 ;;
+      false) return 1 ;;
+    esac
+  done
+  return 1
 }
 
 function get_flow_engine_zeek {
-  local v; v=$(_flow_engine_override zeek)
-  echo "${v:-${FW_FLOW_ENGINE_ZEEK:-zeek}}"
+  _fw_feature_on pcap_zeek_fleet && echo fleet || echo zeek
 }
 
 function get_flow_engine_suricata {
-  local v; v=$(_flow_engine_override suricata)
-  echo "${v:-${FW_FLOW_ENGINE_SURICATA:-suricata}}"
+  _fw_feature_on pcap_zeek_suricata && echo fleet || echo suricata
 }
 
 function heartbeatLED {

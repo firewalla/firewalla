@@ -1,13 +1,17 @@
 #!/bin/bash
 #
-# Apply the flow-engine knobs: make brofish.service and suricata.service run
-# fleet, zeek/suricata, or a mix, according to FW_FLOW_ENGINE_ZEEK and
-# FW_FLOW_ENGINE_SURICATA (platform.sh, overridable per box by
-# ~/.firewalla/config/flow_engine_zeek / flow_engine_suricata).
+# Apply the pcap_zeek_fleet / pcap_zeek_suricata features: make
+# brofish.service and suricata.service run fleet, zeek/suricata, or a mix
+# (platform.sh get_flow_engine_zeek / get_flow_engine_suricata, which read the
+# features the way net2/config.js does: sys:features, then the platform's
+# files/config.json userFeatures, then net2/config.json).
 #
-#   fleet-engine.sh apply     install / remove the systemd drop-ins (main-start)
+#   fleet-engine.sh apply     install / remove the systemd drop-ins (main-start,
+#                             FleetEnginePlugin); stops zeek/suricata beside fleet
 #   fleet-engine.sh restart   apply, then restart whichever services run fleet
-#   fleet-engine.sh status    print the knobs and what the units resolve to
+#   fleet-engine.sh switch    apply, then restart both brofish and suricata so the
+#                             current features take effect whichever way they moved
+#   fleet-engine.sh status    print the features and what the units resolve to
 #
 # The unit files themselves are never touched: main-start copies the
 # platform's brofish.service and suricata.service on every start, so fleet
@@ -84,6 +88,14 @@ apply() {
       changed=true
       log "suricata.service -> $(basename "$src" .conf | sed 's/suricata-//')"
     fi
+    # the suricata processes must not run while fleet evaluates the rules
+    if [[ $ZEEK_ENGINE == fleet ]] && systemctl is-active -q suricata 2>/dev/null \
+       && [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" != *"$FLEET_BIN"* ]]; then
+      log "stopping suricata (fleet evaluates its rules)"
+      sudo systemctl daemon-reload
+      sudo systemctl stop suricata 2>/dev/null || true
+      changed=false
+    fi
   elif [[ -e $SURICATA_DROPIN ]]; then
     sudo rm -f "$SURICATA_DROPIN"
     changed=true
@@ -92,6 +104,13 @@ apply() {
 
   $changed && sudo systemctl daemon-reload
   return 0
+}
+
+# after a feature flip: both units restart so whatever the drop-ins now say
+# takes effect (fleet in, zeek/suricata out, or the reverse)
+switch_roles() {
+  sudo systemctl restart brofish 2>/dev/null || true
+  sudo systemctl restart suricata 2>/dev/null || true
 }
 
 # restart whichever services now run fleet (after the asset was updated, or
@@ -108,7 +127,7 @@ restart_fleet_services() {
 
 status() {
   resolve
-  echo "FW_FLOW_ENGINE_ZEEK=$(get_flow_engine_zeek) FW_FLOW_ENGINE_SURICATA=$(get_flow_engine_suricata) (effective: $ZEEK_ENGINE / $SURICATA_ENGINE)"
+  echo "pcap_zeek_fleet -> zeek role: $(get_flow_engine_zeek); pcap_zeek_suricata -> suricata role: $(get_flow_engine_suricata) (effective: $ZEEK_ENGINE / $SURICATA_ENGINE)"
   echo "fleet binary: $([[ -x $FLEET_BIN ]] && "$FLEET_BIN" --help 2>&1 | head -1 || echo "missing at $FLEET_BIN")"
   for u in brofish suricata; do
     printf '%-9s %-8s %s\n' "$u" "$(systemctl is-active $u 2>/dev/null)" \
@@ -119,6 +138,7 @@ status() {
 case "${1:-apply}" in
   apply)   apply ;;
   restart) apply; restart_fleet_services ;;
+  switch)  apply; switch_roles ;;
   status)  status ;;
-  *) echo "usage: $0 apply|restart|status" >&2; exit 2 ;;
+  *) echo "usage: $0 apply|restart|switch|status" >&2; exit 2 ;;
 esac
