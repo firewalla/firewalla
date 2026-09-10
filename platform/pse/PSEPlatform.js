@@ -37,6 +37,15 @@ class PSEPlatform extends Platform {
     return "pse";
   }
 
+  // PSE runs fleet for flows and for the suricata rule set (platform/pse/platform.sh)
+  getDefaultFlowEngineZeek() {
+    return 'fleet';
+  }
+
+  getDefaultFlowEngineSuricata() {
+    return 'fleet';
+  }
+
   getLicenseTypes() {
     return ["d1"];
   }
