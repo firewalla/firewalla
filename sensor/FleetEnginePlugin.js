@@ -115,11 +115,15 @@ class FleetEnginePlugin extends Sensor {
       fs.renameSync(tmp, EFFECTIVE_FEATURES);
     } catch (err) {
       try { fs.unlinkSync(tmp); } catch (e) {}
-      log.error('Failed to publish effective flow engine features', err.message);
+      // the shell side would fall back to a stale file, or to the config
+      // files, and could apply the opposite engine: do not apply at all
+      throw new Error(`publishing the effective flow engine features failed: ${err.message}`);
     }
   }
 
   async apply(restart = true) {
+    // the shell side reads these; a stale file would make it apply the
+    // opposite engine, so this throws rather than continue
     this.publishFeatures();
     const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
     let applied = false;
