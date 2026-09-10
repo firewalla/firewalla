@@ -65,6 +65,12 @@ fail() { log "FAILED: $1"; return 1; }
 apply() {
   resolve
   local changed=false
+  # Transactional hold: from here until verification succeeds the drop-ins may
+  # be partial, so nothing may start brofish or suricata. Every caller gets
+  # this, and a crash mid-apply leaves the hold in place rather than a box
+  # running the wrong engine. net2/FlowEngine.js reads the same marker, and
+  # BroControl.restart / SuricataControl.restart honour it.
+  $LIVE && sudo touch "$FAILED_MARKER" 2>/dev/null
 
   if [[ $ZEEK_ENGINE == fleet ]]; then
     local opts=""
@@ -121,8 +127,8 @@ apply() {
   # engines fleet has taken over from. A failure above returns before this, so
   # an unsuccessful apply leaves the running services alone.
   verify || return 1
-  # the drop-ins match the features again: lift a hold left by an earlier
-  # failure (main-start, or a previous apply) so the services may start
+  # verified: the drop-ins match the features, so lift the hold (this also
+  # clears one left by an earlier failed apply or by main-start)
   $LIVE && sudo rm -f "$FAILED_MARKER" 2>/dev/null
   $LIVE && stop_replaced_engines
   return 0
@@ -186,9 +192,14 @@ verify() {
 # takes effect (fleet in, zeek/suricata out, or the reverse)
 switch_roles() {
   $LIVE || return 0
-  pcap_zeek_enabled && { sudo systemctl restart brofish 2>/dev/null || true; }
-  pcap_suricata_enabled && { sudo systemctl restart suricata 2>/dev/null || true; }
-  return 0
+  local rc=0
+  if pcap_zeek_enabled; then
+    sudo systemctl restart brofish || { log "FAILED: restarting brofish"; rc=1; }
+  fi
+  if pcap_suricata_enabled; then
+    sudo systemctl restart suricata || { log "FAILED: restarting suricata"; rc=1; }
+  fi
+  return $rc
 }
 
 # restart whichever services now run fleet (after the asset was updated, or

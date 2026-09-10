@@ -35,9 +35,10 @@ const FlowEngine = require('../net2/FlowEngine.js');
 const fs = require('fs');
 
 const FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
-// main-start leaves this behind when its apply failed: it stopped brofish and
-// suricata rather than start them on drop-ins that do not match the features,
-// and BroControl / SuricataControl refuse to start them while it is there
+// fleet-engine.sh holds this from the first change it makes until verification
+// succeeds, so a failed or interrupted apply leaves it behind. While it is
+// there BroControl.restart, SuricataControl.restart and the script's own
+// restart path refuse to start the pcap services.
 const FAILED_MARKER = FlowEngine.APPLY_FAILED_MARKER;
 
 class FleetEnginePlugin extends Sensor {
@@ -91,10 +92,7 @@ class FleetEnginePlugin extends Sensor {
     const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
     let applied = false;
     await exec(`sudo ${script} apply`).then((r) => {
-      applied = true;
-      // the drop-ins match the features again: let the pcap plugins start
-      // their services (BroControl / SuricataControl check this marker)
-      try { fs.unlinkSync(FAILED_MARKER); } catch (err) {}
+      applied = true;   // fleet-engine.sh cleared its hold on success
       if (r.stdout && r.stdout.trim()) log.info('fleet-engine:', r.stdout.trim().replace(/\n/g, '; '));
     }).catch((err) => {
       // the drop-ins are not what the features say: restarting now would

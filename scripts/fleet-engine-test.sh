@@ -111,10 +111,36 @@ check "BroControl picks the cron template from the applied engine" 'grep -q "app
 check "SuricataControl uses the applied engines" 'grep -q "appliedSuricataEngine" "$FIREWALLA_HOME/net2/SuricataControl.js"'
 check "ZeekDPISensor uses the applied engine" 'grep -q "appliedZeekEngine" "$FIREWALLA_HOME/sensor/ZeekDPISensor.js"'
 
+echo "== a failed apply leaves the hold marker (live mode)"
+# live mode is needed for the marker, but the failure has to happen before any
+# service is touched: an unwritable drop-in location does that
+setf 1 1
+sudo rm -f /dev/shm/fleet-engine.failed
+sudo mkdir -p /etc/systemd/system/brofish.service.d
+sudo chattr +i /etc/systemd/system/brofish.service.d 2>/dev/null
+if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
+  live_before=$(systemctl show brofish -p ExecStart --value)
+  out=$(sudo -E env -u SYSTEMD_DIR "$ENGINE" apply 2>&1); rc=$?
+  check "live apply fails" '[[ $rc -ne 0 ]]'
+  check "hold marker is left behind" '[[ -e /dev/shm/fleet-engine.failed ]]'
+  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR "$ENGINE" restart >/dev/null 2>&1'
+  check "brofish was not restarted" '[[ "$(systemctl show brofish -p ExecStart --value)" == "$live_before" ]]'
+  sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
+  sudo -E env -u SYSTEMD_DIR "$ENGINE" apply >/dev/null 2>&1
+  check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
+else
+  echo "  skip live marker checks (cannot make the drop-in dir immutable here)"
+  sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
+fi
+
+echo "== switch reports a restart failure"
+check "switch_roles tracks failures and returns them" 'sed -n "/^switch_roles()/,/^}/p" "$ENGINE" | grep -q "rc=1" && sed -n "/^switch_roles()/,/^}/p" "$ENGINE" | grep -q "return \$rc"'
+
 echo "== the failed-apply hold is honoured everywhere"
 check "BroControl refuses to start brofish while held" 'grep -q "applyHeld" "$FIREWALLA_HOME/net2/BroControl.js"'
 check "SuricataControl refuses to start suricata while held" 'grep -q "applyHeld" "$FIREWALLA_HOME/net2/SuricataControl.js"'
 check "fleet-engine restart refuses while held" 'grep -q "not starting the pcap services" "$ENGINE"'
+check "apply sets the hold before touching anything" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "touch \"\$FAILED_MARKER\""'
 check "a successful apply lifts the hold" 'grep -q "rm -f \"\$FAILED_MARKER\"" "$ENGINE"'
 
 echo "== zeek is stopped even without zeekctl, and restart failures propagate"
