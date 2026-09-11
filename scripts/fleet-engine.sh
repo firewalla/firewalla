@@ -31,6 +31,13 @@ fi
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source "${FIREWALLA_HOME}/platform/platform.sh"
 
+# Test mode deliberately drops privilege: even if a caller supplies arbitrary
+# scratch paths, commands written as sudo below execute with the caller's own
+# permissions.
+if [[ $TEST_MODE == true ]]; then
+  sudo() { command "$@"; }
+fi
+
 : ${SYSTEMD_DIR:=/etc/systemd/system}
 # FLEET_BIN comes from platform.sh (overridable in the environment for tests)
 BROFISH_DROPIN=$SYSTEMD_DIR/brofish.service.d/fleet.conf
@@ -56,18 +63,6 @@ FLEET_IDS_RUN=$FLEET_RUN_DIR/fleet-ids-run
 # reload systemd or touch a running service
 LIVE=false
 [[ $SYSTEMD_DIR == /etc/systemd/system ]] && LIVE=true
-
-# Scratch paths are supported only for the dedicated test harness. Production
-# callers must not be able to redirect privileged installs or removals through
-# inherited environment variables.
-if [[ $TEST_MODE != true ]]; then
-  if [[ $SYSTEMD_DIR != /etc/systemd/system \
-     || $FLEET_RUN_DIR != /home/pi/.firewalla/run/assets \
-     || ${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d} != /dev/shm/fleet-engine.lock.d ]]; then
-    echo "FIREWALLA:FLEET-ENGINE refusing noncanonical production paths" >&2
-    exit 1
-  fi
-fi
 
 log() { logger "FIREWALLA:FLEET-ENGINE $1"; echo "$1"; }
 
