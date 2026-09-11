@@ -16,7 +16,7 @@
 const log = require("../net2/logger.js")(__filename)
 
 const cp = require('child_process');
-const { exec } = require('child-process-promise')
+const { execFile } = require('child-process-promise')
 
 const util = require('util');
 const _ = require('lodash')
@@ -336,15 +336,15 @@ function getLatestCommitHash() {
 }
 
 async function getLocalCommitHash() {
-  const cmd = await exec("git rev-parse @")
+  const cmd = await execFile("git", ["rev-parse", "@"])
   return cmd.stdout.trim()
 }
 
 async function getRemoteCommitHash() {
   // @{u}: remote-tracking branch
   // https://www.git-scm.com/docs/gitrevisions
-  await exec("timeout 20s git fetch origin")
-  const cmd = await exec("git rev-parse @{u}")
+  await execFile("timeout", ["20s", "git", "fetch", "origin"])
+  const cmd = await execFile("git", ["rev-parse", "@{u}"])
   return cmd.stdout.trim()
 }
 

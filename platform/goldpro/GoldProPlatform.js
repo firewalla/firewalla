@@ -18,7 +18,7 @@
 const Platform = require('../Platform.js');
 const firestatusBaseURL = "http://127.0.0.1:9966";
 const f = require('../../net2/Firewalla.js')
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const fsp = require('fs').promises;
 const log = require('../../net2/logger.js')(__filename);
 const rp = require('request-promise');
@@ -250,7 +250,7 @@ class GoldProPlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }

@@ -27,7 +27,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const sysManager = require('../net2/SysManager.js');
-const execAsync = require('child-process-promise').exec
+const { exec: execAsync, execFile } = require('child-process-promise')
 
 
 class IPv6DiscoverySensor extends Sensor {
@@ -61,7 +61,7 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync(`ping6 -c2 -w5 -I ${intf} ff02::1%${intf}`, { timeout: 6000 }).catch((err) => { });
+    await execFile("ping6", ["-c2", "-w5", "-I", intf, `ff02::1%${intf}`], { timeout: 6000 }).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
       let pcmd = `ping6 -B -c 2 -w5 -I ${intf} -I ${o} ff02::1%${intf}`;
       log.debug("Discovery:v6Neighbor:Ping6", pcmd);

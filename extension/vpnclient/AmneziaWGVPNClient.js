@@ -22,7 +22,7 @@ const f = require('../../net2/Firewalla.js');
 const WGVPNClient = require('./WGVPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
 const PlatformLoader = require('../../platform/PlatformLoader.js');
@@ -151,7 +151,7 @@ class AmneziaWGVPNClient extends WGVPNClient {
 
     // TODO: make VPNClient.logDir configurable, NEVER defined here
     const logPath = `${this.logDir || "/var/log/awg"}/vpn_${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "100", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     if (content) {
       return AmneziaWGVPNClient._getLastNSession(content, "Interface created", N_SESS);
     }

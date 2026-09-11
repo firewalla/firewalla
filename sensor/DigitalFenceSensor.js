@@ -24,6 +24,7 @@ const cp = require('child_process');
 const spawn = cp.spawn;
 const util = require('util');
 const execAsync = util.promisify(cp.exec);
+const { execFile } = require('child-process-promise');
 const f = require('../net2/Firewalla.js');
 const extensionManager = require('./ExtensionManager.js')
 const FireRouter = require('../net2/FireRouter.js');
@@ -210,7 +211,7 @@ class DigitalFenceSensor extends Sensor {
     await execAsync(setWlanDefaultCmd).catch((err) => { log.error(`Failed to set default mode`, err);});
     if (this.tcpdumpPid) {
       const cPid = await execAsync(`ps -ef| grep tcpdump| awk '$3 == '${this.tcpdumpPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
-      await execAsync(`sudo kill -9 ${cPid}`).catch((err) => { log.error(`kill pid ${cPid} failed`, err) });
+      await execFile("sudo", ["kill", "-9", String(cPid)]).catch((err) => { log.error(`kill pid ${cPid} failed`, err) });
     }
   }
 

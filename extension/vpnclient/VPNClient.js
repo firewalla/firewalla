@@ -304,7 +304,7 @@ class VPNClient {
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, bypassSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
-    await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
+    await execFile("sudo", ["sysctl", "-w", `net.ipv4.conf.${intf}.rp_filter=2`]).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
@@ -1411,20 +1411,24 @@ class VPNClient {
     if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
       return;
     // first, find DNS zone from AUTHORITY SECTION
-    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
+    const zone = await execFile("dig", ["+noall", "+authority", "+time=3", "+tries=2", "SOA", domain]).then(result => {
+      // owner name of the first authority record
+      const record = result.stdout.split('\n').map(line => line.trim()).find(line => line.length > 0);
+      return record ? record.split(/\s+/)[0] : null;
+    }).catch((err) => {
       log.error(`Failed to find zone of ${domain}`, err.message);
       return null;
     });
     if (!zone)
       return;
     // then, find authoritative DNS server on zone
-    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
+    const servers = await execFile("dig", ["+time=3", "+tries=2", "+short", "NS", zone]).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
       log.error(`Failed to get servers of zone ${zone}`, err.message);
       return [];
     });
     // finally, send DNS query to authoritative DNS server
     for (const server of servers) {
-      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
+      const ip = await execFile("dig", ["+short", "+time=3", "+tries=1", `@${server}`, "A", domain]).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });

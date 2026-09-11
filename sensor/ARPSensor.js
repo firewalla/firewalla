@@ -26,6 +26,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
+const { execFile } = require('child-process-promise');
 const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
 const { Address4 } = require('ip-address');
@@ -55,7 +56,7 @@ class ARPSensor extends Sensor {
     for (const pid of this.intfPidMap.values()) {
       const childPid = await execAsync(`ps -ef| awk '$3 == '${pid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
       if (childPid) {
-        await execAsync(`sudo kill -9 ${childPid}`).catch((err) => { });
+        await execFile("sudo", ["kill", "-9", String(childPid)]).catch((err) => { });
       }
     }
     this.intfPidMap.clear();
