@@ -41,8 +41,8 @@ if [[ -r $RC ]]; then
   done
 fi
 if [[ ${#args[@]} -eq 0 ]]; then
-  # fleet then takes the list from node.cfg, if the zeek role left one behind
-  logger "FIREWALLA:FLEET-IDS-RUN no interfaces in $RC, falling back to node.cfg"
+  logger "FIREWALLA:FLEET-IDS-RUN no capture interfaces in $RC"
+  exit 1
 fi
 
 [[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-IDS-RUN $FLEET_BIN is not executable"; exit 1; }
