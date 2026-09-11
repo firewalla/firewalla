@@ -18,6 +18,15 @@
 # lives in drop-ins beside them. With both knobs at their stock values the
 # drop-ins are removed and the box behaves as before.
 
+TEST_MODE=${FLEET_ENGINE_TEST_MODE:-false}
+if [[ $TEST_MODE != true ]]; then
+  [[ -z ${FIREWALLA_HOME+x} || $FIREWALLA_HOME == /home/pi/firewalla ]] \
+    && [[ -z ${FIREWALLA_HIDDEN+x} || $FIREWALLA_HIDDEN == /home/pi/.firewalla ]] \
+    && [[ -z ${SYSTEMD_DIR+x} || $SYSTEMD_DIR == /etc/systemd/system ]] \
+    && [[ -z ${FLEET_RUN_DIR+x} || $FLEET_RUN_DIR == /home/pi/.firewalla/run/assets ]] \
+    && [[ -z ${FLEET_ENGINE_LOCK+x} || $FLEET_ENGINE_LOCK == /dev/shm/fleet-engine.lock.d ]] \
+    || { echo "FIREWALLA:FLEET-ENGINE refusing noncanonical production paths" >&2; exit 1; }
+fi
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source "${FIREWALLA_HOME}/platform/platform.sh"
@@ -47,6 +56,18 @@ FLEET_IDS_RUN=$FLEET_RUN_DIR/fleet-ids-run
 # reload systemd or touch a running service
 LIVE=false
 [[ $SYSTEMD_DIR == /etc/systemd/system ]] && LIVE=true
+
+# Scratch paths are supported only for the dedicated test harness. Production
+# callers must not be able to redirect privileged installs or removals through
+# inherited environment variables.
+if [[ $TEST_MODE != true ]]; then
+  if [[ $SYSTEMD_DIR != /etc/systemd/system \
+     || $FLEET_RUN_DIR != /home/pi/.firewalla/run/assets \
+     || ${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d} != /dev/shm/fleet-engine.lock.d ]]; then
+    echo "FIREWALLA:FLEET-ENGINE refusing noncanonical production paths" >&2
+    exit 1
+  fi
+fi
 
 log() { logger "FIREWALLA:FLEET-ENGINE $1"; echo "$1"; }
 
@@ -209,10 +230,15 @@ apply() {
   if $LIVE; then
     if [[ $ZEEK_ENGINE == fleet ]]; then
       if [[ -e /etc/cron.hourly/bro-cron ]]; then
-        sudo rm -f /etc/cron.hourly/bro-cron && log "removed /etc/cron.hourly/bro-cron"
+        if ! sudo rm -f /etc/cron.hourly/bro-cron || [[ -e /etc/cron.hourly/bro-cron ]]; then
+          fail "removing /etc/cron.hourly/bro-cron"
+          return 1
+        fi
+        log "removed /etc/cron.hourly/bro-cron"
       fi
     elif [[ ! -e /etc/cron.hourly/bro-cron && -f $FIREWALLA_HOME/etc/bro-cron ]] && ${FW_SCHEDULE_BRO:-true}; then
-      sudo install -m 0755 "$FIREWALLA_HOME/etc/bro-cron" /etc/cron.hourly/bro-cron 2>/dev/null || true
+      sudo install -m 0755 "$FIREWALLA_HOME/etc/bro-cron" /etc/cron.hourly/bro-cron 2>/dev/null \
+        || { fail "restoring /etc/cron.hourly/bro-cron"; return 1; }
     fi
   fi
   # verified, and nothing else is running: lift the hold (this also clears one
@@ -396,9 +422,17 @@ run_locked() {
       # empty lock left by a crash is safe to reclaim only with rmdir, which
       # fails if the owner has created its pid file in the meantime.
       waited=$((waited + 1))
-      if [[ $waited -ge 10 ]] && rmdir "$LOCK" 2>/dev/null; then
-        log "removed an abandoned uninitialized apply lock $LOCK"
-        continue
+      if [[ $waited -ge 10 ]]; then
+        # rmdir is atomic and refuses a directory whose owner published pid
+        # meanwhile; sudo is needed when a root asset hook died after mkdir.
+        if rmdir "$LOCK" 2>/dev/null || sudo rmdir "$LOCK" 2>/dev/null; then
+          log "removed an abandoned uninitialized apply lock $LOCK"
+          continue
+        fi
+      fi
+      if [[ $waited -gt 600 ]]; then
+        fail "an uninitialized apply still holds $LOCK"
+        return 1
       fi
       sleep 1
       continue
