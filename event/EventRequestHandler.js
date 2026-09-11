@@ -32,6 +32,7 @@ const ACTION_REQUIRED_FIELDS = [ "ts", "action_type", "action_value"];
 const DEFAULT_OK_VALUE = 0;
 const STATE_OK_VALUE='ok_value';
 const STATE_ERROR_VALUE='error_value';
+const STATE_NO_ERROR='no_error';
 
 /*
  * EventRequestHandler accepts event requests from redis channels and processes them accordingly
@@ -177,12 +178,27 @@ class EventRequestHandler {
     }
 
     /*
+     * A "no_error" event ONLY tracks state changes, none of its values is an error,
+     * e.g. a mode/selection change that has no faulty value.
+     * Unlike other state events, its initial state is sent as an event as well.
+     */
+    isNoErrorStateEvent(eventRequest) {
+        return Boolean(eventRequest.labels && eventRequest.labels[STATE_NO_ERROR]);
+    }
+
+    /*
      * Either one of following attributes in "labels" can be provided, an event is considered as an error if
      * - ok_value    : state_value != labels.ok_value
      * - error_value : state_value == labels.error_value
      * If none of above defined, {"ok_value": 0} will be added to "labels" as default.
+     * Unless "no_error" is set in "labels", in which case the event is NEVER an error.
      */
     isStateEventError(eventRequest) {
+        // state-change-only event, no value of it is recognized as an error
+        if (this.isNoErrorStateEvent(eventRequest)) {
+            return false;
+        }
+
         if ('labels' in eventRequest) {
             if ( !(STATE_OK_VALUE in eventRequest.labels) && !(STATE_ERROR_VALUE in eventRequest.labels) ) {
                 eventRequest.labels.ok_value = 0
@@ -224,10 +240,14 @@ class EventRequestHandler {
                     this.sendEvent(eventRequest,"state");
                 }
             } else {
-                // no saved state, record ts0 and ONLY send event if it is ERROR
+                // no saved state, record ts0 and ONLY send event if it is ERROR,
+                // or if it is a no_error event, whose initial state is a state change on its own
                 eventRequest.ts0 = eventRequest.ts;
                 if (isError) {
                     log.debug("send initial error state event:",eventRequest);
+                    this.sendEvent(eventRequest,"state");
+                } else if (this.isNoErrorStateEvent(eventRequest)) {
+                    log.debug(`send initial no_error state event ${newValue}:`,eventRequest);
                     this.sendEvent(eventRequest,"state");
                 } else {
                     log.debug(`ignore initial state ${newValue}`);

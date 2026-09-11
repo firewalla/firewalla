@@ -117,5 +117,73 @@ describe('Test event handler state event', function() {
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_connect_state"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
   });
+
+  it('should check if state event is error', async () => {
+    // no labels, default ok_value 0 applies
+    expect(eventhandler.isStateEventError({"state_value":0})).to.be.false;
+    expect(eventhandler.isStateEventError({"state_value":1})).to.be.true;
+    // explicit ok_value/error_value
+    expect(eventhandler.isStateEventError({"state_value":1000,"labels":{"ok_value":1000}})).to.be.false;
+    expect(eventhandler.isStateEventError({"state_value":100,"labels":{"ok_value":1000}})).to.be.true;
+    expect(eventhandler.isStateEventError({"state_value":1,"labels":{"error_value":1}})).to.be.true;
+    expect(eventhandler.isStateEventError({"state_value":2,"labels":{"error_value":1}})).to.be.false;
+  });
+
+  it('should check if no_error state event', async () => {
+    expect(eventhandler.isNoErrorStateEvent({"state_value":1,"labels":{"no_error":true}})).to.be.true;
+    expect(eventhandler.isNoErrorStateEvent({"state_value":1,"labels":{"no_error":false}})).to.be.false;
+    expect(eventhandler.isNoErrorStateEvent({"state_value":1,"labels":{"ok_value":0}})).to.be.false;
+    expect(eventhandler.isNoErrorStateEvent({"state_value":1})).to.be.false;
+  });
+
+  it('should never treat no_error state event as error', async () => {
+    // no value is an error, including the ones ok_value/error_value would flag
+    expect(eventhandler.isStateEventError({"state_value":0,"labels":{"no_error":true}})).to.be.false;
+    expect(eventhandler.isStateEventError({"state_value":1,"labels":{"no_error":true}})).to.be.false;
+    expect(eventhandler.isStateEventError({"state_value":2,"labels":{"no_error":true,"error_value":2}})).to.be.false;
+    expect(eventhandler.isStateEventError({"state_value":2,"labels":{"no_error":true,"ok_value":0}})).to.be.false;
+    // labels are left untouched, no default ok_value injected
+    const eventRequest = {"state_value":1,"labels":{"no_error":true}};
+    eventhandler.isStateEventError(eventRequest);
+    expect(eventRequest.labels).to.deep.equal({"no_error":true});
+    // no_error false/absent falls back to the default behavior
+    expect(eventhandler.isStateEventError({"state_value":1,"labels":{"no_error":false}})).to.be.true;
+  });
+
+  it('should only record state changes of no_error state event', async () => {
+    const now = Date.now();
+    const stateType = "no_error_test_type"; // NOT an ap_ state event, processed without event queue
+    const stateKey = "test_key";
+    const cacheKey = `${stateType}:${stateKey}`;
+    const labels = {"no_error":true};
+    const stateEvent = (ts, value) => JSON.stringify(
+      {"event_type":"state","ts":ts,"state_type":stateType,"state_key":stateKey,"state_value":value,"labels":labels});
+
+    // start from a clean state, as if the box has never seen this state event
+    await rclient.hdelAsync("event:state:cache", cacheKey);
+    await rclient.hdelAsync("event:state:cache:error", cacheKey);
+
+    // initial state is sent as an event
+    await eventhandler.queueStateEvent(stateEvent(now-2000, 1));
+    expect((await eventapi.getEventByTs(now-2000)).state_value).to.equal(1);
+
+    // repeated state is NOT sent
+    await eventhandler.queueStateEvent(stateEvent(now-1000, 1));
+    expect(await eventapi.getEventByTs(now-1000)).to.be.empty;
+
+    // changed state is sent, along with the previous value
+    await eventhandler.queueStateEvent(stateEvent(now, 2));
+    const changed = await eventapi.getEventByTs(now);
+    expect(changed.state_value).to.equal(2);
+    expect(changed.prev_state_value).to.equal(1);
+
+    // none of them is recorded as an error, and no default ok_value is injected
+    expect(await rclient.hgetAsync("event:state:cache:error", cacheKey)).to.be.null;
+    const saved = JSON.parse(await rclient.hgetAsync("event:state:cache", cacheKey));
+    expect(saved.labels).to.deep.equal({"no_error":true});
+
+    await rclient.zremrangebyscoreAsync("event:log", now-2000, now);
+    await rclient.hdelAsync("event:state:cache", cacheKey);
+  });
 });
 
