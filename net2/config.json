@@ -941,6 +941,29 @@
         }
       }
     },
+    "EventSummarySensor": {
+      "eventSummarySettings": [
+        {
+          "period": 86400,
+          "key": "event::dap_state_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "dap_state_change"
+              }
+            ]
+          },
+          "labelKeys": [
+            "mac"
+          ]
+        }
+      ]
+    },
     "BlockStatsSensor": {
       "slotSecs": 10800,
       "blockStatsSettings": [
