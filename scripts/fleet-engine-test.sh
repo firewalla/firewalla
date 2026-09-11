@@ -244,6 +244,19 @@ roles=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source \"$F
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
 
+echo "== a release hidden feature wins during early boot"
+mkdir -p "$T/hidden-release/config"
+printf '{"hiddenFeatures":["pcap_zeek_fleet"],"userFeatures":{"pcap_zeek_fleet":true}}' > "$T/hidden-release/config/config.json"
+cat > "$T/bin/redis-cli" <<'RC'
+#!/bin/sh
+echo 1
+RC
+chmod 755 "$T/bin/redis-cli"
+roles=$(PATH=$T/bin:$PATH FIREWALLA_HIDDEN=$T/hidden-release FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; branch=release_6_0; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+check "hiddenFeatures suppresses a stale runtime enable" '[[ $roles == zeek ]]'
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
+setf 1 1
+
 echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated

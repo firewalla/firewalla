@@ -30,7 +30,7 @@ const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
-const exec = require('child-process-promise').exec;
+const execFile = require('child-process-promise').execFile;
 const FlowEngine = require('../net2/FlowEngine.js');
 const fs = require('fs');
 
@@ -143,7 +143,7 @@ class FleetEnginePlugin extends Sensor {
     this.publishFeatures();
     const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
     let applied = false;
-    await exec(`sudo ${script} apply`).then((r) => {
+    await execFile('sudo', [script, 'apply']).then((r) => {
       applied = true;   // fleet-engine.sh cleared its hold on success
       if (r.stdout && r.stdout.trim()) log.info('fleet-engine:', r.stdout.trim().replace(/\n/g, '; '));
     }).catch((err) => {
