@@ -362,6 +362,7 @@ check "fleet-ids-run queues a fresh stock-engine transaction" 'grep -q "systemct
 check "mandatory preparation failures abort startup" 'grep -q "before_bro failed" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "failed to apply" "$FIREWALLA_HOME/scripts/fleet-run"'
 check "preparation runs in ExecStartPre, after_bro in ExecStartPost" 'grep -q "^ExecStartPre=$RUNNER --prepare" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStartPost=$RUNNER --after-bro" "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
 check "the lock records its owner and only a dead owner is stale" 'grep -q "LOCK/pid" "$ENGINE" && grep -q "kill -0" "$ENGINE"'
+check "a cross-user owner is recognized through procfs" 'grep -q "pid_alive" "$ENGINE" && grep -q "/proc/" "$ENGINE"'
 
 echo "== behaviour: a live lock owner is not stolen from"
 setf 1 1
