@@ -147,7 +147,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -1813,24 +1813,11 @@ class netBot extends ControllerBot {
       }
       case "vpnProfile":
       case "ovpnProfile": {
-        const type = (value && value.type) || "openvpn";
-        const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
-        let vpnClient = VPNClient.getInstance(profileId);
-        if (!vpnClient) {
-          const exists = await c.profileExists(profileId);
-          if (!exists) {
-            throw { code: 404, msg: "Specified profileId is not found." }
-          }
-          vpnClient = new c({ profileId });
-        }
+        const vpnClient = await netBotTool.getVPNClient({ 
+          type: (value && value.type) || "openvpn",
+          profileId: value.profileId,
+          mustExist: true
+        });
         return vpnClient.getAttributes(true);
       }
       case "vpnProfiles":
@@ -3192,8 +3179,7 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         const category = value.category
         let domain = value.domain
-        const regex = /^[-a-zA-Z0-9.*]+?/;
-        if (!regex.test(domain)) {
+        if (!isCategoryDomainValid(domain)) {
           throw { code: 400, msg: "Invalid domain." }
         }
 
@@ -3217,6 +3203,9 @@ class netBot extends ControllerBot {
       case "removeIncludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3236,6 +3225,9 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         const category = value.category
         let domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         domain = domain.toLowerCase();
         await categoryUpdater.addExcludedDomain(category, domain)
         const event = {
@@ -3256,6 +3248,9 @@ class netBot extends ControllerBot {
       case "removeExcludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeExcludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3275,6 +3270,11 @@ class netBot extends ControllerBot {
       case "updateIncludedElements": {
         const category = value.category;
         const elements = value.elements;
+        // elements end up in a dnsmasq config file parsed by root, a valid element (domain, address,
+        // port or regex) is printable ASCII without whitespace. anything but an array is refused
+        if (!_.isArray(elements) || elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
+          throw { code: 400, msg: "Invalid elements." }
+        }
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3287,11 +3287,19 @@ class netBot extends ControllerBot {
       case "createOrUpdateCustomizedCategory": {
         const category = value.category;
         const obj = value.obj;
+        // category becomes a dnsmasq config file name and an ipset name, a new one is a generated uuid
+        if (category && (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category))) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
         return c
       }
       case "removeCustomizedCategory": {
         const category = value.category;
+        // category becomes a dnsmasq config file name and an ipset name
+        if (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category)) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         await categoryUpdater.removeCustomizedCategory(category);
         return
       }
@@ -3431,18 +3439,8 @@ class netBot extends ControllerBot {
       }
       case "startVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         await vpnClient.setup()
         const { result, errMsg } = await vpnClient.start().catch(err => {
           log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
@@ -3458,18 +3456,8 @@ class netBot extends ControllerBot {
       }
       case "stopVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         // error in setup should not interrupt stop vpn client
         await vpnClient.setup().catch((err) => {
           log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
@@ -3480,21 +3468,9 @@ class netBot extends ControllerBot {
       }
       case "saveVpnProfile":
       case "saveOvpnProfile": {
-        let type = value.type || "openvpn";
         const profileId = value.profileId;
         const settings = value.settings || {};
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified" }
-        }
-        const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-        if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
           await vpnClient.saveSettings(settings);
@@ -3506,14 +3482,7 @@ class netBot extends ControllerBot {
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         const profileId = value.profileId;
-        if (!profileId || profileId === "") {
-          throw { code: 400, msg: "'profileId' is not specified" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         const status = await vpnClient.status();
         if (status) {
           throw { code: 400, msg: `${type} VPN client ${profileId} is still running` }

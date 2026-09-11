@@ -88,7 +88,7 @@ const ipset = require('../net2/Ipset.js');
 const blockControl = require('../control/BlockControl.js');
 const _ = require('lodash');
 
-const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
+const { delay, isSameOrSubDomain, batchKeyExists, isDomainTargetValid } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -1893,7 +1893,11 @@ class PolicyManager2 {
         remoteSet6 = Block.getDstSet6(pid);
 
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
-          if (!policy.domainExactMatch && !target.startsWith("*."))
+          // the tls host is interpolated into an iptables command line that runs as root, only a
+          // plain domain can go there. an odd target still gets ipset enforcement below
+          if (!isDomainTargetValid(target))
+            log.error(`Target of policy ${pid} is not a valid domain, skip TLS rule`, target);
+          else if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
@@ -1901,7 +1905,10 @@ class PolicyManager2 {
 
         if (action === "allow" && policy.trust) {
           const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
-          await tm.addDomain(finalTarget);
+          if (isDomainTargetValid(finalTarget))
+            await tm.addDomain(finalTarget);
+          else
+            log.error(`Target of policy ${pid} is not a valid domain, skip trust domain`, target);
         }
 
         if (["allow", "block", "resolve", "address", "route"].includes(action)) {
@@ -2573,7 +2580,11 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
-          if (!policy.domainExactMatch && !target.startsWith("*."))
+          // mirrors _enforce: a target that is not a plain domain never got a TLS rule, so leave
+          // tlsHost null here too, otherwise the delete is issued without its --tls-host match
+          if (!isDomainTargetValid(target))
+            log.error(`Target of policy ${pid} is not a valid domain, skip TLS rule`, target);
+          else if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
@@ -2581,7 +2592,10 @@ class PolicyManager2 {
 
         if (action === "allow" && policy.trust) {
           const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
-          await tm.removeDomain(finalTarget);
+          if (isDomainTargetValid(finalTarget))
+            await tm.removeDomain(finalTarget);
+          else
+            log.error(`Target of policy ${pid} is not a valid domain, skip trust domain`, target);
         }
 
         if (!policy.dnsmasq_only) {

@@ -220,5 +220,14 @@ module.exports = {
 
   // a plain file name: no path separators, so a value matching this cannot leave the directory it
   // is resolved against. use it wherever an untrusted value becomes a path component
-  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+  REGEX_FILENAME: /^[a-z0-9][a-z0-9._-]*$/i,
+
+  // matches if a value contains any control character. use it on untrusted values that end up in a
+  // line-oriented config file or on the stdin of a command interpreter, where a line break in the
+  // value injects a directive or a command
+  REGEX_CONTROL_CHARS: /[\x00-\x1f\x7f]/,
+
+  // same as above but tolerates CR and LF, for free text fields that are never written to a config
+  // file or a command line
+  REGEX_CONTROL_CHARS_MULTILINE: /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/,
 };
