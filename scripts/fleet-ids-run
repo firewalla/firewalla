@@ -22,11 +22,15 @@ RC=$FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc
 
 if [[ ! -x $ENGINE ]]; then
   logger "FIREWALLA:FLEET-IDS-RUN $ENGINE is gone (rollback?); handing suricata back"
+  units=(suricata)
+  systemctl is-active -q brofish && units+=(brofish)
   sudo rm -f /etc/systemd/system/brofish.service.d/fleet.conf \
-             /etc/systemd/system/suricata.service.d/fleet.conf 2>/dev/null
-  sudo rm -f /dev/shm/fleet-engine.failed 2>/dev/null
-  sudo systemctl daemon-reload 2>/dev/null
-  exec "$FIREWALLA_HOME/scripts/suricata-run"
+             /etc/systemd/system/suricata.service.d/fleet.conf 2>/dev/null \
+    && sudo rm -f /dev/shm/fleet-engine.failed 2>/dev/null \
+    && sudo systemctl daemon-reload 2>/dev/null \
+    && sudo systemctl --no-block restart "${units[@]}" 2>/dev/null \
+    || logger "FIREWALLA:FLEET-IDS-RUN failed to schedule stock-engine handoff"
+  exit 1
 fi
 
 args=()
