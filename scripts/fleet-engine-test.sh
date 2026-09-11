@@ -216,6 +216,7 @@ check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && gr
 echo "== the pcap roles are respected"
 check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" FLEET_BIN="$FLEET_BIN" bash "$FIREWALLA_HOME/scripts/fleet-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
 check "the apply lock needs no shared permissions (mkdir based)" 'grep -q "until mkdir \"\$LOCK\"" "$ENGINE"'
 check "an abandoned uninitialized lock is removed" 'grep -q "abandoned uninitialized apply lock" "$ENGINE"'
@@ -341,6 +342,7 @@ echo "== unit: rollback safety and the hidden-feature kill switch"
 check "the drop-ins point outside the git checkout" 'grep -q "^ExecStart=$RUNNER " "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStart=$IDS_RUNNER " "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "apply refreshes the launcher copies" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN_DIR/\$l"'
 check "the published effective state is read before redis" 'awk "/FW_EFFECTIVE_FEATURES/{e=NR} /redis-cli hget sys:features/{r=NR} END{exit !(e && r && e<r)}" "$FIREWALLA_HOME/platform/platform.sh"'
+check "main-start invalidates the previous FireMain snapshot before apply" 'awk "/rm -f .*FW_EFFECTIVE_FEATURES/{r=NR} /fleet-engine.sh apply/{a=NR} END{exit !(r && a && r<a)}" "$FIREWALLA_HOME/scripts/main-start"'
 
 echo "== behaviour: a hidden feature beats a stale redis override"
 printf '{"pcap_zeek_fleet":false,"pcap_zeek_suricata":false,"pcap_zeek":true,"pcap_suricata":true}' > "$T/hidden.json"
