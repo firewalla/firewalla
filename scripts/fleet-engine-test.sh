@@ -28,6 +28,7 @@ export SYSTEMD_DIR=$T/systemd
 export FLEET_BIN=$T/fleet
 export FLEET_RUN_DIR=$T/assets
 export FLEET_ENGINE_LOCK=$T/apply.lock
+export FLEET_ENGINE_TEST_MODE=true
 export FW_EFFECTIVE_FEATURES=$T/features.json
 printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
 mkdir -p "$SYSTEMD_DIR" "$FLEET_RUN_DIR" "$T/bin"
@@ -90,7 +91,8 @@ B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 
 echo "== fleet/fleet"
-setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
+setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; rc=$?
+check "apply returns 0" '[[ $rc -eq 0 ]]'
 # the templates name the asset path; FLEET_BIN here only stands in for its presence
 ASSET=/home/pi/.firewalla/run/assets/fleet
 # the brofish drop-in launches through the wrapper, the ids-only unit runs the
@@ -220,6 +222,7 @@ check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
 check "the apply lock needs no shared permissions (mkdir based)" 'grep -q "until mkdir \"\$LOCK\"" "$ENGINE"'
 check "an abandoned uninitialized lock is removed" 'grep -q "abandoned uninitialized apply lock" "$ENGINE"'
+check "production rejects redirected privileged paths" '! env -u FLEET_ENGINE_TEST_MODE SYSTEMD_DIR="$T/redirected" "$ENGINE" status >/dev/null 2>&1'
 check "the watchdog checks both roles" 'grep -q "ROLES+=" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "any apply failure is retried" 'grep -q "this.applyFailed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -325,6 +328,7 @@ check "fleet-run runs before_bro and after_bro" 'grep -q "before_bro ||" "$FIREW
 check "the launcher copies are installed beside the asset" '[[ -x $LOCAL_RUNNER && -x $LOCAL_IDS_RUNNER ]]'
 check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "the hourly zeekctl cron is removed while fleet owns the role" 'grep -q "cron.hourly/bro-cron" "$ENGINE"'
+check "failure to remove the hourly zeekctl cron aborts apply" 'grep -q "fail .*removing /etc/cron.hourly/bro-cron" "$ENGINE"'
 check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.failed || /home/pi/firewalla/scripts/flow-check.sh" "$FIREWALLA_HOME/etc/crontab.fleet"'
 check "a backup that fails aborts before the destination is touched" 'sed -n "/commit_one()/,/^  }/p" "$ENGINE" | grep -q "cp -f \"\$dst\" \"\$backup/\$name\" 2>/dev/null; then"'
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -375,6 +379,7 @@ check "an initializing owner keeps its empty lock" 'kill -0 $initializing 2>/dev
 rmdir "$T/lock.d"
 wait $initializing; initializing_rc=$?
 check "apply proceeds after the initializing lock is released" '[[ $initializing_rc -eq 0 ]]'
+check "an abandoned cross-user lock uses atomic privileged removal" 'grep -q "sudo rmdir" "$ENGINE" && grep -q "an uninitialized apply still holds" "$ENGINE"'
 
 mkdir -p "$T/lock.d"; sleep 600 & sleeper=$!
 echo $sleeper > "$T/lock.d/pid"
