@@ -22,7 +22,7 @@
 # no box and no network are needed. What is under test is the script's own
 # control flow: which failures abort the switch, and whether a rejected switch
 # leaves the post-switch tail alone (.no_auto_upgrade, the redis flag,
-# /tmp/FWPRODUCTION, the reboot log).
+# /tmp/FWPRODUCTION, the switch log).
 #
 # The gate's signature and minimal-version logic is NOT retested here -
 # test_upgrade_verify.sh covers that. Verification is steered only by whether
@@ -171,7 +171,7 @@ mk_fw
 RC=$(run_switch master UV_TEST_KEYRING="$T/none")
 check "same branch: exit 0"                    0    "$RC"
 check "same branch: no redis write"            no   "$(called redis-cli)"
-check "same branch: no reboot log"             no   "$(called logger)"
+check "same branch: no switch log"             no   "$(called logger)"
 dump
 
 # 2. gate rejects a release_* target with enforcement on
@@ -183,7 +183,7 @@ check "reject: exit 1"                         1    "$RC"
 check "reject: branch unchanged"               master "$(branch_now)"
 check "reject: refspec unchanged"              "+refs/heads/master:refs/remotes/origin/master" "$(refspec_now)"
 check "reject: no redis write"                 no   "$(called redis-cli)"
-check "reject: no reboot log"                  no   "$(called logger)"
+check "reject: no switch log"                  no   "$(called logger)"
 check "reject: FWPRODUCTION not written"       absent "$([[ -e /tmp/FWPRODUCTION ]] && cat /tmp/FWPRODUCTION || echo absent)"
 check "reject: .no_auto_upgrade kept"          yes  "$([[ -e $HIDDEN/config/.no_auto_upgrade ]] && echo yes || echo no)"
 grep -q "failed release verification" "$T/out"
@@ -211,7 +211,7 @@ check "fetch fail: branch unchanged"           master "$(branch_now)"
 check "fetch fail: not on the stale revision"  "master rev" "$(head_msg)"
 check "fetch fail: refspec unchanged"          "+refs/heads/master:refs/remotes/origin/master" "$(refspec_now)"
 check "fetch fail: no redis write"             no   "$(called redis-cli)"
-check "fetch fail: no reboot log"              no   "$(called logger)"
+check "fetch fail: no switch log"              no   "$(called logger)"
 check "fetch fail: stale ref still exists"     "$STALE" "$(git -C "$FW" rev-parse --short origin/beta_22_0)"
 dump
 
@@ -223,7 +223,7 @@ check "checkout fail: exit 1"                  1    "$RC"
 check "checkout fail: branch unchanged"        master "$(branch_now)"
 check "checkout fail: refspec unchanged"       "+refs/heads/master:refs/remotes/origin/master" "$(refspec_now)"
 check "checkout fail: no redis write"          no   "$(called redis-cli)"
-check "checkout fail: no reboot log"           no   "$(called logger)"
+check "checkout fail: no switch log"           no   "$(called logger)"
 dump
 
 # 6. successful switch: tail runs, refspec follows the mapped remote branch
@@ -234,9 +234,9 @@ check "success: branch switched"               beta_6_0 "$(branch_now)"
 check "success: on the fetched revision"       "beta_22_0 OLD" "$(head_msg)"
 check "success: refspec is the mapped branch"  "+refs/heads/beta_22_0:refs/remotes/origin/beta_22_0" "$(refspec_now)"
 check "success: redis flag set"                yes  "$(called redis-cli)"
-check "success: reboot logged"                 yes  "$(called logger)"
-grep -q "REBOOT: SWITCH branch from master to beta_6_0" "$CALLS/logger"
-check "success: reboot log text"               0    "$?"
+check "success: switch logged"                 yes  "$(called logger)"
+grep -q "Firewalla:switch_branch: from master to beta_6_0" "$CALLS/logger"
+check "success: switch log text"               0    "$?"
 check "success: .no_auto_upgrade removed"      no   "$([[ -e $HIDDEN/config/.no_auto_upgrade ]] && echo yes || echo no)"
 grep -q "branch.changed 2" "$CALLS/redis-cli"
 check "success: beta_6_0 maps to flag 2"       0    "$?"
