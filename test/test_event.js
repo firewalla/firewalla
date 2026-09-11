@@ -109,10 +109,13 @@ describe('Test event handler state event', function() {
     // expect(eventhandler.queueMap.size).to.equal(0);
   });
 
-  it('should check if ap state event', async () => {
-    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_state"})).to.be.true;
-    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_speed_change"})).to.be.true;
-    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
+  it('should check if state event needs the serialized per-key queue', async () => {
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_speed_change"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_speed_change"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_connect_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
   });
 });
 
