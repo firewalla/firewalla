@@ -62,7 +62,10 @@ switch_branch() {
     ( cd $FIREWALLA_HOME
     uv_ensure_release_key
     uv_update_version_floor
-    $MGIT fetch origin "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+    # a failed fetch must abort: refs/remotes/origin/$remote_branch may still hold
+    # a revision from an earlier switch, and verifying and checking that out would
+    # silently land on a stale revision while reporting success
+    $MGIT fetch origin "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch" || exit 1
     if ! uv_gate "origin/$remote_branch" "$tgt_branch"; then
         err "target branch $remote_branch failed release verification, abort"
         exit 1
