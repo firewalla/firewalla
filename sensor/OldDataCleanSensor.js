@@ -41,7 +41,7 @@ const migrationPrefix = "oldDataMigration";
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -570,7 +570,7 @@ class OldDataCleanSensor extends Sensor {
         }
         if (shouldRemove) {
           log.info(`Directory ${file.name} under ${f.getUserConfigFolder()}/dnsmasq is no longer used in any historical network config, delete it`);
-          await exec(`rm -rf ${f.getUserConfigFolder()}/dnsmasq/${file.name}`).catch((err) => {});
+          await execFile("rm", ["-rf", `${f.getUserConfigFolder()}/dnsmasq/${file.name}`]).catch((err) => {});
         }
       }
     }

@@ -19,7 +19,7 @@ const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
 const { delay } = require('../util/util.js')
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const Promise = require('bluebird');
 const fs = require('fs');
 Promise.promisifyAll(fs);
@@ -58,7 +58,7 @@ class BroControl {
   async writeClusterConfig(options) {
     log.info('writeClusterConfig', options)
     // rewrite cluster node.cfg
-    await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
+    await execFile("sudo", ["cp", "-f", `${f.getFirewallaHome()}/etc/node.cluster.cfg`, PATH_NODE_CFG])
 
     const listenInterfaces = options.listenInterfaces || {};
     let workerCfg = []
@@ -127,7 +127,7 @@ class BroControl {
     // fleet-ping.sh replaces brofish-ping.sh when fleet runs as brofish
     const crontab = FlowEngine.appliedZeekEngine() === 'fleet' ? 'crontab.fleet' : 'crontab.zeek';
     await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/${crontab}`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
     });
   }
@@ -135,7 +135,7 @@ class BroControl {
   async removeCronJobs() {
     log.info('Removing bro related cron jobs');
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
@@ -163,7 +163,7 @@ class BroControl {
     try {
       this.restarting = true
       log.info('Restarting brofish..')
-      await exec(`sudo systemctl restart brofish`)
+      await execFile("sudo", ["systemctl", "restart", "brofish"])
       this.restarting = false
       log.info('Restart complete')
     } catch (err) {
@@ -175,7 +175,7 @@ class BroControl {
   }
 
   async stop() {
-    await exec(`sudo systemctl stop brofish`).catch((err) => {
+    await execFile("sudo", ["systemctl", "stop", "brofish"]).catch((err) => {
       log.error(`Failed to stop brofish`, err.message);
     });
   }

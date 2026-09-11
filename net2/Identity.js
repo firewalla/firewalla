@@ -20,7 +20,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const { Rule } = require('./Iptables.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -116,7 +116,7 @@ class Identity extends Monitorable {
     await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
-    await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
+    await execFile("sudo", ["rm", "-f", `${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`]).catch((err) => { });
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());

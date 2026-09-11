@@ -24,7 +24,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const IdentityManager = require('../net2/IdentityManager.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
 const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
@@ -40,8 +40,8 @@ class UnboundPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     this._init(featureName, `${f.getUserConfigFolder()}/dnsmasq`);
     this.applyUnboundSync = new scheduler.UpdateJob(this.applyUnbound.bind(this), 0);
 
-    await exec(`mkdir -p ${this.dnsmasqConfigFolder}`);
-    await exec(`mkdir -p ${f.getUserConfigFolder()}/unbound_local`);
+    await execFile("mkdir", ["-p", this.dnsmasqConfigFolder]);
+    await execFile("mkdir", ["-p", `${f.getUserConfigFolder()}/unbound_local`]);
 
     sem.on('UNBOUND_REFRESH', () => {
       void this.applyUnboundSync.exec(true);

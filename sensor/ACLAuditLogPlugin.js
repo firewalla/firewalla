@@ -49,7 +49,7 @@ const IntelTool = require('../net2/IntelTool.js');
 const intelTool = new IntelTool();
 
 const { Address4, Address6 } = require('ip-address');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const LRU = require('lru-cache');
 const { Rule } = require('../net2/Iptables.js');
@@ -1146,25 +1146,25 @@ class ACLAuditLogPlugin extends Sensor {
 
     await this.flushAuditChains();
     await this.addIptablesLogging();
-    await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
+    await execFile(`${f.getFirewallaHome()}/scripts/audit-run`, [])
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
 
-    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log on`);
+    await execFile(`${f.getFirewallaHome()}/scripts/dnsmasq-log`, ["on"]);
   }
 
   async globalOff() {
     super.globalOff()
 
     await this.flushAuditChains();
-    await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
+    await execFile(`${f.getFirewallaHome()}/scripts/audit-stop`, [])
 
     clearInterval(this.bufferDumper)
     clearInterval(this.aggregator)
     this.bufferDumper = this.aggregator = undefined
 
-    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log off`);
+    await execFile(`${f.getFirewallaHome()}/scripts/dnsmasq-log`, ["off"]);
   }
 }
 

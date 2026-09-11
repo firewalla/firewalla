@@ -39,7 +39,11 @@ function loadDNSMASQ(options = {}) {
       timer.cleared = true;
   };
 
+  // the module reaches the shell two ways: execAsync = util.promisify(child_process.exec) with a
+  // command string, and execFile from child-process-promise with argv. both land here as one
+  // string, so this table and the command assertions read the same either way
   const execResult = (cmd) => {
+    commands.push(cmd);
     if (cmd.includes('find ')) {
       return { stdout: `${options.md5 || 'abc123'}\n`, stderr: '' };
     } else if (cmd.includes('kill -RTMIN')) {
@@ -56,7 +60,6 @@ function loadDNSMASQ(options = {}) {
   };
 
   const exec = (cmd, cb) => {
-    commands.push(cmd);
     try {
       const result = execResult(cmd);
       cb(null, result.stdout, result.stderr);
@@ -64,10 +67,12 @@ function loadDNSMASQ(options = {}) {
       cb(err, '', err.message);
     }
   };
-  exec[util.promisify.custom] = async (cmd) => {
-    commands.push(cmd);
-    return execResult(cmd);
-  };
+  // child_process.exec carries its own promisify.custom and resolves {stdout, stderr}; promisifying
+  // a plain (err, stdout, stderr) callback would resolve stdout alone and drop stderr
+  exec[util.promisify.custom] = async (cmd) => execResult(cmd);
+
+  // child-process-promise takes argv, resolves a result object and rejects on failure
+  const execFile = async (file, args = []) => execResult([file, ...args].join(' '));
 
   const redisClient = {
     on: () => {},
@@ -149,7 +154,8 @@ function loadDNSMASQ(options = {}) {
     '../../sensor/SensorEventManager.js': {
       getInstance: () => ({ once: () => {}, on: () => {}, sendEventToFireMain: () => {} })
     },
-    'child_process': { exec, execFile: () => {} },
+    'child_process': { exec },
+    'child-process-promise': { execFile },
     'fs': fsStub,
     '../../net2/Mode.js': {},
     '../../net2/DNSTool.js': class { constructor() {} },

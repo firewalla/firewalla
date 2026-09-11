@@ -20,6 +20,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
+const { execFile } = require('child-process-promise');
 const f = require('../net2/Firewalla.js');
 const PlatformLoader = require('../platform/PlatformLoader.js');
 const platform = PlatformLoader.getPlatform();
@@ -125,7 +126,7 @@ class DapSensor extends Sensor {
       
       // Start the fwdap.service
       log.info('Starting fwdap.service...');
-      const { stdout, stderr } = await execAsync('sudo systemctl start fwdap.service');
+      const { stdout, stderr } = await execFile('sudo', ['systemctl', 'start', 'fwdap.service']);
       if (stderr) {
         log.warn('Warning when starting fwdap.service:', stderr);
       }
@@ -142,7 +143,7 @@ class DapSensor extends Sensor {
     try {
       // Stop the fwdap.service
       log.info('Stopping fwdap.service...');
-      const { stdout, stderr } = await execAsync('sudo systemctl stop fwdap.service');
+      const { stdout, stderr } = await execFile('sudo', ['systemctl', 'stop', 'fwdap.service']);
       if (stderr) {
         log.warn('Warning when stopping fwdap.service:', stderr);
       }

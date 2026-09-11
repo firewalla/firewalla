@@ -34,7 +34,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const { spawn, ChildProcess } = require('child_process')
 const { createInterface, Interface } = require('readline')
 const _ = require('lodash')
@@ -60,7 +60,7 @@ class LiveStatsPlugin extends Sensor {
     if (cache.iftop) {
       cache.iftop.stdout && cache.iftop.stdout.unpipe()
       // iftop is invoked as root, cannot be terminated with kill()
-      exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      execFile("sudo", ["pkill", "-P", String(cache.iftop.pid)]).catch(() => {})
       delete cache.iftop
     }
     if (cache.rl) {
@@ -75,7 +75,7 @@ class LiveStatsPlugin extends Sensor {
     if (!cache) return
     if (cache.ping) {
       cache.ping.proc && cache.ping.proc.stdout && cache.ping.proc.stdout.unpipe()
-      exec(`kill ${cache.ping.proc.pid}`).catch((err) => {})
+      execFile("kill", [String(cache.ping.proc.pid)]).catch((err) => {})
       if (cache.ping.rl) {
         cache.ping.rl.close();
       }
@@ -902,7 +902,7 @@ class LiveStatsPlugin extends Sensor {
       return { ssid: null, band: null }
 
     const ctrlDir = this.getWpaCtrlDir(intf)
-    const identity = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} status`)
+    const identity = await execFile("sudo", [wpaCli, "-p", ctrlDir, "-i", intf.name, "status"])
       .then(result => this.parseWpaStatus(result.stdout, intf.name))
       .catch(err => {
         log.error('Failed to get wpa status of', intf.name, err.message)
@@ -933,7 +933,7 @@ class LiveStatsPlugin extends Sensor {
       return null
 
     const ctrlDir = this.getWpaCtrlDir(intf)
-    return exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
+    return execFile("sudo", [wpaCli, "-p", ctrlDir, "-i", intf.name, "signal_poll"])
       .then(result => this.parseWpaSignalPoll(result.stdout))
       .catch(err => {
         log.error('Failed to get wpa signal of', intf.name, err.message)
@@ -1051,7 +1051,7 @@ class LiveStatsPlugin extends Sensor {
       log.debug(ipv4Cmd);
       const ipv4Count = await exec(ipv4Cmd);
       try {
-        await exec("sudo modinfo nf_conntrack_ipv6"); // check if ipv6 kernel module is loaded, if not loaded, do not use the ipv6 data, which is not correct
+        await execFile("sudo", ["modinfo", "nf_conntrack_ipv6"]); // check if ipv6 kernel module is loaded, if not loaded, do not use the ipv6 data, which is not correct
         const ipv6Cmd = "sudo conntrack -L -f ipv6 2>/dev/null | fgrep -v =::1 | wc -l";
         const ipv6Count = await exec(ipv6Cmd);
         return Number(ipv4Count.stdout) + Number(ipv6Count.stdout);

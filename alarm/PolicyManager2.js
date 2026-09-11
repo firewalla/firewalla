@@ -92,7 +92,7 @@ const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const LRU = require('lru-cache');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -3063,7 +3063,7 @@ class PolicyManager2 {
     try {
       let cmdResult = await exec("sudo iptables -w -S | grep -E 'FW_FIREWALL'");
       let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
-      cmdResult = await exec(`sudo ipset -S`);
+      cmdResult = await execFile("sudo", ["ipset", "-S"]);
       let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
       for (const line of cmdResultContent) {
         const splitCurrent = line.split(" ");

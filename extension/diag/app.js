@@ -24,7 +24,7 @@ const port = 8835
 
 const Promise = require('bluebird')
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 const fs = require('fs')
 Promise.promisifyAll(fs)
 const http = require('http');
@@ -129,7 +129,7 @@ class App {
 
   async getFireResetStatus() {
     try {
-      await exec("systemctl is-active firereset")
+      await execFile("systemctl", ["is-active", "firereset"])
     } catch(err) {
       log.error("firereset is not active", err);
       return 1;
@@ -174,7 +174,7 @@ class App {
   }
 
   async getSystemMemory() {
-    const result = await exec("free -m")
+    const result = await execFile("free", ["-m"])
     const stdout = result.stdout
     const lines = stdout.split(/\n/g)
 
@@ -201,7 +201,7 @@ class App {
 
   async getDatabase() {
     try {
-      await exec("systemctl is-active redis-server")
+      await execFile("systemctl", ["is-active", "redis-server"])
     } catch (err) {
       log.error("Failed to check database", err);
       return errorCodes.database
@@ -212,7 +212,7 @@ class App {
 
   async getDatabaseConnectivity() {
     try {
-      await exec("redis-cli get mode")
+      await execFile("redis-cli", ["get", "mode"])
     } catch (err) {
       log.error("Failed to check database connection status", err);
       return errorCodes.databaseConnectivity
@@ -222,7 +222,7 @@ class App {
 
   async getGID() {
     try {
-      const gid = await exec("redis-cli hget sys:ept gid")
+      const gid = await execFile("redis-cli", ["hget", "sys:ept", "gid"])
       return gid && gid.stdout && gid.stdout.substring(0, 8)
     } catch (err) {
       log.error("Failed to get gid", err);
@@ -232,7 +232,7 @@ class App {
 
   async getFullGID() {
     try {
-      const gid = await exec("redis-cli hget sys:ept gid")
+      const gid = await execFile("redis-cli", ["hget", "sys:ept", "gid"])
       return gid && gid.stdout && gid.stdout.replace("\n", "")
     } catch (err) {
       log.error("Failed to get gid", err);
@@ -284,7 +284,7 @@ class App {
         const gid = await this.getFullGID()
         await fs.accessAsync(filename, fs.constants.F_OK)
         //tail -n 1000 /home/pi/logs/FireKick.log | sed -r   "s/0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g"
-        const result = (await exec(`tail -n 1000 ${filename}`)).stdout
+        const result = (await execFile("tail", ["-n", "1000", filename])).stdout
         let lines = result.split("\n")
         lines = lines.map((originLine) => {
           let line = originLine
@@ -308,7 +308,7 @@ class App {
       const filename = "/home/pi/.forever/firereset.log";
       (async () => {
         await fs.accessAsync(filename, fs.constants.F_OK)
-        const result = (await exec(`tail -n 100 ${filename}`)).stdout
+        const result = (await execFile("tail", ["-n", "100", filename])).stdout
         let lines = result.split("\n")
         lines = lines.map((originLine) => {
           let line = originLine

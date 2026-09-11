@@ -33,7 +33,7 @@ const intelTool = new IntelTool()
 
 const LogReader = require('../util/LogReader.js');
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const LRU = require('lru-cache');
 const HostManager = require('../net2/HostManager.js');
@@ -283,12 +283,12 @@ class ACLAlarmLogPlugin extends Sensor {
 
   async globalOn() {
     super.globalOn()
-    await exec(`${f.getFirewallaHome()}/scripts/alarm-run`)
+    await execFile(`${f.getFirewallaHome()}/scripts/alarm-run`, [])
   }
 
   async globalOff() {
     super.globalOff()
-    await exec(`${f.getFirewallaHome()}/scripts/alarm-stop`)
+    await execFile(`${f.getFirewallaHome()}/scripts/alarm-stop`, [])
   }
 }
 

@@ -30,7 +30,7 @@ const sysManager = require('./SysManager.js');
 const Message = require('./Message.js');
 const Constants = require("./Constants.js");
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 // internal properties
 let staStatus = null
@@ -63,9 +63,9 @@ class IntegratedFWAPC {
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
       try {
-        const { stdout: iwDevInfoOutput } = await exec(`sudo iw dev ${AP_INTF} info`);
+        const { stdout: iwDevInfoOutput } = await execFile("sudo", ["iw", "dev", AP_INTF, "info"]);
         const iwDevInfo = this.parseIWDevInfo(iwDevInfoOutput);
-        const { stdout } = await exec(`sudo hostapd_cli -i ${AP_INTF} -p ${f.getFireRouterRuntimeInfoFolder()}/hostapd all_sta`);
+        const { stdout } = await execFile("sudo", ["hostapd_cli", "-i", AP_INTF, "-p", `${f.getFireRouterRuntimeInfoFolder()}/hostapd`, "all_sta"]);
         staStatus = this.parseHostApdCliSTAs(stdout, AP_INTF, iwDevInfo.ssid, iwDevInfo.bssid, iwDevInfo.channel);
         staStatusTs = Date.now() / 1000;
       } catch (err) {
@@ -78,9 +78,9 @@ class IntegratedFWAPC {
 
   async getSTAStatus(mac) {
     try {
-      const { stdout: iwDevInfoOutput } = await exec(`sudo iw dev ${AP_INTF} info`);
+      const { stdout: iwDevInfoOutput } = await execFile("sudo", ["iw", "dev", AP_INTF, "info"]);
       const iwDevInfo = this.parseIWDevInfo(iwDevInfoOutput);
-      const { stdout } = await exec(`sudo hostapd_cli -i ${AP_INTF} -p ${f.getFireRouterRuntimeInfoFolder()}/hostapd sta ${mac}`);
+      const { stdout } = await execFile("sudo", ["hostapd_cli", "-i", AP_INTF, "-p", `${f.getFireRouterRuntimeInfoFolder()}/hostapd`, "sta", mac]);
       const result = this.parseHostApdCliSTAs(stdout, AP_INTF, iwDevInfo.ssid, iwDevInfo.bssid, iwDevInfo.channel);
       return result[mac.toUpperCase()] || null;
     } catch (err) {
