@@ -95,12 +95,12 @@ for role in "${ROLES[@]}"; do
   }
 
   # the process is answering and every interface it captures is publishing
+  status_args=(--zeekctl-compat)
+  if [[ $SERVICE == suricata && ${#ids_status_args[@]} -gt 0 ]]; then
+    status_args+=("${ids_status_args[@]}")
+  fi
   check_status() {
-    local args=(--zeekctl-compat)
-    if [[ $SERVICE == suricata && ${#ids_status_args[@]} -gt 0 ]]; then
-      args+=("${ids_status_args[@]}")
-    fi
-    sudo "$FLEET" "${args[@]}" --http "$HTTP" --status >/dev/null 2>&1
+    sudo "$FLEET" "${status_args[@]}" --http "$HTTP" --status >/dev/null 2>&1
   }
 
   result_hb="OK"
@@ -115,7 +115,7 @@ for role in "${ROLES[@]}"; do
   done
 
   if ! $ok; then
-    detail=$(sudo "$FLEET" --zeekctl-compat --http "$HTTP" --status 2>&1 | tr '\n' ' ')
+    detail=$(sudo "$FLEET" "${status_args[@]}" --http "$HTTP" --status 2>&1 | tr '\n' ' ')
     log "fleet ping failed(HB:$result_hb, Status:$result_status), restarting $SERVICE: $detail"
     sudo systemctl restart "$SERVICE" || overall=1
   fi
