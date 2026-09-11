@@ -325,7 +325,7 @@ case "$UNAME" in
     ;;
 esac
 
-branch=$(cd /home/pi/firewalla;git rev-parse --abbrev-ref HEAD)
+branch=$(cd "${FIREWALLA_HOME:-/home/pi/firewalla}" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null)
 if [ "$branch" = "master" ]; then
   XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
 fi

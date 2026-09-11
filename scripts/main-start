@@ -327,6 +327,11 @@ if [[ ! -f /.dockerenv ]]; then
       sudo cp $(get_suricata_service) /etc/systemd/system/.
     fi
 
+    # This snapshot belongs to the previous FireMain/configuration. Do not let
+    # an upgrade or restart apply its stale feature state before the new
+    # FireMain publishes and reconciles the current effective configuration.
+    sudo rm -f "${FW_EFFECTIVE_FEATURES:-/dev/shm/fleet-engine.features}"
+
     # flow engines: install or remove the fleet drop-ins beside the unit files
     # just copied, per the pcap_zeek_fleet / pcap_zeek_suricata features. On
     # failure the drop-ins may not match the features, and starting brofish or
