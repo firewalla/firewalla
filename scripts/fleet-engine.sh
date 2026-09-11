@@ -380,9 +380,28 @@ run_locked() {
     # than any timeout worth waiting.
     local owner
     owner=$(cat "$LOCK/pid" 2>/dev/null)
-    if [[ -z $owner ]] || ! kill -0 "$owner" 2>/dev/null; then
-      log "removing the apply lock $LOCK left by ${owner:-an unknown process}"
-      sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
+    if [[ -z $owner ]]; then
+      # mkdir publishes the lock before its owner can publish the pid. Do not
+      # steal a freshly acquired lock in that small initialization window. An
+      # empty lock left by a crash is safe to reclaim only with rmdir, which
+      # fails if the owner has created its pid file in the meantime.
+      waited=$((waited + 1))
+      if [[ $waited -ge 10 ]] && rmdir "$LOCK" 2>/dev/null; then
+        log "removed an abandoned uninitialized apply lock $LOCK"
+        continue
+      fi
+      sleep 1
+      continue
+    fi
+    if [[ ! $owner =~ ^[0-9]+$ ]] || ! kill -0 "$owner" 2>/dev/null; then
+      log "removing the apply lock $LOCK left by process $owner"
+      if [[ $(cat "$LOCK/pid" 2>/dev/null) == "$owner" ]]; then
+        if sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null; then
+          continue
+        fi
+      fi
+      waited=$((waited + 1))
+      sleep 1
       continue
     fi
     waited=$((waited + 2))
@@ -392,10 +411,22 @@ run_locked() {
     fi
     sleep 2
   done
-  echo $$ | sudo tee "$LOCK/pid" >/dev/null 2>&1 || echo $$ > "$LOCK/pid" 2>/dev/null
+  if ! printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null; then
+    rmdir "$LOCK" 2>/dev/null
+    fail "recording ownership of $LOCK"
+    return 1
+  fi
   "$@"
   local rc=$?
-  sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
+  if [[ $(cat "$LOCK/pid" 2>/dev/null) == "$$" ]]; then
+    if ! sudo rm -rf "$LOCK" 2>/dev/null && ! rm -rf "$LOCK" 2>/dev/null; then
+      fail "releasing $LOCK"
+      return 1
+    fi
+  else
+    fail "lost ownership of $LOCK"
+    return 1
+  fi
   return $rc
 }
 
