@@ -26,6 +26,7 @@ const Constants = require('../net2/Constants.js');
 const bone = require('../lib/Bone.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
+const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
 
 const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
 const BUCKET_TTL = 86400 * 7; // 7 days
@@ -97,15 +98,26 @@ class BlockStatsSensor extends Sensor {
     };
     // note: changing slotSecs takes effect only for buckets created after the change - any
     // in-memory buckets keyed under the previous slotSecs keep accumulating under their old
-    // boundaries until they're flushed/purged, an accepted transitional inaccuracy
+    // boundaries until they're flushed/purged, an accepted transitional inaccuracy. The same
+    // applies to a timezone change, since slot boundaries are pivoted on local midnight
     this.slotSecs = this.blockStatsConfs.slotSecs;
+    // slots are pivoted on local midnight, so a slotSecs that doesn't divide a day leaves a short
+    // trailing slot every day. Warn rather than override - unlike EventSummarySensor's "period",
+    // slotSecs is already deployed and silently changing a configured value would be worse
+    if (!tilesLocalDay(this.slotSecs))
+      log.warn(`slotSecs(${this.slotSecs}) does not divide 86400 evenly, the last slot of each local day will be short`);
+  }
+
+  // start of the slot containing tsSec, pivoted on local midnight. See util/TimeSlot.js
+  _slotStart(tsSec) {
+    return localSlotStart(tsSec, this.slotSecs, SysManager.getTimezone());
   }
 
   async loadCloudConfig(reload = false) {
     let cfg = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
     this.cloudConfig = cfg;
     if (_.isEmpty(cfg) || reload) {
-      cfg = await bone.hashsetAsync(Constants.REDIS_KEY_BLOCK_STATS_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
+      cfg = await bone.hashsetAsync(Constants.KEY_BLOCK_STATS_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
       if (!_.isEmpty(cfg) && _.isObject(cfg)) {
         await rclient.setAsync(Constants.REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG, JSON.stringify(cfg));
         this.cloudConfig = cfg;
@@ -122,7 +134,7 @@ class BlockStatsSensor extends Sensor {
 
   _onBlockFlow(event) {
     const { _ts, ct = 1 } = event;
-    const bucketTs = Math.floor(_ts / this.slotSecs) * this.slotSecs;
+    const bucketTs = this._slotStart(_ts);
     for (const setting of this.blockStatsConfs.blockStatsSettings) {
       if (!matchFilter(setting.filter, event)) continue;
       const { key: settingKey, recordKeys } = setting;
@@ -149,7 +161,7 @@ class BlockStatsSensor extends Sensor {
   }
 
   async _flushAndPurge() {
-    const nowBucket = Math.floor(Date.now() / 1000 / this.slotSecs) * this.slotSecs;
+    const nowBucket = this._slotStart(Math.floor(Date.now() / 1000));
     const staleCutoff = nowBucket - this.slotSecs * 2; // keep current + previous bucket only
 
     const multi = rclient.multi();
@@ -186,8 +198,10 @@ class BlockStatsSensor extends Sensor {
   }
 
   async _reloadRecentBucketsFromRedis() {
-    const nowBucket = Math.floor(Date.now() / 1000 / this.slotSecs) * this.slotSecs;
-    const candidates = [nowBucket, nowBucket - this.slotSecs]; // current + immediately-preceding slot
+    const nowBucket = this._slotStart(Math.floor(Date.now() / 1000));
+    // the slot holding the second just before the current one - derived rather than subtracting
+    // slotSecs, so it stays right across a local-day boundary and across a DST transition
+    const candidates = [nowBucket, this._slotStart(nowBucket - 1)];
     const keys = candidates.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
     const values = await rclient.mgetAsync(keys);
     candidates.forEach((ts, i) => {

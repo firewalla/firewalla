@@ -105,6 +105,9 @@ const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+// matches EventSummarySensor's RETENTION_SECS (7 days), but counted in local calendar days
+const EVENT_SUMMARY_RETENTION_DAYS = 7;
+const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
@@ -1706,6 +1709,7 @@ module.exports = class HostManager extends Monitorable {
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
       this.recentBlockStatsForInit(json),
+      this.eventSummaryForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1828,6 +1832,56 @@ module.exports = class HostManager extends Monitorable {
   // stats buckets whose ts falls in [begin, end), newest first
   async getBlockStatsInRange(begin, end) {
     return this._getBlockStatsBuckets(begin, `(${end}`);
+  }
+
+  // strips the sensor's internal bookkeeping fields (record group key, first/last event ts) and
+  // caps the record count to the busiest ones - MAX_RECORDS_PER_KEY x buckets x settings would
+  // otherwise be inlined in every init response, the same concern summarizeBlockStatsEntry
+  // addresses by truncating to top-5 by cnt
+  summarizeEventSummaryBucket(payload) {
+    const records = (payload.records || []).slice()
+      .sort((a, b) => b.cnt - a.cnt)
+      .slice(0, EVENT_SUMMARY_MAX_RECORDS)
+      .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
+    return { ts: payload.ts, du: payload.du, key: payload.key, records };
+  }
+
+  async eventSummaryForInit(json) {
+    // align the cutoff to local midnight so this is the last 7 CALENDAR days, "now - 604800" would
+    // yield 7 days plus a partial 8th. Same shape as AlarmManager2.getAlarmWindowBeginTs
+    const tz = sysManager.getTimezone();
+    const now = tz && moment.tz.zone(tz) ? moment().tz(tz) : moment();
+    const cutoff = now.subtract(EVENT_SUMMARY_RETENTION_DAYS - 1, 'days').startOf('day').unix();
+
+    let redisKeys;
+    try {
+      // ZREVRANGEBYSCORE takes max before min. Members are full key strings, so the bucket
+      // boundaries never have to be reconstructed from the (possibly since-changed) config
+      redisKeys = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_EVENT_SUMMARY_INDEX, '+inf', cutoff);
+    } catch (err) {
+      log.error(`Failed to load event summary index: ${err.message}`);
+      json.eventSummary = [];
+      return;
+    }
+    if (_.isEmpty(redisKeys)) {
+      json.eventSummary = [];
+      return;
+    }
+    const buckets = [];
+    try {
+      const values = await rclient.mgetAsync(redisKeys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          buckets.push(this.summarizeEventSummaryBucket(JSON.parse(v)));
+        } catch (err) {
+          log.error(`Failed to parse event summary bucket ${redisKeys[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load event summary buckets: ${err.message}`);
+    }
+    json.eventSummary = buckets;
   }
 
   async miscForInit(json) {
