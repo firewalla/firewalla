@@ -140,4 +140,4 @@ else
 fi
 
 sync
-logger "REBOOT: SWITCH branch from $cur_branch to $branch"
+logger "Firewalla:switch_branch: from $cur_branch to $branch"
