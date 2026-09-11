@@ -102,6 +102,10 @@ class Host extends Monitorable {
 
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
 
+        // derive bname/localDomain/userLocalDomain, a host created from scratch has none of them
+        // yet. The publish is picked up by the subscription above, which schedules the hosts file
+        await this.update(this.o, false, true)
+
         await this.applyPolicy()
       })().catch(err => {
         log.error(`Error initializing Host ${this.o.mac}`, err);
@@ -738,6 +742,9 @@ class Host extends Monitorable {
 
       if (this.invalidateHostsFileTask)
         clearTimeout(this.invalidateHostsFileTask);
+      // otherwise a pending task will re-add ipset entries and re-create the hosts file below
+      if (this.updateHostDataTask)
+        clearTimeout(this.updateHostDataTask);
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       await fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
@@ -801,6 +808,12 @@ class Host extends Monitorable {
         if (ops.length)
           await Ipset.restore(ops, true);
 
+        // hosts file is derived from the same host object as the ipsets above.
+        // own catch + placed before identifyDevice() so neither can skip the other
+        await this.updateHostsFileIfChanged().catch((err) => {
+          log.error(`Failed to update hosts file of ${this.o.mac}`, err.message);
+        });
+
         await this.identifyDevice(false)
       } catch (err) {
         log.error('Error update host data', err)
@@ -808,87 +821,129 @@ class Host extends Monitorable {
     }, 3000);
   }
 
+  // normalized key of the IPv6 addresses that actually affect the hosts file,
+  // i.e. valid and not link-local, see the entry generation in updateHostsFile()
+  static hostsFileV6Key(v6) {
+    if (_.isString(v6)) {
+      try { v6 = JSON.parse(v6) } catch (err) { return "" }
+    }
+    if (!_.isArray(v6))
+      return "";
+    return v6.filter((ip) => {
+      try {
+        const addr6 = new Address6(ip);
+        // isValid() only exists in ip-address 6.x, newer versions throw in the constructor instead
+        if (_.isFunction(addr6.isValid) && !addr6.isValid())
+          return false;
+        return !addr6.isLinkLocal();
+      } catch (err) {
+        return false;
+      }
+    }).sort().join(",");
+  }
+
+  // refresh the hosts file only if one of the fields it is rendered from changed,
+  // this merely saves a couple of redis reads, updateHostsFile() dedups the write itself
+  async updateHostsFileIfChanged() {
+    if (!fc.isFeatureOn('local_domain'))
+      return;
+    const key = [
+      this.o.ipv4Addr,
+      Host.hostsFileV6Key(this.ipv6Addr),
+      this.o.localDomain,
+      this.o.userLocalDomain
+    ].join("|");
+    if (this._hostsFileKey === key)
+      return;
+    await this.updateHostsFile();
+    // only record on success so a failed write is retried on the next update
+    this._hostsFileKey = key;
+  }
+
   async updateHostsFile() {
-    const macEntry = await hostTool.getMACEntry(this.o.mac);
-    // update hosts file in dnsmasq
-    const hostsFile = Host.getHostsFilePath(this.o.mac);
-    const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
-      // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+    // serialize per device, _lastHostfileEntries is read and written across awaits below
+    await lock.acquire(`HOSTSFILE_${this.o.mac}`, async () => {
+      const macEntry = await hostTool.getMACEntry(this.o.mac);
+      // update hosts file in dnsmasq
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
+      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
+        // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    const ipv4Addr = macEntry && macEntry.ipv4Addr;
-    const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
-    const localDomain = macEntry.localDomain || "";
-    const userLocalDomain = macEntry.userLocalDomain || "";
-    if (!ipv4Addr) {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+      const ipv4Addr = macEntry && macEntry.ipv4Addr;
+      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
+      const localDomain = macEntry.localDomain || "";
+      const userLocalDomain = macEntry.userLocalDomain || "";
+      if (!ipv4Addr) {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    let ipv6Addr = null;
-    try {
-      ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-    } catch (err) {}
-    const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-      return a.indexOf(v) === i;
-    })
-    const iface = sysManager.getInterfaceViaIP(ipv4Addr);
-    if (!iface) {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+      let ipv6Addr = null;
+      try {
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+      } catch (err) {}
+      const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+        return a.indexOf(v) === i;
+      })
+      const iface = sysManager.getInterfaceViaIP(ipv4Addr);
+      if (!iface) {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
-    const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
-    const entries = [];
-    for (const suffix of suffixes) {
-      for (const alias of aliases) {
-        const fqdn = `${alias}.${suffix}`;
-        if (new Address4(ipv4Addr).isValid())
-          entries.push(`${ipv4Addr} ${fqdn}`);
-        let ipv6Found = false;
-        if (_.isArray(ipv6Addr)) {
-          for (const addr of ipv6Addr) {
-            const addr6 = new Address6(addr);
-            if (addr6.isValid() && !addr6.isLinkLocal()) {
-              ipv6Found = true;
-              entries.push(`${addr} ${fqdn}`);
+      const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+      const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
+      const entries = [];
+      for (const suffix of suffixes) {
+        for (const alias of aliases) {
+          const fqdn = `${alias}.${suffix}`;
+          if (new Address4(ipv4Addr).isValid())
+            entries.push(`${ipv4Addr} ${fqdn}`);
+          let ipv6Found = false;
+          if (_.isArray(ipv6Addr)) {
+            for (const addr of ipv6Addr) {
+              const addr6 = new Address6(addr);
+              if (addr6.isValid() && !addr6.isLinkLocal()) {
+                ipv6Found = true;
+                entries.push(`${addr} ${fqdn}`);
+              }
             }
           }
+          // add empty ipv6 address if no routable ipv6 address is available
+          if (!ipv6Found)
+            entries.push(`:: ${fqdn}`);
         }
-        // add empty ipv6 address if no routable ipv6 address is available
-        if (!ipv6Found)
-          entries.push(`:: ${fqdn}`);
       }
-    }
-    if (entries.length !== 0) {
-      if (this._lastHostfileEntries !== entries.sort().join("\n")) {
-        await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
-          log.error(`Failed to write hosts file ${hostsFile}`, err.message);
-        });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = entries.sort().join("\n");
+      if (entries.length !== 0) {
+        if (this._lastHostfileEntries !== entries.sort().join("\n")) {
+          await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
+            log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+          });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = entries.sort().join("\n");
+        }
+      } else {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
       }
-    } else {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }
-    }
-    this.scheduleInvalidateHostsFile();
+      this.scheduleInvalidateHostsFile();
+    });
   }
 
   scheduleInvalidateHostsFile() {

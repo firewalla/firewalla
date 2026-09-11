@@ -25,7 +25,7 @@ const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const country = require('../extension/country/country.js')
 const ipUtil = require('../util/IPUtil.js')
 
-const exec = require('child-process-promise').exec
+const { execFile } = require('child-process-promise')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
@@ -52,7 +52,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.resetActiveCountries()
-      exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
+      execFile("mkdir", ["-p", DISK_CACHE_FOLDER]);
     }
 
     return instance

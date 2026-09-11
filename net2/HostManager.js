@@ -21,7 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const ipset = require('./Ipset.js');
 const _ = require('lodash');
@@ -1710,7 +1710,7 @@ module.exports = class HostManager extends Monitorable {
       this.extraTimeRequestsForInit(json),
       this.recentBlockStatsForInit(json),
       this.eventSummaryForInit(json),
-      exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
+      execFile("sudo", ["systemctl", "is-active", "firekick"]).then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
     if (options.legacySystemFlows)
@@ -2584,7 +2584,7 @@ module.exports = class HostManager extends Monitorable {
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
       } catch(err) {
-        await exec(`touch ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("touch", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       }
     } else {
@@ -2595,7 +2595,7 @@ module.exports = class HostManager extends Monitorable {
       // remove dev flag file if it exists and restart bitbridge
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
-        await exec(`rm ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("rm", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       } catch(err) {}
     }

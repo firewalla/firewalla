@@ -1,17 +1,5 @@
 'use strict';
 
-// Box activation bootstrap (used by the auto-install image; currently
-// exercised in Proxmox VMs but not VM-specific by design).
-// Reports identifiers to the provisioning service, polls encipher rendezvous for the MSP-injected payload,
-// then installs the license, joins the MSP web eid into the box group, configures Guardian, and restarts fireapi.
-
-// TODO: too fragile when launched at firstboot. The fw-firstboot.sh gate uses
-// a wall-clock timer (breaks on the no-RTC box's NTP step), proceeds even on
-// timeout, and never waits for node_modules or the network. Result: this runs
-// before things are ready -> require('uuid') fails, eth0 IP shows none, etc.
-// Don't assume the env is ready: verify deps/redis/network up front and exit
-// non-zero with a clear message instead of crashing on a require.
-
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
@@ -23,91 +11,71 @@ const _ = require('lodash');
 const Cloud = require('../encipher');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const licenseUtil = require('../util/license.js');
+const eptGroup = require('../util/eptGroup.js');
 const bone = require('../lib/Bone.js');
 const networkTool = require('../net2/NetworkTool.js')();
+const sysManager = require('../net2/SysManager.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const nodePersist = require('node-persist');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
-const PROVISION_BASE = process.env.FW_PROVISION_BASE || 'https://msp.dd.firewalla.net';
-const ACTIVATE_BASE = process.env.FW_ACTIVATE_BASE || PROVISION_BASE;
+const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
+let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
+const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
+const ENCIPHER_DB = `${process.env.HOME || '/home/pi'}/.encipher/db`;
 
-const POLL_INTERVAL_SEC = 2;
-const POLL_TIMEOUT_SEC = 3600;
-
-const DEBUG = process.argv.includes('--debug');
+const POLL_INTERVAL_SEC = 1; // reduce activate time
 
 let eptcloud;
-
-const c = {
-  reset: '\x1b[0m', dim: '\x1b[2m', bold: '\x1b[1m',
-  red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-  blue: '\x1b[34m', cyan: '\x1b[36m', gray: '\x1b[90m'
-};
-
-const ui = {
-  banner(title) {
-    const line = '═'.repeat(58);
-    const pad = Math.max(0, Math.floor((58 - title.length) / 2));
-    const left = ' '.repeat(pad);
-    const right = ' '.repeat(58 - title.length - pad);
-    console.log('');
-    console.log(c.cyan + '╔' + line + '╗' + c.reset);
-    console.log(c.cyan + '║' + c.reset + c.bold + left + title + right + c.reset + c.cyan + '║' + c.reset);
-    console.log(c.cyan + '╚' + line + '╝' + c.reset);
-    console.log('');
-  },
-  url(label, u) {
-    console.log('');
-    console.log('  ' + c.gray + label + c.reset);
-    console.log('    ' + c.cyan + c.bold + u + c.reset);
-    console.log('');
-  },
-  note(msg) { console.log('  ' + msg); },
-  err(msg)  { console.log('  ' + c.red + '✗' + c.reset + ' ' + c.red + msg + c.reset); },
-  step(n, title) {
-    console.log('');
-    console.log(c.gray + '─'.repeat(60) + c.reset);
-    console.log(c.bold + c.blue + ' Step ' + n + ' · ' + c.reset + c.bold + title + c.reset);
-    console.log(c.gray + '─'.repeat(60) + c.reset);
-  },
-  ok(msg, detail) {
-    const d = detail ? c.dim + '  ' + detail + c.reset : '';
-    console.log('  ' + c.green + '✓' + c.reset + ' ' + msg + d);
-  },
-  info(msg) { console.log('  ' + c.gray + '·' + c.reset + ' ' + c.gray + msg + c.reset); },
-  warn(msg) { console.log('  ' + c.yellow + '!' + c.reset + ' ' + c.yellow + msg + c.reset); },
-  kv(k, v)  { console.log('  ' + c.gray + k.padEnd(10) + c.reset + c.bold + v + c.reset); }
-};
-
-// In non-debug mode, silence the internal-diagnostic helpers.
-if (!DEBUG) {
-  for (const m of ['step', 'ok', 'info', 'warn', 'kv']) ui[m] = () => {};
-}
+let cloudConfig;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function loadConfig() {
-  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  for (const k of ['appId', 'appSecret']) {
-    if (!cfg[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
+const uptime = () => {
+  try {
+    return Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]);
+  } catch (e) {
+    return null;
   }
-  return cfg;
+};
+
+const timing = {};
+const mark = key => { timing[key] = uptime(); };
+
+const log = msg => console.log(`[onboard ${new Date().toISOString()} up=${uptime()}s] ${msg}`);
+
+function loadOnboardConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(ONBOARD_CONFIG, 'utf8'));
+    return cfg && typeof cfg === 'object' ? cfg : null;
+  } catch (e) {
+    return null;
+  }
 }
 
-async function connectCloud(config) {
-  eptcloud = new Cloud(config.endpoint_name || 'netbot', null);
+async function connectCloud() {
+  cloudConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  for (const k of ['appId', 'appSecret', 'service']) {
+    if (!cloudConfig[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
+  }
+  eptcloud = new Cloud(cloudConfig.endpoint_name || 'netbot', null);
   await eptcloud.loadKeys();
-  await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name);
+  await eptcloud.eptLogin(cloudConfig.appId, cloudConfig.appSecret, null, cloudConfig.endpoint_name);
 }
 
-// the wait is defensive.
-async function waitForGid(maxSec = 10) {
-  for (let i = 0; i < maxSec; i++) {
-    const gid = await rclient.hgetAsync('sys:ept', 'gid');
-    if (gid) return gid;
-    await sleep(1000);
-  }
-  throw new Error('sys:ept.gid not found - firekick must run first');
+async function ensureGid() {
+  fs.mkdirSync(ENCIPHER_DB, { recursive: true });
+  nodePersist.initSync({ dir: ENCIPHER_DB });
+
+  const gid = await eptGroup.ensureGroup({
+    eptcloud,
+    config: cloudConfig,
+    model: platform.getName(),
+    storage: nodePersist
+  });
+  await eptGroup.publishEpt(eptcloud, gid);
+  return gid;
 }
 
 async function registerBootstrap({ bootstrapId, rid, gid }) {
@@ -120,20 +88,21 @@ async function registerBootstrap({ bootstrapId, rid, gid }) {
   });
 }
 
-// Poll encipher rendezvous until the MSP-side lambda pushes a payload.
-// Returns { value: <web_eid>, evalue: JSON({ license, server, business }) }.
 async function waitForInvitation(rid) {
-  const deadline = Date.now() + POLL_TIMEOUT_SEC * 1000;
-  while (Date.now() < deadline) {
+  let i = 0;
+  const heartbeatEvery = Math.max(1, Math.round(300 / POLL_INTERVAL_SEC));
+  for (;;) {
     try {
       const res = await eptcloud.rendezvousMap(rid);
       if (res && res.value) return res;
     } catch (e) {
-      if (e.statusCode !== 404) ui.warn(`poll error: ${e.message}`);
+      if (e.statusCode !== 404) log(`poll error: ${e.message}`);
+    }
+    if (++i % heartbeatEvery === 0) {
+      log(`still waiting for activate... (${i * POLL_INTERVAL_SEC}s elapsed)`);
     }
     await sleep(POLL_INTERVAL_SEC * 1000);
   }
-  throw new Error(`invitation timeout after ${POLL_TIMEOUT_SEC}s`);
 }
 
 function parsePayload(evalue) {
@@ -152,6 +121,20 @@ async function installLicense(licenseUuid, mac) {
     throw new Error(`license fetch failed for ${licenseUuid}`);
   }
   await licenseUtil.writeLicenseAsync(license);
+  return license;
+}
+
+async function installLicenseAndMark(licenseUuid, mac) {
+  log(`installing license ${licenseUuid}`);
+  const license = await installLicense(licenseUuid, mac);
+  await persistState({
+    stage: 'licensed',
+    license_uuid: license.DATA.UUID,
+    license_type: license.DATA.LICENSE,
+    bound_mac: license.DATA.MAC,
+    licensed_at: new Date().toISOString(),
+  });
+  log(`license installed uuid=${license.DATA.UUID} type=${license.DATA.LICENSE}`);
   return license;
 }
 
@@ -174,21 +157,46 @@ async function writeUiConf(gid) {
   await fs.promises.writeFile('/home/pi/.firewalla/ui.conf', JSON.stringify({ gid }), 'utf8');
 }
 
-async function configureGuardian({ server, business }) {
-  const writes = {
-    'ext.guardian.socketio.server':      server,
-    'ext.guardian.business':             JSON.stringify(business),
-    'ext.guardian.socketio.adminStatus': '1'
-  };
-  for (const [k, v] of Object.entries(writes)) await rclient.setAsync(k, v);
-  return writes;
+async function configureGuardian({ server, region, business }) {
+  await rclient.setAsync('ext.guardian.socketio.server', server);
+  if (region) await rclient.setAsync('ext.guardian.socketio.region', region);
+  await rclient.setAsync('ext.guardian.socketio.adminStatus', '1');
+  await rclient.setAsync('ext.guardian.business', JSON.stringify(business));
 }
 
-async function markBootingComplete() {
-  await rclient.setAsync('bootingComplete', '1');
+
+async function applyTimezone(tz) {
+  if (!tz) {
+    log('no timezone in onboard-config - skipping');
+    return;
+  }
+  const existing = await rclient.hgetAsync('sys:config', 'timezone');
+  if (existing) {
+    log(`timezone already set (${existing}) - skipping`);
+    return;
+  }
+  if (!fs.existsSync(`/usr/share/zoneinfo/${tz}`)) {
+    log(`WARN: unknown timezone in onboard-config: ${tz} - skipping, is tzdata-legacy installed?`);
+    return;
+  }
+  const err = await sysManager.setTimezone(tz);
+  if (err) {
+    await rclient.hdelAsync('sys:config', 'timezone');
+    sysManager.timezone = null;
+    log(`WARN: failed to set timezone ${tz}: ${err.message}`);
+    return;
+  }
+  log(`timezone set to ${tz}`);
 }
 
 async function restartFireApi() {
+  const state = await execAsync('sudo systemctl is-active fireapi')
+    .then(r => r.stdout.trim())
+    .catch(e => (e.stdout || '').trim());
+  if (state !== 'active') {
+    log(`fireapi is ${state}, main-run will bring it up with this config`);
+    return;
+  }
   await execAsync('sudo systemctl restart fireapi');
 }
 
@@ -200,173 +208,72 @@ async function persistState(patch) {
   try {
     await fs.promises.mkdir(require('path').dirname(STATE_FILE), { recursive: true });
     await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2) + '\n', 'utf8');
-  } catch (e) { /* best-effort */ }
+  } catch (e) {}
 }
 
-// QR rendering: try qrcode-terminal -> system qrencode -> just print URL.
-// Every layer is isolated so any error stays contained.
-function renderQr(url) {
-  try {
-    const qrcode = require('qrcode-terminal');
-    qrcode.generate(url, { small: true });
-    return true;
-  } catch (e1) {
-    try {
-      const { execSync } = require('child_process');
-      const out = execSync('qrencode -t UTF8 -- ' + JSON.stringify(url), { encoding: 'utf8' });
-      process.stdout.write(out);
-      return true;
-    } catch (e2) {
-      console.log('  (no QR renderer available — qrcode-terminal or qrencode missing)');
-      console.log('  URL: ' + url);
-      return false;
-    }
-  }
-}
-
-// readline-based "qr" listener: while bootstrap is polling for activation
-// the user can type "qr" + Enter to render a QR code of the activate URL.
-// Defensive: any error inside the line handler is swallowed so it can't
-// kill the bootstrap process via uncaughtException.
-let qrRl = null;
-let qrCount = 0;
-function startQrListener(url) {
-  // process.stdin may be paused by default with terminal:false on Node 12.
-  try { process.stdin.setEncoding('utf8'); } catch (_) {}
-  try { process.stdin.resume(); } catch (_) {}
-  const readline = require('readline');
-  qrRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-  qrRl.on('line', (raw) => {
-    try {
-      if (raw.trim().toLowerCase() !== 'qr') return;
-      qrCount++;
-      console.log('');
-      console.log('  Rendering QR for: ' + url);
-      console.log('');
-      if (qrCount === 1) {
-        renderQr(url);
-      } else {
-        console.log('  (QR already rendered above — scroll up in noVNC to see it.)');
-        console.log('  URL: ' + url);
-      }
-      console.log('');
-    } catch (e) {
-      try { console.log('  (qr command failed: ' + e.message + ')'); } catch (_) {}
-    }
-  });
-}
-function stopQrListener() {
-  if (qrRl) { try { qrRl.close(); } catch (_) {} qrRl = null; }
-}
-
-async function main() {
-  ui.banner('  Firewalla Software Activation  ');
-
-  const config = loadConfig();
-
-  ui.step(1, 'Connect to Firewalla cloud');
-  await connectCloud(config);
-  ui.ok('Logged in');
-
-  ui.step(2, 'Prepare activation request');
-  const gid = await waitForGid();
+async function main(onboard) {
+  log('onboard start');
+  await connectCloud();
+  const gid = await ensureGid();
+  mark('gid');
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
+  log(`gid=${gid} mac=${mac}`);
+  await persistState({ stage: 'onboard_start', gid, mac, timing });
+
+  await applyTimezone(_.get(onboard, 'timezone'))
+      .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
+
+  const bid = _.get(onboard, 'activation.bid') || uuid.v4();
   const rid = eptcloud.eptGenerateInvite().r;
-  const bootstrapId = uuid.v4();
-  ui.kv('GID', gid);
-  ui.kv('MAC', mac);
-  ui.kv('RID', rid);
-  ui.kv('Bootstrap', bootstrapId);
+  log(`register bid=${bid} rid=${rid}`);
+  await registerBootstrap({ bootstrapId: bid, rid, gid });
+  mark('registered');
+  await persistState({ stage: 'awaiting_activation', bootstrap_id: bid, rid });
 
-  ui.step(3, 'Register with provisioning service');
-  await registerBootstrap({ bootstrapId, rid, gid });
-  ui.ok('Registered');
-  const activateUrl = `${ACTIVATE_BASE}/?bid=${bootstrapId}`;
-  ui.url('Open this URL to activate:', activateUrl);
-  console.log('  ' + c.dim + 'Type ' + c.reset + c.bold + '"qr" + Enter' + c.reset + c.dim +
-              ' on this console to render a QR code of the URL above.' + c.reset);
-  console.log('');
-
-  await persistState({
-    stage: 'awaiting_activation',
-    bootstrap_id: bootstrapId,
-    rid, gid, mac,
-    activate_url: activateUrl,
-  });
-  startQrListener(activateUrl);
-
-  ui.step(4, 'Wait for MSP payload');
-  ui.info(`Polling rendezvous every ${POLL_INTERVAL_SEC}s (timeout ${POLL_TIMEOUT_SEC}s)`);
-  ui.note('Waiting for activation to be confirmed in the browser...');
+  log('waiting for activate (polling rendezvous)...');
   const { value: webEid, evalue } = await waitForInvitation(rid);
-  stopQrListener();
   const payload = parsePayload(evalue);
-  await persistState({
-    stage: 'activating',
-    web_eid: webEid,
-    payload_received_at: new Date().toISOString(),
-  });
-  ui.ok('Invitation received');
-  ui.kv('Web eid', webEid);
-  ui.kv('License', payload.license);
-  ui.kv('MSP', `${payload.business.name} (${payload.business.id})`);
-  ui.kv('Server', payload.server);
+  mark('activated');
+  log(`activate confirmed: web_eid=${webEid} msp=${_.get(payload, 'business.name')}`);
+  await persistState({ stage: 'activating', web_eid: webEid, payload_received_at: new Date().toISOString() });
 
-  ui.step(5, 'Apply activation');
-  ui.note('Applying configuration...');
-
-  const license = await installLicense(payload.license, mac);
-  ui.ok('License installed');
-  ui.kv('UUID',  license.DATA.UUID);
-  ui.kv('Type',  license.DATA.LICENSE);
-  ui.kv('SUUID', license.DATA.SUUID);
-  ui.kv('Bound MAC', license.DATA.MAC);
-
+  await installLicenseAndMark(payload.license, mac);
   const memberCount = await joinWebEidToGroup(gid, webEid);
-  ui.ok('Web eid joined group');
-  ui.kv('Members', String(memberCount));
-
   await writeUiConf(gid);
-  ui.ok('ui.conf written');
-
-  const writes = await configureGuardian(payload);
-  ui.ok('Guardian configured');
-  for (const [k, v] of Object.entries(writes)) {
-    ui.kv(k, v.length > 60 ? v.slice(0, 60) + '...' : v);
-  }
-
-  await markBootingComplete();
-  ui.ok('Marked booting complete');
+  await configureGuardian(payload);
+  log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
 
   await restartFireApi();
-  ui.ok('FireAPI restarting');
+  log('fireapi restarted');
 
   await persistState({
     stage: 'completed',
-    license_uuid: license.DATA.UUID,
-    license_type: license.DATA.LICENSE,
-    bound_mac: license.DATA.MAC,
-    business: payload.business,
+    business: _.get(payload, 'business'),
     server: payload.server,
+    region: payload.region,
     activated_at: new Date().toISOString(),
   });
-
-  ui.banner('  Activation Complete  ');
-  ui.note(`Connected to MSP: ${payload.server}`);
-  ui.note(`State saved to ${STATE_FILE}`);
-  console.log('');
+  mark('done');
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s done=${timing.done}s`);
+  log('onboard done');
 }
 
-main().catch(async (err) => {
-  console.log('');
-  ui.err(`bootstrap failed: ${err.message}`);
-  if (err.stack) console.log(c.dim + err.stack + c.reset);
-  console.log('');
-  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString() }); } catch (_) {}
+const onboard = loadOnboardConfig();
+if (!onboard) {
+  console.error(`[onboard] no/invalid onboard-config at ${ONBOARD_CONFIG} — abort`);
+  process.exit(1);
+}
+
+PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAULT_PROVISION_BASE;
+
+main(onboard).catch(async (err) => {
+  log(`bootstrap failed: ${err.message}`);
+  if (err.stack) console.log(err.stack);
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s`);
+  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString(), timing }); } catch (_) {}
   process.exitCode = 1;
 }).finally(async () => {
-  try { stopQrListener(); } catch (_) { /* ignore */ }
-  try { await rclient.quitAsync(); } catch (_) { /* ignore */ }
+  try { await rclient.quitAsync(); } catch (_) {}
   process.exit(process.exitCode || 0);
 });

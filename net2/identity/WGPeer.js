@@ -24,7 +24,7 @@ const Constants = require('../Constants.js');
 const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
 const FireRouter = require('../FireRouter.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const spawn = require('child-process-promise').spawn;
 
 const Identity = require('../Identity.js');
@@ -301,7 +301,7 @@ class WGPeer extends Identity {
     }
 
     for (const intf of intfs) {
-      const endpointsResults = (await exec(`sudo ${this.wgCmd()} show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+      const endpointsResults = (await execFile("sudo", [this.wgCmd(), "show", intf, "endpoints"]).then(result => result.stdout.trim().split('\n')).catch((err) => {
         log.debug(`Failed to show endpoints using ${this.wgCmd()} command`, err.message);
         return [];
       })).map(result => result.split(/\s+/g));

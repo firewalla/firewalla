@@ -113,7 +113,7 @@ class SysManager {
       })
 
       this.restartRsyslogJob = new scheduler.UpdateJob(async () => {
-        exec(`sudo systemctl restart rsyslog`).catch((err) => {
+        execFile("sudo", ["systemctl", "restart", "rsyslog"]).catch((err) => {
           log.error(`Failed to restart rsyslog`, err.message);
         });
       }, 3000);
@@ -406,8 +406,8 @@ class SysManager {
       pclient.publish("System:TimezoneChange", timezone);
 
       await execFile('sudo', ['timedatectl', 'set-timezone', timezone]);
-      await exec('sudo systemctl restart cron.service');
-      await exec('sudo systemctl restart rsyslog');
+      await execFile('sudo', ['systemctl', 'restart', 'cron.service']);
+      await execFile('sudo', ['systemctl', 'restart', 'rsyslog']);
 
       return null;
     } catch (err) {

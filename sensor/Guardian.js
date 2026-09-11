@@ -50,7 +50,7 @@ const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
 const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
-const execAsync = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const RECONNECT_DELAY_MAX = 5 * 60 * 1000; // socket.io defaults to 5s, way too aggressive for a server that is gone for good
 const SESSION_TTL = 24 * 60 * 60 * 1000; // idle lifetime of a non-msp (my.firewalla) session
@@ -675,7 +675,7 @@ module.exports = class {
             break;
           }
         }
-        await execAsync("sync");
+        await execFile("sync", []);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }
