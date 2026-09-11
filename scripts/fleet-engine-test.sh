@@ -70,7 +70,7 @@ if $LIVE_CHECKS; then
     done
   }
   relive() {
-    sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1 || true
+    sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1 || true
     [[ $brofish_was == active ]] && [[ $(systemctl is-active brofish) != active ]] && sudo systemctl start brofish >/dev/null 2>&1
     [[ $suricata_was == active ]] && [[ $(systemctl is-active suricata) != active ]] && sudo systemctl start suricata >/dev/null 2>&1
     return 0
@@ -185,13 +185,13 @@ if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
   # the live checks run against the box's real paths: the sandbox FLEET_BIN
   # would make verify compare systemd's ExecStart with the scratch binary
   live_before=$(systemctl show brofish -p ExecStart --value)
-  out=$(sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply 2>&1); rc=$?
+  out=$(sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply 2>&1); rc=$?
   check "live apply fails" '[[ $rc -ne 0 ]]'
   check "hold marker is left behind" '[[ -e /dev/shm/fleet-engine.failed ]]'
-  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" restart >/dev/null 2>&1'
+  check "restart refuses while held" '! sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" restart >/dev/null 2>&1'
   check "brofish was not restarted" '[[ "$(systemctl show brofish -p ExecStart --value)" == "$live_before" ]]'
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
-  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1
+  sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1
   check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
   check "the live drop-in is back" '[[ -f /etc/systemd/system/brofish.service.d/fleet.conf ]]'
 else
@@ -223,6 +223,7 @@ check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" 
 check "the apply lock needs no shared permissions (mkdir based)" 'grep -q "until mkdir \"\$LOCK\"" "$ENGINE"'
 check "an abandoned uninitialized lock is removed" 'grep -q "abandoned uninitialized apply lock" "$ENGINE"'
 check "production rejects redirected privileged paths" '! env -u FLEET_ENGINE_TEST_MODE SYSTEMD_DIR="$T/redirected" "$ENGINE" status >/dev/null 2>&1'
+check "test mode never elevates scratch-path operations" 'grep -q "sudo() { command" "$ENGINE"'
 check "the watchdog checks both roles" 'grep -q "ROLES+=" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "any apply failure is retried" 'grep -q "this.applyFailed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
