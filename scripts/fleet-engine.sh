@@ -373,6 +373,16 @@ apply_and_switch()  { apply && switch_roles; }
 LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d}
 run_locked() {
   local waited=0
+
+  pid_alive() {
+    local pid=$1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    # An apply can run as root (asset hook) or pi (main-start). kill -0
+    # returns EPERM across those users even while the process is alive; procfs
+    # remains readable and prevents the lower-privileged caller stealing it.
+    kill -0 "$pid" 2>/dev/null || [[ -d /proc/$pid ]]
+  }
+
   until mkdir "$LOCK" 2>/dev/null; do
     # Only a lock whose owner is gone is stale. Age alone is not enough: a
     # switch back to zeek waits on `systemctl restart brofish`, and the stock
@@ -393,7 +403,7 @@ run_locked() {
       sleep 1
       continue
     fi
-    if [[ ! $owner =~ ^[0-9]+$ ]] || ! kill -0 "$owner" 2>/dev/null; then
+    if ! pid_alive "$owner"; then
       log "removing the apply lock $LOCK left by process $owner"
       if [[ $(cat "$LOCK/pid" 2>/dev/null) == "$owner" ]]; then
         if sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null; then
