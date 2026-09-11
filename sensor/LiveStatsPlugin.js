@@ -615,7 +615,7 @@ class LiveStatsPlugin extends Sensor {
 
       const iftopCmd = [
         'stdbuf', '-o0', '-e0',
-        platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
+        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
 
       iftopCmd.push('-i', intf.name, '-t')
