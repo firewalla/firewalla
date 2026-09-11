@@ -597,6 +597,9 @@ class Platform {
 
   getPlatformFilesPath() { return `${this.__dirname}/files` }
 
+  // platforms whose image ships iftop can override this to use the system one
+  getIftopPath() { return `${this.getPlatformFilesPath()}/iftop` }
+
   getZeekPcapBufsize() {
     return {
       eth: 32,
