@@ -20,6 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const eventApi = require('./EventApi.js');
 const EventQueue = require('../event/EventQueue.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -170,6 +172,23 @@ class EventRequestHandler {
             eventApi.addEvent(Object.assign({}, eventRequest,{"event_type":event_type}),eventRequest.ts);
         } catch (err) {
             log.error(`failed to add ${event_type} event(${JSON.stringify(eventRequest)}):`,err);
+        }
+        // fan out to in-process consumers, e.g. EventSummarySensor. This is the only chokepoint all
+        // state events pass through, note controllers/netbot.js adds firewalla_upgrade directly via
+        // EventApi and thus bypasses this - that runs in FireApi, where the consumers don't exist.
+        try {
+            sem.emitLocalEvent({
+                type: Message.MSG_EVENT_GENERATED,
+                suppressEventLogging: true,
+                // labels is copied as well, isStateEventError() mutates it in place (injects
+                // ok_value) and consumers may read it asynchronously
+                event: Object.assign({}, eventRequest, {
+                    "event_type": event_type,
+                    "labels": Object.assign({}, eventRequest.labels)
+                })
+            });
+        } catch (err) {
+            log.error(`failed to emit ${Message.MSG_EVENT_GENERATED} for ${event_type} event:`,err);
         }
     }
 

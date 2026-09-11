@@ -82,12 +82,22 @@ module.exports = {
   REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG: "block_stats_cloud_config",
-  REDIS_KEY_BLOCK_STATS_CONFIG: "block_stats_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_STATS_CONFIG: "block_stats_config",
   REDIS_KEY_BLOCK_STATS_PREFIX: "blockStats::",
   // zset tracking which blockStats::<ts> bucket keys actually exist (score = member = ts), so
   // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
+  // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
+  // full key string), so readers don't have to reconstruct bucket boundaries from the current config
+  REDIS_KEY_EVENT_SUMMARY_INDEX: "eventSummary:index",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
