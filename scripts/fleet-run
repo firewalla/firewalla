@@ -1,0 +1,72 @@
+#!/bin/bash
+#
+# Launcher for fleet when it owns the zeek role (brofish.service through
+# etc/brofish-fleet.conf). Installed beside the asset, not in the git
+# checkout, so a rollback cannot leave the unit pointing at a missing file.
+#
+#   fleet-run --prepare     what bro-run does before starting zeek: mount
+#                           /bspool, run the platform before_bro hooks (they
+#                           refresh ~/.firewalla/run/zeek/scripts and rebuild
+#                           local.zeek from additional_options.bro, which fleet
+#                           reads) and apply the sysctl profile
+#   fleet-run <args...>     exec fleet with those arguments
+#   fleet-run --after-bro   run the platform after_bro hooks
+#
+# If the checkout no longer knows about the flow engine (a soft downgrade to a
+# revision without scripts/fleet-engine.sh), this hands the role back to the
+# stock engine: the older code would otherwise revive zeek from its unguarded
+# zeekctl cron paths and restart brofish from brofish-ping.sh while fleet ran.
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+source "${FIREWALLA_HOME}/platform/platform.sh"
+
+FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
+DROPINS=(/etc/systemd/system/brofish.service.d/fleet.conf /etc/systemd/system/suricata.service.d/fleet.conf)
+
+# the checkout has no flow-engine support: give the units back and let systemd
+# start the stock ones on the next attempt
+hand_back() {
+  logger "FIREWALLA:FLEET-RUN $ENGINE is gone (rollback?); handing brofish and suricata back to zeek/suricata"
+  local units=(brofish)
+  systemctl is-active -q suricata && units+=(suricata)
+  sudo rm -f "${DROPINS[@]}" 2>/dev/null || return 1
+  sudo rm -f /dev/shm/fleet-engine.failed 2>/dev/null || return 1
+  sudo systemctl daemon-reload 2>/dev/null || return 1
+  # Do not run the stock launcher inside this already-selected Fleet start
+  # transaction. Queue a fresh job so systemd reads the restored base units.
+  sudo systemctl --no-block restart "${units[@]}" 2>/dev/null
+}
+
+if [[ ! -x $ENGINE ]]; then
+  hand_back || logger "FIREWALLA:FLEET-RUN failed to schedule stock-engine handoff"
+  exit 1
+fi
+
+case "${1:-}" in
+  --after-bro)
+    after_bro
+    exit $?
+    ;;
+  --prepare)
+    logger "FIREWALLA:FLEET-RUN preparing"
+    # bro-run normally mounts this; fleet writes its live logs there
+    if ! mountpoint -q /bspool && { ! mkdir -p /bspool || ! mount -t tmpfs -o size=30m tmpfs /bspool; }; then
+      logger "FIREWALLA:FLEET-RUN failed to prepare /bspool"
+      exit 1
+    fi
+    before_bro || { logger "FIREWALLA:FLEET-RUN before_bro failed"; exit 1; }
+    sysctl_conf=$(get_sysctl_conf_path 2>/dev/null)
+    if [[ -n $sysctl_conf && -f $sysctl_conf ]]; then
+      cp -f "$sysctl_conf" /etc/sysctl.conf \
+        && sysctl -p >/dev/null 2>&1 \
+        || { logger "FIREWALLA:FLEET-RUN failed to apply $sysctl_conf"; exit 1; }
+    fi
+    exit 0
+    ;;
+esac
+
+[[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-RUN $FLEET_BIN is not executable"; exit 1; }
+logger "FIREWALLA:FLEET-RUN exec $FLEET_BIN $*"
+exec "$FLEET_BIN" "$@"

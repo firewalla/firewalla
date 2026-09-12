@@ -4,3 +4,4 @@
 /home/pi/.firewalla/run/assets/libmysqlclient.so.21 /goldplus2/libmysqlclient.so.21 644 ":" 'SLNAME="/usr/lib/aarch64-linux-gnu/libmysqlclient.so.21"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/libmysqlclient.so.21 ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/liblua5.3-sql-mysql.so /goldplus2/liblua5.3-sql-mysql.so 644 "" 'sudo mkdir -p /usr/local/lib/lua/5.3/luasql/; SLNAME="/usr/local/lib/lua/5.3/luasql/mysql.so"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/liblua5.3-sql-mysql.so ${SLNAME}; fi'
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /all/zeek-dpi.fwsig 644
+/home/pi/.firewalla/run/assets/fleet /goldplus2/fleet 755 ":" "sudo /home/pi/firewalla/scripts/fleet-updated.sh"

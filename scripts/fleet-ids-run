@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# Launcher for fleet in IDS-only mode, under suricata.service (see
+# etc/suricata-fleet-ids.conf). Installed beside the asset, not in the git
+# checkout, so a rollback cannot leave the unit pointing at a missing file.
+#
+# It replaces scripts/suricata-run, so it takes the same interface list:
+# PcapSuricataPlugin writes it to ~/.firewalla/run/suricata/listen_interfaces.rc,
+# and that list is authoritative whether or not the zeek role is enabled
+# (node.cfg is only refreshed while PcapZeekPlugin runs).
+#
+# If the checkout no longer knows about the flow engine (a soft downgrade),
+# the role is handed back to the stock suricata.
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+source "${FIREWALLA_HOME}/platform/platform.sh"
+
+FLEET_BIN=${FLEET_BIN:-$FIREWALLA_HIDDEN/run/assets/fleet}
+ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
+RC=$FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc
+
+if [[ ! -x $ENGINE ]]; then
+  logger "FIREWALLA:FLEET-IDS-RUN $ENGINE is gone (rollback?); handing suricata back"
+  units=(suricata)
+  systemctl is-active -q brofish && units+=(brofish)
+  sudo rm -f /etc/systemd/system/brofish.service.d/fleet.conf \
+             /etc/systemd/system/suricata.service.d/fleet.conf 2>/dev/null \
+    && sudo rm -f /dev/shm/fleet-engine.failed 2>/dev/null \
+    && sudo systemctl daemon-reload 2>/dev/null \
+    && sudo systemctl --no-block restart "${units[@]}" 2>/dev/null \
+    || logger "FIREWALLA:FLEET-IDS-RUN failed to schedule stock-engine handoff"
+  exit 1
+fi
+
+args=()
+if [[ -r $RC ]]; then
+  source "$RC"
+  for intf in $LISTEN_INTERFACES; do
+    args+=(-i "$intf")
+  done
+fi
+if [[ ${#args[@]} -eq 0 ]]; then
+  logger "FIREWALLA:FLEET-IDS-RUN no capture interfaces in $RC"
+  exit 1
+fi
+
+[[ -x $FLEET_BIN ]] || { logger "FIREWALLA:FLEET-IDS-RUN $FLEET_BIN is not executable"; exit 1; }
+logger "FIREWALLA:FLEET-IDS-RUN exec $FLEET_BIN --ids-only ${args[*]} $*"
+exec "$FLEET_BIN" --zeekctl-compat --ids-only "${args[@]}" "$@"

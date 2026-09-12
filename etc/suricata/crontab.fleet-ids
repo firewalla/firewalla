@@ -1,0 +1,2 @@
+* * * * * sudo logrotate /etc/logrotate.d/suricata
+*/2 * * * * ( /home/pi/firewalla/scripts/fleet-ping.sh suricata >/dev/null 2>&1 )

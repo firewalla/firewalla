@@ -29,6 +29,7 @@ const BASIC_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_basi
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const FlowEngine = require('./FlowEngine.js');
 
 class SuricataControl {
   constructor() {
@@ -60,7 +61,12 @@ class SuricataControl {
     });
     log.info("Adding suricata related cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    // fleet always runs the IDS as its own process under this unit (never on
+    // the brofish fleet: zeek's restrict_filters would cost IDS coverage), so
+    // it needs the watchdog entry whenever it owns the role
+    const idsOnlyFleet = FlowEngine.appliedSuricataEngine() === 'fleet';
+    const crontab = idsOnlyFleet ? 'crontab.fleet-ids' : 'crontab';
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh`, err.message);
     })
@@ -91,6 +97,10 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
+      if (FlowEngine.appliedSuricataEngine() === 'fleet') {
+        log.info("Suricata rules are evaluated by fleet, not updating the suricata binary");
+        return;
+      }
       // Check if the current platform supports suricata from assets
       
       const isSupported = await platform.isSuricataFromAssetsSupported();
@@ -169,6 +179,10 @@ class SuricataControl {
   }
 
   async restart() {
+    if (FlowEngine.applyHeld()) {
+      log.warn('Flow engine configuration is not applied, not starting suricata');
+      return;
+    }
     if (this.restarting) {
       // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
       if (!this.pendingRestart) {

@@ -84,6 +84,93 @@ function get_zeek_log_dir {
   echo "/log/blog/"
 }
 
+# Flow engines: which program handles each pcap role, decided by two features
+#   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
+#   pcap_zeek_suricata   fleet evaluates the suricata rule set instead of suricata
+# Same sources as net2/config.js: the runtime value in redis sys:features (set
+# by the app / enableDynamicFeature), else the platform's files/config.json
+# userFeatures, else net2/config.json, else off. See scripts/fleet-engine.sh.
+# net2/config.js merges cloud, MSP and version configuration too, which no
+# shell can reproduce; FleetEnginePlugin writes the effective values of the
+# features below here whenever they change, and this file is consulted right
+# after the runtime overrides in sys:features
+FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/fleet-engine.features}
+
+function _fw_feature_on {
+  local name=$1 v
+  # What net2/config.js decided, first: it merges cloud, MSP and version
+  # configuration and drops anything in hiddenFeatures, so a feature hidden by
+  # a release while sys:features still says 1 must resolve to off here too.
+  if [[ -r $FW_EFFECTIVE_FEATURES ]]; then
+    v=$(jq -r --arg n "$name" 'if has($n) then (.[$n] | tostring) else empty end' "$FW_EFFECTIVE_FEATURES" 2>/dev/null)
+    case "$v" in
+      true) return 0 ;;
+      false) return 1 ;;
+    esac
+  fi
+  # At early boot main-start intentionally discards the snapshot from the
+  # previous FireMain. Honour the current release's kill switches before a
+  # stale runtime override in Redis can select an unsupported engine.
+  if [[ ${branch:-} == release_* || ${branch:-} == beta_* ]]; then
+    local hidden_cfg
+    for hidden_cfg in "${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/config.json" \
+                      "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" \
+                      "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+      [[ -f $hidden_cfg ]] || continue
+      v=$(jq -r --arg n "$name" '(.hiddenFeatures // []) | index($n) != null' "$hidden_cfg" 2>/dev/null)
+      [[ $v == true ]] && return 1
+    done
+  fi
+  # before FireMain has published (early boot), the runtime override in redis
+  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
+  case "$v" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  # then the same file precedence as net2/config.js: user config, the platform
+  # default, the checked-in default. `has` keeps an explicit false, which
+  # `// empty` would have thrown away.
+  local cfg
+  for cfg in "${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/config.json" \
+             "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" \
+             "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+    [[ -f $cfg ]] || continue
+    v=$(jq -r --arg n "$name" 'if (.userFeatures // {}) | has($n) then (.userFeatures[$n] | tostring) else empty end' "$cfg" 2>/dev/null)
+    case "$v" in
+      true) return 0 ;;
+      false) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+# the fleet binary arrives as an asset; until it is there (or if it goes
+# missing) the roles resolve to the stock engines so the box never ends up
+# with neither. Everything shell-side asks these, never the raw feature.
+FLEET_BIN=${FLEET_BIN:-/home/pi/.firewalla/run/assets/fleet}
+
+function fleet_available {
+  [[ -x $FLEET_BIN ]]
+}
+
+function get_flow_engine_zeek {
+  if _fw_feature_on pcap_zeek_fleet && fleet_available; then echo fleet; else echo zeek; fi
+}
+
+function get_flow_engine_suricata {
+  if _fw_feature_on pcap_zeek_suricata && fleet_available; then echo fleet; else echo suricata; fi
+}
+
+# the roles themselves can be switched off by the box: pcap_zeek governs flow
+# capture and pcap_suricata the IDS, whichever program provides them
+function pcap_zeek_enabled {
+  _fw_feature_on pcap_zeek
+}
+
+function pcap_suricata_enabled {
+  _fw_feature_on pcap_suricata
+}
+
 function heartbeatLED {
   return 0
 }
@@ -256,7 +343,7 @@ case "$UNAME" in
     ;;
 esac
 
-branch=$(cd /home/pi/firewalla;git rev-parse --abbrev-ref HEAD)
+branch=$(cd "${FIREWALLA_HOME:-/home/pi/firewalla}" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null)
 if [ "$branch" = "master" ]; then
   XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
 fi
