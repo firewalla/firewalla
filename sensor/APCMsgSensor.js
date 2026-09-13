@@ -668,6 +668,11 @@ class APCMsgSensor extends Sensor {
     if (msg.action === 'allow' && msg.pid && msg.src && msg.sport && msg.dst && msg.dport && msg.proto) {
       conntrack.setConnEntry(msg.src, msg.sport, msg.dst, msg.dport, msg.proto, Constants.REDIS_HKEY_CONN_APID, msg.pid, 600);
     }
+    // flag blocked UDP flows the same way as the box's own audit path, so BroDetect suppresses
+    // them too. Key off msg.action, not record.ac, since isolation blocks get reclassified below.
+    if (msg.action === 'block' && msg.proto === 'udp' && msg.src && msg.sport && msg.dst && msg.dport) {
+      conntrack.setConnEntry(msg.src, msg.sport, msg.dst, msg.dport, msg.proto, Constants.REDIS_HKEY_CONN_BPID, msg.pid || 0, 600);
+    }
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
     if (msg.gid !== undefined && msg.gid !== null) record.isoGID = String(msg.gid)

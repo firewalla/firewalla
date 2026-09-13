@@ -22,6 +22,10 @@ const LRU = require('lru-cache');
 
 const sysManager = require('../net2/SysManager.js');
 const Policy = require('../alarm/Policy.js');
+const conntrack = require('../net2/Conntrack.js');
+const Constants = require('../net2/Constants.js');
+const HostManager = require('../net2/HostManager');
+const hostManager = new HostManager();
 
 const ACLAuditLogPlugin = require('../sensor/ACLAuditLogPlugin.js');
 const RuleStatsPlugin = require('../sensor/RuleStatsPlugin.js');
@@ -106,6 +110,44 @@ describe('Test process iptables log', function(){
 
     expect(adblockHitRecord).to.be.null;
     expect(record.pid).to.equal(42);
+  });
+
+  describe('local UDP block writes bpid', () => {
+    let origSetConnEntry, origGetHostFast, setConnEntryCalls;
+
+    beforeEach(() => {
+      setConnEntryCalls = [];
+      origSetConnEntry = conntrack.setConnEntry;
+      conntrack.setConnEntry = async (...args) => { setConnEntryCalls.push(args); };
+      origGetHostFast = hostManager.getHostFast;
+      hostManager.getHostFast = () => ({ getUniqueId: () => 'BB:CC:DD:EE:FF:02' });
+    });
+
+    afterEach(() => {
+      conntrack.setConnEntry = origSetConnEntry;
+      hostManager.getHostFast = origGetHostFast;
+    });
+
+    it('local UDP block with MARK writes bpid with the rule pid, originator direction only', async () => {
+      // D=L local flow, srcMac AA:BB:CC:DD:EE:01 is not one of the stubbed sysinfo MACs so it is not re-routed by isMyMac
+      const line = "[FW_ADT]D=L CD=O IN=br0 OUT=br0 MAC=20:6d:31:01:2b:40:AA:BB:CC:DD:EE:01:08:00 SRC=192.168.196.105 DST=192.168.196.106 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=UDP SPT=55000 DPT=5555 WINDOW=65535 RES=0x00 URGP=0 MARK=0x2a";
+      await this.plugin._processIptablesLog(line);
+
+      const bpidCalls = setConnEntryCalls.filter(args => args[5] === Constants.REDIS_HKEY_CONN_BPID);
+      expect(bpidCalls.length).to.equal(1);
+      expect(bpidCalls[0]).to.deep.equal(['192.168.196.105', 55000, '192.168.196.106', 5555, 'udp', Constants.REDIS_HKEY_CONN_BPID, 42, 600]);
+      // no reverse-direction write
+      expect(setConnEntryCalls.some(args => args[0] === '192.168.196.106' && args[2] === '192.168.196.105')).to.equal(false);
+    });
+
+    it('local UDP block with no MARK (global ipset/security block) writes the 0 sentinel', async () => {
+      const line = "[FW_ADT]D=L CD=O IN=br0 OUT=br0 MAC=20:6d:31:01:2b:40:AA:BB:CC:DD:EE:01:08:00 SRC=192.168.196.105 DST=192.168.196.106 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=UDP SPT=55000 DPT=5555 WINDOW=65535 RES=0x00 URGP=0";
+      await this.plugin._processIptablesLog(line);
+
+      const bpidCalls = setConnEntryCalls.filter(args => args[5] === Constants.REDIS_HKEY_CONN_BPID);
+      expect(bpidCalls.length).to.equal(1);
+      expect(bpidCalls[0]).to.deep.equal(['192.168.196.105', 55000, '192.168.196.106', 5555, 'udp', Constants.REDIS_HKEY_CONN_BPID, 0, 600]);
+    });
   });
 
 });

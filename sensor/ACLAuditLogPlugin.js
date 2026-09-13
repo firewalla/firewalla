@@ -340,11 +340,6 @@ class ACLAuditLogPlugin extends Sensor {
           }
         }
         return;
-      } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
-        // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
-        // delete it here to make sure following zeek logs are not recoreded
-        await conntrack.delConnEntries(src, sport, dst, dport, 'udp');
-        await conntrack.delConnEntries(dst, dport, src, sport, 'udp');
       }
 
     }
@@ -541,6 +536,14 @@ class ACLAuditLogPlugin extends Sensor {
     // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
       await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_RPID, record.pid);
+    }
+
+    // flag blocked/isolated UDP flows in conntrack so BroDetect can suppress them, including local
+    // flows that get no conn entry from the accept-log path. Written unconditionally (0 sentinel
+    // when pid is unknown, e.g. global ipset/security drops) since presence, not the pid value, is the signal.
+    // isolation records aren't covered by the record.sp validation above, so guard it here.
+    if (record.pr == 'udp' && ['block', 'isolation'].includes(record.ac) && record.sp && record.sp.length) {
+      await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_BPID, record.pid || 0);
     }
 
     // try to get host name from conn entries for better timeliness and accuracy

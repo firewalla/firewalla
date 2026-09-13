@@ -777,6 +777,17 @@ class BroDetect {
     return false;
   }
 
+  // decide whether a uni-directional UDP flow was blocked, from the conn entry ACLAuditLogPlugin/APCMsgSensor write on block
+  _isBlockedUDPFlow(connEntry, outIntfId, localFlow) {
+    // explicit block marker from the audit/AP path, works for local and internet flows alike
+    if (connEntry && _.has(connEntry, Constants.REDIS_HKEY_CONN_BPID)) return true
+    // local flows never get a conn entry from the A=C accept log, so absence means nothing here.
+    // Treating it as blocked drops legitimate uni-directional local UDP (see 40bcfbd33)
+    if (localFlow) return false
+    // legacy heuristic for internet-bound flows: an allowed flow gets oIntf from the A=C log
+    return !outIntfId
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -1431,12 +1442,11 @@ class BroDetect {
         tmpspec.rl = extractIP(realLocal);
 
       // might be blocked UDP packets, checking conntrack
-      // blocked connections don't leave a trace in conntrack
-      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0) && !localFlow) {
-        if (!outIntfId) {
-          log.debug('Dropping blocked UDP', JSON.stringify(tmpspec))
-          return
-        }
+      // ACLAuditLogPlugin/APCMsgSensor write bpid on the conn entry when a UDP packet is dropped
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)
+        && this._isBlockedUDPFlow(connEntry, outIntfId, localFlow)) {
+        log.verbose('Dropping blocked UDP', JSON.stringify(tmpspec))
+        return
       }
 
       const sigs = this.getConnSignatures(uid);
