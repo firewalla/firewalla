@@ -161,6 +161,12 @@ class ACLAuditLogPlugin extends Sensor {
     return platform.isFireRouterManaged() && inIntf.name.startsWith("br") && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name);
   }
 
+  // Record a rule id on the conn entry so BroDetect can pick it up when the flow is generated.
+  // Returns setConnEntry's result: falsy when the field already held this value (used for dedup).
+  _setConnRuleId(record, subKey, value) {
+    return conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, subKey, value, 600);
+  }
+
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
@@ -534,7 +540,7 @@ class ACLAuditLogPlugin extends Sensor {
     
     // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
+      await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_RPID, record.pid);
     }
 
     // try to get host name from conn entries for better timeliness and accuracy
@@ -570,11 +576,11 @@ class ACLAuditLogPlugin extends Sensor {
       let added = true;
       // write apid immediately when pid is known from MARK (per-device allow)
       if (record.ac === "allow") {
-        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
+        added = await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT);
       }
       // record disturb rule id into conntrack for BroDetect to pick up on flow generation
       if (record.pid && record.ac === "disturb") {
-        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+        added = await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_DPID, record.pid);
       }
       // middle packets may still hit the allow chain; skip duplicate five-tuples.
       if (!added) return
