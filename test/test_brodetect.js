@@ -205,4 +205,23 @@ describe('_isBlockedUDPFlow', () => {
   it('non-local flow with no conn entry and no outIntfId -> blocked (legacy fallback)', () => {
     expect(broDetect._isBlockedUDPFlow(null, undefined, false)).to.equal(true);
   });
+
+  describe('bpidts aging (stale marker no longer suppresses forever)', () => {
+    it('fresh bpidts within the window -> still blocked', () => {
+      const bpidts = Date.now() / 1000 - 10;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(true);
+    });
+    it('local flow, bpidts older than the max age -> marker is stale, falls back to localFlow=false', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, oIntf present -> stale marker no longer overrides an allowed flow', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts, oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, no oIntf -> falls through to the legacy fallback, still blocked', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, false)).to.equal(true);
+    });
+  });
 });

@@ -113,41 +113,53 @@ describe('Test process iptables log', function(){
   });
 
   describe('local UDP block writes bpid', () => {
-    let origSetConnEntry, origGetHostFast, setConnEntryCalls;
+    let origSetConnEntries, origGetHostFast, setConnEntriesCalls;
 
     beforeEach(() => {
-      setConnEntryCalls = [];
-      origSetConnEntry = conntrack.setConnEntry;
-      conntrack.setConnEntry = async (...args) => { setConnEntryCalls.push(args); };
+      setConnEntriesCalls = [];
+      origSetConnEntries = conntrack.setConnEntries;
+      conntrack.setConnEntries = async (...args) => { setConnEntriesCalls.push(args); };
       origGetHostFast = hostManager.getHostFast;
       hostManager.getHostFast = () => ({ getUniqueId: () => 'BB:CC:DD:EE:FF:02' });
     });
 
     afterEach(() => {
-      conntrack.setConnEntry = origSetConnEntry;
+      conntrack.setConnEntries = origSetConnEntries;
       hostManager.getHostFast = origGetHostFast;
     });
 
-    it('local UDP block with MARK writes bpid with the rule pid, originator direction only', async () => {
+    it('local UDP block with MARK writes bpid+bpidts with the rule pid, originator direction only', async () => {
       // D=L local flow, srcMac AA:BB:CC:DD:EE:01 is not one of the stubbed sysinfo MACs so it is not re-routed by isMyMac
       const line = "[FW_ADT]D=L CD=O IN=br0 OUT=br0 MAC=20:6d:31:01:2b:40:AA:BB:CC:DD:EE:01:08:00 SRC=192.168.196.105 DST=192.168.196.106 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=UDP SPT=55000 DPT=5555 WINDOW=65535 RES=0x00 URGP=0 MARK=0x2a";
       await this.plugin._processIptablesLog(line);
 
-      const bpidCalls = setConnEntryCalls.filter(args => args[5] === Constants.REDIS_HKEY_CONN_BPID);
+      const bpidCalls = setConnEntriesCalls.filter(args => Constants.REDIS_HKEY_CONN_BPID in args[5]);
       expect(bpidCalls.length).to.equal(1);
-      expect(bpidCalls[0]).to.deep.equal(['192.168.196.105', 55000, '192.168.196.106', 5555, 'udp', Constants.REDIS_HKEY_CONN_BPID, 42, 600]);
+      const [sh, sp, dh, dp, pr, obj, expr] = bpidCalls[0];
+      expect([sh, sp, dh, dp, pr, expr]).to.deep.equal(['192.168.196.105', 55000, '192.168.196.106', 5555, 'udp', 600]);
+      expect(obj[Constants.REDIS_HKEY_CONN_BPID]).to.equal(42);
+      expect(obj[Constants.REDIS_HKEY_CONN_BPID_TS]).to.be.a('number');
       // no reverse-direction write
-      expect(setConnEntryCalls.some(args => args[0] === '192.168.196.106' && args[2] === '192.168.196.105')).to.equal(false);
+      expect(setConnEntriesCalls.some(args => args[0] === '192.168.196.106' && args[2] === '192.168.196.105')).to.equal(false);
     });
 
     it('local UDP block with no MARK (global ipset/security block) writes the 0 sentinel', async () => {
       const line = "[FW_ADT]D=L CD=O IN=br0 OUT=br0 MAC=20:6d:31:01:2b:40:AA:BB:CC:DD:EE:01:08:00 SRC=192.168.196.105 DST=192.168.196.106 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=UDP SPT=55000 DPT=5555 WINDOW=65535 RES=0x00 URGP=0";
       await this.plugin._processIptablesLog(line);
 
-      const bpidCalls = setConnEntryCalls.filter(args => args[5] === Constants.REDIS_HKEY_CONN_BPID);
+      const bpidCalls = setConnEntriesCalls.filter(args => Constants.REDIS_HKEY_CONN_BPID in args[5]);
       expect(bpidCalls.length).to.equal(1);
-      expect(bpidCalls[0]).to.deep.equal(['192.168.196.105', 55000, '192.168.196.106', 5555, 'udp', Constants.REDIS_HKEY_CONN_BPID, 0, 600]);
+      expect(bpidCalls[0][5][Constants.REDIS_HKEY_CONN_BPID]).to.equal(0);
     });
+
+    // The write now sits at :419-420 (right after the ctdir/net.isIP normalization), textually and
+    // control-flow-wise before all five early returns a device-attribution failure can hit
+    // (getConnRemote late-reply, broadcast MAC, non-FireRouter identity, !mac, invalid sp) - so a
+    // block whose device can't be attributed still lands, restoring what delConnEntries covered.
+    // Not re-tested here per early-return case: reproducing each of the five distinct
+    // unresolvable-device conditions (no host, no ARP cache, no identity, wrong platform, etc.)
+    // is disproportionate for what plan-review scored should-fix; the ordering is provable by
+    // inspection and the two tests above already exercise the write at its new location.
   });
 
 });

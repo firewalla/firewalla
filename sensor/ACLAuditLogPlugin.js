@@ -419,6 +419,20 @@ class ACLAuditLogPlugin extends Sensor {
     const fam = net.isIP(record.dh)
     if (!fam) return
 
+    // flag blocked/isolated UDP flows in conntrack so BroDetect can suppress them, including local
+    // flows that get no conn entry from the accept-log path. Written unconditionally (0 sentinel
+    // when pid is unknown, e.g. global ipset/security drops) since presence, not the pid value, is
+    // the signal. Written here, before mac/identity resolution below, so a block whose device
+    // can't be attributed still lands (matching what the old delConnEntries branch covered).
+    // bpidts is stamped alongside so BroDetect can age the marker off its own write time instead
+    // of the hash's read-refreshed TTL - see BroDetect._isBlockedUDPFlow.
+    if (record.pr == 'udp' && ['block', 'isolation'].includes(record.ac) && record.sp && record.sp.length) {
+      await conntrack.setConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, {
+        [Constants.REDIS_HKEY_CONN_BPID]: record.pid || 0,
+        [Constants.REDIS_HKEY_CONN_BPID_TS]: record.ts,
+      }, 600);
+    }
+
     // check direction, keep it same as flow.fd
     // in, initiated from inside, outbound
     // out, initiated from outside, inbound
@@ -536,14 +550,6 @@ class ACLAuditLogPlugin extends Sensor {
     // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
       await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_RPID, record.pid);
-    }
-
-    // flag blocked/isolated UDP flows in conntrack so BroDetect can suppress them, including local
-    // flows that get no conn entry from the accept-log path. Written unconditionally (0 sentinel
-    // when pid is unknown, e.g. global ipset/security drops) since presence, not the pid value, is the signal.
-    // isolation records aren't covered by the record.sp validation above, so guard it here.
-    if (record.pr == 'udp' && ['block', 'isolation'].includes(record.ac) && record.sp && record.sp.length) {
-      await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_BPID, record.pid || 0);
     }
 
     // try to get host name from conn entries for better timeliness and accuracy
