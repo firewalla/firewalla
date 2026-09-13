@@ -26,6 +26,8 @@ const domainBlock = require('../control/DomainBlock.js');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+const Bypass = require('../control/Bypass.js');
+const Tag = require('../net2/Tag.js');
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -366,5 +368,232 @@ describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
     // first call = failed attempt with the reduced tag list, second = rollback restoring the old (full) tag list
     expect(enforceCalls.length).to.equal(2);
     expect(enforceCalls[1]).to.deep.equal([`tag:${uid}`, 'otherTag']);
+  });
+});
+
+// The suite above stubs pm2.unenforce/enforceOnQueue, so it never reaches the real
+// _unenforce()/_enforce()/_applyBypass() and can't see resolveRuleScope() or the guard it
+// replaced. These tests call the real functions and stub only the outermost iptables/ipset
+// seam (__applyRules / Bypass.bypassIptablesRules), matching test_bypass.js's convention of
+// stubbing Tag.ensureCreateEnforcementEnv where a case still reaches it directly.
+describe('Test _unenforce/_enforce/_applyBypass teardown when a rule\'s tag no longer exists', function() {
+  this.timeout(5000);
+
+  it('_unenforce() keeps a dead tag\'s uid in scope so teardown can still match enforcement', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagOnly';
+    const rule = new Policy({ pid: 'testDeadTagOnlyPid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    let applyRulesOptions = null;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    pm2.__applyRules = async (options) => { applyRulesOptions = options; };
+    pm2._removeActivatedTime = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+    }
+
+    expect(applyRulesOptions).to.not.be.null;
+    expect(applyRulesOptions.tags).to.deep.equal([uid]);
+  });
+
+  it('_unenforce() keeps a dead tag\'s uid in scope alongside an interface', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagWithIntf';
+    const intfUuid = 'testIntfUuid';
+    const rule = new Policy({ pid: 'testDeadTagWithIntfPid', type: 'intranet', action: 'block', tag: [`tag:${uid}`, `intf:${intfUuid}`] });
+
+    let applyRulesOptions = null;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    pm2.__applyRules = async (options) => { applyRulesOptions = options; };
+    pm2._removeActivatedTime = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+    }
+
+    // before the fix, the guard couldn't fire here (an interface is present), but the
+    // unconditional existence filter still silently dropped the dead tag from `tags`
+    expect(applyRulesOptions).to.not.be.null;
+    expect(applyRulesOptions.tags).to.deep.equal([uid]);
+    expect(applyRulesOptions.intfs).to.deep.equal([intfUuid]);
+  });
+
+  it('_unenforce() keeps a dead tag alongside a live tag (the reenforce path)', async () => {
+    const pm2 = new PolicyManager2();
+    const deadUid = 'testDeadTagWithLive';
+    const liveUid = 'testLiveTagWithDead';
+    const rule = new Policy({ pid: 'testDeadTagWithLivePid', type: 'intranet', action: 'block', tag: [`tag:${deadUid}`, `tag:${liveUid}`] });
+
+    let applyRulesOptions = null;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    pm2.__applyRules = async (options) => { applyRulesOptions = options; };
+    pm2._removeActivatedTime = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+    }
+
+    // before the fix, deleteTagRelatedPolicies() routes this rule shape through 'reenforce',
+    // which unenforces the old policy carrying both uids; the existence filter silently
+    // dropped the dead one from `tags` even though the guard never fired
+    expect(applyRulesOptions).to.not.be.null;
+    expect(applyRulesOptions.tags).to.deep.equal([deadUid, liveUid]);
+  });
+
+  it('_unenforce() on the reported disturb/qos shape keeps the tag uid and the bypass chain name', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagDisturb';
+    const rule = new Policy({
+      pid: 'testDeadTagDisturbPid', type: 'intranet', action: 'disturb', tag: [`tag:${uid}`],
+      increaseLatency: 100, dropPacketRate: 10
+    });
+
+    let applyRulesOptions = null;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    pm2.__applyRules = async (options) => { applyRulesOptions = options; };
+    pm2._removeActivatedTime = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+    }
+
+    // this is the exact options tuple that, before the fix, produced the leaked
+    // FW_DISTURB_QOS_* jumps: a tag-scoped disturb rule rewritten to action 'qos'
+    expect(applyRulesOptions).to.not.be.null;
+    expect(applyRulesOptions.tags).to.deep.equal([uid]);
+    expect(applyRulesOptions.byPassChain).to.equal(`FW_${rule.pid}_BYPASS`);
+  });
+
+  it('_unenforce() on a rule whose target is the deleted tag itself is unaffected by the guard', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeletedTagAsTarget';
+    // deleteTagRelatedPolicies() reaches this shape via its rule.type === "tag" branch;
+    // rule.tag is empty here so the guard (which checks `tag && tag.length`) never applied,
+    // with or without the fix -- this just documents that this shape was never at risk
+    const rule = new Policy({ pid: 'testDeletedTagAsTargetPid', type: 'tag', action: 'block', target: uid });
+
+    let applyRulesOptions = null;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    const origTagEnsure = Tag.ensureCreateEnforcementEnv;
+    pm2.__applyRules = async (options) => { applyRulesOptions = options; };
+    pm2._removeActivatedTime = async () => {};
+    Tag.ensureCreateEnforcementEnv = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+      Tag.ensureCreateEnforcementEnv = origTagEnsure;
+    }
+
+    expect(applyRulesOptions).to.not.be.null;
+    expect(applyRulesOptions.tags).to.deep.equal([]);
+  });
+
+  it('_enforce() drops a dead tag and stops before __applyRules', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagEnforce';
+    const rule = new Policy({ pid: 'testDeadTagEnforcePid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    let applyRulesCalled = false;
+    const origApplyRules = pm2.__applyRules;
+    const origRefreshActivatedTime = pm2._refreshActivatedTime;
+    pm2.__applyRules = async () => { applyRulesCalled = true; };
+    pm2._refreshActivatedTime = async () => {};
+
+    try {
+      await pm2._enforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._refreshActivatedTime = origRefreshActivatedTime;
+    }
+
+    // the enforce-side guard is unchanged: a tag that no longer exists must still be
+    // dropped, or Block.setupTagsRules would create ipsets nothing will ever clean up
+    expect(applyRulesCalled).to.be.false;
+  });
+
+  it('_unenforce() with a malformed (non-prefixed) tag field still stops before __applyRules', async () => {
+    const pm2 = new PolicyManager2();
+    const rule = new Policy({ pid: 'testMalformedTagPid', type: 'intranet', action: 'block', tag: ['garbage'] });
+
+    let applyRulesCalled = false;
+    const origApplyRules = pm2.__applyRules;
+    const origRemoveActivatedTime = pm2._removeActivatedTime;
+    pm2.__applyRules = async () => { applyRulesCalled = true; };
+    pm2._removeActivatedTime = async () => {};
+
+    try {
+      await pm2._unenforce(rule);
+    } finally {
+      pm2.__applyRules = origApplyRules;
+      pm2._removeActivatedTime = origRemoveActivatedTime;
+    }
+
+    // the format guard is untouched by the fix: a tag field that names nothing
+    // recognizable still has nothing tag-scoped to tear down
+    expect(applyRulesCalled).to.be.false;
+  });
+
+  it('_applyBypass(policy, "unenforce") keeps a dead tag\'s uid in scope', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagBypassUnenforce';
+    const bypassPolicy = new Policy({
+      pid: 'testDeadTagBypassUnenforcePid', type: 'country', target: 'US',
+      tag: [`tag:${uid}`], affectedPids: ['1']
+    });
+
+    let bypassOptions = null;
+    const origBypassIptablesRules = Bypass.bypassIptablesRules;
+    Bypass.bypassIptablesRules = async (options) => { bypassOptions = options; };
+
+    try {
+      await pm2._applyBypass(bypassPolicy, 'unenforce');
+    } finally {
+      Bypass.bypassIptablesRules = origBypassIptablesRules;
+    }
+
+    expect(bypassOptions).to.not.be.null;
+    expect(bypassOptions.tags).to.deep.equal([uid]);
+  });
+
+  it('_applyBypass(policy, "enforce") drops a dead tag and stops before bypassIptablesRules', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testDeadTagBypassEnforce';
+    const bypassPolicy = new Policy({
+      pid: 'testDeadTagBypassEnforcePid', type: 'country', target: 'US',
+      tag: [`tag:${uid}`], affectedPids: ['1']
+    });
+
+    let bypassCalled = false;
+    const origBypassIptablesRules = Bypass.bypassIptablesRules;
+    Bypass.bypassIptablesRules = async () => { bypassCalled = true; };
+
+    try {
+      await pm2._applyBypass(bypassPolicy, 'enforce');
+    } finally {
+      Bypass.bypassIptablesRules = origBypassIptablesRules;
+    }
+
+    expect(bypassCalled).to.be.false;
   });
 });
