@@ -86,7 +86,7 @@ function get_zeek_log_dir {
 
 # Flow engines: which program handles each pcap role, decided by two features
 #   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
-#   pcap_zeek_suricata   fleet evaluates the suricata rule set instead of suricata
+#   pcap_suricata_fleet   fleet evaluates the suricata rule set instead of suricata
 # Same sources as net2/config.js: the runtime value in redis sys:features (set
 # by the app / enableDynamicFeature), else the platform's files/config.json
 # userFeatures, else net2/config.json, else off. See scripts/fleet-engine.sh.
@@ -145,7 +145,7 @@ function get_flow_engine_zeek {
 }
 
 function get_flow_engine_suricata {
-  if _fw_feature_on pcap_zeek_suricata && fleet_available; then echo fleet; else echo suricata; fi
+  if _fw_feature_on pcap_suricata_fleet && fleet_available; then echo fleet; else echo suricata; fi
 }
 
 # the roles themselves can be switched off by the box: pcap_zeek governs flow

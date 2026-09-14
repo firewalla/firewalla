@@ -349,7 +349,7 @@ if [[ ! -f /.dockerenv ]]; then
     fi
 
     # flow engines: install or remove the fleet drop-ins beside the unit files
-    # just copied, per the pcap_zeek_fleet / pcap_zeek_suricata features. On
+    # just copied, per the pcap_zeek_fleet / pcap_suricata_fleet features. On
     # failure the drop-ins may not match the features, and starting brofish or
     # suricata could run zeek and fleet against the same spool: the script
     # leaves its hold marker in place (honoured by BroControl.restart,
