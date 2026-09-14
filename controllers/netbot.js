@@ -789,6 +789,9 @@ class netBot extends ControllerBot {
             "action_value": 1,
             "labels": { "version": fc.getSimpleVersion() }
           }
+          // NOTE: this writes event:log directly and thus bypasses EventRequestHandler.sendEvent,
+          // so it does NOT fan out Message.MSG_EVENT_GENERATED. That is fine here - netbot runs in
+          // FireApi, where the consumers of that message don't exist.
           await ea.addEvent(eventRequest, eventRequest.ts);
         } catch (err) {
           log.error("failed to add action event on firewalla_upgrade:", err);
