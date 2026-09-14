@@ -212,6 +212,34 @@ describe('Test event summary settings validation', function() {
     expect(sensor._validateSettings([Object.assign({}, base, { period: 3600 })])[0].period).to.equal(3600);
     expect(sensor._validateSettings([Object.assign({}, base, { period: 7200 })])[0].period).to.equal(7200);
   });
+
+  it('should normalize a label-only setting eventKeys to []', async () => {
+    const sensor = makeSensor([]);
+    const valid = sensor._validateSettings([SETTING]);
+    expect(valid).to.have.lengthOf(1);
+    expect(valid[0].eventKeys).to.deep.equal([]);
+  });
+
+  it('should accept a setting with eventKeys and no labelKeys', async () => {
+    const sensor = makeSensor([]);
+    const setting = Object.assign({}, SETTING, { eventKeys: ['state_key'] });
+    delete setting.labelKeys;
+    const valid = sensor._validateSettings([setting]);
+    expect(valid).to.have.lengthOf(1);
+    expect(valid[0].eventKeys).to.deep.equal(['state_key']);
+    expect(valid[0].labelKeys).to.deep.equal([]);
+  });
+
+  it('should drop a setting with neither list, a non-array list, or a colliding key', async () => {
+    const sensor = makeSensor([]);
+    const base = { key: TEST_KEY, filter: SETTING.filter };
+    // neither eventKeys nor labelKeys present at all
+    expect(sensor._validateSettings([Object.assign({}, base)])).to.be.empty;
+    // eventKeys present but not an array
+    expect(sensor._validateSettings([Object.assign({}, base, { eventKeys: 'state_key' })])).to.be.empty;
+    // the same name in both lists - the record is a flat map and cannot hold both values
+    expect(sensor._validateSettings([Object.assign({}, base, { eventKeys: ['mac'], labelKeys: ['mac'] })])).to.be.empty;
+  });
 });
 
 describe('Test event summary record upsert', function() {
@@ -325,6 +353,77 @@ describe('Test event summary record upsert', function() {
     const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
     const rec = (await readBucket(sensor2, setting2, bucketTs)).records[0];
     expect(rec.state_key).to.be.null;      // state_key is top-level, labelKeys read labels only
+  });
+
+  it('should keep a label-only record key byte-identical to the pre-eventKeys format', async () => {
+    // this is the redis back-compat guard: a literal string comparison, not a grouping check
+    await sensor._onEvent(stateEvent(anchor * 1000, 1, { mac: MAC }, 0));
+    const rec = (await readBucket(sensor, SETTING, bucketTs)).records[0];
+    expect(rec._k).to.equal(JSON.stringify([MAC]));
+  });
+
+  it('should group by eventKeys on a top-level field', async () => {
+    const setting = Object.assign({}, SETTING, { eventKeys: ['state_key'], labelKeys: [] });
+    const sensor2 = makeSensor([setting]);
+    const e1 = stateEvent(anchor * 1000, 1, {}, 0);
+    e1.state_key = 'eth0';
+    const e2 = stateEvent(anchor * 1000, 5, {}, 4);
+    e2.state_key = 'eth1';
+    await sensor2._onEvent(e1);
+    await sensor2._onEvent(e2);
+    const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
+    const records = (await readBucket(sensor2, setting2, bucketTs)).records;
+    expect(records).to.have.lengthOf(2);
+    expect(records.map(r => r.state_key).sort()).to.deep.equal(['eth0', 'eth1']);
+  });
+
+  it('should order the record key as eventKeys then labelKeys', async () => {
+    const setting = Object.assign({}, SETTING, { eventKeys: ['state_key'], labelKeys: ['mac'] });
+    const sensor2 = makeSensor([setting]);
+    const other = '11:22:33:44:55:66';
+    const combos = [['eth0', MAC], ['eth0', other], ['eth1', MAC], ['eth1', other]];
+    for (const [stateKey, mac] of combos) {
+      const e = stateEvent(anchor * 1000, 1, { mac }, 0);
+      e.state_key = stateKey;
+      await sensor2._onEvent(e);
+    }
+    const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
+    const records = (await readBucket(sensor2, setting2, bucketTs)).records;
+    expect(records).to.have.lengthOf(4);
+    for (const [stateKey, mac] of combos) {
+      const rec = records.find(r => r.state_key === stateKey && r.mac === mac);
+      expect(rec).to.not.be.undefined;
+      // pins outer-then-label order in the stored _k
+      expect(rec._k).to.equal(JSON.stringify([stateKey, mac]));
+    }
+  });
+
+  it('should represent a missing top-level field as null, distinct from a present value', async () => {
+    const setting = Object.assign({}, SETTING, { eventKeys: ['state_key'], labelKeys: ['mac'] });
+    const sensor2 = makeSensor([setting]);
+    const e1 = stateEvent(anchor * 1000, 1, { mac: MAC }, 0);
+    e1.state_key = 'eth0';
+    const e2 = stateEvent(anchor * 1000, 2, { mac: MAC }, 1);
+    delete e2.state_key;
+    await sensor2._onEvent(e1);
+    await sensor2._onEvent(e2);
+    const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
+    const records = (await readBucket(sensor2, setting2, bucketTs)).records;
+    expect(records).to.have.lengthOf(2);
+    const missing = records.find(r => r.state_key === null);
+    expect(missing).to.not.be.undefined;
+    expect(missing._k).to.equal(JSON.stringify([null, MAC]));
+  });
+
+  it('should not let a label shadow a same-named top-level key', async () => {
+    const setting = Object.assign({}, SETTING, { eventKeys: ['state_key'], labelKeys: ['mac'] });
+    const sensor2 = makeSensor([setting]);
+    const e = stateEvent(anchor * 1000, 1, { mac: MAC, state_key: 'bogus' }, 0);
+    e.state_key = 'eth0';   // the top-level value, which must win
+    await sensor2._onEvent(e);
+    const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
+    const rec = (await readBucket(sensor2, setting2, bucketTs)).records[0];
+    expect(rec.state_key).to.equal('eth0');
   });
 
   it('should not match a filter on a label', async () => {
