@@ -17,6 +17,7 @@ function Ssdp(opts) {
   this._queue = [];
   this.listenAddr = this._opts.listenAddr || null;
   this.type = this._opts.type || 'udp4';
+  this._allowedSourceAddress = this._opts.allowedSourceAddress || null;
 
   // Create sockets on all external interfaces
   this.createSockets();
@@ -154,6 +155,8 @@ Ssdp.prototype.createSocket = function createSocket(address, type = "udp4") {
 Ssdp.prototype.parseResponse = function parseResponse(response, addr, remote) {
   // Ignore incorrect packets
   if (!/^(HTTP|NOTIFY)/m.test(response)) return;
+
+  if (this._allowedSourceAddress && (!remote || remote.address !== this._allowedSourceAddress)) return;
 
   var headers = Ssdp.parseMimeHeader(response);
 
