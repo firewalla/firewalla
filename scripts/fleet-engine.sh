@@ -79,11 +79,21 @@ resolve() {
 
 fail() { log "FAILED: $1"; return 1; }
 
+# Does the installed fleet keep the two roles apart inside one process? An
+# older build installs zeek's restrict_filters on the capture socket, which
+# would leave the IDS blind to everything they drop or sample, so the two
+# services stay separate until the asset catches up.
+fleet_supports_shared_roles() {
+  [[ -x $FLEET_BIN ]] || return 1
+  timeout 10 "$FLEET_BIN" --capabilities 2>/dev/null | grep -qx "shared-roles"
+}
+
 # One fleet process under brofish.service serves both roles: fleet captures
 # with suricata's filter and applies zeek's restrict_filters per packet, so the
 # IDS keeps full coverage and the zeek logs stay what a filtered zeek produced.
 shared_roles() {
-  [[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] && pcap_zeek_enabled && pcap_suricata_enabled
+  [[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] \
+    && pcap_zeek_enabled && pcap_suricata_enabled && fleet_supports_shared_roles
 }
 
 install_dropin() { # src dst
@@ -288,6 +298,19 @@ stop_replaced_engines() {
     done
     if pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
       log "FAILED: ${BRO_PROC_NAME:-zeek} is still running"
+      rc=1
+    fi
+  fi
+  # folding two services into one: the IDS-only fleet under the suricata unit
+  # has to stop, or two processes would evaluate the rules and write the same
+  # eve.json while the watchdog watches only one of them
+  if shared_roles && systemctl is-active -q suricata 2>/dev/null; then
+    log "stopping the separate IDS service (one process serves both roles now)"
+    if ! sudo systemctl stop suricata; then
+      log "FAILED: stopping suricata"
+      rc=1
+    elif systemctl is-active -q suricata 2>/dev/null; then
+      log "FAILED: suricata is still active"
       rc=1
     fi
   fi
