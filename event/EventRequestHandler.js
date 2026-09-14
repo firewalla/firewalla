@@ -261,9 +261,6 @@ class EventRequestHandler {
                 if (isError) {
                     log.debug("send initial error state event:",eventRequest);
                     this.sendEvent(eventRequest,"state");
-                } else if (this.isNoErrorStateEvent(eventRequest)) {
-                    log.debug(`send initial no_error state event ${newValue}:`,eventRequest);
-                    this.sendEvent(eventRequest,"state");
                 } else {
                     log.debug(`ignore initial state ${newValue}`);
                 }
