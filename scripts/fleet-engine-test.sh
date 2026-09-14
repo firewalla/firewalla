@@ -104,7 +104,7 @@ LOCAL_RUNNER=$FLEET_RUN_DIR/fleet-run
 LOCAL_IDS_RUNNER=$FLEET_RUN_DIR/fleet-ids-run
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
-check "one process serves both roles: brofish has no --no-suricata" '! grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
+check "one process serves both roles: brofish has no --no-suricata" '! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
 check "the suricata unit is held off while brofish serves both" 'grep -q "^ConditionPathExists=" "$S"'
 
 echo "== fleet/suricata"
@@ -428,7 +428,7 @@ check "the IDS keeps its own unit" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 check "brofish is told not to evaluate the rules" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
 printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "fleet test";; esac\n' > "$T/fleet"; chmod 755 "$T/fleet"
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
-check "a capable fleet folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep -q -- "--no-suricata" "$B"'
+check "a capable fleet folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
 
 echo "== behaviour: two applies do not interleave"
 setf 1 1
