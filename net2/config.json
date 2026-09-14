@@ -1196,7 +1196,7 @@
     "pcap_zeek": true,
     "pcap_suricata": false,
     "pcap_zeek_fleet": false,
-    "pcap_zeek_suricata": false,
+    "pcap_suricata_fleet": false,
     "local_flow": false,
     "local_audit": true,
     "category_filter": true,
