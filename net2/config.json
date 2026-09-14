@@ -945,7 +945,7 @@
       "eventSummarySettings": [
         {
           "period": 86400,
-          "key": "event::dap_state_change",
+          "key": "event::dap_state",
           "filter": {
             "and": [
               {
@@ -954,13 +954,47 @@
               },
               {
                 "field": "state_type",
-                "value": "dap_state_change"
+                "value": "dap_state"
               }
             ]
           },
           "labelKeys": [
             "mac"
           ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ethernet_state"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::nic_speed",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "nic_speed"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
         }
       ]
     },
