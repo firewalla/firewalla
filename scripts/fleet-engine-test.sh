@@ -407,6 +407,27 @@ FLEET_ENGINE_LOCK=$T/lock.d "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE
 check "a dead owner's lock is taken over" '[[ ! -d $T/lock.d ]]'
 rm -rf "$T/lock.d"
 
+echo "== unit: one process only with a fleet that supports it"
+check "shared mode asks the binary for the capability" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "fleet_supports_shared_roles"'
+check "the capability is read from the binary, not assumed" 'sed -n "/^fleet_supports_shared_roles()/,/^}/p" "$ENGINE" | grep -q -- "--capabilities"'
+check "an IDS-only service is stopped when folding into one" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "one process serves both roles now"'
+check "SuricataControl imports what its cron condition uses" 'grep -q "require(./config.js.)" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "require(./Constants.js.)" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+
+echo "== behaviour: a fleet without the capability keeps the two services apart"
+cat > "$T/fleet" <<'OLD'
+#!/bin/sh
+# an older fleet: no --capabilities
+exit 1
+OLD
+chmod 755 "$T/fleet"
+setf 1 1
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "the IDS keeps its own unit" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
+check "brofish is told not to evaluate the rules" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
+printf '#!/bin/sh\necho shared-roles\necho ids-only\n' > "$T/fleet"; chmod 755 "$T/fleet"
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "a capable fleet folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep -q -- "--no-suricata" "$B"'
+
 echo "== behaviour: two applies do not interleave"
 setf 1 1
 ( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
