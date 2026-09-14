@@ -30,7 +30,7 @@
 //
 // The features:
 //   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
-//   pcap_zeek_suricata   fleet evaluates the suricata rule set instead of suricata
+//   pcap_suricata_fleet   fleet evaluates the suricata rule set instead of suricata
 // Defaults come from the platform's files/config.json (userFeatures), the
 // runtime state from sys:features like every other feature. The shell side
 // (platform.sh get_flow_engine_zeek / get_flow_engine_suricata) reads the same
