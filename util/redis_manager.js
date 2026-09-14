@@ -19,8 +19,15 @@ const log = require('../net2/logger.js')(__filename)
 const util = require('util')
 
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+// promisifyAll is not idempotent, a second pass over the same prototype throws
+// "Cannot promisify an API that has normal methods with 'Async'-suffix". Tests that evict
+// this module from require.cache (proxyquire noPreserveCache, mock-require) reload it while
+// the redis package keeps the prototypes promisified by the first load, so promisify once.
+if (!redis.__fwPromisified) {
+  Promise.promisifyAll(redis.RedisClient.prototype);
+  Promise.promisifyAll(redis.Multi.prototype);
+  redis.__fwPromisified = true;
+}
 const _ = require('lodash');
 const LRU = require('lru-cache');
 

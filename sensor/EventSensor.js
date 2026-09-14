@@ -17,7 +17,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const extensionManager = require('./ExtensionManager.js')
 const sysManager = require('../net2/SysManager.js');
 
@@ -247,7 +247,7 @@ class EventSensor extends Sensor {
         try{
             log.info(`Collect event with ${collector}`);
             // get collector output
-            const result = await exec(`${COLLECTOR_DIR}/${collector}`);
+            const result = await execFile(`${COLLECTOR_DIR}/${collector}`, []);
 
             // try to parse as JSON if possible
             let result_obj = null
@@ -317,7 +317,7 @@ class EventSensor extends Sensor {
         for (const gw of sysManager.myGateways() ) {
             try {
                 log.debug(`ping ${gw}`);
-                const result = await exec(`ping -n -c ${PACKET_COUNT} -W 3 ${gw}`);
+                const result = await execFile("ping", ["-n", "-c", String(PACKET_COUNT), "-W", "3", gw]);
                 for (const line of result.stdout.split("\n")) {
                     const found = line.match(/ ([0-9]+)% packet loss/);
                     if (found) {
@@ -338,7 +338,7 @@ class EventSensor extends Sensor {
         const stateType = "dns";
         for (const dns of sysManager.myDnses() ) {
             try {
-                await exec(`dig @${dns} google.com +short`);
+                await execFile("dig", [`@${dns}`, "google.com", "+short"]);
                 era.addStateEvent(stateType,dns,0);
             } catch (err) {
                 log.error(`failed to dig ${dns}: ${err}`);

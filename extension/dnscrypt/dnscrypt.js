@@ -33,7 +33,7 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 const templatePath = `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.template.toml`;
 const runtimePath = `${f.getRuntimeInfoFolder()}/dnscrypt.toml`;
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const serverKey = "ext.dnscrypt.servers"; // selected servers list
 const allServerKey = "ext.dnscrypt.allServers";
@@ -105,14 +105,14 @@ class DNSCrypt {
   }
 
   async start() {
-    return exec("sudo systemctl start dnscrypt");
+    return execFile("sudo", ["systemctl", "start", "dnscrypt"]);
   }
 
   restart() {
     if (this._restartTask)
       clearTimeout(this._restartTask);
     this._restartTask = setTimeout(() => {
-      exec("sudo systemctl restart dnscrypt").catch((err) => {
+      execFile("sudo", ["systemctl", "restart", "dnscrypt"]).catch((err) => {
         log.error("Failed to restart dnscrypt", err.message);
       });
     }, 3000);
@@ -121,7 +121,7 @@ class DNSCrypt {
   async stop() {
     if (this._restartTask)
       clearTimeout(this._restartTask);
-    return exec("sudo systemctl stop dnscrypt");
+    return execFile("sudo", ["systemctl", "stop", "dnscrypt"]);
   }
 
   getDefaultServers() {

@@ -128,6 +128,84 @@ describe('dockerEmmcUsage.getUpperDir', () => {
   it('should return null when GraphDriver or UpperDir is missing', () => {
     expect(getUpperDir({ GraphDriver: { Name: 'overlay2', Data: {} } })).to.be.null;
     expect(getUpperDir({ GraphDriver: { Name: 'overlay2' } })).to.be.null;
+    expect(getUpperDir({ GraphDriver: null })).to.be.null; // docker 29 / overlayfs
     expect(getUpperDir({})).to.be.null;
+  });
+});
+
+describe('dockerEmmcUsage.getEmmcUsage', () => {
+  // findmnt/readlink/docker-info are the only shell calls getEmmcUsage makes directly;
+  // deviceByPath stands in for the host mount table
+  function makeExecFile(dockerRootDir, deviceByPath) {
+    return async (cmd, args) => {
+      if (cmd === 'readlink') return { stdout: `${args[1]}\n` };
+      if (cmd !== 'sudo') throw new Error(`unexpected command: ${cmd}`);
+      if (args[0] === 'systemctl') return { stdout: '' };
+      if (args[0] === 'docker' && args[1] === 'info') return { stdout: `${dockerRootDir}\n` };
+      if (args[0] === 'findmnt') {
+        const source = deviceByPath[args[args.length - 1]];
+        if (!source) throw new Error('findmnt: no such mount');
+        return { stdout: JSON.stringify({ filesystems: [{ source, fstype: 'ext4', options: 'rw,relatime' }] }) };
+      }
+      throw new Error(`unexpected exec: ${cmd} ${args.join(' ')}`);
+    };
+  }
+
+  function loadWithStubs(dockerRootDir, deviceByPath, inspectObjs) {
+    return proxyquire('../extension/docker/dockerEmmcUsage.js', {
+      'child-process-promise': { execFile: makeExecFile(dockerRootDir, deviceByPath), '@noCallThru': true },
+      './docker.js': {
+        listContainers: async () => inspectObjs.map((o, i) => ({ ID: `container${i}` })),
+        inspectContainer: async (id) => [inspectObjs[Number(id.replace('container', ''))]],
+        '@noCallThru': true,
+      },
+      '../../platform/PlatformLoader.js': {
+        getPlatform: () => ({ isDockerSupported: () => true }),
+        '@noCallThru': true,
+      },
+      '../vpnclient/VPNClient.js': {
+        getClass: (type) => { throw new Error(`Unrecognized VPN client type: ${type}`); },
+        '@noCallThru': true,
+      },
+    });
+  }
+
+  const EMMC_ROOT = { '/var/lib/docker': '/dev/mmcblk0p9' };
+
+  it('should report a no-mount container on docker 29 / overlayfs, where inspect has no GraphDriver', async () => {
+    const mod = loadWithStubs('/var/lib/docker', EMMC_ROOT, [
+      { Name: '/user-app', Config: { Image: 'nginx:latest', Labels: {} }, Mounts: [], Driver: 'overlayfs' },
+    ]);
+    expect(await mod.getEmmcUsage()).to.deep.equal([
+      { name: 'user-app', image: 'nginx:latest', mounts: [] },
+    ]);
+  });
+
+  it('should still trust UpperDir over the data-root fallback when it points off eMMC', async () => {
+    const upperDir = '/var/lib/docker/overlay2/abc/diff';
+    const deviceByPath = Object.assign({}, EMMC_ROOT, { [upperDir]: '/dev/sda1' });
+    const mod = loadWithStubs('/var/lib/docker', deviceByPath, [
+      {
+        Name: '/user-app',
+        Config: { Image: 'nginx:latest', Labels: {} },
+        Mounts: [],
+        GraphDriver: { Name: 'overlay2', Data: { UpperDir: upperDir } },
+      },
+    ]);
+    expect(await mod.getEmmcUsage()).to.deep.equal([]);
+  });
+
+  it('should keep skipping verified firewalla profiles, which the data-root fallback would otherwise catch', async () => {
+    const mod = loadWithStubs('/var/lib/docker', EMMC_ROOT, [
+      {
+        Name: '/freeradius_freeradius_1',
+        Config: {
+          Image: 'freeradius:latest',
+          Labels: { 'com.docker.compose.project.working_dir': `${f.getHiddenFolder()}/run/docker/freeradius` },
+        },
+        Mounts: [],
+      },
+    ]);
+    expect(await mod.getEmmcUsage()).to.deep.equal([]);
   });
 });

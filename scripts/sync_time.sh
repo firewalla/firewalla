@@ -28,7 +28,7 @@ function sync_website() {
 function sync_time() {
     tsWebsite=$(sync_website status.github.com || sync_website google.com || sync_website live.com || sync_website facebook.com)
     if [[ -z $tsWebsite ]]; then
-      tsWebsite = 0
+      tsWebsite=0
     fi
     tsSystem=$(date +%s)
     tsDiff=$((tsWebsite - tsSystem))
@@ -43,12 +43,14 @@ function sync_time() {
 
 logger "FIREONBOOT.UPGRADE.DATE.SYNC"
 
+rc=0
 while ! sync_time
 do
-    ${SYNC_ONCE:-false} && break
+    ${SYNC_ONCE:-false} && { rc=1; break; }
     logger "Sleeping for $RETRY_INTERVAL seconds before next try ..."
     sleep $RETRY_INTERVAL
 done
 
 logger "FIREONBOOT.UPGRADE.DATE.SYNC.DONE"
 sync
+exit $rc

@@ -89,3 +89,46 @@ describe.skip('Test Host Tool', () => {
     })
   })
 });
+
+describe('HostTool.removeDupIPv4FromMacEntry', function() {
+  const testMac = 'AA:BB:CC:DD:EE:02';
+  const testIp = '192.168.9.9';
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const macKey = `host:mac:${testMac}`;
+
+  beforeEach(async() => {
+    await rclient.hmsetAsync(macKey, {
+      mac: testMac,
+      ipv4: testIp,
+      ipv4Addr: testIp,
+      localDomain: 'olddevice'
+    });
+  });
+
+  afterEach(async() => {
+    await rclient.unlinkAsync(macKey);
+    hostTool.invalidateMacEntryCache(testMac);
+  });
+
+  it('should drop both ipv4 keys and invalidate the cached entry', async() => {
+    // prime the LRU so we can tell the invalidation actually happened
+    const before = await hostTool.getMACEntry(testMac);
+    expect(before.ipv4Addr).to.equal(testIp);
+
+    await hostTool.removeDupIPv4FromMacEntry(testMac, testIp, 'AA:BB:CC:DD:EE:03');
+
+    const raw = await rclient.hgetallAsync(macKey);
+    expect(raw.ipv4).to.be.undefined;
+    expect(raw.ipv4Addr).to.be.undefined;
+    expect(raw.localDomain).to.equal('olddevice');
+
+    const after = await hostTool.getMACEntry(testMac);
+    expect(after.ipv4Addr).to.be.undefined;
+  });
+
+  it('should keep an ipv4 that belongs to a different address', async() => {
+    await hostTool.removeDupIPv4FromMacEntry(testMac, '192.168.9.10', 'AA:BB:CC:DD:EE:03');
+    const raw = await rclient.hgetallAsync(macKey);
+    expect(raw.ipv4Addr).to.equal(testIp);
+  });
+});

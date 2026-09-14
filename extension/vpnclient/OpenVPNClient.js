@@ -25,7 +25,7 @@ const Message = require('../../net2/Message.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const iptool = require('ip');
 const crypto = require('crypto');
 const Address6 = require('ip-address').Address6;
@@ -536,7 +536,7 @@ class OpenVPNClient extends VPNClient {
 
   async getLatestSessionLog() {
     const logPath = `/var/log/openvpn_client-${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "100", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     if (content) {
       const pattern = "the current --script-security setting may allow this configuration to call user-defined scripts";
       const lines = content.split('\n');

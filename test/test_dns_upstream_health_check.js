@@ -16,7 +16,9 @@
 
 const chai = require('chai');
 const expect = chai.expect;
-const proxyquire = require('proxyquire').noPreserveCache().noCallThru();
+// no noPreserveCache(): it evicts the proxied module's dependencies from require.cache,
+// which leaves other test files running against half-reloaded modules
+const proxyquire = require('proxyquire').noCallThru();
 
 describe('DNSUpstreamHealthCheck', () => {
   function loadHelper(execFileImpl, config = { dns: { verificationDomains: ['health.firewalla.test'] } }) {

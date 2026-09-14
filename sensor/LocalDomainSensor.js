@@ -34,7 +34,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 const Constants = require('../net2/Constants.js');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 class LocalDomainSensor extends Sensor {
     async run() {
@@ -66,7 +66,7 @@ class LocalDomainSensor extends Sensor {
     }
 
     async globalOn() {
-        await exec(`mkdir -p ${HOSTS_DIR}`);
+        await execFile("mkdir", ["-p", HOSTS_DIR]);
         await dnsmasq.writeConfig(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
         const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
         let noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);

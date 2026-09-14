@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const Message = require('../net2/Message.js');
 
 const sem = require('./SensorEventManager.js').getInstance();
+const FlowEngine = require('../net2/FlowEngine.js');
 
 const ZEEK_SIG_DIR = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
 
@@ -45,8 +46,12 @@ class ZeekDPISensor extends Sensor {
     const watcher = fs.watch(ZEEK_SIG_DIR, async (eventType, filename) => {
       const sha256 = await this.loadSigFileHash(filename);
       if (sha256 !== this.sigSha256s[filename]) {
-        log.info(`zeek sig file ${filename} is updated, will restart zeek ...`);
-        sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+        if (FlowEngine.appliedZeekEngine() === 'fleet') {
+          log.info(`zeek sig file ${filename} is updated, fleet reloads it in place`);
+        } else {
+          log.info(`zeek sig file ${filename} is updated, will restart zeek ...`);
+          sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+        }
       }
       this.sigSha256s[filename] = sha256;
     });

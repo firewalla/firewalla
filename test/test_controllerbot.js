@@ -149,3 +149,88 @@ describe('Test ControllerBot bone message callback', function () {
     expect(() => cb(null, {type: 'CONTROL'})).to.not.throw();
   });
 });
+
+// buildMspDataTraceAction does not use `this` either, same prototype trick as above
+const buildMspDataTraceAction = (data, prev, msgid) =>
+  ControllerBot.prototype.buildMspDataTraceAction.call({}, data, prev, msgid);
+
+describe('Test ControllerBot.buildMspDataTraceAction', function () {
+  const eidA = 'It8M_iUtwHnv5qrYWN1VyQ', eidB = '1LmbNM4-LKDb01yisoFN2A';
+  const full = () => ({
+    config: { alarms: { apply: { default: { state: 'ready' }, large_upload: { state: 'pending' } } } },
+    alarmSummary: { create: 0, ignore: 551, review: 7 },
+    targetlists: [{ id: 'TL-1', name: 'a', count: 1 }, { id: 'TL-2', name: 'b', count: 2 }],
+    mobileAccess: { [eidA]: { profileId: 'full_access' }, [eidB]: { profileId: 'full_access' } },
+    plan: 'business', version: '2.12.0', channel: 'official', features: { fireAI: true },
+  });
+  const msg = (list) => ({ item: 'msp.data', value: { list }, autoTriggered: true });
+
+  it('returns null when nothing changed', () => {
+    expect(buildMspDataTraceAction(msg(full()), full(), 'id1')).to.be.null;
+  });
+
+  it('records the changed field names and nothing else', () => {
+    const next = full();
+    next.alarmSummary = { create: 0, ignore: 552, review: 7 };
+    const result = buildMspDataTraceAction(msg(next), full(), 'id2');
+    expect(result.value.changed).to.deep.equal(['alarmSummary']);
+    expect(result.value.list).to.be.undefined;
+    expect(result.value.notes).to.be.a('string');
+  });
+
+  it('reports every changed field', () => {
+    const next = full();
+    next.config.alarms.apply.large_upload.state = 'ready';
+    next.mobileAccess[eidB] = { profileId: 'limited_access' };
+    next.targetlists = [{ id: 'TL-3', name: 'c', count: 3 }];
+    const result = buildMspDataTraceAction(msg(next), full(), 'id3');
+    expect(result.value.changed.sort()).to.deep.equal(['config', 'mobileAccess', 'targetlists']);
+  });
+
+  it('detects a metadata-only target list refresh', () => {
+    const next = full();
+    next.targetlists[0].count = 100;
+    const result = buildMspDataTraceAction(msg(next), full(), 'id4');
+    expect(result.value.changed).to.deep.equal(['targetlists']);
+  });
+
+  it('keeps the rest of the action untouched', () => {
+    const next = full();
+    next.plan = 'enterprise';
+    const result = buildMspDataTraceAction(msg(next), full(), 'id5');
+    expect(result.item).to.equal('msp.data');
+    expect(result.autoTriggered).to.be.true;
+  });
+
+  it('keeps the other value fields, alias picks the guardian session', () => {
+    const next = full();
+    next.plan = 'enterprise';
+    const action = { item: 'msp.data', value: { list: next, alias: 'secondary' } };
+    const result = buildMspDataTraceAction(action, full(), 'id-alias');
+    expect(result.value.alias).to.equal('secondary');
+    expect(result.value.list).to.be.undefined;
+    expect(action.value.alias).to.equal('secondary'); // source not mutated
+  });
+
+  it('records the full payload when there is no previous value', () => {
+    // first set up after pairing, or the precede record is gone: nothing to diff against
+    const action = msg(full());
+    expect(buildMspDataTraceAction(action, null, 'id6')).to.equal(action);
+  });
+
+  it('records the full payload when the stored value is empty or broken', () => {
+    // Guardian.getMspData() returns [] when the stored json fails to parse
+    const action = msg(full());
+    expect(buildMspDataTraceAction(action, [], 'id7')).to.equal(action);
+    expect(buildMspDataTraceAction(action, {}, 'id7b')).to.equal(action);
+  });
+
+  it('does not mutate the action or the precede record', () => {
+    const next = full(), prev = full();
+    next.alarmSummary = { create: 1, ignore: 551, review: 7 };
+    const action = msg(next), nextSnapshot = JSON.stringify(next), prevSnapshot = JSON.stringify(prev);
+    buildMspDataTraceAction(action, prev, 'id8');
+    expect(JSON.stringify(action.value.list)).to.equal(nextSnapshot);
+    expect(JSON.stringify(prev)).to.equal(prevSnapshot);
+  });
+});

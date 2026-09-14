@@ -20,7 +20,7 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
@@ -103,7 +103,7 @@ class TSDockerClient extends DockerBaseVPNClient {
   }
 
   async __isLinkUpInsideContainer() {
-    const result = await exec(`sudo docker exec ${this.getContainerName()} tailscale status`).then(output => output.stdout.trim()).catch((err) => {
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "tailscale", "status"]).then(output => output.stdout.trim()).catch((err) => {
       log.error(`Failed to check tailscale status on ${this.profileId}`, err.message);
       return null;
     });
@@ -134,7 +134,7 @@ class TSDockerClient extends DockerBaseVPNClient {
 
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes(includeContent);
-    const tsIP = await exec(`sudo docker exec ${this.getContainerName()} tailscale ip -4`)
+    const tsIP = await execFile("sudo", ["docker", "exec", this.getContainerName(), "tailscale", "ip", "-4"])
           .then(output => output.stdout.trim())
           .catch((err) => {
       log.error(`Failed to check tailscale ip on ${this.profileId}`, err.message);

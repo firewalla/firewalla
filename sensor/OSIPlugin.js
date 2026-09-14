@@ -15,7 +15,7 @@
 'use strict';
 
 const _ = require('lodash');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
@@ -159,7 +159,7 @@ class OSIPlugin extends Sensor {
           for (const tag of tags) {
             if (this.appliedTags[tag]) {
               log.info("Tag already applied, adding to osi_verified_mac_set", event.uid, tag);
-              exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+              execFile("sudo", ["ipset", "add", "-!", "osi_verified_mac_set", event.uid]).catch((err) => { });
               return;
             }
           }
@@ -230,7 +230,7 @@ class OSIPlugin extends Sensor {
             log.info(`Marked mac ${event.uid} as verified`);
             const exists = await rclient.sismemberAsync(OSI_KEY, `mac,${event.uid}`);
             if (exists) {
-              exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+              execFile("sudo", ["ipset", "add", "-!", "osi_verified_mac_set", event.uid]).catch((err) => { });
             }
             break;
           }
@@ -243,14 +243,14 @@ class OSIPlugin extends Sensor {
             const macs = this.tagsTrackingForMac[tagId] || [];
             for (const mac of macs) {
               log.info(`Marked tag ${tagId} mac ${mac} as verified`);
-              exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
+              execFile("sudo", ["ipset", "add", "-!", "osi_verified_mac_set", mac]).catch((err) => { });
             }
             delete this.tagsTrackingForMac[tagId]; // no longer needed
 
             const subnets = this.tagsTrackingForSubnet[tagId] || [];
             for (const subnet of subnets) {
               log.info(`Marked tag ${tagId} subnet ${subnet} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+              execFile("sudo", ["ipset", "add", "-!", "osi_verified_subnet_set", subnet]).catch((err) => { });
             }
             delete this.tagsTrackingForSubnet[tagId]; // no longer needed
 
@@ -262,12 +262,12 @@ class OSIPlugin extends Sensor {
               if (item.startsWith(`network,${event.uid},`)) {
                 const subnet = item.replace(`network,${event.uid},`, "");
                 log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
-                exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+                execFile("sudo", ["ipset", "add", "-!", "osi_verified_subnet_set", subnet]).catch((err) => { });
               }
               if (item.startsWith(`network6,${event.uid},`)) {
                 const subnet = item.replace(`network6,${event.uid},`, "");
                 log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
-                exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
+                execFile("sudo", ["ipset", "add", "-!", "osi_verified_subnet6_set", subnet]).catch((err) => { });
               }
             }
             break;
@@ -279,8 +279,8 @@ class OSIPlugin extends Sensor {
               if (item.startsWith(`identity,${event.uid},`)) {
                 const ip = item.replace(`identity,${event.uid},`, "");
                 log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
-                exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
-                // exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
+                execFile("sudo", ["ipset", "add", "-!", "osi_verified_subnet_set", ip]).catch((err) => { });
+                // execFile("sudo", ["ipset", "add", "-!", "osi_verified_subnet6_set", ip]).catch((err) => { });
               }
             }
             break;
@@ -300,14 +300,14 @@ class OSIPlugin extends Sensor {
       return;
     if (this.inboundRulesDone) {
       log.info("Flushing osi_wan_inbound_set & osi_wan_inbound_set6");
-      await exec("sudo ipset flush -! osi_wan_inbound_set").catch((err) => { });
-      await exec("sudo ipset flush -! osi_wan_inbound_set6").catch((err) => { });
+      await execFile("sudo", ["ipset", "flush", "-!", "osi_wan_inbound_set"]).catch((err) => { });
+      await execFile("sudo", ["ipset", "flush", "-!", "osi_wan_inbound_set6"]).catch((err) => { });
     }
     if (this.vpnClientDone) {
       if (!this.knob1Lifted) {
         log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
-        await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
-        await exec("sudo ipset flush -! osi_match_all_knob6").catch((err) => { });
+        await execFile("sudo", ["ipset", "flush", "-!", "osi_match_all_knob"]).catch((err) => { });
+        await execFile("sudo", ["ipset", "flush", "-!", "osi_match_all_knob6"]).catch((err) => { });
         this.knob1Lifted = true;
       }
       if (this.rulesDone) {
@@ -323,8 +323,8 @@ class OSIPlugin extends Sensor {
   async releaseBrake() {
     // rules (especially pbr rules) depends on vpn client policy, so only unblock when both vpn client & pbr are both applied in code
     log.info("Flushing osi_rules_match_all_knob & osi_rules_match_all_knob6");
-    await exec("sudo ipset flush -! osi_rules_match_all_knob").catch((err) => { });
-    await exec("sudo ipset flush -! osi_rules_match_all_knob6").catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_rules_match_all_knob"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_rules_match_all_knob6"]).catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
       if (this.updateTask)
@@ -349,12 +349,12 @@ class OSIPlugin extends Sensor {
   async cleanup() {
     // await rclient.delAsync(OSI_KEY);
     // await rclient.delAsync(OSI_RULES_KEY);
-    await exec("sudo ipset flush -! osi_mac_set").catch((err) => { });
-    await exec("sudo ipset flush -! osi_subnet_set").catch((err) => { });
-    await exec("sudo ipset flush -! osi_subnet6_set").catch((err) => { });
-    await exec("sudo ipset flush -! osi_rules_mac_set").catch((err) => { });
-    await exec("sudo ipset flush -! osi_rules_subnet_set").catch((err) => { });
-    await exec("sudo ipset flush -! osi_rules_subnet6_set").catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_mac_set"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_subnet_set"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_subnet6_set"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_rules_mac_set"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_rules_subnet_set"]).catch((err) => { });
+    await execFile("sudo", ["ipset", "flush", "-!", "osi_rules_subnet6_set"]).catch((err) => { });
   }
 
   hasValidProfileId(x) {

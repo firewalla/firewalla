@@ -39,7 +39,7 @@ const fsp = fs.promises
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const execAsync = util.promisify(cp.exec);
-const execFileAsync = util.promisify(cp.execFile);
+const { execFile } = require('child-process-promise');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
@@ -845,8 +845,8 @@ class VpnManager {
     await writeFileAsync(configRCFile, configRC.join('\n'), 'utf8');
     await writeFileAsync(configJSONFile, JSON.stringify(settings), 'utf8');
     await writeFileAsync(configCCDFileTmp, configCCD.join('\n'), 'utf8');
-    await execFileAsync('sudo', ['cp', configCCDFileTmp, configCCDFile]);
-    await execFileAsync('sudo', ['chmod', '644', configCCDFile]).catch((err) => {
+    await execFile('sudo', ['cp', configCCDFileTmp, configCCDFile]);
+    await execFile('sudo', ['chmod', '644', configCCDFile]).catch((err) => {
       log.error(`Failed to change permission: ${configCCDFile}`, err);
     });
   }
@@ -951,12 +951,12 @@ class VpnManager {
 
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-    await execFileAsync('flock', ['-n', vpnLockFile, 'sudo', './ovpngen.sh', commonName, String(password), ip, String(externalPort), protocol], {
+    await execFile('flock', ['-n', vpnLockFile, 'sudo', './ovpngen.sh', commonName, String(password), ip, String(externalPort), protocol], {
       cwd: `${fHome}/vpn`
     }).catch(err => {
       log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
     });
-    await execFileAsync('sync', []).catch(() => {});
+    await execFile('sync', []).catch(() => {});
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,
       cn: commonName
@@ -973,7 +973,7 @@ class VpnManager {
 
     try {
       const indexFile = `${platform.openvpnFolder()}/easy-rsa/keys/index.txt`;
-      const result = await execFileAsync('sudo', ['cat', indexFile]);
+      const result = await execFile('sudo', ['cat', indexFile]);
       const lines = result.stdout.toString("utf8").split('\n');
       for (var i = 0; i < lines.length; i++) {
         const contents = lines[i].split(/\t/);

@@ -789,6 +789,9 @@ class netBot extends ControllerBot {
             "action_value": 1,
             "labels": { "version": fc.getSimpleVersion() }
           }
+          // NOTE: this writes event:log directly and thus bypasses EventRequestHandler.sendEvent,
+          // so it does NOT fan out Message.MSG_EVENT_GENERATED. That is fine here - netbot runs in
+          // FireApi, where the consumers of that message don't exist.
           await ea.addEvent(eventRequest, eventRequest.ts);
         } catch (err) {
           log.error("failed to add action event on firewalla_upgrade:", err);
@@ -2394,13 +2397,13 @@ class netBot extends ControllerBot {
         sysTool.restartFireKickService();
         return
       case "restartFirereset":
-        await execAsync("sudo systemctl restart firereset");
+        await execFile("sudo", ["systemctl", "restart", "firereset"]);
         return
       case "restartFirestatus":
-        await execAsync("sudo systemctl restart firestatus");
+        await execFile("sudo", ["systemctl", "restart", "firestatus"]);
         return
       case "restartBluetoothRTKService":
-        await execAsync("sudo systemctl restart rtk_hciuart");
+        await execFile("sudo", ["systemctl", "restart", "rtk_hciuart"]);
         return
       case "cleanIntel":
         await sysTool.cleanIntel();
@@ -2815,7 +2818,7 @@ class netBot extends ControllerBot {
               });
               await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
               await pm2.deletePoliciesData(pAudit)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`, [])
 
               // always recreate inbound firewall and active protect
               if (await mode.isRouterModeOn()) {
@@ -2831,7 +2834,7 @@ class netBot extends ControllerBot {
               log.info('Reseting qos policies', pQos.length)
               await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
               await pm2.deletePoliciesData(pQos)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`, [])
 
             } else if (value.audit) {
               log.info('Reenforcing qos policies', pQos.length)
@@ -2843,7 +2846,7 @@ class netBot extends ControllerBot {
               log.info('Reseting route policies', pRoute.length)
               await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
               await pm2.deletePoliciesData(pRoute)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`, [])
 
             } else if (value.audit) {
               log.info('Reenforcing route policies', pRoute.length)
@@ -4096,7 +4099,7 @@ class netBot extends ControllerBot {
     }
     log.info("Going to switch to branch", targetBranch);
     try {
-      await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+      await execFile(`${f.getFirewallaHome()}/scripts/switch_branch.sh`, [targetBranch])
       if (platform.isFireRouterManaged()) {
         // firerouter switch branch will trigger fireboot and restart firewalla services
         await FireRouter.switchBranch(target);
@@ -4512,7 +4515,7 @@ class netBot extends ControllerBot {
     if (restartUPnPTask[intfName])
       clearTimeout(restartUPnPTask[intfName]);
     restartUPnPTask[intfName] = setTimeout(() => {
-      execAsync(`sudo systemctl restart firerouter_upnpd@${intfName}`).catch((err) => { });
+      execFile("sudo", ["systemctl", "restart", `firerouter_upnpd@${intfName}`]).catch((err) => { });
     }, 3000);
   }
 
@@ -4600,7 +4603,7 @@ class netBot extends ControllerBot {
             break;
           }
         }
-        await execAsync("sync");
+        await execFile("sync", []);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }

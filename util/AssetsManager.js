@@ -20,7 +20,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const Message = require('../net2/Message.js')
 
 const fsp = require('fs').promises
-const { exec } = require('child-process-promise')
+const { execFile } = require('child-process-promise')
 
 const RETRY_COUNT = 3
 
@@ -29,7 +29,7 @@ class AssetsManager {
     this.assetsPath = firewalla.getRuntimeInfoFolder() + '/assets/'
     this.files = {}
     this.retry = {}
-    exec(`mkdir -p ${this.assetsPath}`)
+    execFile("mkdir", ["-p", this.assetsPath])
       .catch(err => log.error('Error creating directory', this.assetsPath, err.message, err.stack))
     sclient.on("message", async (channel, message) => {
       if (channel == Message.MSG_ASSETS_UPDATED_CHANNEL) {

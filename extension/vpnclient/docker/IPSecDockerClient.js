@@ -20,7 +20,7 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
@@ -43,7 +43,7 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     await super.checkAndSaveProfile(value);
     const files = value.files || [];
     // copy the file content to the same relative path under docker config directory, which will be mapped as volume into container
-    await exec(`sudo rm -rf ${this._getFilesDir()}`).catch((err) => {});
+    await execFile("sudo", ["rm", "-rf", this._getFilesDir()]).catch((err) => {});
     for (const file of files) {
       const path = file.path;
       const content = file.content;
@@ -53,7 +53,7 @@ class IPSecDockerClient extends DockerBaseVPNClient {
       const basename = PATH.basename(filename);
       await fs.mkdirAsync(dirname, {recursive: true, mode: 0o755});
       await fs.writeFileAsync(`${dirname}/${basename}`, content, {encoding: "utf8"});
-      await exec(`chmod ${permission} ${dirname}/${basename}`);
+      await execFile("chmod", [String(permission), `${dirname}/${basename}`]);
     }
   }
 
@@ -108,11 +108,11 @@ class IPSecDockerClient extends DockerBaseVPNClient {
         // classic ipsec.conf ipsec.secrets and other dependent scripts/certificates if necessary
         composeObj.services.vpn.image = `public.ecr.aws/a0j1s2e9/strongswan-clientv2:${f.isDevelopmentVersion() ? "dev" : "latest"}`;
         // add files under ${this._getDockerConfigDirectory()}/files into volumes
-        await exec(`sudo rm -rf ${this._getDockerConfigDirectory()}/files`).catch((err) => {});
-        await exec(`cp -rf ${this._getFilesDir()} ${this._getDockerConfigDirectory()}`).catch((err) => {
+        await execFile("sudo", ["rm", "-rf", `${this._getDockerConfigDirectory()}/files`]).catch((err) => {});
+        await execFile("cp", ["-rf", this._getFilesDir(), this._getDockerConfigDirectory()]).catch((err) => {
           log.error(`Failed to copy files to ${this._getDockerConfigDirectory()}`, err.message);
         });
-        const files = await exec(`find ${this._getDockerConfigDirectory()}/files -type f`).then(result => result.stdout.trim().split('\n').map(line => line.substring(`${this._getDockerConfigDirectory()}/files/`.length)));
+        const files = await execFile("find", [`${this._getDockerConfigDirectory()}/files`, "-type", "f"]).then(result => result.stdout.trim().split('\n').map(line => line.substring(`${this._getDockerConfigDirectory()}/files/`.length)));
         composeObj.services.vpn.volumes = files.map(file => `./files/${file}:/${file}`); // map relative path to the absolute path in container
         break;
     }
@@ -152,7 +152,7 @@ FW_SERVER="${config.server}"`;
   }
 
   async __isLinkUpInsideContainer() {
-    const result = await exec(`sudo docker exec ${this.getContainerName()} ipsec status`).then(output => output.stdout.trim()).catch((err) => {
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "ipsec", "status"]).then(output => output.stdout.trim()).catch((err) => {
       log.error(`Failed to check ipsec status on ${this.profileId}`, err.message);
       return null;
     });
@@ -207,7 +207,7 @@ FW_SERVER="${config.server}"`;
     const config = await this.loadJSONConfig().catch((err) => null) || {};
     switch (config.type) {
       case "ikev2-generic": {
-        const result = await exec(`sudo docker exec ${this.getContainerName()} ipsec statusall`).then(output => output.stdout.trim()).catch((err) => {
+        const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "ipsec", "statusall"]).then(output => output.stdout.trim()).catch((err) => {
           log.error(`Failed to check ipsec statusall on ${this.profileId}`, err.message);
           return null;
         });
@@ -234,17 +234,17 @@ FW_SERVER="${config.server}"`;
 
   async destroy() {
     await super.destroy();
-    await exec(`sudo rm -rf ${this.constructor.getConfigDirectory()}/${this.profileId}`).catch((err) => {});
+    await execFile("sudo", ["rm", "-rf", `${this.constructor.getConfigDirectory()}/${this.profileId}`]).catch((err) => {});
   }
 
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes(includeContent);
     if (includeContent) {
-      const files = await exec(`find ${this._getFilesDir()}/ -type f`).then(result => result.stdout.trim().split('\n').map(line => line.substring(`${this._getFilesDir()}/`.length)));
+      const files = await execFile("find", [`${this._getFilesDir()}/`, "-type", "f"]).then(result => result.stdout.trim().split('\n').map(line => line.substring(`${this._getFilesDir()}/`.length)));
       const fileEntries = await Promise.all(files.map(async (file) => {
         const filename = `/${file}`;
         const content = await fs.readFileAsync(`${this._getFilesDir()}/${file}`, {encoding: "utf8"});
-        const permission = await exec(`stat -c '%a' ${this._getFilesDir()}/${file}`).then(output => output.stdout.trim()).catch((err) => {
+        const permission = await execFile("stat", ["-c", "%a", `${this._getFilesDir()}/${file}`]).then(output => output.stdout.trim()).catch((err) => {
           log.error(`Failed to read file permission of ${this._getFilesDir()}/${file}`, err.message);
           return "644"
         });
@@ -257,7 +257,7 @@ FW_SERVER="${config.server}"`;
 
   async getLatestSessionLog() {
     const logPath = `/var/log/docker_ipsec_vpn_${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "200", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     return content;
   }
 
@@ -265,7 +265,7 @@ FW_SERVER="${config.server}"`;
     if (!LogFileName)
       return;
     await exec(`[ -f ${LogFileName} ] || sudo touch ${LogFileName}`).catch((err) => {});
-    await exec(`sudo chmod 644 ${LogFileName}`).catch((err) => {});
+    await execFile("sudo", ["chmod", "644", LogFileName]).catch((err) => {});
   }
 
 }

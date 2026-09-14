@@ -19,7 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-const { exec } = require('child-process-promise')
+const { exec, execFile } = require('child-process-promise')
 
 const Firewalla = require('../net2/Firewalla');
 const nmap = require('../net2/Nmap.js');
@@ -79,7 +79,7 @@ class NmapSensor extends Sensor {
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
     // uses the latest OUI DB if possible
-    exec(`sudo cp -f ${OUI_ASSET_PATH} /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+    execFile("sudo", ["cp", "-f", OUI_ASSET_PATH, "/usr/share/nmap/nmap-mac-prefixes"]).catch(()=>{})
 
     this.scheduleReload();
     setInterval(() => {

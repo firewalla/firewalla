@@ -17,7 +17,7 @@
 let instance = null;
 let log = require("../../net2/logger.js")(__filename);
 
-let exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 let util = require('util');
 
@@ -58,7 +58,7 @@ class Samba {
   }
 
   nbtscanExists() {
-    return exec("which nbtscan")
+    return execFile("which", ["nbtscan"])
       .then(() => {
         return true;
       }).catch((err) => {

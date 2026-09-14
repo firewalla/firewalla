@@ -35,7 +35,7 @@ const Buffer = require('buffer').Buffer;
 
 const featureName = "fast_intel";
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const Promise = require('bluebird');
 const jsonfile = require('jsonfile');
@@ -228,7 +228,7 @@ class FastIntelPlugin extends Sensor {
 
   async restartIntelProxy() {
     log.info("Restarting intel proxy...");
-    await exec("sudo systemctl restart intelproxy").catch((err) => {
+    await execFile("sudo", ["systemctl", "restart", "intelproxy"]).catch((err) => {
       log.error("Failed to restart intelproxy, err:", err);
     });
   }
@@ -270,7 +270,7 @@ class FastIntelPlugin extends Sensor {
       });
     }
 
-    await exec("sudo systemctl stop intelproxy").catch((err) => {
+    await execFile("sudo", ["systemctl", "stop", "intelproxy"]).catch((err) => {
       log.error("Failed to stop intelproxy, err:", err);
     });
 

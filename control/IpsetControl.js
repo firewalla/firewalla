@@ -21,7 +21,7 @@ const path = require('path');
 const fsp = require('fs').promises;
 const uuid = require('uuid');
 
-const { exec, execFile } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const { spawn } = require('child_process');
 
 /**
@@ -139,7 +139,7 @@ class IpsetControl extends ModuleControl {
     try {
       await fsp.mkdir(path.dirname(restoreFile), { recursive: true });
       await fsp.writeFile(restoreFile, ops.join('\n') + '\n', 'utf8');
-      await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 300000 });
+      await execFile("sudo", ["ipset", "restore", "-!", "-f", restoreFile], { timeout: 300000 });
     } finally {
       await fsp.unlink(restoreFile).catch(() => {});
     }
@@ -312,7 +312,7 @@ class IpsetControl extends ModuleControl {
 
       try {
         // the 5 min timeout is for https://ubuntu.com/security/CVE-2024-26910
-        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 300000 });
+        await execFile("sudo", ["ipset", "restore", "-!", "-f", restoreFile], { timeout: 300000 });
         log.verbose(`ipset restore completed ${remaining.length} operations successfully`);
         break;
       } catch (err) {
@@ -391,7 +391,7 @@ class IpsetControl extends ModuleControl {
    */
   async listExistingSets() {
     try {
-      const result = await exec('sudo ipset list -name', { timeout: 10000 });
+      const result = await execFile('sudo', ['ipset', 'list', '-name'], { timeout: 10000 });
       const names = result.stdout
         .split('\n')
         .map(line => line.trim())

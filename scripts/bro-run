@@ -3,6 +3,13 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+if [[ $(get_flow_engine_zeek) == fleet ]]; then
+  # brofish.service runs fleet through its drop-in (scripts/fleet-engine.sh);
+  # zeek must not be deployed beside it, they would write the same spool
+  logger 'FIREWALLA.BROFISH flow engine is fleet, not deploying zeek'
+  exit 0
+fi
+
 logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla

@@ -18,7 +18,7 @@
 const log = require('./logger.js')(__filename);
 
 const net = require('net');
-const { exec, execFile } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -456,7 +456,7 @@ class VirtWanGroup {
     const tableName = this._getRTName();
     try {
       for (const af of [4, 6]) {
-        const { stdout } = await exec(`ip -${af} route show table ${tableName}`);
+        const { stdout } = await execFile("ip", [`-${af}`, "route", "show", "table", tableName]);
         if (!stdout || !stdout.trim())
           continue;
         if (this._hasValidDefaultForDev(stdout, intf))

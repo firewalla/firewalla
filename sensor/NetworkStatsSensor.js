@@ -38,7 +38,7 @@ const Ping = require('../extension/ping/Ping.js');
 const sysManager = require('../net2/SysManager.js');
 const sem = require('./SensorEventManager.js').getInstance();
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
 const CronJob = require('cron').CronJob;
@@ -471,7 +471,7 @@ class NetworkStatsSensor extends Sensor {
       const resultGroupByDns = {}
       for (const dns of dnses) {
         try {
-          const result = await exec(`dig +time=3 +tries=2 @${dns} +short ${internetTestHost}`);
+          const result = await execFile("dig", ["+time=3", "+tries=2", `@${dns}`, "+short", internetTestHost]);
           resultGroupByDns[dns] = {
             stdout: result.stdout ? result.stdout.split('\n').filter(x => x) : result.stdout,
             stderr: result.stderr ? result.stderr.split('\n').filter(x => x) : result.stderr

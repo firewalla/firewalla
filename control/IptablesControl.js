@@ -15,7 +15,7 @@
 'use strict'
 
 const log = require('../net2/logger.js')(__filename);
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const { Rule } = require('../net2/Iptables.js');
 const f = require('../net2/Firewalla.js');
 const path = require('path');
@@ -238,8 +238,8 @@ class IptablesControl extends ModuleControl {
     log.debug('Dumping current iptables chains');
     try {
       const [v4Result, v6Result] = await Promise.all([
-        exec('sudo iptables-save', { timeout: 30000 }),
-        exec('sudo ip6tables-save', { timeout: 30000 })
+        execFile('sudo', ['iptables-save'], { timeout: 30000 }),
+        execFile('sudo', ['ip6tables-save'], { timeout: 30000 })
       ]);
 
       for (const [family, output] of [[4, v4Result.stdout], [6, v6Result.stdout]]) {

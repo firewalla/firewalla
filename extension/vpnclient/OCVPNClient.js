@@ -21,7 +21,7 @@ const f = require('../../net2/Firewalla.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const SERVICE_NAME = "openconnect_client";
 const _ = require('lodash');
@@ -167,7 +167,7 @@ class OCVPNClient extends VPNClient {
 
   async _isLinkUp() {
     const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    return execFile("ip", ["link", "show", "dev", intf]).then(() => true).catch((err) => false);
   }
 
   async checkAndSaveProfile(value) {
@@ -202,7 +202,7 @@ class OCVPNClient extends VPNClient {
 
   async getLatestSessionLog() {
     const logPath = `/var/log/openconnect_client-${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "200", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     return content;
   }
 }

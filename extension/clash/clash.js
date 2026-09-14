@@ -23,7 +23,7 @@ const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const _ = require('lodash');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 const { delay } = require('../../util/util.js');
 
@@ -89,7 +89,7 @@ class Clash {
   async prepareDockerComposeFile() {
     const dockerPath = `${f.getRuntimeInfoFolder()}/docker`;
 		const clashDockerPath = `${dockerPath}/clash`;
-    return exec(`cp ${__dirname}/docker-compose.yml ${clashDockerPath}/`);
+    return execFile("cp", [`${__dirname}/docker-compose.yml`, `${clashDockerPath}/`]);
   }
 
   getServers() {
@@ -125,7 +125,7 @@ class Clash {
       await this.prepareClashConfig();
       await this.prepareDockerComposeFile();
 
-      await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
+      await execFile("touch", [`${f.getUserHome()}/.forever/clash.log`]);
 
       // setup iptables
       await this.setupIptables();
@@ -191,11 +191,11 @@ class Clash {
       log.error("Config file is not ready yet");
     }
 
-    return exec("sudo systemctl restart docker-compose@clash")
+    return execFile("sudo", ["systemctl", "restart", "docker-compose@clash"])
   }
 
   async rawStop() {
-    return exec("sudo systemctl stop docker-compose@clash").catch(() => {})
+    return execFile("sudo", ["systemctl", "stop", "docker-compose@clash"]).catch(() => {})
   }
 
   async postStart(config = {}) {

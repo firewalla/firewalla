@@ -29,6 +29,7 @@ const bone = require("../lib/Bone.js");
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
+const { execFile } = require('child-process-promise');
 const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const f = require('../net2/Firewalla.js');
 const Ranges = require('../util/Ranges.js');
@@ -153,7 +154,7 @@ class InternalScanSensor extends Sensor {
         task.ets = Date.now() / 1000;
       }
     }
-    await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
+    await execFile("sudo", ["cp", "../extension/nmap/scripts/mysql.lua", "/usr/share/nmap/nselib/"]).catch((err) => {});
     setInterval(() => {
       this._cleanTasks();
       this.checkRunningStatus();
@@ -305,12 +306,12 @@ class InternalScanSensor extends Sensor {
 }
 
   async killTask(pid) {
-    const children = await execAsync(`pgrep -P ${pid}`).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
+    const children = await execFile("pgrep", ["-P", String(pid)]).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
     if (!_.isEmpty(children)) {
       for (const child of children)
         await this.killTask(child);
     }
-    await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
+    await execFile("sudo", ["kill", "-SIGINT", String(pid)]).catch((err) => {
       log.error(`Failed to kill task pid ${pid}`, err.message);
     });
   }
@@ -844,7 +845,7 @@ class InternalScanSensor extends Sensor {
     const rmFiles = diff.map(file => {return fpath.join(dir, file)});
     log.debug(`rm diff files *${suffix}`, rmFiles);
     for (const filepath of rmFiles) {
-      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+      await execFile("rm", ["-f", filepath]).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
     }
   }
 
@@ -865,7 +866,7 @@ class InternalScanSensor extends Sensor {
     const filenames = await this._list_suffix_files(dir, suffix);
     const rmFiles = filenames.map(file => {return fpath.join(dir, file)});
     for (const filepath of rmFiles) {
-      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+      await execFile("rm", ["-f", filepath]).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
     }
   }
 
@@ -1194,7 +1195,7 @@ class InternalScanSensor extends Sensor {
     } else {
       creds = `${username}/${password}`;
     }
-    await execAsync(`rm -f ${credfile}`); // cleanup credfile in case of dirty data
+    await execFile("rm", ["-f", credfile]); // cleanup credfile in case of dirty data
     await fsp.writeFile(credfile, creds);
     if (! await fsp.access(credfile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
         log.warn('fail to write credfile', ipAddr, port, username, credfile);
@@ -1203,7 +1204,7 @@ class InternalScanSensor extends Sensor {
 
     // check file content, skip to improve performance
     if (process.env.FWDEBUG) {
-      const content = await execAsync(`cat ${credfile}`).then((result) => result.stdout.trim()).catch((err) => err.stderr);
+      const content = await execFile("cat", [credfile]).then((result) => result.stdout.trim()).catch((err) => err.stderr);
       if (content != creds) {
         log.warn(`fail to write credfile, (user/pass=${username}/${password}, file=${content}, path ${credfile}`);
       }
@@ -1223,7 +1224,7 @@ class InternalScanSensor extends Sensor {
       return true;
     }
 
-    await execAsync(`rm -f ${credfile}`); // cleanup credfile after finished
+    await execFile("rm", ["-f", credfile]); // cleanup credfile after finished
     log.info(`[httpbruteCreds] Running command: ${cmd} (user/pass=${username}/${password})`);
     return  result.stdout.trim() == "1"
   }

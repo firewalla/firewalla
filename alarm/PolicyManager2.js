@@ -92,7 +92,7 @@ const { delay, isSameOrSubDomain, batchKeyExists, isDomainTargetValid } = requir
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const LRU = require('lru-cache');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -1486,15 +1486,9 @@ class PolicyManager2 {
   async _applyBypass(bypassPolicy, action="enforce") {
     let {affectedPids, tag, pid, type, target, targets, scope, guids} = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.verbose(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, action);
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     if (_.isEmpty(targets)) {
       targets = [target];
@@ -1715,6 +1709,31 @@ class PolicyManager2 {
     return { intfs, tags }
   }
 
+  // Resolve a rule's tag/interface scope. Returns null when the rule's tag field is
+  // non-empty but names nothing usable, meaning the caller should stop.
+  //
+  // The existence filter applies to enforcement only. On enforce, a tag that no longer
+  // exists must be dropped: Block.setupTagsRules() would call ensureCreateEnforcementEnv()
+  // and create ipsets nothing will ever clean up. On unenforce the opposite holds -- the
+  // tag being gone is the reason teardown must run, and the uid has to survive into
+  // commonOptions.tags or the -D commands won't match what enforcement installed,
+  // stranding FW_DISTURB_QOS_* jumps that pin the tag's ipsets at References != 0.
+  async resolveRuleScope(tag, pid, action) {
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    if (action === "enforce") {
+      const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+      tags = tags.filter((_, index) => tagExistenceChecks[index])
+    }
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      const logFn = action === "enforce" ? log.verbose : log.warn;
+      logFn(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
+      return null;
+    }
+    return { intfs, tags };
+  }
+
   async _enforce(policy) {
     log.info(`Enforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
@@ -1729,7 +1748,7 @@ class PolicyManager2 {
     // for now, targets is only used for multiple category block/app time limit/app disturb
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids,
-      parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
+      parentRgId, targetRgId, ipttl, resolver, ipOnly, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
     const qosRef = { pid, subKey: policy.qosSubKey };
 
     if (action === "app_block")
@@ -1752,15 +1771,9 @@ class PolicyManager2 {
     }
 
 
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.verbose(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, "enforce");
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type);
@@ -1879,7 +1892,7 @@ class PolicyManager2 {
             const scheduling = policy.isSchedulingPolicy();
             if (action != "block" || policy.dnsmasq_only) { // dnsmasq_only + block indicates if DNS block should be applied on internet block
               // empty string matches all domains
-              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID, routeType }).catch(() => { });
+              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, ipOnly, wanUUID, routeType }).catch(() => { });
               dnsmasq.scheduleRestartDNSService();
             }
           }
@@ -1915,7 +1928,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) { // always implement allow rule in dnsmasq, but implement block rule only in iptables
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
+            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, ipOnly, wanUUID, routeType }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -2455,15 +2468,9 @@ class PolicyManager2 {
       return this._unenforceBypass(policy);
     }
 
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, "unenforce");
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     const devOpts = { tags, intfs, scope, guids };
 
@@ -3077,7 +3084,7 @@ class PolicyManager2 {
     try {
       let cmdResult = await exec("sudo iptables -w -S | grep -E 'FW_FIREWALL'");
       let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
-      cmdResult = await exec(`sudo ipset -S`);
+      cmdResult = await execFile("sudo", ["ipset", "-S"]);
       let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
       for (const line of cmdResultContent) {
         const splitCurrent = line.split(" ");

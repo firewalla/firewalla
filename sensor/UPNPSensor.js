@@ -48,7 +48,7 @@ const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fs = require('fs');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const _ = require('lodash');
 
@@ -127,7 +127,7 @@ class UPNPSensor extends Sensor {
 
   async _watchLeaseFile(leaseFile) {
     try {
-      await exec(`sudo touch ${leaseFile}`);
+      await execFile("sudo", ["touch", leaseFile]);
       const watcher = fs.watch(leaseFile, {}, (e) => {
         if (e === "change") {
           log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);

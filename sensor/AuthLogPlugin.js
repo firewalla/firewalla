@@ -22,10 +22,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const sysManager = require('../net2/SysManager.js');
-const util = require('util');
 const net = require('net')
-const cp = require('child_process');
-const execFileAsync = util.promisify(cp.execFile);
+const { execFile } = require('child-process-promise');
 
 const _ = require('lodash');
 
@@ -44,7 +42,7 @@ class AuthLogPlugin extends Sensor {
       try {
         log.debug("Start to check ssh login attempts");
         let sshLoginFailIPs;
-        const loginFailStr = await execFileAsync('sudo', ['journalctl', '-t', 'sshd', '-t', 'sshd-session', '-o', 'cat', '--since', `-${interval}min`])
+        const loginFailStr = await execFile('sudo', ['journalctl', '-t', 'sshd', '-t', 'sshd-session', '-o', 'cat', '--since', `-${interval}min`])
           .then(result => result.stdout.trim()).catch(() => null);
         if (loginFailStr) {
             sshLoginFailIPs = loginFailStr.split("\n").filter(line => line.includes('Failed password')).map(line => {

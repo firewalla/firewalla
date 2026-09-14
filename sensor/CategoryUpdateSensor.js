@@ -43,7 +43,7 @@ const dnsmasq = new DNSMASQ();
 const util = require('util');
 
 const fs = require('fs');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const { execSync } = require('child_process');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -470,7 +470,7 @@ class CategoryUpdateSensor extends Sensor {
     await rclient.hdelAsync(CATEGORY_DATA_KEY, uid);
 
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
-    await exec(`rm -fr ${filterFile}`);
+    await execFile("rm", ["-fr", filterFile]);
   }
 
   async updateDnsmasqConfig(category) {

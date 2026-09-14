@@ -31,7 +31,7 @@ const df = util.promisify(require('node-df'))
 
 const os = require('../../vendor_lib/osutils.js');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const { execSync } = require('child_process')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
@@ -311,7 +311,7 @@ async function getAutoUpgrade() {
 
 async function getKernelVersion() {
   if (!kernelVersion) {
-    kernelVersion = await exec("uname -r").then(result => result.stdout.trim()).catch((err) => {
+    kernelVersion = await execFile("uname", ["-r"]).then(result => result.stdout.trim()).catch((err) => {
       log.error("Failed to get kernel version via uname -r", err.message);
       return null;
     });
@@ -349,7 +349,7 @@ function cachedAsync(producer, ttlMs) {
 
 // /proc/version never changes without a reboot, so cache it forever like kernelVersion above.
 const getProcVersion = cachedAsync(
-  () => exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+  () => execFile("cat", ["/proc/version"]).then(result => result.stdout.trim()).catch(err => null),
   Infinity
 );
 
@@ -370,7 +370,7 @@ async function getIntelQueueSize() {
 
 async function getRealMemoryUsage() {
   try {
-    const res = await exec('free');
+    const res = await execFile('free', []);
     var lines = res.stdout.split(/\n/g);
     for(var i = 0; i < lines.length; i++) {
       lines[i] = lines[i].split(/\s+/);
@@ -495,7 +495,7 @@ async function getMaxPid() {
 async function getActiveContainers() {
   try {
     if (! platform.isDockerSupported()) { return; }
-    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    const active = await execFile("sudo", ["systemctl", "-q", "is-active", "docker"]).then(() => true).catch((err) => false);
     if (active) {
       const cmd = await exec('sudo docker container ls -q | wc -l')
       activeContainers = Number(cmd.stdout)
@@ -533,7 +533,7 @@ async function computeTop10RSSProcesses() {
     // pids are guaranteed numeric (parsed above), so safe to interpolate into the script.
     if (needSudo.length) {
       const script = needSudo.map(p => `echo "${p.pid} $(readlink /proc/${p.pid}/exe 2>/dev/null)"`).join('; ');
-      const exeByPid = await exec(`sudo bash -c '${script}'`).then(result => {
+      const exeByPid = await execFile("sudo", ["bash", "-c", script]).then(result => {
         const map = {};
         for (const line of result.stdout.trim().split('\n')) {
           const idx = line.indexOf(' ');
@@ -650,7 +650,7 @@ async function getRecentLogs() {
   let results = await Promise.all(logFiles.map(async file => {
     // ignore all errors
     try {
-      let res = await exec(util.format('tail -n %d %s', tailNum, file))
+      let res = await execFile('tail', ['-n', String(tailNum), file])
       return { file: file, content: res.stdout }
     } catch(err) {
       return { file: file, content: "" }
@@ -694,7 +694,7 @@ function getHeapDump(file, callback) {
 // counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
 // the ones with error in the name, same as `ethtool -S ethX | grep error`
 async function getEthErrorStats(nic) {
-  const output = await exec(`ethtool -S ${nic}`).then((result) => result.stdout).catch((err) => null);
+  const output = await execFile("ethtool", ["-S", nic]).then((result) => result.stdout).catch((err) => null);
   if (!output)
     return null;
   const stats = {};
@@ -880,7 +880,7 @@ async function isUsbWifi(id, name, device) {
 // which types of USB accessories are plugged into the box. bluetooth and wifi dongles are
 // reported with their id and product string, anything else is only counted as "other"
 async function readUsbInfo() {
-  const output = await exec("lsusb").then((result) => result.stdout).catch((err) => {
+  const output = await execFile("lsusb", []).then((result) => result.stdout).catch((err) => {
     if (!lsusbFailed) { // this is retried on every refresh, only complain about it once
       lsusbFailed = true;
       log.error("Failed to list USB devices", err.message);
@@ -1088,7 +1088,7 @@ async function getDiskUsage(path) {
 }
 
 async function getReleaseInfo() {
-  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return execFile('cat', ['/etc/firewalla_release']).then(result => result.stdout.trim().split("\n")).then(lines => {
     releaseInfo = {};
     lines.forEach(line => {
       const [key,value] = line.split(/: (.+)?/,2);
