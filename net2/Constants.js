@@ -114,6 +114,8 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+  REDIS_HKEY_CONN_BPID: "bpid", // block rule id; presence flags the 5-tuple as blocked
+  REDIS_HKEY_CONN_BPID_TS: "bpidts", // epoch seconds bpid was last (re)written; ages the marker off its own write time
 
   NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
   NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
