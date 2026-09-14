@@ -39,11 +39,16 @@ fi
 # role, suricata/crontab.fleet-ids for the IDS) do not both check everything:
 #   fleet-ping.sh [brofish|suricata]    default: every role fleet owns
 WANT=${1:-all}
+# When fleet owns both roles and the box wants both, one process under
+# brofish.service serves them: the suricata unit is held off and there is
+# nothing of ours to check there.
+shared=false
+[[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] && pcap_zeek_enabled && pcap_suricata_enabled && shared=true
 ROLES=()
 if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled && [[ $WANT == all || $WANT == brofish ]]; then
   ROLES+=("brofish:127.0.0.1:8927")
 fi
-if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && [[ $WANT == all || $WANT == suricata ]]; then
+if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && ! $shared && [[ $WANT == all || $WANT == suricata ]]; then
   ROLES+=("suricata:127.0.0.1:8928")
 fi
 [[ ${#ROLES[@]} -gt 0 ]] || exit 0   # nothing of ours to check
