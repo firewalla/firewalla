@@ -101,7 +101,6 @@ RUNNER=/home/pi/.firewalla/run/assets/fleet-run
 IDS_RUNNER=/home/pi/.firewalla/run/assets/fleet-ids-run
 LOCAL_RUNNER=$FLEET_RUN_DIR/fleet-run
 LOCAL_IDS_RUNNER=$FLEET_RUN_DIR/fleet-ids-run
-check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
 
 check "one process serves both roles: brofish has no --no-suricata" '! grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
@@ -351,7 +350,7 @@ check "a backup that fails aborts before the destination is touched" 'sed -n "/c
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
 echo "== unit: the two-process arrangement"
-check "the IDS is restarted whatever the flow role is doing" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then"'
+check "the IDS unit is restarted only when it runs a fleet of its own" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "pcap_suricata_enabled && ! shared_roles"'
 check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && suricata_running; then"'
 check "each cron entry checks one role" 'grep -q "fleet-ping.sh brofish" "$FIREWALLA_HOME/etc/crontab.fleet" && grep -q "fleet-ping.sh suricata" "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids"'
 check "the watchdog probes the IDS with suricata interfaces" 'grep -q "ids_status_args" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
