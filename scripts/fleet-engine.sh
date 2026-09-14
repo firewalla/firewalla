@@ -18,9 +18,25 @@
 # lives in drop-ins beside them. With both knobs at their stock values the
 # drop-ins are removed and the box behaves as before.
 
+TEST_MODE=${FLEET_ENGINE_TEST_MODE:-false}
+if [[ $TEST_MODE != true ]]; then
+  [[ -z ${FIREWALLA_HOME+x} || $FIREWALLA_HOME == /home/pi/firewalla ]] \
+    && [[ -z ${FIREWALLA_HIDDEN+x} || $FIREWALLA_HIDDEN == /home/pi/.firewalla ]] \
+    && [[ -z ${SYSTEMD_DIR+x} || $SYSTEMD_DIR == /etc/systemd/system ]] \
+    && [[ -z ${FLEET_RUN_DIR+x} || $FLEET_RUN_DIR == /home/pi/.firewalla/run/assets ]] \
+    && [[ -z ${FLEET_ENGINE_LOCK+x} || $FLEET_ENGINE_LOCK == /dev/shm/fleet-engine.lock.d ]] \
+    || { echo "FIREWALLA:FLEET-ENGINE refusing noncanonical production paths" >&2; exit 1; }
+fi
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source "${FIREWALLA_HOME}/platform/platform.sh"
+
+# Test mode deliberately drops privilege: even if a caller supplies arbitrary
+# scratch paths, commands written as sudo below execute with the caller's own
+# permissions.
+if [[ $TEST_MODE == true ]]; then
+  sudo() { command "$@"; }
+fi
 
 : ${SYSTEMD_DIR:=/etc/systemd/system}
 # FLEET_BIN comes from platform.sh (overridable in the environment for tests)
@@ -209,10 +225,15 @@ apply() {
   if $LIVE; then
     if [[ $ZEEK_ENGINE == fleet ]]; then
       if [[ -e /etc/cron.hourly/bro-cron ]]; then
-        sudo rm -f /etc/cron.hourly/bro-cron && log "removed /etc/cron.hourly/bro-cron"
+        if ! sudo rm -f /etc/cron.hourly/bro-cron || [[ -e /etc/cron.hourly/bro-cron ]]; then
+          fail "removing /etc/cron.hourly/bro-cron"
+          return 1
+        fi
+        log "removed /etc/cron.hourly/bro-cron"
       fi
     elif [[ ! -e /etc/cron.hourly/bro-cron && -f $FIREWALLA_HOME/etc/bro-cron ]] && ${FW_SCHEDULE_BRO:-true}; then
-      sudo install -m 0755 "$FIREWALLA_HOME/etc/bro-cron" /etc/cron.hourly/bro-cron 2>/dev/null || true
+      sudo install -m 0755 "$FIREWALLA_HOME/etc/bro-cron" /etc/cron.hourly/bro-cron 2>/dev/null \
+        || { fail "restoring /etc/cron.hourly/bro-cron"; return 1; }
     fi
   fi
   # verified, and nothing else is running: lift the hold (this also clears one
@@ -373,6 +394,16 @@ apply_and_switch()  { apply && switch_roles; }
 LOCK=${FLEET_ENGINE_LOCK:-/dev/shm/fleet-engine.lock.d}
 run_locked() {
   local waited=0
+
+  pid_alive() {
+    local pid=$1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    # An apply can run as root (asset hook) or pi (main-start). kill -0
+    # returns EPERM across those users even while the process is alive; procfs
+    # remains readable and prevents the lower-privileged caller stealing it.
+    kill -0 "$pid" 2>/dev/null || [[ -d /proc/$pid ]]
+  }
+
   until mkdir "$LOCK" 2>/dev/null; do
     # Only a lock whose owner is gone is stale. Age alone is not enough: a
     # switch back to zeek waits on `systemctl restart brofish`, and the stock
@@ -380,9 +411,36 @@ run_locked() {
     # than any timeout worth waiting.
     local owner
     owner=$(cat "$LOCK/pid" 2>/dev/null)
-    if [[ -z $owner ]] || ! kill -0 "$owner" 2>/dev/null; then
-      log "removing the apply lock $LOCK left by ${owner:-an unknown process}"
-      sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
+    if [[ -z $owner ]]; then
+      # mkdir publishes the lock before its owner can publish the pid. Do not
+      # steal a freshly acquired lock in that small initialization window. An
+      # empty lock left by a crash is safe to reclaim only with rmdir, which
+      # fails if the owner has created its pid file in the meantime.
+      waited=$((waited + 1))
+      if [[ $waited -ge 10 ]]; then
+        # rmdir is atomic and refuses a directory whose owner published pid
+        # meanwhile; sudo is needed when a root asset hook died after mkdir.
+        if rmdir "$LOCK" 2>/dev/null || sudo rmdir "$LOCK" 2>/dev/null; then
+          log "removed an abandoned uninitialized apply lock $LOCK"
+          continue
+        fi
+      fi
+      if [[ $waited -gt 600 ]]; then
+        fail "an uninitialized apply still holds $LOCK"
+        return 1
+      fi
+      sleep 1
+      continue
+    fi
+    if ! pid_alive "$owner"; then
+      log "removing the apply lock $LOCK left by process $owner"
+      if [[ $(cat "$LOCK/pid" 2>/dev/null) == "$owner" ]]; then
+        if sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null; then
+          continue
+        fi
+      fi
+      waited=$((waited + 1))
+      sleep 1
       continue
     fi
     waited=$((waited + 2))
@@ -392,10 +450,22 @@ run_locked() {
     fi
     sleep 2
   done
-  echo $$ | sudo tee "$LOCK/pid" >/dev/null 2>&1 || echo $$ > "$LOCK/pid" 2>/dev/null
+  if ! printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null; then
+    rmdir "$LOCK" 2>/dev/null
+    fail "recording ownership of $LOCK"
+    return 1
+  fi
   "$@"
   local rc=$?
-  sudo rm -rf "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null
+  if [[ $(cat "$LOCK/pid" 2>/dev/null) == "$$" ]]; then
+    if ! sudo rm -rf "$LOCK" 2>/dev/null && ! rm -rf "$LOCK" 2>/dev/null; then
+      fail "releasing $LOCK"
+      return 1
+    fi
+  else
+    fail "lost ownership of $LOCK"
+    return 1
+  fi
   return $rc
 }
 
