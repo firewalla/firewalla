@@ -14,7 +14,7 @@
  */
 'use strict';
 
-// Applies the pcap_zeek_fleet / pcap_zeek_suricata features: when either
+// Applies the pcap_zeek_fleet / pcap_suricata_fleet features: when either
 // flips, scripts/fleet-engine.sh rewrites the systemd drop-ins beside
 // brofish.service and suricata.service (fleet in, zeek/suricata out, or the
 // reverse) and the pcap plugins are asked to restart their services, which
