@@ -47,6 +47,9 @@ const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
 const { compactTime } = require('../util/util')
 
+const MAX_CACHE_ENTRIES = 10000;
+const createCache = () => Object.create(null);
+
 
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
@@ -54,6 +57,50 @@ class FlowAggregationSensor extends Sensor {
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
+    this.cacheEntryCounts = {
+      traffic: 0,
+      category: 0,
+      app: 0,
+      ipBlock: 0,
+      dnsBlock: 0,
+      ifBlock: 0
+    };
+    this.cacheDropCounts = {
+      traffic: 0,
+      category: 0,
+      app: 0,
+      ipBlock: 0,
+      dnsBlock: 0,
+      ifBlock: 0
+    };
+  }
+
+  _resetCurrentCacheBounds() {
+    for (const name of Object.keys(this.cacheEntryCounts)) {
+      this.cacheEntryCounts[name] = 0;
+      this.cacheDropCounts[name] = 0;
+    }
+  }
+
+  _getCacheEntry(cacheName, cache, bucketKey, entryKey, createEntry, createArg) {
+    const bucket = Object.prototype.hasOwnProperty.call(cache, bucketKey) ? cache[bucketKey] : null;
+    if (bucket && Object.prototype.hasOwnProperty.call(bucket, entryKey))
+      return bucket[entryKey];
+
+    if (this.cacheEntryCounts[cacheName] >= MAX_CACHE_ENTRIES) {
+      this.cacheDropCounts[cacheName]++;
+      if (this.cacheDropCounts[cacheName] === 1 ||
+          this.cacheDropCounts[cacheName] % 1000 === 0) {
+        log.warn(`Flow aggregation cache limit reached for ${cacheName}: ${MAX_CACHE_ENTRIES}`);
+      }
+      return null;
+    }
+
+    const cacheBucket = bucket || (cache[bucketKey] = createCache());
+    const entry = createEntry(createArg);
+    cacheBucket[entryKey] = entry;
+    this.cacheEntryCounts[cacheName]++;
+    return entry;
   }
 
   async scheduledJob() {
@@ -67,17 +114,18 @@ class FlowAggregationSensor extends Sensor {
     let appFlowCache = null;
     // retrieve global cache reference and set global cache to a new empty object
     trafficCache = this.trafficCache;
-    this.trafficCache = {};
+    this.trafficCache = createCache();
     categoryFlowCache = this.categoryFlowCache;
-    this.categoryFlowCache = {};
+    this.categoryFlowCache = createCache();
     appFlowCache = this.appFlowCache;
-    this.appFlowCache = {};
+    this.appFlowCache = createCache();
     ipBlockCache = this.ipBlockCache;
     dnsBlockCache = this.dnsBlockCache;
     ifBlockCache = this.ifBlockCache;
-    this.ipBlockCache = {};
-    this.dnsBlockCache = {};
-    this.ifBlockCache = {};
+    this.ipBlockCache = createCache();
+    this.dnsBlockCache = createCache();
+    this.ifBlockCache = createCache();
+    this._resetCurrentCacheBounds();
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
@@ -134,12 +182,12 @@ class FlowAggregationSensor extends Sensor {
 
     });
 
-    this.trafficCache = {};
-    this.categoryFlowCache = {};
-    this.appFlowCache = {};
-    this.ipBlockCache = {};
-    this.dnsBlockCache = {};
-    this.ifBlockCache = {};
+    this.trafficCache = createCache();
+    this.categoryFlowCache = createCache();
+    this.appFlowCache = createCache();
+    this.ipBlockCache = createCache();
+    this.dnsBlockCache = createCache();
+    this.ifBlockCache = createCache();
 
     // BroDetect -> DestIPFoundHook -> here
     sem.on(Message.MSG_FLOW_ENRICHED, async event => {
@@ -194,39 +242,39 @@ class FlowAggregationSensor extends Sensor {
     const categoryCode = !local && flow.intel && flow.intel.category ?
       await intelTool.categoryToNumber(flow.intel.category) : undefined;
     const key = `${mac}:${local ? dmac : ip}:${fd}${dp ? `:${dp}` : ""}${domain ? `:${domain}` : ""}`;
-    for (const uidTickKey of uidTickKeys) {
-      if (!this.trafficCache[uidTickKey])
-        this.trafficCache[uidTickKey] = {};
-
-      let t = this.trafficCache[uidTickKey][key];
-      if (!t) {
-        t = {device: mac, upload: 0, download: 0, count: 0, fd};
-        if (local) {
-          t.dstMac = dmac
-          if (uidTickKey.startsWith('intf:') && intf == dIntf) {
-            t.intra = 1
-          } else if (uidTickKey.startsWith('tag:')) {
-            const tagID = uidTickKey.split(':')[1]
-            if (dTags.includes(tagID)) {
-              t.intra = 1
-            }
-          } else if (uidTickKey.startsWith('global')) {
+    const createTrafficEntry = (uidTickKey) => {
+      const t = {device: mac, upload: 0, download: 0, count: 0, fd};
+      if (local) {
+        t.dstMac = dmac
+        if (uidTickKey.startsWith('intf:') && intf == dIntf) {
+          t.intra = 1
+        } else if (uidTickKey.startsWith('tag:')) {
+          const tagID = uidTickKey.split(':')[1]
+          if (dTags.includes(tagID)) {
             t.intra = 1
           }
-        } else {
-          t.destIP = ip
-          if (domain)
-            t.domain = domain;
+        } else if (uidTickKey.startsWith('global')) {
+          t.intra = 1
         }
-        // lagacy app only compatible with port number as string
-        if (dp) {
-          if (fd === "out")
-            t.devicePort = [ String(dp) ];
-          else
-            t.port = [ String(dp) ];
-        }
+      } else {
+        t.destIP = ip
+        if (domain)
+          t.domain = domain;
+      }
+      // lagacy app only compatible with port number as string
+      if (dp) {
+        if (fd === "out")
+          t.devicePort = [ String(dp) ];
+        else
+          t.port = [ String(dp) ];
+      }
+      return t;
+    };
 
-        this.trafficCache[uidTickKey][key] = t;
+    for (const uidTickKey of uidTickKeys) {
+      let t = this._getCacheEntry("traffic", this.trafficCache, uidTickKey, key, createTrafficEntry, uidTickKey);
+      if (!t) {
+        continue;
       }
       if (categoryCode && !t.c)
         t.c = categoryCode;
@@ -240,28 +288,36 @@ class FlowAggregationSensor extends Sensor {
 
     const category = _.get(flow, ["intel", "category"]);
     if (category && !excludedCategories.includes(category)) {
-      if (!this.categoryFlowCache[mac])
-        this.categoryFlowCache[mac] = {};
-      if (!this.categoryFlowCache[mac][category])
-        this.categoryFlowCache[mac][category] = {download: 0, upload: 0, duration: 0, ts: _ts}
-      const cache = this.categoryFlowCache[mac][category];
-      cache.upload += (fd === "out" ? rb : ob);
-      cache.download += (fd === "out" ? ob : rb);
-      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
-      cache.ts = Math.min(cache.ts, _ts);
+      const cache = this._getCacheEntry(
+        "category",
+        this.categoryFlowCache,
+        mac,
+        category,
+        () => ({download: 0, upload: 0, duration: 0, ts: _ts})
+      );
+      if (cache) {
+        cache.upload += (fd === "out" ? rb : ob);
+        cache.download += (fd === "out" ? ob : rb);
+        cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+        cache.ts = Math.min(cache.ts, _ts);
+      }
     }
 
     const app = _.get(flow, ["intel", "app"]);
     if (app) {
-      if (!this.appFlowCache[mac])
-        this.appFlowCache[mac] = {};
-      if (!this.appFlowCache[mac][app])
-        this.appFlowCache[mac][app] = {download: 0, upload: 0, duration: 0, ts: _ts}
-      const cache = this.appFlowCache[mac][app];
-      cache.upload += (fd === "out" ? rb : ob);
-      cache.download += (fd === "out" ? ob : rb);
-      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
-      cache.ts = Math.min(cache.ts, _ts);
+      const cache = this._getCacheEntry(
+        "app",
+        this.appFlowCache,
+        mac,
+        app,
+        () => ({download: 0, upload: 0, duration: 0, ts: _ts})
+      );
+      if (cache) {
+        cache.upload += (fd === "out" ? rb : ob);
+        cache.download += (fd === "out" ? ob : rb);
+        cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+        cache.ts = Math.min(cache.ts, _ts);
+      }
     }
   }
 
@@ -298,13 +354,15 @@ class FlowAggregationSensor extends Sensor {
         if (mac.startsWith(Constants.NS_INTERFACE + ":")) {
           const key = `${mac}:${flow.sh}`;
           for (const uidTickKey of uidTickKeys) {
-            if (!this.ifBlockCache[uidTickKey])
-              this.ifBlockCache[uidTickKey] = {};
-            let t = this.ifBlockCache[uidTickKey][key];
-            if (!t) {
-              t = {device: mac, destIP: flow.sh, fd: "out", count: 0};
-              this.ifBlockCache[uidTickKey][key] = t;
-            }
+            const t = this._getCacheEntry(
+              "ifBlock",
+              this.ifBlockCache,
+              uidTickKey,
+              key,
+              () => ({device: mac, destIP: flow.sh, fd: "out", count: 0})
+            );
+            if (!t)
+              continue;
             t.count += flow.ct;
           }
         } else {
@@ -312,36 +370,41 @@ class FlowAggregationSensor extends Sensor {
             return;
           const key = `${mac}:${dir=='L'?dmac:fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
           for (const uidTickKey of uidTickKeys) {
-            if (!this.ipBlockCache[uidTickKey])
-              this.ipBlockCache[uidTickKey] = {};
-            let t = this.ipBlockCache[uidTickKey][key];
-            if (!t) {
-              t = {device: mac, fd, count: 0};
-              if (dir == 'L') {
-                if (flow.dmac)
-                  t.dstMac = flow.dmac;
-                if (uidTickKey.startsWith('intf:') && intf == dIntf) {
-                  t.intra = 1
-                } else if (uidTickKey.startsWith('tag:')) {
-                  const tagID = uidTickKey.split(':')[1]
-                  if (dTags.includes(tagID)) {
-                    t.intra = 1
+            const t = this._getCacheEntry(
+              "ipBlock",
+              this.ipBlockCache,
+              uidTickKey,
+              key,
+              () => {
+                const entry = {device: mac, fd, count: 0};
+                if (dir == 'L') {
+                  if (flow.dmac)
+                    entry.dstMac = flow.dmac;
+                  if (uidTickKey.startsWith('intf:') && intf == dIntf) {
+                    entry.intra = 1
+                  } else if (uidTickKey.startsWith('tag:')) {
+                    const tagID = uidTickKey.split(':')[1]
+                    if (dTags.includes(tagID)) {
+                      entry.intra = 1
+                    }
+                  } else if (uidTickKey.startsWith('global')) {
+                    entry.intra = 1
                   }
-                } else if (uidTickKey.startsWith('global')) {
-                  t.intra = 1
                 }
+                if (fd === "out") {
+                  entry.devicePort = [ String(dp) ];
+                  entry.destIP = flow.sh;
+                } else {
+                  entry.port = [ String(dp) ];
+                  entry.destIP = flow.dh;
+                }
+                if (flow.c)
+                  entry.c = flow.c;
+                return entry;
               }
-              if (fd === "out") {
-                t.devicePort = [ String(dp) ];
-                t.destIP = flow.sh;
-              } else {
-                t.port = [ String(dp) ];
-                t.destIP = flow.dh;
-              }
-              if (flow.c)
-                t.c = flow.c;
-              this.ipBlockCache[uidTickKey][key] = t;
-            }
+            );
+            if (!t)
+              continue;
             t.count += flow.ct;
           }
         }
@@ -354,17 +417,22 @@ class FlowAggregationSensor extends Sensor {
           return;
         const key = `${mac}:${domain}${reason ? `:${reason}` : ""}`;
         for (const uidTickKey of uidTickKeys) {
-          if (!this.dnsBlockCache[uidTickKey])
-            this.dnsBlockCache[uidTickKey] = {};
-          let t = this.dnsBlockCache[uidTickKey][key];
-          if (!t) {
-            t = {device: mac, domain, count: 0};
-            if (reason)
-              t.reason = reason;
-            if (flow.c)
-              t.c = flow.c;
-            this.dnsBlockCache[uidTickKey][key] = t;
-          }
+          const t = this._getCacheEntry(
+            "dnsBlock",
+            this.dnsBlockCache,
+            uidTickKey,
+            key,
+            () => {
+              const entry = {device: mac, domain, count: 0};
+              if (reason)
+                entry.reason = reason;
+              if (flow.c)
+                entry.c = flow.c;
+              return entry;
+            }
+          );
+          if (!t)
+            continue;
           t.count += flow.ct;
         }
         break;
