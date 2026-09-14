@@ -26,15 +26,18 @@ LIVE_CHECKS=false
 T=$(mktemp -d)
 export SYSTEMD_DIR=$T/systemd
 export FLEET_BIN=$T/fleet
+export FLEET_RUN_DIR=$T/assets
+export FLEET_ENGINE_LOCK=$T/apply.lock
+export FLEET_ENGINE_TEST_MODE=true
 export FW_EFFECTIVE_FEATURES=$T/features.json
 printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
-mkdir -p "$SYSTEMD_DIR" "$T/bin"
+mkdir -p "$SYSTEMD_DIR" "$FLEET_RUN_DIR" "$T/bin"
 # the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
 # not answer: a stub on PATH keeps the box's own values out of the way
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
 printf '#!/bin/sh\nexec "$@"\n' > "$T/bin/sudo"; chmod 755 "$T/bin/sudo"
 ENGINE=$FIREWALLA_HOME/scripts/fleet-engine.sh
-SANDBOX=(sudo -E env "PATH=$T/bin:$PATH")
+SANDBOX=(env "PATH=$T/bin:$PATH")
 pass=0; failn=0
 ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; failn=$((failn+1)); }
@@ -67,7 +70,7 @@ if $LIVE_CHECKS; then
     done
   }
   relive() {
-    sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1 || true
+    sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1 || true
     [[ $brofish_was == active ]] && [[ $(systemctl is-active brofish) != active ]] && sudo systemctl start brofish >/dev/null 2>&1
     [[ $suricata_was == active ]] && [[ $(systemctl is-active suricata) != active ]] && sudo systemctl start suricata >/dev/null 2>&1
     return 0
@@ -88,13 +91,16 @@ B=$SYSTEMD_DIR/brofish.service.d/fleet.conf
 S=$SYSTEMD_DIR/suricata.service.d/fleet.conf
 
 echo "== fleet/fleet"
-setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; check "apply returns 0" '[[ $? -eq 0 ]]'
+setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null; rc=$?
+check "apply returns 0" '[[ $rc -eq 0 ]]'
 # the templates name the asset path; FLEET_BIN here only stands in for its presence
 ASSET=/home/pi/.firewalla/run/assets/fleet
 # the brofish drop-in launches through the wrapper, the ids-only unit runs the
 # binary directly
 RUNNER=/home/pi/.firewalla/run/assets/fleet-run
 IDS_RUNNER=/home/pi/.firewalla/run/assets/fleet-ids-run
+LOCAL_RUNNER=$FLEET_RUN_DIR/fleet-run
+LOCAL_IDS_RUNNER=$FLEET_RUN_DIR/fleet-ids-run
 check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
 check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
@@ -179,13 +185,13 @@ if lsattr -d /etc/systemd/system/brofish.service.d 2>/dev/null | grep -q i; then
   # the live checks run against the box's real paths: the sandbox FLEET_BIN
   # would make verify compare systemd's ExecStart with the scratch binary
   live_before=$(systemctl show brofish -p ExecStart --value)
-  out=$(sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply 2>&1); rc=$?
+  out=$(sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply 2>&1); rc=$?
   check "live apply fails" '[[ $rc -ne 0 ]]'
   check "hold marker is left behind" '[[ -e /dev/shm/fleet-engine.failed ]]'
-  check "restart refuses while held" '! sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" restart >/dev/null 2>&1'
+  check "restart refuses while held" '! sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" restart >/dev/null 2>&1'
   check "brofish was not restarted" '[[ "$(systemctl show brofish -p ExecStart --value)" == "$live_before" ]]'
   sudo chattr -i /etc/systemd/system/brofish.service.d 2>/dev/null
-  sudo -E env -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1
+  sudo -E env -u FLEET_ENGINE_TEST_MODE -u SYSTEMD_DIR -u FLEET_BIN -u FW_EFFECTIVE_FEATURES "$ENGINE" apply >/dev/null 2>&1
   check "a successful live apply clears the marker" '[[ ! -e /dev/shm/fleet-engine.failed ]]'
   check "the live drop-in is back" '[[ -f /etc/systemd/system/brofish.service.d/fleet.conf ]]'
 else
@@ -212,9 +218,12 @@ check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && gr
 echo "== the pcap roles are respected"
 check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" FLEET_BIN="$FLEET_BIN" bash "$FIREWALLA_HOME/scripts/fleet-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
 check "the apply lock needs no shared permissions (mkdir based)" 'grep -q "until mkdir \"\$LOCK\"" "$ENGINE"'
-check "a stale lock is removed" 'grep -q "stale apply lock" "$ENGINE"'
+check "an abandoned uninitialized lock is removed" 'grep -q "abandoned uninitialized apply lock" "$ENGINE"'
+check "production rejects redirected privileged paths" '! env -u FLEET_ENGINE_TEST_MODE SYSTEMD_DIR="$T/redirected" "$ENGINE" status >/dev/null 2>&1'
+check "test mode never elevates scratch-path operations" 'grep -q "sudo() { command" "$ENGINE"'
 check "the watchdog checks both roles" 'grep -q "ROLES+=" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
 check "any apply failure is retried" 'grep -q "this.applyFailed" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 check "FleetEnginePlugin also watches pcap_zeek / pcap_suricata" 'grep -q "FEATURE_PCAP_ZEEK," "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js" && grep -q "FEATURE_PCAP_SURICATA" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -235,19 +244,32 @@ roles=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source \"$F
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
 
+echo "== a release hidden feature wins during early boot"
+mkdir -p "$T/hidden-release/config"
+printf '{"hiddenFeatures":["pcap_zeek_fleet"],"userFeatures":{"pcap_zeek_fleet":true}}' > "$T/hidden-release/config/config.json"
+cat > "$T/bin/redis-cli" <<'RC'
+#!/bin/sh
+echo 1
+RC
+chmod 755 "$T/bin/redis-cli"
+roles=$(PATH=$T/bin:$PATH FIREWALLA_HIDDEN=$T/hidden-release FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; branch=release_6_0; FLEET_BIN=$FLEET_BIN; echo \$(get_flow_engine_zeek)")
+check "hiddenFeatures suppresses a stale runtime enable" '[[ $roles == zeek ]]'
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
+setf 1 1
+
 echo "== behaviour: the drop-ins are staged and committed together"
 # a wanted suricata template that cannot be installed must leave the brofish
 # drop-in as it was, not half-updated
 # both drop-ins have to be installed and the suricata one cannot be (a file
 # sits where its directory belongs), so the brofish one must be rolled back
 setf 1 1 1 1
-sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
-sudo touch "$SYSTEMD_DIR/suricata.service.d"
+rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+touch "$SYSTEMD_DIR/suricata.service.d"
 out=$("${SANDBOX[@]}" "$ENGINE" apply 2>&1); rc=$?
 check "apply fails" '[[ $rc -ne 0 ]]'
 check "the failure is reported" '[[ "$out" == *FAILED* ]]'
 check "the brofish drop-in was rolled back, not left half-installed" '[[ ! -e $B ]]'
-sudo rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
+rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null
 check "the next apply installs both cleanly" '[[ -f $B && -f $S ]]'
 
@@ -316,10 +338,11 @@ check "verify checks for fleet-run under brofish" 'sed -n "/^verify()/,/^}/p" "$
 
 echo "== unit: zeek preparation and legacy cron"
 check "the brofish drop-in launches through fleet-run" 'grep -q "^ExecStart=$RUNNER " "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
-check "fleet-run runs before_bro and after_bro" 'grep -q "^before_bro" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
-check "the launcher copies are installed beside the asset" '[[ -x $RUNNER && -x $IDS_RUNNER ]]'
+check "fleet-run runs before_bro and after_bro" 'grep -q "before_bro ||" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "after_bro" "$FIREWALLA_HOME/scripts/fleet-run"'
+check "the launcher copies are installed beside the asset" '[[ -x $LOCAL_RUNNER && -x $LOCAL_IDS_RUNNER ]]'
 check "both drop-ins clear RemainAfterExit" 'grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "RemainAfterExit=false" "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "the hourly zeekctl cron is removed while fleet owns the role" 'grep -q "cron.hourly/bro-cron" "$ENGINE"'
+check "failure to remove the hourly zeekctl cron aborts apply" 'grep -q "fail .*removing /etc/cron.hourly/bro-cron" "$ENGINE"'
 check "flow-check is skipped while the apply is held" 'grep -q "fleet-engine.failed || /home/pi/firewalla/scripts/flow-check.sh" "$FIREWALLA_HOME/etc/crontab.fleet"'
 check "a backup that fails aborts before the destination is touched" 'sed -n "/commit_one()/,/^  }/p" "$ENGINE" | grep -q "cp -f \"\$dst\" \"\$backup/\$name\" 2>/dev/null; then"'
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
@@ -337,6 +360,7 @@ echo "== unit: rollback safety and the hidden-feature kill switch"
 check "the drop-ins point outside the git checkout" 'grep -q "^ExecStart=$RUNNER " "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStart=$IDS_RUNNER " "$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"'
 check "apply refreshes the launcher copies" 'sed -n "/^apply()/,/^}/p" "$ENGINE" | grep -q "FLEET_RUN_DIR/\$l"'
 check "the published effective state is read before redis" 'awk "/FW_EFFECTIVE_FEATURES/{e=NR} /redis-cli hget sys:features/{r=NR} END{exit !(e && r && e<r)}" "$FIREWALLA_HOME/platform/platform.sh"'
+check "main-start invalidates the previous FireMain snapshot before apply" 'awk "/rm -f .*FW_EFFECTIVE_FEATURES/{r=NR} /fleet-engine.sh apply/{a=NR} END{exit !(r && a && r<a)}" "$FIREWALLA_HOME/scripts/main-start"'
 
 echo "== behaviour: a hidden feature beats a stale redis override"
 printf '{"pcap_zeek_fleet":false,"pcap_suricata_fleet":false,"pcap_zeek":true,"pcap_suricata":true}' > "$T/hidden.json"
@@ -353,13 +377,24 @@ printf '#!/bin/sh\nexit 0\n' > "$T/bin/redis-cli"; chmod 755 "$T/bin/redis-cli"
 setf 1 1
 
 echo "== unit: rollback hands the roles back, ordering, lock ownership"
-check "fleet-run hands back when the checkout loses fleet-engine.sh" 'grep -q "hand_back" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "scripts/bro-run" "$FIREWALLA_HOME/scripts/fleet-run"'
-check "fleet-ids-run hands back to suricata-run" 'grep -q "scripts/suricata-run" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "fleet-run queues a fresh stock-engine transaction" 'grep -q "systemctl --no-block restart" "$FIREWALLA_HOME/scripts/fleet-run" && ! grep -q "exec .*scripts/bro-run" "$FIREWALLA_HOME/scripts/fleet-run"'
+check "fleet-ids-run queues a fresh stock-engine transaction" 'grep -q "systemctl --no-block restart" "$FIREWALLA_HOME/scripts/fleet-ids-run" && ! grep -q "exec .*scripts/suricata-run" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
+check "mandatory preparation failures abort startup" 'grep -q "before_bro failed" "$FIREWALLA_HOME/scripts/fleet-run" && grep -q "failed to apply" "$FIREWALLA_HOME/scripts/fleet-run"'
 check "preparation runs in ExecStartPre, after_bro in ExecStartPost" 'grep -q "^ExecStartPre=$RUNNER --prepare" "$FIREWALLA_HOME/etc/brofish-fleet.conf" && grep -q "^ExecStartPost=$RUNNER --after-bro" "$FIREWALLA_HOME/etc/brofish-fleet.conf"'
 check "the lock records its owner and only a dead owner is stale" 'grep -q "LOCK/pid" "$ENGINE" && grep -q "kill -0" "$ENGINE"'
+check "a cross-user owner is recognized through procfs" 'grep -q "pid_alive" "$ENGINE" && grep -q "/proc/" "$ENGINE"'
 
 echo "== behaviour: a live lock owner is not stolen from"
 setf 1 1
+mkdir -p "$T/lock.d"
+FLEET_ENGINE_LOCK=$T/lock.d "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE" apply >/dev/null 2>&1 & initializing=$!
+sleep 1
+check "an initializing owner keeps its empty lock" 'kill -0 $initializing 2>/dev/null && [[ -d $T/lock.d ]]'
+rmdir "$T/lock.d"
+wait $initializing; initializing_rc=$?
+check "apply proceeds after the initializing lock is released" '[[ $initializing_rc -eq 0 ]]'
+check "an abandoned cross-user lock uses atomic privileged removal" 'grep -q "sudo rmdir" "$ENGINE" && grep -q "an uninitialized apply still holds" "$ENGINE"'
+
 mkdir -p "$T/lock.d"; sleep 600 & sleeper=$!
 echo $sleeper > "$T/lock.d/pid"
 rc=0
@@ -368,7 +403,7 @@ check "a live owner keeps the lock" '[[ $rc -ne 0 ]] && [[ -d $T/lock.d ]]'
 kill $sleeper 2>/dev/null; wait $sleeper 2>/dev/null
 FLEET_ENGINE_LOCK=$T/lock.d "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE" apply >/dev/null 2>&1
 check "a dead owner's lock is taken over" '[[ ! -d $T/lock.d ]]'
-sudo rm -rf "$T/lock.d"
+rm -rf "$T/lock.d"
 
 echo "== behaviour: two applies do not interleave"
 setf 1 1
