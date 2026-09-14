@@ -14,6 +14,6 @@
     "dap_bg_task": false,
     "local_flow": true,
     "pcap_zeek_fleet": true,
-    "pcap_zeek_suricata": true
+    "pcap_suricata_fleet": true
   }
 }
