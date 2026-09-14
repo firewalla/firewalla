@@ -102,8 +102,10 @@ IDS_RUNNER=/home/pi/.firewalla/run/assets/fleet-ids-run
 LOCAL_RUNNER=$FLEET_RUN_DIR/fleet-run
 LOCAL_IDS_RUNNER=$FLEET_RUN_DIR/fleet-ids-run
 check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
-check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
+
+check "one process serves both roles: brofish has no --no-suricata" '! grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
+check "the suricata unit is held off while brofish serves both" 'grep -q "^ConditionPathExists=" "$S"'
 
 echo "== fleet/suricata"
 setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
@@ -216,7 +218,8 @@ check "the pkill is not gated on zeekctl" 'grep -q "pkill -x" "$ENGINE" && ! gre
 check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
 
 echo "== the pcap roles are respected"
-check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
+check "the roles share one process only when both are fleet and both enabled" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "pcap_zeek_enabled && pcap_suricata_enabled"'
+check "fleet keeps the capture filters apart inside that process" 'grep -q "applies zeek.s per packet\|applied per packet" "$ENGINE"'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
 check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" FLEET_BIN="$FLEET_BIN" bash "$FIREWALLA_HOME/scripts/fleet-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
