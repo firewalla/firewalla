@@ -159,12 +159,18 @@ class EventSummarySensor extends Sensor {
     return localSlotStart(tsSec, period, SysManager.getTimezone());
   }
 
-  // JSON-encode the label tuple so the Map/record key is both human-readable and collision-free (a
-  // plain string join could conflate e.g. a="AA",b="BCC" with a="AAB",b="CC").
+  // Resolves setting.labelKeys against event.labels into an ordered [name, value] list, the single
+  // source of truth for both the joined key and the record's visible fields.
   // The isNil->null matters: JSON.stringify([undefined]) is "[null]", so without it every record with a
   // missing label would collapse into one group while the stored record silently dropped the field
-  _getRecordJoinedKey(setting, labels) {
-    return JSON.stringify(setting.labelKeys.map(k => _.isNil(labels[k]) ? null : labels[k]));
+  _resolveRecordFields(setting, event, labels) {
+    return setting.labelKeys.map(k => [k, _.isNil(labels[k]) ? null : labels[k]]);
+  }
+
+  // JSON-encode the value tuple so the Map/record key is both human-readable and collision-free (a
+  // plain string join could conflate e.g. a="AA",b="BCC" with a="AAB",b="CC").
+  _getRecordJoinedKey(fields) {
+    return JSON.stringify(fields.map(f => f[1]));
   }
 
   _getBucketKey(setting, bucketTs) {
@@ -194,16 +200,17 @@ class EventSummarySensor extends Sensor {
       if (!matchFilter(setting.filter, event)) continue;
       const bucketTs = this._periodStart(tsSec, setting.period);
       const redisKey = this._getBucketKey(setting, bucketTs);
-      const joinedKey = this._getRecordJoinedKey(setting, labels);
+      const fields = this._resolveRecordFields(setting, event, labels);
+      const joinedKey = this._getRecordJoinedKey(fields);
       await this.lock.acquire(redisKey, async () => {
-        await this._upsertRecord(setting, redisKey, bucketTs, joinedKey, labels, event, tsMs);
+        await this._upsertRecord(setting, redisKey, bucketTs, joinedKey, fields, event, tsMs);
       }).catch(err => log.error(`Failed to update event summary at ${redisKey}`, err.message));
     }
   }
 
   // tsMs is the event timestamp in milliseconds - the first/last guards below need the full
   // precision, truncating to seconds makes same-second events tie
-  async _upsertRecord(setting, redisKey, bucketTs, joinedKey, labels, event, tsMs) {
+  async _upsertRecord(setting, redisKey, bucketTs, joinedKey, fields, event, tsMs) {
     let payload = await rclient.getAsync(redisKey).then(r => r && JSON.parse(r)).catch(err => {
       log.error(`Failed to parse event summary bucket ${redisKey}`, err.message);
       return null;
@@ -226,7 +233,7 @@ class EventSummarySensor extends Sensor {
       }
       const prev = Number(event.prev_state_value);
       record = { _k: joinedKey };
-      for (const k of setting.labelKeys) record[k] = _.isNil(labels[k]) ? null : labels[k];
+      for (const [k, v] of fields) record[k] = v;
       // prev_state_value is only set on a state TRANSITION, a no_error event's very first sighting
       // has none. Emit an explicit null rather than letting JSON.stringify drop the field
       record.prev_state = Number.isFinite(prev) ? prev : null;
