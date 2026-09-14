@@ -30,6 +30,8 @@ const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const FlowEngine = require('./FlowEngine.js');
+const fc = require('./config.js');
+const Constants = require('./Constants.js');
 
 class SuricataControl {
   constructor() {
