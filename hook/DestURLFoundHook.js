@@ -36,9 +36,17 @@ const URL_SET_TO_BE_PROCESSED = "url_set_to_be_processed";
 const ITEMS_PER_FETCH = 100;
 const QUEUE_SIZE_PAUSE = 2000;
 const QUEUE_SIZE_RESUME = 1000;
+const APPEND_URL_LUA = [
+  'if redis.call("zcard", KEYS[1]) >= tonumber(ARGV[2]) then',
+  '  return 0',
+  'end',
+  'redis.call("zadd", KEYS[1], ARGV[1], ARGV[3])',
+  'return 1'
+].join("\n");
 const MAX_URL_LENGTH = 2048;
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
+const QUEUE_DROP_WARNING_INTERVAL = 60 * 1000; // 60 seconds;
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
@@ -56,10 +64,35 @@ class DestURLFoundHook extends Hook {
       max: 1000,
       maxAge: 1000 * 60 * 5
     });
+    this.queueDropCount = 0;
+    this.lastQueueDropWarningAt = 0;
   }
 
-  appendURL(info) {
-    return rclient.zaddAsync(URL_SET_TO_BE_PROCESSED, 0, JSON.stringify(info));
+  warnQueueFull(droppedCount) {
+    log.warn(`URL intel queue is full (${QUEUE_SIZE_PAUSE}), dropping ${droppedCount} URL${droppedCount === 1 ? '' : 's'} in the last ${QUEUE_DROP_WARNING_INTERVAL / 1000} seconds`);
+  }
+
+  async appendURL(info) {
+    const member = JSON.stringify(info);
+    const added = await rclient.evalAsync(
+      APPEND_URL_LUA,
+      1,
+      URL_SET_TO_BE_PROCESSED,
+      0,
+      QUEUE_SIZE_PAUSE,
+      member
+    );
+    if (added === 0) {
+      this.queueDropCount++;
+      const now = Date.now();
+      if (now - this.lastQueueDropWarningAt >= QUEUE_DROP_WARNING_INTERVAL) {
+        const droppedCount = this.queueDropCount;
+        this.queueDropCount = 0;
+        this.lastQueueDropWarningAt = now;
+        this.warnQueueFull(droppedCount);
+      }
+    }
+    return added === 1;
   }
 
   isFirewalla(host) {
@@ -313,7 +346,9 @@ class DestURLFoundHook extends Hook {
       const {url, mac} = event;
       if (!url || url.length > MAX_URL_LENGTH)
         return;
-      this.appendURL({mac, url});
+      this.appendURL({mac, url}).catch((err) => {
+        log.error("Failed to queue URL for intel analysis", err.message);
+      });
     });
 
     sem.on('DestURL', (event) => {
