@@ -38,14 +38,19 @@ const MAX_SEEN_STATES = 100; // cap on distinct state values tracked per record
  * EventSummarySensor folds generated state events into per-period, per-key buckets.
  *
  * For every configured setting, an event matching "filter" is grouped into a record keyed by
- * "labelKeys", and the record tracks the state the group started in, the state it ended in, every
- * state it passed through, and how many events were folded in.
+ * "eventKeys" + "labelKeys", and the record tracks the state the group started in, the state it
+ * ended in, every state it passed through, and how many events were folded in.
  *
  * Buckets are aligned to LOCAL midnight, so a "day" means the user's day.
  *
- * NOTE: "filter" matches the event's TOP-LEVEL fields (event_type, state_type, state_key,
- * state_value, ...) while "labelKeys" are read from event.labels. The two halves of a setting
- * address different objects on purpose - the event is not flattened.
+ * NOTE: "filter" and "eventKeys" both address the event's TOP-LEVEL fields (event_type, state_type,
+ * state_key, state_value, ...); "labelKeys" is read from event.labels instead. The event is NOT
+ * flattened - a name present in both eventKeys and labelKeys makes the setting invalid, rather than
+ * letting one silently shadow the other. The record's "_k" is JSON.stringify(outer values then label
+ * values, in that order) and is persisted inside every record for up to RETENTION_SECS, so this
+ * encoding is frozen: a setting that changes its key composition (adding/removing/reordering
+ * eventKeys or labelKeys) must be given a NEW "key" rather than edited in place, or its in-flight
+ * buckets double-count for up to 7 days.
  */
 class EventSummarySensor extends Sensor {
   constructor(config) {
@@ -138,17 +143,37 @@ class EventSummarySensor extends Sensor {
         log.error(`Ignoring event summary setting ${setting.key} without a filter`);
         continue;
       }
-      if (!_.isArray(setting.labelKeys) || _.isEmpty(setting.labelKeys)) {
-        log.error(`Ignoring event summary setting ${setting.key} without labelKeys`);
+      // silently coercing a malformed list to [] would produce WRONG GROUPING rather than the
+      // "setting ignored" degradation this function is contracted to provide
+      if ((!_.isUndefined(setting.eventKeys) && !_.isArray(setting.eventKeys)) ||
+          (!_.isUndefined(setting.labelKeys) && !_.isArray(setting.labelKeys))) {
+        log.error(`Ignoring event summary setting ${setting.key} with a non-array eventKeys/labelKeys`);
+        continue;
+      }
+      const eventKeys = setting.eventKeys || [];
+      const labelKeys = setting.labelKeys || [];
+      // event[null] or event[''] would create a record field literally named "null"/""
+      const isNonEmptyString = k => _.isString(k) && k.length > 0;
+      if (!eventKeys.every(isNonEmptyString) || !labelKeys.every(isNonEmptyString)) {
+        log.error(`Ignoring event summary setting ${setting.key} with a non-string key in eventKeys/labelKeys`);
+        continue;
+      }
+      if (_.isEmpty(eventKeys) && _.isEmpty(labelKeys)) {
+        log.error(`Ignoring event summary setting ${setting.key} without eventKeys or labelKeys`);
+        continue;
+      }
+      // the record is a flat map, so a name in both lists could only ever store one of the two values
+      if (!_.isEmpty(_.intersection(eventKeys, labelKeys))) {
+        log.error(`Ignoring event summary setting ${setting.key} with a key in both eventKeys and labelKeys`);
         continue;
       }
       const period = Number(setting.period);
       // periods must tile a local day evenly, otherwise the last bucket of each day is short
       if (!tilesLocalDay(period)) {
         log.warn(`Invalid period(${setting.period}) for event summary setting ${setting.key}, falling back to ${DEFAULT_PERIOD}`);
-        valid.push(Object.assign({}, setting, { period: DEFAULT_PERIOD }));
+        valid.push(Object.assign({}, setting, { period: DEFAULT_PERIOD, eventKeys, labelKeys }));
       } else {
-        valid.push(Object.assign({}, setting, { period }));
+        valid.push(Object.assign({}, setting, { period, eventKeys, labelKeys }));
       }
     }
     return valid;
@@ -159,12 +184,26 @@ class EventSummarySensor extends Sensor {
     return localSlotStart(tsSec, period, SysManager.getTimezone());
   }
 
-  // JSON-encode the label tuple so the Map/record key is both human-readable and collision-free (a
-  // plain string join could conflate e.g. a="AA",b="BCC" with a="AAB",b="CC").
+  // Resolves setting.eventKeys against the top-level event, then setting.labelKeys against
+  // event.labels, into a single ordered [name, value] list - the outer-then-label order is the
+  // single source of truth for both the joined key and the record's visible fields.
   // The isNil->null matters: JSON.stringify([undefined]) is "[null]", so without it every record with a
-  // missing label would collapse into one group while the stored record silently dropped the field
-  _getRecordJoinedKey(setting, labels) {
-    return JSON.stringify(setting.labelKeys.map(k => _.isNil(labels[k]) ? null : labels[k]));
+  // missing field would collapse into one group while the stored record silently dropped the field.
+  // An eventKeys value that resolves to a non-primitive (e.g. ['labels'] itself) is also coerced to
+  // null: JSON.stringify's key order for an object is insertion-dependent, which would make _k an
+  // unstable record identity. labelKeys is left as-is - untouched to keep existing settings' _k
+  // byte-identical.
+  _resolveRecordFields(setting, event, labels) {
+    return setting.eventKeys.map(k => {
+      const v = event[k];
+      return [k, (_.isNil(v) || _.isObject(v)) ? null : v];
+    }).concat(setting.labelKeys.map(k => [k, _.isNil(labels[k]) ? null : labels[k]]));
+  }
+
+  // JSON-encode the value tuple so the Map/record key is both human-readable and collision-free (a
+  // plain string join could conflate e.g. a="AA",b="BCC" with a="AAB",b="CC").
+  _getRecordJoinedKey(fields) {
+    return JSON.stringify(fields.map(f => f[1]));
   }
 
   _getBucketKey(setting, bucketTs) {
@@ -190,20 +229,21 @@ class EventSummarySensor extends Sensor {
     const labels = event.labels || {};
 
     for (const setting of this.eventSummaryConfs.eventSummarySettings) {
-      // filter matches the raw event's top-level fields, labels are NOT visible to it
+      // filter matches the raw event's top-level fields only, same as eventKeys - labels are NOT visible to it
       if (!matchFilter(setting.filter, event)) continue;
       const bucketTs = this._periodStart(tsSec, setting.period);
       const redisKey = this._getBucketKey(setting, bucketTs);
-      const joinedKey = this._getRecordJoinedKey(setting, labels);
+      const fields = this._resolveRecordFields(setting, event, labels);
+      const joinedKey = this._getRecordJoinedKey(fields);
       await this.lock.acquire(redisKey, async () => {
-        await this._upsertRecord(setting, redisKey, bucketTs, joinedKey, labels, event, tsMs);
+        await this._upsertRecord(setting, redisKey, bucketTs, joinedKey, fields, event, tsMs);
       }).catch(err => log.error(`Failed to update event summary at ${redisKey}`, err.message));
     }
   }
 
   // tsMs is the event timestamp in milliseconds - the first/last guards below need the full
   // precision, truncating to seconds makes same-second events tie
-  async _upsertRecord(setting, redisKey, bucketTs, joinedKey, labels, event, tsMs) {
+  async _upsertRecord(setting, redisKey, bucketTs, joinedKey, fields, event, tsMs) {
     let payload = await rclient.getAsync(redisKey).then(r => r && JSON.parse(r)).catch(err => {
       log.error(`Failed to parse event summary bucket ${redisKey}`, err.message);
       return null;
@@ -226,7 +266,7 @@ class EventSummarySensor extends Sensor {
       }
       const prev = Number(event.prev_state_value);
       record = { _k: joinedKey };
-      for (const k of setting.labelKeys) record[k] = _.isNil(labels[k]) ? null : labels[k];
+      for (const [k, v] of fields) record[k] = v;
       // prev_state_value is only set on a state TRANSITION, a no_error event's very first sighting
       // has none. Emit an explicit null rather than letting JSON.stringify drop the field
       record.prev_state = Number.isFinite(prev) ? prev : null;

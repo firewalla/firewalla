@@ -138,6 +138,7 @@ module.exports = {
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
+  NOTIF_CATEGORY_PHONE_PAIRED: "com.firewalla.category.phone_paired",
 
   STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
@@ -213,7 +214,7 @@ module.exports = {
   FEATURE_PCAP_SURICATA: "pcap_suricata",
   // fleet takes the zeek / suricata role (net2/FlowEngine.js, scripts/fleet-engine.sh)
   FEATURE_PCAP_ZEEK_FLEET: "pcap_zeek_fleet",
-  FEATURE_PCAP_SURICATA_FLEET: "pcap_zeek_suricata",
+  FEATURE_PCAP_SURICATA_FLEET: "pcap_suricata_fleet",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
