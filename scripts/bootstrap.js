@@ -26,6 +26,8 @@ const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onb
 const ENCIPHER_DB = `${process.env.HOME || '/home/pi'}/.encipher/db`;
 
 const POLL_INTERVAL_SEC = 1; // reduce activate time
+const RETRY_ATTEMPTS = Number(process.env.FW_ONBOARD_RETRY_ATTEMPTS) || 20;
+const RETRY_INTERVAL_SEC = Number(process.env.FW_ONBOARD_RETRY_INTERVAL) || 3;
 
 let eptcloud;
 let cloudConfig;
@@ -43,7 +45,32 @@ const uptime = () => {
 const timing = {};
 const mark = key => { timing[key] = uptime(); };
 
-const log = msg => console.log(`[onboard ${new Date().toISOString()} up=${uptime()}s] ${msg}`);
+const LEVEL_COLOR = { INFO: 32, WARN: 33, ERROR: 31 };
+
+const stamp = () => {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
+const write = (level, msg) =>
+  console.log(`${stamp()} \u001b[${LEVEL_COLOR[level]}m${level}\u001b[39m Onboard: ${msg} (up=${Math.round(uptime())}s)`);
+
+const log = msg => write('INFO', msg);
+const warn = msg => write('WARN', msg);
+const error = msg => write('ERROR', msg);
+
+async function retry(label, fn) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= RETRY_ATTEMPTS) throw e;
+      warn(`${label} failed (${i}/${RETRY_ATTEMPTS}): ${e.message}, retrying in ${RETRY_INTERVAL_SEC}s`);
+      await sleep(RETRY_INTERVAL_SEC * 1000);
+    }
+  }
+}
 
 function loadOnboardConfig() {
   try {
@@ -96,7 +123,7 @@ async function waitForInvitation(rid) {
       const res = await eptcloud.rendezvousMap(rid);
       if (res && res.value) return res;
     } catch (e) {
-      if (e.statusCode !== 404) log(`poll error: ${e.message}`);
+      if (e.statusCode !== 404) warn(`poll error: ${e.message}`);
     }
     if (++i % heartbeatEvery === 0) {
       log(`still waiting for activate... (${i * POLL_INTERVAL_SEC}s elapsed)`);
@@ -126,7 +153,7 @@ async function installLicense(licenseUuid, mac) {
 
 async function installLicenseAndMark(licenseUuid, mac) {
   log(`installing license ${licenseUuid}`);
-  const license = await installLicense(licenseUuid, mac);
+  const license = await retry('installLicense', () => installLicense(licenseUuid, mac));
   await persistState({
     stage: 'licensed',
     license_uuid: license.DATA.UUID,
@@ -176,14 +203,14 @@ async function applyTimezone(tz) {
     return;
   }
   if (!fs.existsSync(`/usr/share/zoneinfo/${tz}`)) {
-    log(`WARN: unknown timezone in onboard-config: ${tz} - skipping, is tzdata-legacy installed?`);
+    warn(`unknown timezone in onboard-config: ${tz} - skipping, is tzdata-legacy installed?`);
     return;
   }
   const err = await sysManager.setTimezone(tz);
   if (err) {
     await rclient.hdelAsync('sys:config', 'timezone');
     sysManager.timezone = null;
-    log(`WARN: failed to set timezone ${tz}: ${err.message}`);
+    warn(`failed to set timezone ${tz}: ${err.message}`);
     return;
   }
   log(`timezone set to ${tz}`);
@@ -213,8 +240,8 @@ async function persistState(patch) {
 
 async function main(onboard) {
   log('onboard start');
-  await connectCloud();
-  const gid = await ensureGid();
+  await retry('connectCloud', connectCloud);
+  const gid = await retry('ensureGid', ensureGid);
   mark('gid');
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
@@ -222,12 +249,12 @@ async function main(onboard) {
   await persistState({ stage: 'onboard_start', gid, mac, timing });
 
   await applyTimezone(_.get(onboard, 'timezone'))
-      .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
+      .catch((e) => warn(`applyTimezone failed: ${e.message}`));
 
   const bid = _.get(onboard, 'activation.bid') || uuid.v4();
   const rid = eptcloud.eptGenerateInvite().r;
   log(`register bid=${bid} rid=${rid}`);
-  await registerBootstrap({ bootstrapId: bid, rid, gid });
+  await retry('registerBootstrap', () => registerBootstrap({ bootstrapId: bid, rid, gid }));
   mark('registered');
   await persistState({ stage: 'awaiting_activation', bootstrap_id: bid, rid });
 
@@ -239,7 +266,7 @@ async function main(onboard) {
   await persistState({ stage: 'activating', web_eid: webEid, payload_received_at: new Date().toISOString() });
 
   await installLicenseAndMark(payload.license, mac);
-  const memberCount = await joinWebEidToGroup(gid, webEid);
+  const memberCount = await retry('joinWebEidToGroup', () => joinWebEidToGroup(gid, webEid));
   await writeUiConf(gid);
   await configureGuardian(payload);
   log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
@@ -261,14 +288,14 @@ async function main(onboard) {
 
 const onboard = loadOnboardConfig();
 if (!onboard) {
-  console.error(`[onboard] no/invalid onboard-config at ${ONBOARD_CONFIG} — abort`);
+  error(`no/invalid onboard-config at ${ONBOARD_CONFIG} - abort`);
   process.exit(1);
 }
 
 PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAULT_PROVISION_BASE;
 
 main(onboard).catch(async (err) => {
-  log(`bootstrap failed: ${err.message}`);
+  error(`bootstrap failed: ${err.message}`);
   if (err.stack) console.log(err.stack);
   log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s`);
   try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString(), timing }); } catch (_) {}
