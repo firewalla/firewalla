@@ -30,7 +30,8 @@ export FLEET_RUN_DIR=$T/assets
 export FLEET_ENGINE_LOCK=$T/apply.lock
 export FLEET_ENGINE_TEST_MODE=true
 export FW_EFFECTIVE_FEATURES=$T/features.json
-printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
+# a stand-in for the asset: it answers --capabilities like a current fleet
+printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "fleet test";; esac\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
 mkdir -p "$SYSTEMD_DIR" "$FLEET_RUN_DIR" "$T/bin"
 # the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
 # not answer: a stub on PATH keeps the box's own values out of the way
@@ -101,9 +102,10 @@ RUNNER=/home/pi/.firewalla/run/assets/fleet-run
 IDS_RUNNER=/home/pi/.firewalla/run/assets/fleet-ids-run
 LOCAL_RUNNER=$FLEET_RUN_DIR/fleet-run
 LOCAL_IDS_RUNNER=$FLEET_RUN_DIR/fleet-ids-run
-check "brofish drop-in always carries --no-suricata (the IDS has its own process)" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
-check "suricata drop-in runs the ids-only fleet" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
 check "drop-ins are mode 0644" 'find "$B" -prune -perm 0644 | grep -q .'
+
+check "one process serves both roles: brofish has no --no-suricata" '! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
+check "the suricata unit is held off while brofish serves both" 'grep -q "^ConditionPathExists=" "$S"'
 
 echo "== fleet/suricata"
 setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null || bad "apply"
@@ -125,7 +127,8 @@ check "apply returns 0 (stock engines)" '[[ $rc -eq 0 ]]'
 check "reports the missing binary" '[[ "$out" == *"not present"* ]]'
 check "no drop-ins at all" '[[ ! -e $B && ! -e $S ]]'
 check "shell roles resolve to zeek/suricata" '[[ $(bash -c "source $FIREWALLA_HOME/platform/platform.sh; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)") == zeek/suricata ]]'
-printf '#!/bin/sh\necho fleet test\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
+# a stand-in for the asset: it answers --capabilities like a current fleet
+printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "fleet test";; esac\n' > "$FLEET_BIN"; chmod 755 "$FLEET_BIN"
 
 echo "== failed install returns nonzero and does not restart"
 # SYSTEMD_DIR as a plain file: creating the drop-in directory fails even for root
@@ -216,7 +219,8 @@ check "the pkill is not gated on zeekctl" 'grep -q "pkill -x" "$ENGINE" && ! gre
 check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && grep -q "return \$rc" "$ENGINE"'
 
 echo "== the pcap roles are respected"
-check "the IDS never rides on the brofish fleet" '! grep -q "suricata-fleet-off" "$ENGINE" && [[ ! -e $FIREWALLA_HOME/etc/suricata-fleet-off.conf ]]'
+check "the roles share one process only when both are fleet and both enabled" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "pcap_zeek_enabled && pcap_suricata_enabled"'
+check "the shared process is not told to skip the rules" 'sed -n "/One process for both roles/,/^    fi/p" "$ENGINE" | grep -q "opts=[\"][\"]"'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
 check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" FLEET_BIN="$FLEET_BIN" bash "$FIREWALLA_HOME/scripts/fleet-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
@@ -348,7 +352,7 @@ check "a backup that fails aborts before the destination is touched" 'sed -n "/c
 check "the feature listeners are registered before the initial apply" 'awk "/onFeature/{o=NR} /await this.apply\\(false\\)/{a=NR} END{exit !(o && a && o<a)}" "$FIREWALLA_HOME/sensor/FleetEnginePlugin.js"'
 
 echo "== unit: the two-process arrangement"
-check "the IDS is restarted whatever the flow role is doing" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then"'
+check "the IDS unit is restarted only when it runs a fleet of its own" 'sed -n "/^restart_fleet_services()/,/^}/p" "$ENGINE" | grep -q "pcap_suricata_enabled && ! shared_roles"'
 check "a leftover suricata process is stopped regardless of ExecStart" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "SURICATA_ENGINE == fleet ]] && suricata_running; then"'
 check "each cron entry checks one role" 'grep -q "fleet-ping.sh brofish" "$FIREWALLA_HOME/etc/crontab.fleet" && grep -q "fleet-ping.sh suricata" "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids"'
 check "the watchdog probes the IDS with suricata interfaces" 'grep -q "ids_status_args" "$FIREWALLA_HOME/scripts/fleet-ping.sh"'
@@ -404,6 +408,27 @@ kill $sleeper 2>/dev/null; wait $sleeper 2>/dev/null
 FLEET_ENGINE_LOCK=$T/lock.d "${SANDBOX[@]}" FLEET_ENGINE_LOCK=$T/lock.d "$ENGINE" apply >/dev/null 2>&1
 check "a dead owner's lock is taken over" '[[ ! -d $T/lock.d ]]'
 rm -rf "$T/lock.d"
+
+echo "== unit: one process only with a fleet that supports it"
+check "shared mode asks the binary for the capability" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "fleet_supports_shared_roles"'
+check "the capability is read from the binary, not assumed" 'sed -n "/^fleet_supports_shared_roles()/,/^}/p" "$ENGINE" | grep -q -- "--capabilities"'
+check "an IDS-only service is stopped when folding into one" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "one process serves both roles now"'
+check "SuricataControl imports what its cron condition uses" 'grep -q "fc = require" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "Constants = require" "$FIREWALLA_HOME/net2/SuricataControl.js"'
+
+echo "== behaviour: a fleet without the capability keeps the two services apart"
+cat > "$T/fleet" <<'OLD'
+#!/bin/sh
+# an older fleet: no --capabilities
+exit 1
+OLD
+chmod 755 "$T/fleet"
+setf 1 1
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "the IDS keeps its own unit" 'grep -q "^ExecStart=$IDS_RUNNER " "$S"'
+check "brofish is told not to evaluate the rules" 'grep -q "^ExecStart=$RUNNER .*--no-suricata" "$B"'
+printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "fleet test";; esac\n' > "$T/fleet"; chmod 755 "$T/fleet"
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "a capable fleet folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
 
 echo "== behaviour: two applies do not interleave"
 setf 1 1

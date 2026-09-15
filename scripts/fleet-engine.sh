@@ -79,6 +79,22 @@ resolve() {
 
 fail() { log "FAILED: $1"; return 1; }
 
+# Does the installed fleet know how to serve both roles from one process? An
+# older asset predates the arrangement, so the two services stay separate until
+# it catches up.
+fleet_supports_shared_roles() {
+  [[ -x $FLEET_BIN ]] || return 1
+  timeout 10 "$FLEET_BIN" --capabilities 2>/dev/null | grep -qx "shared-roles"
+}
+
+# One fleet process under brofish.service serves both roles: it captures once
+# per interface with zeek's own filters and evaluates the suricata rules on
+# those packets, so the IDS sees what zeek sees and nothing else.
+shared_roles() {
+  [[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] \
+    && pcap_zeek_enabled && pcap_suricata_enabled && fleet_supports_shared_roles
+}
+
 install_dropin() { # src dst
   sudo install -d "$(dirname "$2")" || return 1
   if $LIVE; then
@@ -131,9 +147,13 @@ apply() {
 
   # ---- render and validate every wanted file before touching anything ----
   if [[ $ZEEK_ENGINE == fleet ]]; then
-    # the IDS runs as its own process under the suricata unit (see below), so
-    # the brofish fleet never evaluates the suricata rules
+    # One process for both roles when fleet owns both and the box wants both:
+    # the box then runs one capture path instead of two, and the rules are
+    # evaluated on the packets zeek captures.
     local opts="--no-suricata"
+    if shared_roles; then
+      opts=""
+    fi
     [[ -f $FIREWALLA_HOME/etc/brofish-fleet.conf ]] \
       || { rm -rf "$stage"; fail "missing $FIREWALLA_HOME/etc/brofish-fleet.conf"; return 1; }
     want_brofish=$stage/brofish.conf
@@ -144,13 +164,14 @@ apply() {
       || { rm -rf "$stage"; fail "rendered brofish drop-in has no ExecStart"; return 1; }
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
-    # The IDS always gets a fleet of its own under the suricata unit, never a
-    # ride on the brofish one: --zeekctl-compat installs zeek's
-    # restrict_filters as the capture BPF, and those deliberately drop and
-    # sample LAN traffic, so a shared capture path would silently cost IDS
-    # coverage. This unit captures suricata's interfaces with suricata's own
-    # filter, exactly as the suricata process did.
+    # One unit or two: when the brofish fleet owns the flow role as well, it
+    # serves the IDS too and this unit is held off. Otherwise the IDS gets a
+    # fleet of its own here, with suricata's interfaces and suricata's own
+    # filter.
     local src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"
+    if shared_roles; then
+      src="$FIREWALLA_HOME/etc/suricata-fleet-off.conf"
+    fi
     [[ -f $src ]] || { rm -rf "$stage"; fail "missing $src"; return 1; }
     want_suricata=$stage/suricata.conf
     cp -f "$src" "$want_suricata" || { rm -rf "$stage"; fail "staging $src"; return 1; }
@@ -278,6 +299,19 @@ stop_replaced_engines() {
       rc=1
     fi
   fi
+  # folding two services into one: the IDS-only fleet under the suricata unit
+  # has to stop, or two processes would evaluate the rules and write the same
+  # eve.json while the watchdog watches only one of them
+  if shared_roles && systemctl is-active -q suricata 2>/dev/null; then
+    log "stopping the separate IDS service (one process serves both roles now)"
+    if ! sudo systemctl stop suricata; then
+      log "FAILED: stopping suricata"
+      rc=1
+    elif systemctl is-active -q suricata 2>/dev/null; then
+      log "FAILED: suricata is still active"
+      rc=1
+    fi
+  fi
   # the suricata unit runs fleet itself now (ids-only), so any real suricata
   # process left over from before the switch has to go: it would keep writing
   # the same eve.json. suricata-run daemonizes it as "Suricata-Main" (see
@@ -316,8 +350,10 @@ verify() {
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
     [[ -f $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN missing" || return 1
-    ! $real || [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_IDS_RUN"* ]] \
-      || fail "verify: suricata.service does not resolve to $FLEET_IDS_RUN" || return 1
+    if ! shared_roles; then
+      ! $real || [[ "$(systemctl show suricata -p ExecStart --value 2>/dev/null)" == *"$FLEET_IDS_RUN"* ]] \
+        || fail "verify: suricata.service does not resolve to $FLEET_IDS_RUN" || return 1
+    fi
   else
     [[ ! -e $SURICATA_DROPIN ]] || fail "verify: $SURICATA_DROPIN still present" || return 1
   fi
@@ -358,9 +394,9 @@ restart_fleet_services() {
     sudo systemctl reset-failed brofish 2>/dev/null || true
     sudo systemctl restart brofish || { log "FAILED: restarting brofish"; rc=1; }
   fi
-  # the IDS always has its own process under the suricata unit, whatever the
-  # flow role is doing, so it is restarted whenever fleet owns that role
-  if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled; then
+  # the suricata unit runs fleet only when the roles are split; with one
+  # process the brofish restart above covers the IDS as well
+  if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && ! shared_roles; then
     sudo systemctl reset-failed suricata 2>/dev/null || true
     sudo systemctl restart suricata || { log "FAILED: restarting suricata"; rc=1; }
   fi
