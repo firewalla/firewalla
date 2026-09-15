@@ -128,9 +128,13 @@ class EventRequestHandler {
         });
     }
 
-    isApStateEvent(eventRequest) {
-        // check if eventRequest is an AP state event
-        return (eventRequest.state_type && eventRequest.state_type.startsWith("ap_"));
+    needsSerializedQueue(eventRequest) {
+        // per-key locked EventQueue avoids a read-modify-write race in
+        // processStateEvent's cache compare when consecutive messages for the
+        // same state_key arrive close together — required for any state_type whose
+        // events can be emitted back-to-back for the same key, not just "ap_"-prefixed ones.
+        return (eventRequest.state_type &&
+            (eventRequest.state_type.startsWith("ap_") || eventRequest.state_type.startsWith("switch_")));
     }
 
     async queueStateEvent(message) {
@@ -143,9 +147,9 @@ class EventRequestHandler {
                 }
             }
 
-            // if not AP state event, process directly in processStateEvent
-            if (!this.isApStateEvent(eventRequest)) {
-                log.debug(`process non-ap state event directly: ${JSON.stringify(eventRequest)}`);
+            // if this state_type doesn't need serialization, process directly
+            if (!this.needsSerializedQueue(eventRequest)) {
+                log.debug(`process unserialized state event directly: ${JSON.stringify(eventRequest)}`);
                 return await this.processStateEvent(eventRequest);
             }
 
