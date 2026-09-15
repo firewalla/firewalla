@@ -1,20 +1,20 @@
 #!/bin/bash
 #
-# Watchdog for fleet, the brofish-ping.sh counterpart used when the
+# Watchdog for zssids, the brofish-ping.sh counterpart used when the
 # pcap_zeek_fleet and/or pcap_suricata_fleet feature is on.
 #
 # brofish-ping.sh decides whether workers are alive by running `zeekctl top`,
-# which cannot see fleet. This asks fleet itself: `fleet --status` checks the
+# which cannot see zssids. This asks zssids itself: `zssids --status` checks the
 # process answers over its local API AND that every capture thread published
 # a snapshot in the last few seconds, so a dead capture thread is caught rather
 # than silently losing one link. It also makes sure zeek is not running beside
-# fleet (both would write the same spool).
+# zssids (both would write the same spool).
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source "${FIREWALLA_HOME}/platform/platform.sh"
 
-FLEET=${FLEET:-$FIREWALLA_HIDDEN/run/assets/fleet}
+ZSSIDS=${ZSSIDS:-$FIREWALLA_HIDDEN/run/assets/zssids}
 HEARTBEAT_DIR=${HEARTBEAT_DIR:-$(get_zeek_log_dir)}
 MMIN=${MMIN:-15}
 TOTAL_RETRIES=${TOTAL_RETRIES:-5}
@@ -27,28 +27,28 @@ log() { "$FIREWALLA_HOME/scripts/firelog" -t cloud -m "$1"; }
 # a failed or interrupted apply holds the pcap services stopped on purpose
 # (net2/FlowEngine.js and both control classes honour the same marker): do not
 # restart anything on a configuration nobody verified
-if [[ -e /dev/shm/fleet-engine.failed ]]; then
-  logger "fleet-ping: flow engine configuration is held back, not checking"
+if [[ -e /dev/shm/zssids-engine.failed ]]; then
+  logger "zssids-ping: flow engine configuration is held back, not checking"
   exit 0
 fi
 
-# fleet can own both roles at once, in two processes: brofish for the flows and
+# zssids can own both roles at once, in two processes: brofish for the flows and
 # suricata for the IDS. Check each one it owns; a role the box has switched off
 # is not ours to watch.
-# One role per invocation, so the two cron entries (crontab.fleet for the flow
-# role, suricata/crontab.fleet-ids for the IDS) do not both check everything:
-#   fleet-ping.sh [brofish|suricata]    default: every role fleet owns
+# One role per invocation, so the two cron entries (crontab.zssids for the flow
+# role, suricata/crontab.zssids-ids for the IDS) do not both check everything:
+#   zssids-ping.sh [brofish|suricata]    default: every role zssids owns
 WANT=${1:-all}
-# When fleet owns both roles and the box wants both, one process under
+# When zssids owns both roles and the box wants both, one process under
 # brofish.service serves them: the suricata unit is held off and there is
 # nothing of ours to check there.
 shared=false
-[[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] && pcap_zeek_enabled && pcap_suricata_enabled && shared=true
+[[ $ZEEK_ENGINE == zssids && $SURICATA_ENGINE == zssids ]] && pcap_zeek_enabled && pcap_suricata_enabled && shared=true
 ROLES=()
-if [[ $ZEEK_ENGINE == fleet ]] && pcap_zeek_enabled && [[ $WANT == all || $WANT == brofish ]]; then
+if [[ $ZEEK_ENGINE == zssids ]] && pcap_zeek_enabled && [[ $WANT == all || $WANT == brofish ]]; then
   ROLES+=("brofish:127.0.0.1:8927")
 fi
-if [[ $SURICATA_ENGINE == fleet ]] && pcap_suricata_enabled && ! $shared && [[ $WANT == all || $WANT == suricata ]]; then
+if [[ $SURICATA_ENGINE == zssids ]] && pcap_suricata_enabled && ! $shared && [[ $WANT == all || $WANT == suricata ]]; then
   ROLES+=("suricata:127.0.0.1:8928")
 fi
 [[ ${#ROLES[@]} -gt 0 ]] || exit 0   # nothing of ours to check
@@ -64,34 +64,34 @@ if [[ -r $FIREWALLA_HIDDEN/run/suricata/listen_interfaces.rc ]]; then
   done
 fi
 
-# only fleet's own service is ours to restart: if the unit currently runs
+# only zssids's own service is ours to restart: if the unit currently runs
 # something else (drop-in missing after a switch), leave it to FireMain
-# one pass per role fleet owns
+# one pass per role zssids owns
 overall=0
 for role in "${ROLES[@]}"; do
   SERVICE=${role%%:*}
   HTTP=${role#*:}
 
-  # brofish runs fleet through scripts/fleet-run, the IDS unit through
-  # scripts/fleet-ids-run
+  # brofish runs zssids through scripts/zssids-run, the IDS unit through
+  # scripts/zssids-ids-run
   exec_now=$(systemctl show "$SERVICE" -p ExecStart --value 2>/dev/null)
-  if [[ "$exec_now" != *"$FLEET"* && "$exec_now" != *fleet-run* && "$exec_now" != *fleet-ids-run* ]]; then
-    logger "fleet-ping: $SERVICE does not run fleet (${exec_now:0:100}); not checking"
+  if [[ "$exec_now" != *"$ZSSIDS"* && "$exec_now" != *zssids-run* && "$exec_now" != *zssids-ids-run* ]]; then
+    logger "zssids-ping: $SERVICE does not run zssids (${exec_now:0:100}); not checking"
     continue
   fi
 
-  # zeek must not run beside the brofish fleet: `zeekctl cron` restarts nodes
+  # zeek must not run beside the brofish zssids: `zeekctl cron` restarts nodes
   # zeekctl believes crashed, so stop it through zeekctl, which records them as
   # stopped, and log who launched it so the trigger can be found
   if [[ $SERVICE == brofish ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
     zpid=$(pgrep -o -x "${BRO_PROC_NAME:-zeek}")
-    log "fleet-ping: zeek running beside fleet, stopping it: $(ps -o ppid=,lstart=,cmd= -p "$zpid" | cut -c1-120) cgroup=$(cat /proc/$zpid/cgroup 2>/dev/null | tr '\n' ' ')"
+    log "zssids-ping: zeek running beside zssids, stopping it: $(ps -o ppid=,lstart=,cmd= -p "$zpid" | cut -c1-120) cgroup=$(cat /proc/$zpid/cgroup 2>/dev/null | tr '\n' ' ')"
     sudo timeout 60 /usr/local/${BRO_PROC_NAME:-zeek}/bin/${BRO_PROC_NAME:-zeek}ctl stop >/dev/null 2>&1 || true
     sudo pkill -x "${BRO_PROC_NAME:-zeek}" 2>/dev/null || true
   fi
 
   # logs are still being written (the same check brofish-ping.sh makes); only
-  # meaningful for the brofish role, an ids-only fleet writes no zeek logs
+  # meaningful for the brofish role, an ids-only zssids writes no zeek logs
   check_heartbeat() {
     [[ $SERVICE == brofish ]] || return 0
     local result
@@ -105,7 +105,7 @@ for role in "${ROLES[@]}"; do
     status_args+=("${ids_status_args[@]}")
   fi
   check_status() {
-    sudo "$FLEET" "${status_args[@]}" --http "$HTTP" --status >/dev/null 2>&1
+    sudo "$ZSSIDS" "${status_args[@]}" --http "$HTTP" --status >/dev/null 2>&1
   }
 
   result_hb="OK"
@@ -120,8 +120,8 @@ for role in "${ROLES[@]}"; do
   done
 
   if ! $ok; then
-    detail=$(sudo "$FLEET" "${status_args[@]}" --http "$HTTP" --status 2>&1 | tr '\n' ' ')
-    log "fleet ping failed(HB:$result_hb, Status:$result_status), restarting $SERVICE: $detail"
+    detail=$(sudo "$ZSSIDS" "${status_args[@]}" --http "$HTTP" --status 2>&1 | tr '\n' ' ')
+    log "zssids ping failed(HB:$result_hb, Status:$result_status), restarting $SERVICE: $detail"
     sudo systemctl restart "$SERVICE" || overall=1
   fi
 done

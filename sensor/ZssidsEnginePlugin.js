@@ -15,8 +15,8 @@
 'use strict';
 
 // Applies the pcap_zeek_fleet / pcap_suricata_fleet features: when either
-// flips, scripts/fleet-engine.sh rewrites the systemd drop-ins beside
-// brofish.service and suricata.service (fleet in, zeek/suricata out, or the
+// flips, scripts/zssids-engine.sh rewrites the systemd drop-ins beside
+// brofish.service and suricata.service (zssids in, zeek/suricata out, or the
 // reverse) and the pcap plugins are asked to restart their services, which
 // makes the change take effect and re-picks the watchdog cron template.
 // At boot main-start applies the drop-ins before any service starts; this
@@ -35,20 +35,20 @@ const FlowEngine = require('../net2/FlowEngine.js');
 const fs = require('fs');
 
 // the engine selectors, plus the pcap roles themselves: switching the flow
-// role off moves the IDS from the shared brofish fleet to a fleet of its own
+// role off moves the IDS from the shared brofish zssids to a zssids of its own
 // under the suricata unit, which is another apply
 const ENGINE_FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
 const FEATURES = [...ENGINE_FEATURES, Constants.FEATURE_PCAP_ZEEK, Constants.FEATURE_PCAP_SURICATA];
 // net2/config.js merges cloud, MSP and version configuration, which
 // platform.sh cannot; the effective values are written here for it to read
-const EFFECTIVE_FEATURES = '/dev/shm/fleet-engine.features';
-// fleet-engine.sh holds this from the first change it makes until verification
+const EFFECTIVE_FEATURES = '/dev/shm/zssids-engine.features';
+// zssids-engine.sh holds this from the first change it makes until verification
 // succeeds, so a failed or interrupted apply leaves it behind. While it is
 // there BroControl.restart, SuricataControl.restart and the script's own
 // restart path refuse to start the pcap services.
 const FAILED_MARKER = FlowEngine.APPLY_FAILED_MARKER;
 
-class FleetEnginePlugin extends Sensor {
+class ZssidsEnginePlugin extends Sensor {
   async run() {
     this.applyJob = new scheduler.UpdateJob(this.apply.bind(this), 3000);
 
@@ -86,7 +86,7 @@ class FleetEnginePlugin extends Sensor {
         this.applyJob.exec().catch((err) => log.error('Failed to re-apply flow engine', err.message));
       }
     }).catch((err) => {
-      // publishing or spawning can fail before fleet-engine.sh writes its
+      // publishing or spawning can fail before zssids-engine.sh writes its
       // marker; remember it so the poll below keeps retrying
       this.applyFailed = true;
       log.error('Initial flow engine apply failed', err.message);
@@ -96,7 +96,7 @@ class FleetEnginePlugin extends Sensor {
     // feature on, the effective engines change with no feature event, so watch
     // for that and re-apply, which also re-picks the cron templates. A failed
     // apply leaves the services held back, so keep retrying that too.
-    this.fleetAvailable = FlowEngine.fleetAvailable();
+    this.zssidsAvailable = FlowEngine.zssidsAvailable();
     setInterval(() => {
       // apply() owns this flag: UpdateJob.exec() resolves even when the
       // underlying apply threw, so clearing it here could stop the retries
@@ -105,11 +105,11 @@ class FleetEnginePlugin extends Sensor {
         this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
         return;
       }
-      const available = FlowEngine.fleetAvailable();
-      if (available === this.fleetAvailable) return;
-      this.fleetAvailable = available;
+      const available = FlowEngine.zssidsAvailable();
+      if (available === this.zssidsAvailable) return;
+      this.zssidsAvailable = available;
       if (ENGINE_FEATURES.some(name => fc.isFeatureOn(name))) {
-        log.info(`fleet binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
+        log.info(`zssids binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
         this.applyJob.exec().catch((err) => {
           log.error('Failed to apply flow engine change', err.message);
         });
@@ -141,22 +141,22 @@ class FleetEnginePlugin extends Sensor {
     // the shell side reads these; a stale file would make it apply the
     // opposite engine, so this throws rather than continue
     this.publishFeatures();
-    const script = `${f.getFirewallaHome()}/scripts/fleet-engine.sh`;
+    const script = `${f.getFirewallaHome()}/scripts/zssids-engine.sh`;
     let applied = false;
     await execFile('sudo', [script, 'apply']).then((r) => {
-      applied = true;   // fleet-engine.sh cleared its hold on success
-      if (r.stdout && r.stdout.trim()) log.info('fleet-engine:', r.stdout.trim().replace(/\n/g, '; '));
+      applied = true;   // zssids-engine.sh cleared its hold on success
+      if (r.stdout && r.stdout.trim()) log.info('zssids-engine:', r.stdout.trim().replace(/\n/g, '; '));
     }).catch((err) => {
       // the drop-ins are not what the features say: restarting now would
       // apply stale ones, so leave the services alone and try again next time
-      log.error('fleet-engine.sh apply failed, services left as they are', err.message);
+      log.error('zssids-engine.sh apply failed, services left as they are', err.message);
     });
     this.applyFailed = !applied;
     if (restart && applied) {
       sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
     }
-    if (!applied) throw new Error('fleet-engine.sh apply failed');
+    if (!applied) throw new Error('zssids-engine.sh apply failed');
   }
 }
 
-module.exports = FleetEnginePlugin;
+module.exports = ZssidsEnginePlugin;
