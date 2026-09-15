@@ -79,18 +79,17 @@ resolve() {
 
 fail() { log "FAILED: $1"; return 1; }
 
-# Does the installed fleet keep the two roles apart inside one process? An
-# older build installs zeek's restrict_filters on the capture socket, which
-# would leave the IDS blind to everything they drop or sample, so the two
-# services stay separate until the asset catches up.
+# Does the installed fleet know how to serve both roles from one process? An
+# older asset predates the arrangement, so the two services stay separate until
+# it catches up.
 fleet_supports_shared_roles() {
   [[ -x $FLEET_BIN ]] || return 1
   timeout 10 "$FLEET_BIN" --capabilities 2>/dev/null | grep -qx "shared-roles"
 }
 
-# One fleet process under brofish.service serves both roles: fleet captures
-# with suricata's filter and applies zeek's restrict_filters per packet, so the
-# IDS keeps full coverage and the zeek logs stay what a filtered zeek produced.
+# One fleet process under brofish.service serves both roles: it captures once
+# per interface with zeek's own filters and evaluates the suricata rules on
+# those packets, so the IDS sees what zeek sees and nothing else.
 shared_roles() {
   [[ $ZEEK_ENGINE == fleet && $SURICATA_ENGINE == fleet ]] \
     && pcap_zeek_enabled && pcap_suricata_enabled && fleet_supports_shared_roles
@@ -149,9 +148,8 @@ apply() {
   # ---- render and validate every wanted file before touching anything ----
   if [[ $ZEEK_ENGINE == fleet ]]; then
     # One process for both roles when fleet owns both and the box wants both:
-    # fleet then captures with suricata's filter and applies zeek's per packet,
-    # so nothing is lost on either side and the box runs one capture path
-    # instead of two.
+    # the box then runs one capture path instead of two, and the rules are
+    # evaluated on the packets zeek captures.
     local opts="--no-suricata"
     if shared_roles; then
       opts=""
@@ -167,9 +165,9 @@ apply() {
   fi
   if [[ $SURICATA_ENGINE == fleet ]]; then
     # One unit or two: when the brofish fleet owns the flow role as well, it
-    # serves the IDS too (fleet keeps the capture filters apart internally) and
-    # this unit is held off. Otherwise the IDS gets a fleet of its own here,
-    # with suricata's interfaces and suricata's own filter.
+    # serves the IDS too and this unit is held off. Otherwise the IDS gets a
+    # fleet of its own here, with suricata's interfaces and suricata's own
+    # filter.
     local src="$FIREWALLA_HOME/etc/suricata-fleet-ids.conf"
     if shared_roles; then
       src="$FIREWALLA_HOME/etc/suricata-fleet-off.conf"
