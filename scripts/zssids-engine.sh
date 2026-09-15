@@ -59,7 +59,7 @@ FAILED_MARKER=/dev/shm/zssids-engine.failed
 ZSSIDS_RUN_DIR=${ZSSIDS_RUN_DIR:-$FIREWALLA_HIDDEN/run/assets}
 ZSSIDS_RUN=$ZSSIDS_RUN_DIR/zssids-run
 ZSSIDS_IDS_RUN=$ZSSIDS_RUN_DIR/zssids-ids-run
-# The engine was called fleet until firewalla/fleet 0.1.36. A box upgraded in
+# The engine was called fleet before zssids 0.1.36. A box upgraded in
 # place from that code still has its drop-ins, launchers, asset, /dev/shm state,
 # status files, crontab links and possibly a running process called fleet.
 # systemd merges the old drop-ins with the new ones (the old shared-roles
