@@ -48,6 +48,7 @@ const CUSTOMIZED_CATEGORY_KEY_INDEX = "customized_category:key_index"
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
+const { isCategoryDomainValid, isHashDomain } = require('../util/util.js');
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
 const AsyncLock = require('../vendor_lib/async-lock');
 const customizedCategoryLock = new AsyncLock();
@@ -672,6 +673,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   async addPatternDomains(pattern, domain) {
+    if (!isCategoryDomainValid(domain)) {
+      log.warn(`Ignore invalid domain matched by pattern ${pattern}`, domain);
+      return;
+    }
     await rclient.saddAsync(this.getPatternDomainsKey(pattern), domain);
     await rclient.expireAsync(this.getPatternDomainsKey(pattern), EXPIRE_TIME);
   }
@@ -747,8 +752,32 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
   }
 
+  // category and target list content comes from the cloud and from msp lists, and redis is the
+  // first sink on every ingest path, so filtering here is what keeps a malformed member out of
+  // the dnsmasq match set, the tls hostset and the ipsets that are all built by reading it back
+  filterValid(category, items, what, validator) {
+    const valid = [], dropped = [];
+    for (const item of items) {
+      let ok = false;
+      // a member shaped differently from what the validator reads is exactly what this filter is
+      // here to remove, so a throw drops that member instead of aborting the whole update
+      try {
+        ok = validator(item);
+      } catch (err) {}
+      (ok ? valid : dropped).push(item);
+    }
+    if (dropped.length > 0)
+      log.warn(`Dropped ${dropped.length} invalid ${what} of category ${category}`, dropped.slice(0, 10));
+    return valid;
+  }
+
   async addCategoryData(category, domainObjs) {
-    const domainObjStrs = domainObjs.map(obj => JSON.stringify(obj));
+    // ipv4 and ipv6 members already passed an Address4/Address6 parse in CategoryEntry. the object
+    // test is not redundant with the catch in filterValid: a primitive member does not throw, its
+    // .type just reads undefined, so without it a bare string would be written through as valid
+    const valid = this.filterValid(category, domainObjs, "entries",
+      obj => _.isPlainObject(obj) && (obj.type !== "domain" || isCategoryDomainValid(obj.id)));
+    const domainObjStrs = valid.map(obj => JSON.stringify(obj));
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
@@ -764,16 +793,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addDefaultDomains(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domains", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultDomainsOnly(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domainOnly", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultHashedDomains(category, domains) {
+    domains = this.filterValid(category, domains, "hashed domains", isHashDomain);
     await this.addSetMembers(this.getDefaultCategoryKeyHashed(category), domains);
   }
 
@@ -806,6 +838,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!regexList || regexList.length === 0) {
       return;
     }
+    regexList = this.filterValid(category, regexList, "regex domains", expr => CategoryEntry.isValidDomainRE(expr));
     await this.addSetMembers(this.getRegexCategoryKey(category), regexList);
     this._invalidateRegexCache(category);
   }
@@ -854,7 +887,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addIncludedDomain(category, domain) {
-    return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "included domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getIncludeCategoryKey(category), domains)
   }
 
   async removeIncludedDomain(category, domain) {
@@ -898,7 +934,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
     
     for (const element of elements) {
-      const entries = CategoryEntry.parse(element);
+      // parse throws on a malformed element, and the two flushes above have already run, so letting
+      // it out would leave the category emptied. the element stays in the included list either way
+      let entries;
+      try {
+        entries = CategoryEntry.parse(element);
+      } catch (err) {
+        log.warn(`Ignore invalid element of category ${category}`, element, err.message);
+        continue;
+      }
       await this.addCategoryData(category, entries);
     }
     // following code is for backward compatibility, will be removed in the future
@@ -906,7 +950,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.flushIPv6Addresses(category);
     await this.flushIncludedDomains(category);
 
-    const domainRegex = /^[-a-zA-Z0-9\.\*]+?$/;
     let ipv4Addresses = [];
     let ipv6Addresses = [];
     switch (this.customizedCategories[category].type) {
@@ -921,7 +964,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipv6Addresses = elements.filter(e => new Address6(e).isValid());
     }
 
-    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e)).map(domain => domain.toLowerCase());
+    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && isCategoryDomainValid(e)).map(domain => domain.toLowerCase());
     if (ipv4Addresses.length > 0)
       await this.addIPv4Addresses(category, ipv4Addresses);
     if (ipv6Addresses.length > 0)
@@ -953,7 +996,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addExcludedDomain(category, domain) {
-    return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "excluded domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getExcludeCategoryKey(category), domains)
   }
 
   async removeExcludedDomain(category, domain) {
