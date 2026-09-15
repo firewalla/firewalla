@@ -1613,9 +1613,10 @@ check_iptables() {
 }
 
 check_eth_count() {
-  ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
+  ports=$(find /sys/class/net/ | grep -c "\\eth[0-4]$")
 
   if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
+    "$PLATFORM" == 'goldplus2' && $ports -ne 5 ||
     ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
     ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
       printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
