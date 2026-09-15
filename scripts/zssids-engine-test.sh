@@ -430,6 +430,50 @@ printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
 check "a capable zssids folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
 
+echo "== behaviour: an in-place upgrade from the pre-rename engine"
+# what a box running the engine as fleet carries: both drop-ins (the suricata
+# one in its held-off form), the launchers and asset, and crontab links to the
+# old templates
+legacy_state() {
+  mkdir -p "$SYSTEMD_DIR/brofish.service.d" "$SYSTEMD_DIR/suricata.service.d" "$T/hidden/config"
+  printf '[Service]\nExecStart=\nExecStart=/home/pi/.firewalla/run/assets/fleet-run --zeekctl-compat\n' > "$SYSTEMD_DIR/brofish.service.d/fleet.conf"
+  printf '[Unit]\nConditionPathExists=/nonexistent/fleet-serves-both-roles\n' > "$SYSTEMD_DIR/suricata.service.d/fleet.conf"
+  for f in fleet-run fleet-ids-run fleet; do printf '#!/bin/sh\n' > "$ZSSIDS_RUN_DIR/$f"; chmod 755 "$ZSSIDS_RUN_DIR/$f"; done
+  ln -sfn "$FIREWALLA_HOME/etc/crontab.fleet" "$T/hidden/config/zeek_crontab"
+  ln -sfn "$FIREWALLA_HOME/etc/suricata/crontab.fleet-ids" "$T/hidden/config/suricata_crontab"
+}
+LB=$SYSTEMD_DIR/brofish.service.d/fleet.conf
+LS=$SYSTEMD_DIR/suricata.service.d/fleet.conf
+legacy_state
+setf 0 1 0 1
+FIREWALLA_HIDDEN=$T/hidden "${SANDBOX[@]}" FIREWALLA_HIDDEN=$T/hidden "$ENGINE" apply >/dev/null 2>&1; rc=$?
+check "apply succeeds over the pre-rename state" '[[ $rc -eq 0 ]]'
+check "both pre-rename drop-ins are gone" '[[ ! -e $LB && ! -e $LS ]]'
+check "the IDS-only unit is not held off by the old condition" '[[ -f $S ]] && ! grep -rq "fleet-serves-both-roles" "$SYSTEMD_DIR"'
+check "the pre-rename launchers and asset are gone" '[[ ! -e $ZSSIDS_RUN_DIR/fleet-run && ! -e $ZSSIDS_RUN_DIR/fleet-ids-run && ! -e $ZSSIDS_RUN_DIR/fleet ]]'
+check "the current launchers stay" '[[ -x $LOCAL_RUNNER && -x $LOCAL_IDS_RUNNER ]]'
+check "a disabled zeek role gets no watchdog link" '[[ ! -e $T/hidden/config/zeek_crontab && ! -L $T/hidden/config/zeek_crontab ]]'
+check "suricata_crontab moves to the ids-only watchdog" '[[ $(readlink "$T/hidden/config/suricata_crontab") == "$FIREWALLA_HOME/etc/suricata/crontab.zssids-ids" ]]'
+legacy_state
+setf 1 1
+FIREWALLA_HIDDEN=$T/hidden "${SANDBOX[@]}" FIREWALLA_HIDDEN=$T/hidden "$ENGINE" apply >/dev/null 2>&1; rc=$?
+check "one process for both roles: pre-rename drop-ins gone" '[[ $rc -eq 0 && ! -e $LB && ! -e $LS && -f $B && -f $S ]]'
+check "zeek_crontab moves to the zssids watchdog" '[[ $(readlink "$T/hidden/config/zeek_crontab") == "$FIREWALLA_HOME/etc/crontab.zssids" ]]'
+check "suricata_crontab goes back to stock when brofish serves the IDS" '[[ $(readlink "$T/hidden/config/suricata_crontab") == "$FIREWALLA_HOME/etc/suricata/crontab" ]]'
+legacy_state
+setf 0 0
+FIREWALLA_HIDDEN=$T/hidden "${SANDBOX[@]}" FIREWALLA_HIDDEN=$T/hidden "$ENGINE" apply >/dev/null 2>&1; rc=$?
+check "stock engines: pre-rename drop-ins gone too" '[[ $rc -eq 0 && ! -e $LB && ! -e $LS && ! -e $B && ! -e $S ]]'
+check "stock engines with the roles on: zeek_crontab back to the zeek watchdog" '[[ $(readlink "$T/hidden/config/zeek_crontab") == "$FIREWALLA_HOME/etc/crontab.zeek" ]]'
+# a crontab link that is not the old template is left to its controller
+ln -sfn "$FIREWALLA_HOME/etc/crontab.zeek" "$T/hidden/config/zeek_crontab"
+FIREWALLA_HIDDEN=$T/hidden "${SANDBOX[@]}" FIREWALLA_HIDDEN=$T/hidden "$ENGINE" apply >/dev/null 2>&1
+check "a sandbox apply against the canonical hidden dir touches nothing" 'sed -n "/^retire_legacy_leftovers()/,/^}/p" "$ENGINE" | grep -q "LIVE || \$sandbox_ok || return 0"'
+check "a current crontab link is left alone" '[[ $(readlink "$T/hidden/config/zeek_crontab") == "$FIREWALLA_HOME/etc/crontab.zeek" ]]'
+check "a leftover pre-rename process is stopped with its unit" 'sed -n "/^stop_replaced_engines()/,/^}/p" "$ENGINE" | grep -q "pre-rename name" && grep -q "LEGACY_PROC=fleet" "$ENGINE"'
+check "verify refuses a surviving pre-rename drop-in" 'sed -n "/^verify()/,/^}/p" "$ENGINE" | grep -q "LEGACY_BROFISH_DROPIN"'
+rm -rf "$T/hidden"
+
 echo "== behaviour: two applies do not interleave"
 setf 1 1
 ( "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1 ) &
