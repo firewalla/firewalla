@@ -85,16 +85,16 @@ function get_zeek_log_dir {
 }
 
 # Flow engines: which program handles each pcap role, decided by two features
-#   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
-#   pcap_suricata_fleet   fleet evaluates the suricata rule set instead of suricata
+#   pcap_zeek_fleet      zssids runs as brofish.service instead of zeek
+#   pcap_suricata_fleet   zssids evaluates the suricata rule set instead of suricata
 # Same sources as net2/config.js: the runtime value in redis sys:features (set
 # by the app / enableDynamicFeature), else the platform's files/config.json
-# userFeatures, else net2/config.json, else off. See scripts/fleet-engine.sh.
+# userFeatures, else net2/config.json, else off. See scripts/zssids-engine.sh.
 # net2/config.js merges cloud, MSP and version configuration too, which no
-# shell can reproduce; FleetEnginePlugin writes the effective values of the
+# shell can reproduce; ZssidsEnginePlugin writes the effective values of the
 # features below here whenever they change, and this file is consulted right
 # after the runtime overrides in sys:features
-FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/fleet-engine.features}
+FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/zssids-engine.features}
 
 function _fw_feature_on {
   local name=$1 v
@@ -144,21 +144,21 @@ function _fw_feature_on {
   return 1
 }
 
-# the fleet binary arrives as an asset; until it is there (or if it goes
+# the zssids binary arrives as an asset; until it is there (or if it goes
 # missing) the roles resolve to the stock engines so the box never ends up
 # with neither. Everything shell-side asks these, never the raw feature.
-FLEET_BIN=${FLEET_BIN:-/home/pi/.firewalla/run/assets/fleet}
+ZSSIDS_BIN=${ZSSIDS_BIN:-/home/pi/.firewalla/run/assets/zssids}
 
-function fleet_available {
-  [[ -x $FLEET_BIN ]]
+function zssids_available {
+  [[ -x $ZSSIDS_BIN ]]
 }
 
 function get_flow_engine_zeek {
-  if _fw_feature_on pcap_zeek_fleet && fleet_available; then echo fleet; else echo zeek; fi
+  if _fw_feature_on pcap_zeek_fleet && zssids_available; then echo zssids; else echo zeek; fi
 }
 
 function get_flow_engine_suricata {
-  if _fw_feature_on pcap_suricata_fleet && fleet_available; then echo fleet; else echo suricata; fi
+  if _fw_feature_on pcap_suricata_fleet && zssids_available; then echo zssids; else echo suricata; fi
 }
 
 # the roles themselves can be switched off by the box: pcap_zeek governs flow
