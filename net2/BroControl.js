@@ -124,8 +124,8 @@ class BroControl {
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    // fleet-ping.sh replaces brofish-ping.sh when fleet runs as brofish
-    const crontab = FlowEngine.appliedZeekEngine() === 'fleet' ? 'crontab.fleet' : 'crontab.zeek';
+    // zssids-ping.sh replaces brofish-ping.sh when zssids runs as brofish
+    const crontab = FlowEngine.appliedZeekEngine() === 'zssids' ? 'crontab.zssids' : 'crontab.zeek';
     await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/${crontab}`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
     await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
@@ -142,8 +142,8 @@ class BroControl {
 
   async restart() {
     if (FlowEngine.applyHeld()) {
-      // the fleet drop-ins do not match the features; starting brofish now
-      // could run zeek and fleet against the same spool
+      // the zssids drop-ins do not match the features; starting brofish now
+      // could run zeek and zssids against the same spool
       log.warn('Flow engine configuration is not applied, not starting brofish');
       return;
     }
