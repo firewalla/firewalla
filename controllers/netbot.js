@@ -416,6 +416,7 @@ class netBot extends ControllerBot {
         payload.args.name = name;
         payload.args.ts = ts;
         payload.localArgs = [eid, dName, ts, name];
+        payload.category = Constants.NOTIF_CATEGORY_PHONE_PAIRED;
         break;
       }
       case "weak_password_scan_start": {
