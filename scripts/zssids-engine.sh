@@ -59,6 +59,16 @@ FAILED_MARKER=/dev/shm/zssids-engine.failed
 ZSSIDS_RUN_DIR=${ZSSIDS_RUN_DIR:-$FIREWALLA_HIDDEN/run/assets}
 ZSSIDS_RUN=$ZSSIDS_RUN_DIR/zssids-run
 ZSSIDS_IDS_RUN=$ZSSIDS_RUN_DIR/zssids-ids-run
+# The engine was called fleet until firewalla/fleet 0.1.36. A box upgraded in
+# place from that code still has its drop-ins, launchers, asset, /dev/shm state,
+# status files, crontab links and possibly a running process called fleet.
+# systemd merges the old drop-ins with the new ones (the old shared-roles
+# suricata drop-in can hold the IDS off for good) and the old process keeps
+# writing the spool, so apply() retires all of it: the drop-ins inside its
+# transaction, the process before the hold is lifted, the rest afterwards.
+LEGACY_BROFISH_DROPIN=$SYSTEMD_DIR/brofish.service.d/fleet.conf
+LEGACY_SURICATA_DROPIN=$SYSTEMD_DIR/suricata.service.d/fleet.conf
+LEGACY_PROC=fleet
 # tests point SYSTEMD_DIR at a scratch directory: render and check files, never
 # reload systemd or touch a running service
 LIVE=false
@@ -217,6 +227,14 @@ apply() {
   if ! commit_one "$want_suricata" "$SURICATA_DROPIN" suricata; then
     rollback; rm -rf "$stage"; fail "installing $SURICATA_DROPIN"; return 1
   fi
+  # pre-rename drop-ins: removed whatever the roles, with the same backup and
+  # rollback as the current ones
+  if ! commit_one "" "$LEGACY_BROFISH_DROPIN" legacy_brofish; then
+    rollback; rm -rf "$stage"; fail "removing $LEGACY_BROFISH_DROPIN"; return 1
+  fi
+  if ! commit_one "" "$LEGACY_SURICATA_DROPIN" legacy_suricata; then
+    rollback; rm -rf "$stage"; fail "removing $LEGACY_SURICATA_DROPIN"; return 1
+  fi
   $changed && log "brofish.service -> $ZEEK_ENGINE, suricata.service -> $SURICATA_ENGINE"
 
   if $LIVE; then
@@ -263,7 +281,80 @@ apply() {
     fail "clearing $FAILED_MARKER"
     return 1
   fi
+  retire_legacy_leftovers
   return 0
+}
+
+# What the pre-rename engine left besides its drop-ins and process, once the
+# current configuration is verified. Nothing here can affect what runs, so a
+# failure is logged and the apply still succeeds; the next apply tries again.
+retire_legacy_leftovers() {
+  local f
+  # a sandbox apply (tests) only ever touches scratch copies: the box's own
+  # assets and crontab links belong to the live configuration
+  local sandbox_ok=true
+  if ! $LIVE && [[ $ZSSIDS_RUN_DIR == /home/pi/.firewalla/run/assets \
+        || ${FIREWALLA_HIDDEN:-/home/pi/.firewalla} == /home/pi/.firewalla ]]; then
+    sandbox_ok=false
+  fi
+  $LIVE || $sandbox_ok || return 0
+  # launchers and asset: nothing names them once the drop-ins are gone, and a
+  # downgrade to the old code would fetch its asset again (and run the stock
+  # engines until it arrives)
+  for f in fleet-run fleet-ids-run fleet; do
+    if [[ -e $ZSSIDS_RUN_DIR/$f ]]; then
+      sudo rm -f "$ZSSIDS_RUN_DIR/$f" && log "removed pre-rename $ZSSIDS_RUN_DIR/$f" \
+        || log "could not remove pre-rename $ZSSIDS_RUN_DIR/$f"
+    fi
+  done
+  # the crontab links BroControl and SuricataControl made point at templates
+  # that no longer exist, which drops the watchdog until FireMain relinks them;
+  # relink them now to what those controllers would choose
+  local hidden=${FIREWALLA_HIDDEN:-/home/pi/.firewalla} relinked=false
+  local zeek_tab=crontab.zeek suri_tab=crontab
+  [[ $ZEEK_ENGINE == zssids ]] && zeek_tab=crontab.zssids
+  if [[ $SURICATA_ENGINE == zssids ]] && ! { [[ $ZEEK_ENGINE == zssids ]] && pcap_zeek_enabled; }; then
+    suri_tab=crontab.zssids-ids
+  fi
+  # a role the box has turned off gets no watchdog at all, as the controllers'
+  # removeCronJobs leave it: the stock watchdogs would restart a stopped service
+  if [[ $(readlink "$hidden/config/zeek_crontab" 2>/dev/null) == */etc/crontab.fleet ]]; then
+    if pcap_zeek_enabled; then
+      ln -sfn "$FIREWALLA_HOME/etc/$zeek_tab" "$hidden/config/zeek_crontab" && relinked=true
+    else
+      rm -f "$hidden/config/zeek_crontab" && relinked=true
+    fi
+  fi
+  if [[ $(readlink "$hidden/config/suricata_crontab" 2>/dev/null) == */etc/suricata/crontab.fleet-ids ]]; then
+    if pcap_suricata_enabled; then
+      ln -sfn "$FIREWALLA_HOME/etc/suricata/$suri_tab" "$hidden/config/suricata_crontab" && relinked=true
+    else
+      rm -f "$hidden/config/suricata_crontab" && relinked=true
+    fi
+  fi
+  $relinked && log "crontab links moved off the pre-rename templates"
+  $LIVE || return 0
+  if $relinked; then
+    sudo chown -h pi:pi "$hidden/config/zeek_crontab" "$hidden/config/suricata_crontab" 2>/dev/null || true
+  fi
+  if $relinked || sudo crontab -l -u pi 2>/dev/null | grep -q '/scripts/fleet-ping\.sh'; then
+    # as pi, never as root: the asset hook runs this script as root
+    if [[ $EUID -eq 0 ]]; then
+      sudo -u pi "$FIREWALLA_HOME/scripts/update_crontab.sh" >/dev/null 2>&1
+    else
+      "$FIREWALLA_HOME/scripts/update_crontab.sh" >/dev/null 2>&1
+    fi || log "could not rebuild the crontab after moving off fleet-ping.sh"
+  fi
+  # runtime state of the old engine: hold marker, features, reload obligation,
+  # status files, and a lock only once its owner is gone
+  sudo rm -f /dev/shm/fleet-engine.failed /dev/shm/fleet-engine.features \
+    /dev/shm/fleet-engine.reload-pending /bspool/fleet.status /bspool/fleet-ids.status 2>/dev/null || true
+  if [[ -d /dev/shm/fleet-engine.lock.d ]]; then
+    local owner; owner=$(cat /dev/shm/fleet-engine.lock.d/pid 2>/dev/null)
+    if [[ -z $owner ]] || ! { kill -0 "$owner" 2>/dev/null || [[ -d /proc/$owner ]]; }; then
+      sudo rm -rf /dev/shm/fleet-engine.lock.d 2>/dev/null || true
+    fi
+  fi
 }
 
 # zeek must not run beside zssids (both would write the same spool), and zeekctl
@@ -277,6 +368,32 @@ suricata_running() {
 # Returns nonzero unless every engine zssids replaces is verified gone.
 stop_replaced_engines() {
   local rc=0
+  # the engine under its pre-rename name. Its units resolve to the current
+  # drop-ins now, so stopping the unit it runs under retires it for good;
+  # whoever starts the service next (FireMain, restart, switch) starts what the
+  # features say. Anything outside those units is killed.
+  if pgrep -x "$LEGACY_PROC" >/dev/null 2>&1; then
+    local pid unit units=""
+    for pid in $(pgrep -x "$LEGACY_PROC"); do
+      unit=$(sed -n 's#.*/\(brofish\|suricata\)\.service$#\1#p' "/proc/$pid/cgroup" 2>/dev/null | head -1)
+      [[ -n $unit && " $units " != *" $unit "* ]] && units="$units $unit"
+    done
+    for unit in $units; do
+      log "stopping $unit: it still runs the engine under its pre-rename name"
+      sudo systemctl stop "$unit" || { log "FAILED: stopping $unit"; rc=1; }
+    done
+    sudo pkill -x "$LEGACY_PROC" 2>/dev/null || true
+    local i
+    for i in 1 2 3 4 5; do
+      pgrep -x "$LEGACY_PROC" >/dev/null 2>&1 || break
+      sleep 1
+      sudo pkill -9 -x "$LEGACY_PROC" 2>/dev/null || true
+    done
+    if pgrep -x "$LEGACY_PROC" >/dev/null 2>&1; then
+      log "FAILED: the pre-rename $LEGACY_PROC process is still running"
+      rc=1
+    fi
+  fi
   if [[ $ZEEK_ENGINE == zssids ]] && pgrep -x "${BRO_PROC_NAME:-zeek}" >/dev/null 2>&1; then
     # zeekctl first when it is there, so its state says "stopped" and
     # `zeekctl cron` does not restart the nodes; the processes have to go
@@ -339,6 +456,10 @@ stop_replaced_engines() {
 # With SYSTEMD_DIR pointed elsewhere (tests) only the files can be checked.
 verify() {
   local real=$LIVE
+  local legacy
+  for legacy in "$LEGACY_BROFISH_DROPIN" "$LEGACY_SURICATA_DROPIN"; do
+    [[ ! -e $legacy ]] || fail "verify: pre-rename $legacy still present" || return 1
+  done
   if [[ $ZEEK_ENGINE == zssids ]]; then
     [[ -f $BROFISH_DROPIN ]] || fail "verify: $BROFISH_DROPIN missing" || return 1
     ! $real || [[ "$(systemctl show brofish -p ExecStart --value 2>/dev/null)" == *"$ZSSIDS_RUN"* ]] \
