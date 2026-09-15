@@ -762,7 +762,8 @@ describe('test netbot', function(){
     const payload = await netbot._notifyNewEvent(event);
     expect(payload.type).to.be.equal('FW_NOTIFICATION');
     expect(payload.titleLocalKey).to.be.equal('NEW_EVENT_TITLE_phone_paired');
-    expect(payload.bodyLocalMsg).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
+    expect(payload.bodyLocalMsg).to.be.undefined;
+    expect(payload.message).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
     expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 1743556883664, "my1@firewalla.com"]);
     expect(payload.payload.dName).to.be.equal("Device-abc");
     expect(payload.payload.name).to.be.equal("my1@firewalla.com");
