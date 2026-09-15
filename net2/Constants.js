@@ -211,7 +211,7 @@ module.exports = {
   // the pcap roles themselves: which capture / IDS work the box wants
   FEATURE_PCAP_ZEEK: "pcap_zeek",
   FEATURE_PCAP_SURICATA: "pcap_suricata",
-  // fleet takes the zeek / suricata role (net2/FlowEngine.js, scripts/fleet-engine.sh)
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
   FEATURE_PCAP_ZEEK_FLEET: "pcap_zeek_fleet",
   FEATURE_PCAP_SURICATA_FLEET: "pcap_suricata_fleet",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
