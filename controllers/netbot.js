@@ -385,7 +385,7 @@ class netBot extends ControllerBot {
       bodyLocalKey: notifEvent.bodyLocalKey || `NEW_EVENT_BODY_${event_type}`,
       bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
         : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
-      bodyLocalMsg: notifEvent.msg,
+      // no bodyLocalMsg, body_loc_msg is not supported by Android notification
       payload: notifEvent.args,
       category: notifEvent.category,
     }
