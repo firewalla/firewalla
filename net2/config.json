@@ -997,6 +997,74 @@
             ]
           },
           "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_state"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_state"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
         }
       ]
     },
