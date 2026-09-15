@@ -20,38 +20,38 @@
 //   zeekEngine() / suricataEngine()  what the features ask for (intent)
 //   appliedZeekEngine() / appliedSuricataEngine()  what the units will run
 //
-// The applied answer comes from the systemd drop-ins scripts/fleet-engine.sh
+// The applied answer comes from the systemd drop-ins scripts/zssids-engine.sh
 // installs, so it is right from the first line of code in a process: the
 // feature table is filled in asynchronously (redis), and anything reading it
-// early would answer 'zeek' while fleet is in fact running. Consumers that
+// early would answer 'zeek' while zssids is in fact running. Consumers that
 // care about the running program (the watchdog cron template, whether to
 // restart for a signature change, whether to fetch the suricata binary) use
 // the applied answer.
 //
 // The features:
-//   pcap_zeek_fleet      fleet runs as brofish.service instead of zeek
-//   pcap_suricata_fleet   fleet evaluates the suricata rule set instead of suricata
+//   pcap_zeek_fleet      zssids runs as brofish.service instead of zeek
+//   pcap_suricata_fleet   zssids evaluates the suricata rule set instead of suricata
 // Defaults come from the platform's files/config.json (userFeatures), the
 // runtime state from sys:features like every other feature. The shell side
 // (platform.sh get_flow_engine_zeek / get_flow_engine_suricata) reads the same
-// two sources; scripts/fleet-engine.sh turns the answers into systemd drop-ins.
+// two sources; scripts/zssids-engine.sh turns the answers into systemd drop-ins.
 
 const fc = require('./config.js');
 const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
 const fs = require('fs');
 
-const FLEET_BIN = `${f.getRuntimeInfoFolder()}/assets/fleet`;
-// main-start leaves this behind when its fleet-engine.sh apply failed: the
+const ZSSIDS_BIN = `${f.getRuntimeInfoFolder()}/assets/zssids`;
+// main-start leaves this behind when its zssids-engine.sh apply failed: the
 // drop-ins do not match the features, so brofish / suricata must not be
-// started until an apply succeeds (FleetEnginePlugin clears it)
-const APPLY_FAILED_MARKER = '/dev/shm/fleet-engine.failed';
+// started until an apply succeeds (ZssidsEnginePlugin clears it)
+const APPLY_FAILED_MARKER = '/dev/shm/zssids-engine.failed';
 
 // the binary arrives as an asset; until it is there (or if it goes missing)
 // both roles resolve to the stock engines, the same rule platform.sh applies
-function fleetAvailable() {
+function zssidsAvailable() {
   try {
-    fs.accessSync(FLEET_BIN, fs.constants.X_OK);
+    fs.accessSync(ZSSIDS_BIN, fs.constants.X_OK);
     return true;
   } catch (err) {
     return false;
@@ -59,15 +59,15 @@ function fleetAvailable() {
 }
 
 function zeekEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) && fleetAvailable() ? 'fleet' : 'zeek';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) && zssidsAvailable() ? 'zssids' : 'zeek';
 }
 
 function suricataEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && fleetAvailable() ? 'fleet' : 'suricata';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && zssidsAvailable() ? 'zssids' : 'suricata';
 }
 
-const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/fleet.conf';
-const SURICATA_DROPIN = '/etc/systemd/system/suricata.service.d/fleet.conf';
+const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/zssids.conf';
+const SURICATA_DROPIN = '/etc/systemd/system/suricata.service.d/zssids.conf';
 
 function dropinPresent(path) {
   try {
@@ -80,11 +80,11 @@ function dropinPresent(path) {
 
 // what brofish.service / suricata.service will actually run right now
 function appliedZeekEngine() {
-  return dropinPresent(BROFISH_DROPIN) ? 'fleet' : 'zeek';
+  return dropinPresent(BROFISH_DROPIN) ? 'zssids' : 'zeek';
 }
 
 function appliedSuricataEngine() {
-  return dropinPresent(SURICATA_DROPIN) ? 'fleet' : 'suricata';
+  return dropinPresent(SURICATA_DROPIN) ? 'zssids' : 'suricata';
 }
 
 // true while the systemd drop-ins are known not to match the features
@@ -100,5 +100,5 @@ function applyHeld() {
 module.exports = {
   zeekEngine, suricataEngine,
   appliedZeekEngine, appliedSuricataEngine,
-  fleetAvailable, applyHeld, FLEET_BIN, APPLY_FAILED_MARKER,
+  zssidsAvailable, applyHeld, ZSSIDS_BIN, APPLY_FAILED_MARKER,
 };
