@@ -220,7 +220,7 @@ check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && gr
 
 echo "== the pcap roles are respected"
 check "the roles share one process only when both are fleet and both enabled" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "pcap_zeek_enabled && pcap_suricata_enabled"'
-check "fleet keeps the capture filters apart inside that process" 'grep -q "applies zeek.s per packet\|applied per packet" "$ENGINE"'
+check "the shared process is not told to skip the rules" 'sed -n "/One process for both roles/,/^    fi/p" "$ENGINE" | grep -q "opts=[\"][\"]"'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/fleet-ids-run"'
 check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" FLEET_BIN="$FLEET_BIN" bash "$FIREWALLA_HOME/scripts/fleet-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "fleet-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
