@@ -142,6 +142,19 @@ describe('Test PolicyManager policy value validation', function() {
     expect(keysOf(applied)).to.include('qos');
   });
 
+  // a value the walk cannot serialize at all makes JSON.stringify throw instead of returning, so the
+  // check runs inside the per-policy try - that costs this one key, not the whole round
+  it('should apply the other policies when one value cannot be walked', async function() {
+    const applied = [];
+    const target = stubMonitorable(applied);
+    const circular = { state: true };
+    circular.self = circular;
+    await policyManager.execute(target, '1.2.3.4', { acl: circular, qos: false });
+    expect(keysOf(applied)).to.not.include('acl');
+    expect(target.oper).to.not.have.property('acl');
+    expect(keysOf(applied)).to.include('qos');
+  });
+
   it('should skip every offending policy and apply every clean one', async function() {
     const applied = [];
     const target = stubMonitorable(applied);

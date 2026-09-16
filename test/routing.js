@@ -34,9 +34,12 @@ function run(cmd, args) {
 }
 
 // the whole point of an rt_tables entry is that iproute2 resolves the name. an unknown name
-// makes "ip route show table" exit 255 with "table id value is invalid"
+// makes "ip route show table" exit 255. note a registered but EMPTY table is not a stable 0:
+// iproute2 5.x and newer exit 2 with "FIB table does not exist", 2018/2020-era builds exit 0.
+// 255 is the only answer that means the name did not resolve, so test for that rather than for 0 -
+// the kernel creates the table with its first route, and creating the name adds no route
 function ipResolvesTable(name) {
-  return run('ip', ['route', 'show', 'table', name]).status === 0;
+  return run('ip', ['route', 'show', 'table', name]).status !== 255;
 }
 
 // the id as recorded in rt_tables, parsed independently of what the function returned

@@ -395,22 +395,12 @@ class PolicyManager {
 
     const policyKeys = Object.keys(policy);
 
-    // policy content might end up in command line or config file, filtering it here as a safety guard
     const invalidPolicyKeys = new Set();
-    for (const p of policyKeys) {
-      // wrap in an object so the walk sees the policy name as the key, which decides whether a
-      // line break is allowed
-      if (hasControlChar({ [p]: policy[p] })) {
-        log.error(`Invalid control character in policy of ${target.constructor.name} ${ip}, skip applying ${p}`);
-        invalidPolicyKeys.add(p);
-      }
-    }
-
     const tagPolicyKeys = Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].policyKey);
     // vpnClient and tag policy enforcement may affect OSI verification, so they should be applied first, check OSIPlugin.js for more details.
     const prioritizedPolicyKeys = ["vpnClient", ...tagPolicyKeys, "dnsmasq", "acl", "aclTimer"].filter(p => policyKeys.includes(p));
     const otherPolicyKeys = policyKeys.filter(p => !prioritizedPolicyKeys.includes(p));
-    const sortedPolicyKeys = [...prioritizedPolicyKeys, ...otherPolicyKeys].filter(p => !invalidPolicyKeys.has(p));
+    const sortedPolicyKeys = [...prioritizedPolicyKeys, ...otherPolicyKeys];
 
     let t1;
     // apply policy in prioritized order
@@ -419,6 +409,16 @@ class PolicyManager {
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
       t1 = Date.now() / 1000;
+
+      // policy content might end up in command line or config file, filtering it here as a safety
+      // guard. wrap in an object so the walk sees the policy name as the key, which decides whether
+      // a line break is allowed
+      if (hasControlChar({ [p]: policy[p] })) {
+        log.error(`Invalid control character in policy of ${target.constructor.name} ${ip}, skip applying ${p}`);
+        invalidPolicyKeys.add(p);
+        continue;
+      }
+
       const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
 
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
