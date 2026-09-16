@@ -27,6 +27,8 @@ const ipsetInterval = 3000;
 const f = require('./Firewalla.js');
 const _ = require('lodash');
 
+const REGEX_SETNAME = /^[A-Za-z0-9_][A-Za-z0-9_:/+-]{0,30}$/;
+
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
@@ -35,6 +37,12 @@ let ipsetProcessing = false;
 // with setName, read one set and returns either an object or null
 async function read(setName, metaOnly = false) {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
+  // the name is interpolated into the shell command below, so an unexpected one is a caller bug
+  // rather than a set that might exist
+  if (setName && !REGEX_SETNAME.test(setName)) {
+    log.error('Invalid ipset name', JSON.stringify(setName));
+    return null;
+  }
   try {
     const result = await exec(`sudo timeout 120s ipset list ${metaOnly?'-t':''} ${setName||''} -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024})
     const jsonResult = _.get(JSON.parse(result.stdout), 'ipsets.ipset')
@@ -378,6 +386,7 @@ module.exports = {
   batchTest,
   testAndAdd,
   CONSTANTS,
+  REGEX_SETNAME,
   read,
   readAllIpsets
 }

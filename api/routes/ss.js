@@ -43,6 +43,7 @@ router.get('/garbage', function (req, res) {
     const ckSize = Number(req.query.ckSize);
     const requestedSize = Number.isInteger(ckSize) && ckSize > 0 ? Math.min(ckSize, 1024) : 100;
 
+    // every chunk is the same buffer
     const send = () => {
         for (let i = 0; i < requestedSize; i++)
             res.write(cache);

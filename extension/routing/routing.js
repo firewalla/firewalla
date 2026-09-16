@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,8 @@ const lock = new AsyncLock();
 
 const util = require('util');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
+const fsp = require('fs').promises;
 
 const RT_TYPE_VC = "RT_TYPE_VC";
 const RT_TYPE_REG = "RT_TYPE_REG";
@@ -37,67 +38,99 @@ const LOCK_FILE = "/tmp/rt_tables.lock";
 
 const rtIdCache = {};
 
+// the table name is interpolated into a command line that is run by root, reject anything that is
+// not a plain name so it cannot end the quoting or start a command substitution
+function isValidTableName(tableName) {
+  return _.isString(tableName) && tableName.length > 0 && !/[^A-Za-z0-9._:@-]/.test(tableName);
+}
+
 async function removeCustomizedRoutingTable(tableName) {
-  let cmd = `sudo bash -c 'flock ${LOCK_FILE} -c "sed -i -e \\"s/^[[:digit:]]\\+\\s\\+${tableName}$//g\\" /etc/iproute2/rt_tables"'`;
-  await exec(cmd);
+  if (!isValidTableName(tableName)) {
+    log.error(`Invalid routing table name: ${tableName}`);
+    throw new Error(`Invalid routing table name: ${tableName}`);
+  }
+  // the name goes into a sed address, where it is a regex rather than a literal. '.' is the only
+  // character isValidTableName admits that a basic regular expression treats specially, so escape
+  // it - without this, removing eth0.100_local would take eth0X100_local with it. widening the
+  // allowlist above means revisiting this line.
+  const pattern = tableName.replace(/\./g, '\\.');
+  await execFile('sudo', ['flock', LOCK_FILE, 'sed', '-i', '-e',
+    `/^[[:digit:]]\\+\\s\\+${pattern}$/d`, '/etc/iproute2/rt_tables']);
   delete rtIdCache[tableName];
 }
 
 async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
+  if (!isValidTableName(tableName)) {
+    log.error(`Invalid routing table name: ${tableName}`);
+    throw new Error(`Invalid routing table name: ${tableName}`);
+  }
   if (_.has(rtIdCache, tableName))
     return rtIdCache[tableName];
   return new Promise((resolve, reject) => {
+    // async-lock takes this as a callback-style task because of the done argument, so the promise it
+    // returns is discarded: a throw or a rejected await would never release the lock and would leave
+    // the outer promise pending for good, since this lock has no timeout. every path ends in done()
+    //
+    // FIXME: this lock is process local and the flock further down covers only the append
     lock.acquire(LOCK_RT_TABLES, async function(done) {
-      // separate bits in fwmark for vpn client and regular WAN
-      const bitOffset = type === RT_TYPE_VC ? 10 : 0;
-      const maxTableId = type === RT_TYPE_VC ? 64 : 512;
-      let cmd = "cat /etc/iproute2/rt_tables | grep -v '#' | awk '{print $1,\"\\011\",$2}'";
-      let result = await exec(cmd);
-      if (result.stderr !== "") {
-        log.error("Failed to read rt_tables.", result.stderr);
-      }
-      const entries = result.stdout.split('\n');
-      const usedTid = [];
-      for (var i in entries) {
-        const entry = entries[i];
-        const line = entry.split(/\s+/);
-        const tid = line[0];
-        const name = line[1];
-        usedTid.push(tid);
-        if (name === tableName) {
-          if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
-            log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
-            await removeCustomizedRoutingTable(tableName);
-          } else {
-            log.debug("Table with same name already exists: " + tid);
-            done(null, Number(tid));
-            return;
+      try {
+        // separate bits in fwmark for vpn client and regular WAN
+        const bitOffset = type === RT_TYPE_VC ? 10 : 0;
+        const maxTableId = type === RT_TYPE_VC ? 64 : 512;
+        // an unreadable rt_tables has to fail the call: with no content every id looks free and the
+        // loop below would hand out one that is already in use
+        const content = await fsp.readFile('/etc/iproute2/rt_tables', 'utf8');
+        const usedTid = [];
+        for (const entry of content.split('\n')) {
+          // a comment can follow an entry, so drop the whole line if it holds a '#' at all, then
+          // take the id and the name from the first two fields
+          if (entry.includes('#')) continue;
+          const line = entry.trim().split(/\s+/);
+          const tid = line[0];
+          const name = line[1];
+          if (!tid) continue;
+          usedTid.push(tid);
+          if (name === tableName) {
+            if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
+              log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
+              await removeCustomizedRoutingTable(tableName);
+            } else {
+              log.debug("Table with same name already exists: " + tid);
+              done(null, Number(tid));
+              return;
+            }
           }
         }
-      }
-      // find unoccupied table id between 1 - maxTableId
-      let id = 1;
-      while (id < maxTableId) {
-        if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
-          break;
-        id++;
-      }
-      if (id == maxTableId) {
-        done(`Insufficient space to create routing table for ${tableName}, type ${type}`, null);
-        return;
-      }
-      cmd = `sudo bash -c 'flock ${LOCK_FILE} -c "echo -e ${id << bitOffset}\\\t${tableName} >> /etc/iproute2/rt_tables; \
+        // find unoccupied table id between 1 - maxTableId
+        let id = 1;
+        while (id < maxTableId) {
+          if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
+            break;
+          id++;
+        }
+        if (id == maxTableId) {
+          done(`Insufficient space to create routing table for ${tableName}, type ${type}`, null);
+          return;
+        }
+        // the redirections and the pipeline need a shell, so flock is given bash directly instead of
+        // being wrapped in one. bash is named rather than using flock's own -c, which picks $SHELL
+        // and falls back to /bin/sh, where the builtin echo has no -e and would emit a literal "-e"
+        const script = `echo -e "${id << bitOffset}\\t${tableName}" >> /etc/iproute2/rt_tables; \
         cat /etc/iproute2/rt_tables | sort | uniq > /etc/iproute2/rt_tables.new; \
         cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
-        rm /etc/iproute2/rt_tables.new"'`;
-      log.info("Append new routing table: ", cmd);
-      result = await exec(cmd);
-      if (result.stderr !== "") {
-        log.error("Failed to create customized routing table.", result.stderr);
-        done(result.stderr, null);
-        return;
+        rm /etc/iproute2/rt_tables.new`;
+        log.info("Append new routing table: ", script);
+        const result = await execFile('sudo', ['flock', LOCK_FILE, 'bash', '-c', script]);
+        if (result.stderr !== "") {
+          log.error("Failed to create customized routing table.", result.stderr);
+          done(result.stderr, null);
+          return;
+        }
+        done(null, id << bitOffset);
+      } catch (err) {
+        log.error(`Failed to create routing table ${tableName}`, err.message);
+        done(err, null);
       }
-      done(null, id << bitOffset);
     }, function(err, ret) {
       if (err)
         reject(err);
@@ -311,6 +344,7 @@ async function addMultiPathRouteToTable(dest, tableName, af = 4, metric, ...mult
 }
 
 module.exports = {
+  isValidTableName,
   createCustomizedRoutingTable: createCustomizedRoutingTable,
   removeCustomizedRoutingTable: removeCustomizedRoutingTable,
   createPolicyRoutingRule: createPolicyRoutingRule,
