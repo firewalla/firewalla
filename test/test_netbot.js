@@ -43,6 +43,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const f = require('../net2/Firewalla.js');
+const moment = require('moment-timezone/moment-timezone.js');
+
+// localized time of the box, mirrors what netbot puts into loc-args/body_loc_args
+function localizedTime(ts) {
+  const tz = sysManager.getTimezone();
+  return (tz ? moment(ts).tz(tz) : moment(ts)).format("LT");
+}
 
 // ctx is the mocha context of the calling test. A box only records the kinds of flow its enabled
 // features produce, so a prefix with no data means there is nothing to exercise rather than a
@@ -732,7 +739,7 @@ describe('test netbot', function(){
     expect(await netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA", "name": "my1@firewalla.com", "dName": "Device-abc", "ts": 1743556883664})).to.be.eql({
       "msg": "A new phone (Device-abc) is paired with your Firewalla box.",
       "args": {eid: "7wZYL2pk6hkzF313f8FkIA", dName: "Device-abc", deviceName: "Device-abc", name: "my1@firewalla.com", ts: 1743556883664},
-      "localArgs": ["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 1743556883664, "my1@firewalla.com"],
+      "localArgs": ["7wZYL2pk6hkzF313f8FkIA", "Device-abc", localizedTime(1743556883664), "my1@firewalla.com"],
     })
   });
 
@@ -740,14 +747,14 @@ describe('test netbot', function(){
     expect(await netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc"})).to.be.eql({
       "msg": "A new phone (Device-abc) is paired with your Firewalla box.",
       "args": {eid: "7wZYL2pk6hkzF313f8FkIA", dName: "Device-abc", deviceName: "Device-abc", name: "", ts: 0},
-      "localArgs": ["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 0, ""],
+      "localArgs": ["7wZYL2pk6hkzF313f8FkIA", "Device-abc", "", ""],
     })
   });
 
   it('should get event message without device name', async() => {
     const payload = await netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA", "name": "my1@firewalla.com", "ts": 1743556883664});
     expect(payload.msg).to.be.equal("A new phone is paired with your Firewalla box.");
-    expect(payload.localArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "", 1743556883664, "my1@firewalla.com"]);
+    expect(payload.localArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "", localizedTime(1743556883664), "my1@firewalla.com"]);
   });
 
   it('should not get event message of unsupported event type', async() => {
@@ -764,7 +771,7 @@ describe('test netbot', function(){
     expect(payload.titleLocalKey).to.be.equal('NEW_EVENT_TITLE_phone_paired');
     expect(payload.bodyLocalMsg).to.be.undefined;
     expect(payload.message).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
-    expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 1743556883664, "my1@firewalla.com"]);
+    expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc", localizedTime(1743556883664), "my1@firewalla.com"]);
     expect(payload.payload.dName).to.be.equal("Device-abc");
     expect(payload.payload.name).to.be.equal("my1@firewalla.com");
   });
