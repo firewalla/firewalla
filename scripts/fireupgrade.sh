@@ -207,6 +207,15 @@ function map_target_branch {
     "goldplus2:beta_7_0")
       echo "beta_23_0"
       ;;
+    "crystal:release_6_0")
+      echo "release_15_0"
+      ;;
+    "crystal:beta_6_0")
+      echo "beta_24_0"
+      ;;
+    "crystal:beta_7_0")
+      echo "beta_25_0"
+      ;;
     "*:master")
       echo "master"
       ;;
