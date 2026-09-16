@@ -33,8 +33,8 @@ class Metrics {
     return instance;
   }
 
-  async incr(hkey) {
-    await rclient.hincrbyAsync(key, hkey, 1);
+  async incr(hkey, increment = 1) {
+    await rclient.hincrbyAsync(key, hkey, increment);
   }
 
   async getMetrics() {
