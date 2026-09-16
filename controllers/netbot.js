@@ -391,10 +391,17 @@ class netBot extends ControllerBot {
     }
   }
 
-  // time of the day in the timezone of the box, e.g. 03:00 AM, defaults to now
+  // time of the day of a timestamp in seconds, in the timezone of the box, defaults to now
   _localizedTimeOfDay(ts = Date.now() / 1000) {
+    return this._localizedTime(ts * 1000);
+  }
+
+  // localized short time of a timestamp in milliseconds, e.g. 3:00 AM, same format as the one used
+  // by alarms, e.g. ALARM_VPN_RESTORE. Returns "" if the timestamp is unknown
+  _localizedTime(ts) {
+    if (!ts) return "";
     const timezone = sysManager.getTimezone();
-    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
+    return (timezone ? moment(ts).tz(timezone) : moment(ts)).format("LT");
   }
 
   // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
@@ -415,7 +422,8 @@ class netBot extends ControllerBot {
         payload.args.deviceName = dName; // legacy key, kept for apps that do not read dName yet
         payload.args.name = name;
         payload.args.ts = ts;
-        payload.localArgs = [eid, dName, ts, name];
+        // loc-args/body_loc_args carry the localized time of the box instead of the raw timestamp
+        payload.localArgs = [eid, dName, this._localizedTime(ts), name];
         payload.category = Constants.NOTIF_CATEGORY_PHONE_PAIRED;
         break;
       }
