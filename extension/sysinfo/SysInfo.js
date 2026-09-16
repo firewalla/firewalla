@@ -747,29 +747,29 @@ async function getEthernetInfo() {
 }
 
 async function getWlanInfo() {
+  const localWlanInfo = {};
+
   for (const intf of platform.getAllNicNames()) try {
     const res = await exec(`iwconfig ${intf} | grep Quality`).catch(() => null)
     if (!res || !res.stdout || !res.stdout.length) {
       log.debug('[getWlanInfo] skipping', intf, 'no output')
       continue
     }
-
     const segments = res.stdout.split('=')
     // unconnected interface might be
     // Link Quality:0  Signal level:0  Noise level:0
     if (segments.length == 1) {
       log.debug('[getWlanInfo] not connected', intf, segments)
-      wlanInfo[intf] = {};
+      localWlanInfo[intf] = {};
       continue
     }
-
     // Link Quality=80/100  Signal level=53/100  Noise level=0/100
     for (const i in segments) {
       segments[i] = segments[i].split('/')
     }
     log.debug('[getWlanInfo]', segments)
-    if (!wlanInfo[intf]) wlanInfo[intf] = {}
-    const wlan = wlanInfo[intf]
+    if (!localWlanInfo[intf]) localWlanInfo[intf] = {}
+    const wlan = localWlanInfo[intf]
     wlan.quality = segments[1][0]
     wlan.signal = segments[2][0]
     wlan.noise = segments[3][0]
@@ -777,7 +777,15 @@ async function getWlanInfo() {
     log.error('Failed to parse wlan info for', intf, err)
   }
 
-  wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  try {
+    localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  } catch (err) {
+    log.error('Failed to get WLAN kernel reload state', err)
+    if (Object.prototype.hasOwnProperty.call(wlanInfo, 'kernelReload'))
+      localWlanInfo.kernelReload = wlanInfo.kernelReload
+  }
+  wlanInfo = localWlanInfo;
+
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
 }
@@ -1103,6 +1111,7 @@ async function getReleaseInfo() {
 
 module.exports = {
   getSysInfo: getSysInfo,
+  getWlanInfo: getWlanInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
