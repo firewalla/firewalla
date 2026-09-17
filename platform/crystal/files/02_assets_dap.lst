@@ -1,1 +1,1 @@
-../../gold/files/02_assets_dap.lst
+/home/pi/.firewalla/run/assets/dap /crystal/dap 755 "sudo systemctl stop fwdap" "sudo systemctl start fwdap"
