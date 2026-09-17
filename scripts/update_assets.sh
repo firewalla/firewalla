@@ -82,8 +82,23 @@ while IFS= read -r line; do
   expected_hash=""
   for attempt in 1 2 3 4 5; do
     expected_hash=$(curl -sf --connect-timeout 10 -m 30 "$hash_url")
-    [ ${#expected_hash} = 64 ] && break
-    echo "Attempt $attempt: failed to get valid hash from $hash_url, retry in $((attempt*5))s"
+    curl_rc=$?
+    if [ "$curl_rc" = 0 ] && [ ${#expected_hash} = 64 ]; then
+      break
+    fi
+    if [ "$curl_rc" = 22 ]; then
+      echo "Attempt $attempt: $hash_url returned an HTTP error, not retrying"
+      break
+    fi
+    if [ "$curl_rc" = 0 ]; then
+      echo "Attempt $attempt: $hash_url returned ${#expected_hash} bytes, expecting 64, not retrying"
+      break
+    fi
+    if [ "$attempt" = 5 ]; then
+      echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc)"
+      break
+    fi
+    echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc), retry in $((attempt*5))s"
     sleep $((attempt * 5))
   done
   if [ ${#expected_hash} != 64 ]; then
