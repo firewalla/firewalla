@@ -24,8 +24,14 @@ CFG=${CRYSTAL_ONBOARD_CONFIG:-/home/pi/.firewalla/onboard-config.json}
 MAP=/run/crystal-ifmap                          # /run is tmpfs and always up this early
 [ -r "$CFG" ] || { echo "ifmap: no $CFG, nothing to do"; exit 0; }
 
+# A missing or broken jq must not look like an empty config: without the table the names are not
+# pinned at all, which is a hard failure, not a no-op.
+command -v jq >/dev/null 2>&1 || { echo "ifmap: ERROR jq not installed, cannot read $CFG"; exit 1; }
 # MACs are lowercased on the way in: sysfs reports lowercase, but a hand-edited config might not.
-jq -r '.provision.ifmap // {} | to_entries[] | "\(.key) \(.value | ascii_downcase)"' "$CFG" 2>/dev/null | sort > "$MAP"
+jq -r '.provision.ifmap // {} | to_entries[] | "\(.key) \(.value | ascii_downcase)"' "$CFG" > "$MAP.raw" \
+  || { echo "ifmap: ERROR could not parse $CFG"; exit 1; }
+sort "$MAP.raw" > "$MAP"
+rm -f "$MAP.raw"
 want=$(grep -c '^eth' "$MAP")
 [ "$want" -gt 0 ] || { echo "ifmap: no .provision.ifmap in $CFG, nothing to do"; exit 0; }
 
@@ -79,6 +85,9 @@ rc=0
 while read -r name mac; do
   cur=$(iface_of_mac "$mac") || { echo "ifmap: WARN $mac absent, $name left unassigned"; continue; }
   [ "$cur" = "$name" ] && continue
+  # $cur was only downed if it happened to hold a target name and got parked; the kernel refuses to
+  # rename an interface that is UP.
+  ip link set "$cur" down 2>/dev/null
   if ip link set "$cur" name "$name" 2>/dev/null; then
     echo "ifmap: $mac -> $name (was $cur)"
   else

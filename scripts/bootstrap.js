@@ -272,7 +272,6 @@ async function main(onboard) {
   log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
 
   await restartFireApi();
-  log('fireapi restarted');
 
   await persistState({
     stage: 'completed',
