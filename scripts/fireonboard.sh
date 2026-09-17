@@ -18,7 +18,16 @@ CLOCK_WAIT="${FW_ONBOARD_CLOCK_WAIT:-120}"  # seconds to keep retrying the time 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 exec >>"$LOG" 2>&1
 uptime_s(){ read -r _u _ < /proc/uptime; echo "${_u%.*}"; }
-log(){ printf '[fireonboard %s up=%ss] %s\n' "$(date -Is 2>/dev/null || date)" "$(uptime_s)" "$*"; }
+_log(){
+  local level=$1; shift
+  local color=32
+  [ "$level" = WARN ] && color=33
+  [ "$level" = ERROR ] && color=31
+  printf '%s \033[%dm%s\033[39m Fireonboard: %s (up=%ss)\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$color" "$level" "$*" "$(uptime_s)"
+}
+log(){ _log INFO "$*"; }
+warn(){ _log WARN "$*"; }
 
 # Echoes the default-route address, else any global one. Empty when the box has no address at all.
 current_ip(){
@@ -81,16 +90,16 @@ done
 T_NET=$(uptime_s)
 log "ready: internet confirmed via $NET_VIA"
 
-t0=$(uptime_s); synced=0
+t0=$(uptime_s); synced=0; clock_msg=""
 while [ $(( $(uptime_s) - t0 )) -lt "$CLOCK_WAIT" ]; do
-  SYNC_ONCE=true "$SCRIPTS_DIR/sync_time.sh" >/dev/null 2>&1 && { synced=1; break; }
-  sleep 1
+  if clock_msg=$("$SCRIPTS_DIR/sync_clock.sh" 2>&1); then synced=1; break; fi
+  sleep 5
 done
 T_CLOCK=$(uptime_s)
 if [ "$synced" = 1 ]; then
-  log "clock: $(date -Is)"
+  log "$clock_msg"
 else
-  log "WARN: no time sync after ${CLOCK_WAIT}s, clock is $(date -Is) - bootstrap may fail on TLS"
+  warn "no time sync after ${CLOCK_WAIT}s (${clock_msg:-no result}), clock is $(date -Is), bootstrap may fail on TLS"
 fi
 
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
@@ -102,7 +111,7 @@ if [ -d "$NM_PATH" ]; then
       log "early linked firewalla/node_modules -> $NM_PATH "
   fi
 else
-  log "WARN: $NM_PATH missing — bootstrap.js will fail to resolve its dependencies"
+  warn "$NM_PATH missing, bootstrap.js will fail to resolve its dependencies"
 fi
 
 T_BOOTSTRAP=$(uptime_s)
@@ -118,7 +127,7 @@ if [ $rc -eq 0 ]; then
   touch "$DONE" 2>/dev/null
   log "marked $DONE"
 else
-  log "NOT marking done - will retry next boot (or: sudo rm $DONE && sudo systemctl start fireonboard)"
+  warn "not marking done - will retry next boot (or: sudo rm $DONE && sudo systemctl start fireonboard)"
 fi
 log "=== fireonboard end (rc=$rc) ==="
 exit $rc
