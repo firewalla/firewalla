@@ -29,31 +29,30 @@ _log(){
 log(){ _log INFO "$*"; }
 warn(){ _log WARN "$*"; }
 
-# Echoes "<ip> [note]": the default-route address, else any global one — reachable from the LAN side
-# only, so it gets labelled. Empty when the box has no address at all.
+# Echoes the default-route address, else any global one. Empty when the box has no address at all.
 current_ip(){
   local dev="" ip=""
   dev=$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
   [ -n "$dev" ] && ip=$(ip -4 -br addr show "$dev" 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
   [ -n "$ip" ] && { echo "$ip"; return; }
   ip=$(ip -4 -br addr show scope global 2>/dev/null | awk 'NR==1{print $3}' | cut -d/ -f1)
-  [ -n "$ip" ] && echo "$ip LAN port"
+  [ -n "$ip" ] && echo "$ip"
 }
 
 # banner <headline> [detail] — the console is the only channel when the box is unreachable.
 banner(){
-  local ip="" note=""
-  read -r ip note <<< "$(current_ip)"
+  local ip=""
+  ip=$(current_ip)
   {
     printf '\n'
     printf '  ============================================================\n'
     printf '    %s\n' "$1"
     [ -n "${2:-}" ] && printf '    %s\n' "$2"
-    [ -n "$ip" ] && printf '    IP:  %s%s\n' "$ip" "${note:+   [$note]}"
+    [ -n "$ip" ] && printf '    IP:  %s\n' "$ip"
     printf '  ============================================================\n\n'
   } > /etc/issue 2>/dev/null
   systemctl restart getty@tty1 2>/dev/null || true   # force getty to redraw /etc/issue now
-  log "console banner: $1 (ip=${ip:-none}${note:+ $note})"
+  log "console banner: $1 (ip=${ip:-none})"
 }
 
 # Any one is enough: upstreams may drop ICMP or hijack DNS. No TLS — a stale clock breaks handshakes.
