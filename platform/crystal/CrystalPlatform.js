@@ -20,6 +20,10 @@ const f = require('../../net2/Firewalla.js');
 const fs = require('fs');
 const log = require('../../net2/logger.js')(__filename);
 const { execSync } = require('child_process');
+const _ = require('lodash');
+
+const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
+const SIGNATURE_NIC = 'eth0';
 
 class CrystalPlatform extends Platform {
   constructor() {
@@ -33,6 +37,30 @@ class CrystalPlatform extends Platform {
 
   getBoardSerial() {
     return this.getSignatureMac();
+  }
+
+  getSignatureMac() {
+    if (this.signatureMac)
+      return this.signatureMac;
+
+    const mac = this.readProvisionedMac(SIGNATURE_NIC);
+    if (mac) {
+      this.signatureMac = mac.toUpperCase();
+      return this.signatureMac;
+    }
+
+    log.error(`No ${SIGNATURE_NIC} entry in .provision.ifmap of ${ONBOARD_CONFIG}, falling back to the current ${SIGNATURE_NIC}`);
+    return super.getSignatureMac();
+  }
+
+  readProvisionedMac(name) {
+    try {
+      const onboard = JSON.parse(fs.readFileSync(ONBOARD_CONFIG, {encoding: 'utf8'}));
+      return _.get(onboard, ['provision', 'ifmap', name], null);
+    } catch (err) {
+      log.error(`Failed to read ${ONBOARD_CONFIG}: ${err.message}`);
+      return null;
+    }
   }
 
   getLicenseTypes() {
