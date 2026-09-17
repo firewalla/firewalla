@@ -30,12 +30,14 @@ if [ "${1:-}" = "--check" ]; then
   exit $?
 fi
 
-SELF=$(readlink -f "$0")
-RUNNER="/dev/shm/.$(basename "$SELF")"
-if [[ "$SELF" != /dev/shm/* ]]; then
-  cp -f "$SELF" "$RUNNER" || { log "ERROR failed to stage $RUNNER"; exit 1; }
-  chmod 755 "$RUNNER"
-  exec env FIREWALLA_POST_RESET_OP="$FIREWALLA_POST_RESET_OP" \
+# /dev/shm is world-writable, stage into a private mkdtemp dir so the runner cannot be pre-created or swapped
+if [ "${FIREWALLA_RESET_STAGED:-}" != "1" ]; then
+  SELF=$(readlink -f "$0") || { log "ERROR failed to resolve $0"; exit 1; }
+  STAGE=$(mktemp -d /dev/shm/.fwreset.XXXXXXXX) || { log "ERROR failed to create staging directory"; exit 1; }
+  RUNNER="$STAGE/reset.sh"
+  cp -f "$SELF" "$RUNNER" && chmod 700 "$RUNNER" || { log "ERROR failed to stage $RUNNER"; rm -fr "$STAGE"; exit 1; }
+  exec env FIREWALLA_RESET_STAGED=1 \
+           FIREWALLA_POST_RESET_OP="$FIREWALLA_POST_RESET_OP" \
            FIREWALLA_RESET_DELAY="$FIREWALLA_RESET_DELAY" "$RUNNER"
 fi
 

@@ -123,7 +123,9 @@ class Platform {
       try {
         const mac = cp.execSync("cat /sys/class/net/eth0/address", {encoding: 'utf8'});
         this.signatureMac = mac && mac.trim().toUpperCase();
-      } catch (err) {}
+      } catch (err) {
+        log.error(`Failed to read signature MAC from eth0: ${err.message}`);
+      }
     }
     return this.signatureMac;
   }

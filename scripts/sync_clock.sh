@@ -2,7 +2,7 @@
 
 set -u
 
-SITES="${FW_CLOCK_SITES:-cloudflare.com live.com bing.com microsoft.com amazon.com google.com facebook.com baidu.com qq.com}"
+SITES="${FW_CLOCK_SITES:-cloudflare.com live.com bing.com microsoft.com amazon.com google.com facebook.com time.gov time.is}"
 QUORUM="${FW_CLOCK_QUORUM:-3}"
 SPREAD="${FW_CLOCK_SPREAD:-5}"
 TOLERANCE="${FW_CLOCK_TOLERANCE:-30}"
