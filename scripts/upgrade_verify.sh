@@ -305,7 +305,7 @@ uv_verify_release_commit() {
     # gpgv trusts exactly the keys in the keyring, so a good signature there
     # already means "signed by us" - no separate fingerprint match needed
     if ! uv_gpgv_verify_tag "$tag" "$keyring"; then
-      uv_log "tag $tag signature not from a trusted key"
+      uv_log "tag $tag is unsigned or not signed by a trusted key"
       continue
     fi
     if [[ -n "$floor" ]]; then
