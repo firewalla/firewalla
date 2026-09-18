@@ -88,7 +88,12 @@ remote_branch=$(map_target_branch $branch)
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
-$MGIT fetch --tags
+# bare fetch: the refspec above scopes it, and default tag auto-following then
+# brings only this branch's tags, which is what keeps "git describe --tags"
+# (/tmp/REPO_TAG) working. --tags would pull every platform's tags plus the
+# history behind them; naming the branch instead writes FETCH_HEAD only and
+# fetches no tags at all.
+$MGIT fetch
 
 current_hash=$(git rev-parse HEAD)
 latest_hash=$(git rev-parse origin/$remote_branch)
