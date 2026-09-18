@@ -1,56 +1,22 @@
 #!/bin/bash
+#
+# Compatibility shim. The clock sync lives in sync_clock.sh now; this stays only so firerouter's
+# firerouter_upgrade.sh keeps working until it is pointed at sync_clock.sh directly. Delete once
+# no caller refers to it.
+#
+# SYNC_ONCE=true meant one pass; anything else meant retry until it succeeds.
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${PI_HOME:=/home/pi}
 
-RETRY_INTERVAL=60
-TIME_THRESHOLD="2021-05-20"
+if ${SYNC_ONCE:-false}; then
+  retry=1
+else
+  retry=0
+fi
 
-function sync_website() {
-    time_website=$1
-    logger "Syncing time from ${time_website}..."
-    time=$(curl -ILsm5 ${time_website} | awk -F ": " '/^[Dd]ate: / {print $2}'|tail -1)
-    if [[ "x$time" == "x" ]]; then
-        logger "ERROR: Failed to load date info from website: $time_website"
-        return 1
-    else
-        # compare website time against threshold to prevent it goes bad in some rare cases
-        tsWebsite=$(date -d "$time" +%s)
-        tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
-        if [ $tsWebsite -ge $tsThreshold ];
-        then
-          echo "$tsWebsite";
-          return 0
-        else
-          return 1
-        fi
-    fi
-}
+# prefer the bootstrap copy, for the same reason fire-time.sh does
+SYNC_CLOCK=$PI_HOME/scripts/sync_clock.sh
+[ -s "$SYNC_CLOCK" ] || SYNC_CLOCK=$FIREWALLA_HOME/scripts/sync_clock.sh
 
-function sync_time() {
-    tsWebsite=$(sync_website status.github.com || sync_website google.com || sync_website live.com || sync_website facebook.com)
-    if [[ -z $tsWebsite ]]; then
-      tsWebsite=0
-    fi
-    tsSystem=$(date +%s)
-    tsDiff=$((tsWebsite - tsSystem))
-    if [[ $tsDiff -ge -30 ]];
-    then
-        logger "Sync time to $tsWebsite($(date -d @$tsWebsite))"
-        sudo date +%s -s "@$tsWebsite";
-        return $?
-    fi
-    return 1
-}
-
-logger "FIREONBOOT.UPGRADE.DATE.SYNC"
-
-rc=0
-while ! sync_time
-do
-    ${SYNC_ONCE:-false} && { rc=1; break; }
-    logger "Sleeping for $RETRY_INTERVAL seconds before next try ..."
-    sleep $RETRY_INTERVAL
-done
-
-logger "FIREONBOOT.UPGRADE.DATE.SYNC.DONE"
-sync
-exit $rc
+exec env FW_CLOCK_RETRY=$retry "$SYNC_CLOCK" "$@"
