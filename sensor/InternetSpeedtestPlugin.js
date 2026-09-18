@@ -19,7 +19,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const CronJob = require('cron').CronJob;
 const cronParser = require('cron-parser');
 const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
@@ -295,7 +295,20 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async listAvailableServers(bindIP, dnsServers, vendor) {
-    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${vendor ? `--vendor ${vendor}` : ""} -l --json`).then((result) => {
+    // execFile throws synchronously on a non-string file, the old shell command merely failed
+    if (!cliBinaryPath) {
+      log.error(`Failed to list available servers`, "speedtest cli is not available on this platform");
+      return [];
+    }
+    const args = [];
+    if (bindIP)
+      args.push("-b", String(bindIP));
+    if (dnsServers)
+      args.push("--nameserver", dnsServers.join(","));
+    if (vendor)
+      args.push("--vendor", String(vendor));
+    args.push("-l", "--json");
+    const servers = await execFile(cliBinaryPath, args).then((result) => {
       const r = JSON.parse(result.stdout.trim());
       return (r && r.servers || []).map(server => this._convertServer(server));
     }).catch((err) => {
@@ -366,6 +379,22 @@ class InternetSpeedtestPlugin extends Sensor {
     return await rclient.hgetAsync(Constants.REDIS_KEY_PLUGIN_RUNENV, featureName);
   }
 
+  // extraEnvs is carried as a shell-style "KEY=VALUE KEY2=VALUE2" prefix, e.g.
+  // "GODEBUG=netedns0=0,netdns=cgo+1". Turn it into an object so it can be handed to execFile as env
+  // instead of being pasted in front of a command line. A token that is not a plain KEY=VALUE is
+  // dropped rather than repaired, so anything carrying shell punctuation contributes nothing.
+  parseRunEnv(extraEnvs) {
+    const env = {};
+    if (!_.isString(extraEnvs))
+      return env;
+    for (const token of extraEnvs.split(/\s+/)) {
+      const match = token.match(/^([A-Za-z_]\w*)=([\w.,:+\/@=-]*)$/);
+      if (match)
+        env[match[1]] = match[2];
+    }
+    return env;
+  }
+
   getVendorCandidates() {
     return !_.isEmpty(this.config.vendorCandidates) ? this.config.vendorCandidates : ["mlab", "ookla"];
   }
@@ -428,7 +457,31 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async runSpeedTest(bindIP, dnsServers, serverId, noUpload = false, noDownload = false, vendor = "mlab", extraOpts = {}, extraEnvs = "") {
-    const result = await exec(`${extraEnvs} timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json ${Object.keys(extraOpts).map(k => `--${k} ${extraOpts[k]}`).join(" ")}`)
+    if (!cliBinaryPath) {
+      log.error(`Failed to run speed test from ${bindIP}`, "speedtest cli is not available on this platform");
+      return {success: false, err: "speedtest cli is not available on this platform"};
+    }
+    const args = ["90", cliBinaryPath];
+    if (bindIP)
+      args.push("-b", String(bindIP));
+    if (dnsServers)
+      args.push("--nameserver", dnsServers.join(","));
+    if (serverId)
+      args.push("-s", String(serverId));
+    if (noUpload)
+      args.push("--no-upload");
+    if (noDownload)
+      args.push("--no-download");
+    if (vendor)
+      args.push("--vendor", String(vendor));
+    args.push("--json");
+    for (const k of Object.keys(extraOpts)) {
+      args.push(`--${k}`);
+      // an empty value used to collapse into nothing in the shell command, keep it a bare flag
+      if (extraOpts[k] !== null && extraOpts[k] !== undefined && extraOpts[k] !== "")
+        args.push(String(extraOpts[k]));
+    }
+    const result = await execFile("timeout", args, {env: Object.assign({}, process.env, this.parseRunEnv(extraEnvs))})
       .then(result => JSON.parse(result.stdout.trim()))
       .then((result) => {
         const r = this._convertTestResult(result);
