@@ -826,6 +826,39 @@
       "eventsLimit": 10000,
       "eventsExpire": 604800,
       "latestStateEventsExpire": 2592000,
+      "eventClassifierSettings": [
+        {
+          "key": "wan_monitor",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              {
+                "or": [
+                  { "field": "action_type", "value": "ping_RTT" },
+                  { "field": "action_type", "value": "dns_RTT" },
+                  { "field": "action_type", "value": "http_RTT" },
+                  { "field": "action_type", "value": "ping_lossrate" },
+                  { "field": "action_type", "value": "dns_lossrate" },
+                  { "field": "action_type", "value": "http_lossrate" }
+                ]
+              }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["wan_intf_uuid"]
+        },
+        {
+          "key": "weak_password_scan_complete",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              { "field": "action_type", "value": "weak_password_scan_complete" }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["found"]
+        }
+      ],
       "intervals": {
         "cleanEventsByTime": 3600,
         "cleanEventsByCount": 300,

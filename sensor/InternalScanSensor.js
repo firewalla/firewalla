@@ -486,11 +486,15 @@ class InternalScanSensor extends Sensor {
 
   async addScanCompleteEvent(key, task, ets) {
     const results = task && task.results || [];
+    const numOfWeakPasswords = this._countWeakPasswords(results);
     await this._emitScanEvent("weak_password_scan_complete", {
       key: key,
       trigger: this._getTaskTrigger(key),
       numOfHosts: results.length,
-      numOfWeakPasswords: this._countWeakPasswords(results),
+      numOfWeakPasswords,
+      // 0/1 flag rather than the raw count, so a scan that found nothing and a scan that found
+      // something are two distinct event types to the classifier - see EventClassifier
+      found: numOfWeakPasswords > 0 ? 1 : 0,
       duration: task && task.ts ? Math.round(ets - task.ts) : 0
     });
   }
