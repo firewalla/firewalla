@@ -64,17 +64,33 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin:{
-        servers: await dc.getServers(),
-        killSwitch: (await dc.getSettings()).killSwitch
-      }})} catch(err) {};
+      try {
+        const settings = await dc.getSettings();
+        await extensionManager._precedeRecord(msg.id, {origin:{
+          servers: await dc.getServers(),
+          killSwitch: settings.killSwitch,
+          vpnClient: settings.vpnClient
+        }})
+      } catch(err) {};
 
       if (data) {
+        // Validate before writing anything, so a bad field can't leave half
+        // of the payload persisted.
+        const setsVpnClient = Object.prototype.hasOwnProperty.call(data, 'vpnClient');
+        if (setsVpnClient) {
+          const vpnClient = data.vpnClient;
+          if (vpnClient !== null && !(vpnClient && typeof vpnClient === 'object' && typeof vpnClient.state === 'boolean' && typeof vpnClient.profileId === 'string')) {
+            throw new Error("vpnClient must be null or {state: boolean, profileId: string}");
+          }
+        }
         if (Array.isArray(data.servers)) {
           await dc.setServers(data.servers, false);
         }
         if (Object.prototype.hasOwnProperty.call(data, 'killSwitch') && typeof data.killSwitch === 'boolean') {
           await dc.updateSettings({ killSwitch: data.killSwitch });
+        }
+        if (setsVpnClient) {
+          await dc.updateSettings({ vpnClient: data.vpnClient });
         }
         sem.sendEventToFireMain({ type: 'DOH_REFRESH' });
       }
@@ -93,13 +109,14 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
       const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
       const settings = await dc.getSettings();
-      return { selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch };
+      return { selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch, vpnClient: settings.vpnClient };
     });
 
     extensionManager.onCmd("dohReset", async (msg, data) => {
       try {await extensionManager._precedeRecord(msg.id, {origin: {
         servers: await dc.getServers(), customizedServers: await dc.getCustomizedServers(), allServers: await dc.getAllServerNames(),
         killSwitch: (await dc.getSettings()).killSwitch,
+        vpnClient: (await dc.getSettings()).vpnClient,
         enabled: fc.isFeatureOn(featureName)}})
       } catch(err) {};
       sem.sendEventToFireMain({ type: 'DOH_RESET' });
@@ -128,8 +145,16 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     if (!fc.isFeatureOn(featureName)) {
       await dc.stop();
     } else {
-      const result = await dc.prepareConfig({}, reCheckConfig);
-      if (result) { dc.restart(); } else { await dc.start(); }
+      try {
+        const result = await dc.prepareConfig({}, reCheckConfig);
+        if (result) { dc.restart(); } else { await dc.start(); }
+      } catch (err) {
+        if (err.code !== dc.DOH_VPN_MARK_UNAVAILABLE) throw err;
+        // Running DoH unmarked would send queries out the plain WAN. Stop it
+        // instead and let the health check apply the user's killSwitch choice.
+        log.error("Cannot route DoH through the selected VPN client, stopping dnscrypt:", err.message);
+        await dc.stop();
+      }
     }
     await this.syncDnsmasqUpstreamConfig();
     await this.applyDnsmasqPolicyBindings();
