@@ -47,6 +47,7 @@ if [ -f "$FIREWALLA_HOME/platform/platform.sh" ]; then
 fi
 NTP_SVC="${NTP_SVC:-ntp}"
 NTP_STRATUM=""
+NTP_OFFSET=""
 
 # Never accept a source reading older than the release floor, nor older than the last time
 # fake-hwclock saved - a source behind the box's own last known good time is wrong, not early.
@@ -74,18 +75,27 @@ floor_ts() {
 ntp_upstream_synced() {
   local out leap
   if [ "$NTP_SVC" = "chrony" ]; then
-    # csv field 3 is stratum, field 14 the leap status ("Normal" once a source is selected)
+    # csv field 3 is stratum, field 5 the system clock's own remaining offset from NTP time in
+    # seconds, field 14 the leap status ("Normal" once a source is selected)
     out=$(chronyc -c tracking 2>/dev/null) || return 1
     NTP_STRATUM=$(echo "$out" | cut -d, -f3)
+    NTP_OFFSET=$(echo "$out" | cut -d, -f5)
     leap=$(echo "$out" | cut -d, -f14)
     [ "$leap" = "Normal" ] || return 1
   else
-    out=$(ntpq -c "rv 0 leap,stratum" 2>/dev/null) || return 1
+    out=$(ntpq -c "rv 0 leap,stratum,offset" 2>/dev/null) || return 1
     NTP_STRATUM=$(echo "$out" | sed -n 's/.*stratum=\([0-9][0-9]*\).*/\1/p')
+    # ntpq reports the offset in milliseconds, everything below is seconds
+    NTP_OFFSET=$(echo "$out" | sed -n 's/.*offset=\([-0-9.]*\).*/\1/p')
+    [ -n "$NTP_OFFSET" ] && NTP_OFFSET=$(awk -v v="$NTP_OFFSET" 'BEGIN{printf "%.6f", v/1000}')
     leap=$(echo "$out" | sed -n 's/.*leap=\([0-9][0-9]*\).*/\1/p')
     [ "$leap" = "00" ] || return 1
   fi
-  [ -n "$NTP_STRATUM" ] && [ "$NTP_STRATUM" -ge 1 ] && [ "$NTP_STRATUM" -lt 10 ] 2>/dev/null
+  [ -n "$NTP_STRATUM" ] && [ "$NTP_STRATUM" -ge 1 ] && [ "$NTP_STRATUM" -lt 10 ] 2>/dev/null || return 1
+  # a daemon reports itself synchronized as soon as it has selected a source, while it may still be
+  # slewing a large error into the clock - at the default slew rate that takes minutes per second of
+  # error. Waiting it out is not this script's job, so hand back to the http path, which steps.
+  [ -n "$NTP_OFFSET" ] && awk -v v="$NTP_OFFSET" -v t="$TOLERANCE" 'BEGIN{ if (v<0) v=-v; exit !(v<=t) }'
 }
 
 # A dead daemon is a real problem on its own, and ntpd -gq / ntpdate step in either direction
@@ -176,7 +186,7 @@ while :; do
   # re-checked every round: on a slow boot the daemon may reach an upstream while we are retrying,
   # and once it has one it is a far better source than any HTTP header
   if ntp_upstream_synced; then
-    log "$NTP_SVC synced upstream at stratum $NTP_STRATUM, leaving the clock to it"
+    log "$NTP_SVC synced upstream at stratum $NTP_STRATUM, ${NTP_OFFSET}s off, leaving the clock to it"
     exit 0
   fi
   attempt && exit 0
