@@ -53,25 +53,39 @@ NTP_STRATUM=""
 # Note this cuts both ways: if the clock was far ahead when fake-hwclock last saved, the floor
 # inherits that error and every source is rejected until the saved file is refreshed.
 floor_ts() {
-  local base saved
+  local base saved raw file
   base=$(date -d "${FW_CLOCK_FLOOR:-2026-09-15}" +%s 2>/dev/null) || base=0
-  # fake-hwclock writes UTC, so it has to be read as UTC
-  saved=$(date -u -d "$(cat "${FW_CLOCK_HWCLOCK_FILE:-/data/fake-hwclock.data}" 2>/dev/null)" +%s 2>/dev/null) || saved=0
-  if [ "$saved" -gt "$base" ] 2>/dev/null; then base=$saved; fi
+  file="${FW_CLOCK_HWCLOCK_FILE:-/data/fake-hwclock.data}"
+  # the file has to be read and checked first: `date -d ""` is not an error, it succeeds and
+  # returns midnight today, which would silently become the floor whenever the file is missing
+  if [ -s "$file" ] && raw=$(cat "$file" 2>/dev/null) && [ -n "$raw" ]; then
+    # fake-hwclock writes UTC, so it has to be read as UTC
+    saved=$(date -u -d "$raw" +%s 2>/dev/null) || saved=0
+    if [ "$saved" -gt "$base" ] 2>/dev/null; then base=$saved; fi
+  fi
   echo "$base"
 }
 
 # The NTP daemon is configured with a local refclock at stratum 10 (ntp) / "local stratum 10"
-# (chrony) so it keeps answering clients when no upstream is reachable. That makes every "are you
-# synchronized" check true, so stratum is the only usable signal: a real upstream puts this box
-# below 10, the local fallback sits at 10-11, and an unsynchronized daemon reports 16.
+# (chrony) so it keeps answering clients when no upstream is reachable. Stratum alone therefore
+# cannot answer this: the local fallback sits at 10-11, but a daemon with no source at all reports
+# stratum 0 (chrony) or 16 (ntp), and 0 is below the fallback. So require the daemon to say it is
+# synchronized AND to sit between a real upstream (1) and the local fallback (10).
 ntp_upstream_synced() {
+  local out leap
   if [ "$NTP_SVC" = "chrony" ]; then
-    NTP_STRATUM=$(chronyc -c tracking 2>/dev/null | cut -d, -f3)
+    # csv field 3 is stratum, field 14 the leap status ("Normal" once a source is selected)
+    out=$(chronyc -c tracking 2>/dev/null) || return 1
+    NTP_STRATUM=$(echo "$out" | cut -d, -f3)
+    leap=$(echo "$out" | cut -d, -f14)
+    [ "$leap" = "Normal" ] || return 1
   else
-    NTP_STRATUM=$(ntpq -c "rv 0 stratum" 2>/dev/null | sed -n 's/.*stratum=\([0-9][0-9]*\).*/\1/p')
+    out=$(ntpq -c "rv 0 leap,stratum" 2>/dev/null) || return 1
+    NTP_STRATUM=$(echo "$out" | sed -n 's/.*stratum=\([0-9][0-9]*\).*/\1/p')
+    leap=$(echo "$out" | sed -n 's/.*leap=\([0-9][0-9]*\).*/\1/p')
+    [ "$leap" = "00" ] || return 1
   fi
-  [ -n "$NTP_STRATUM" ] && [ "$NTP_STRATUM" -lt 10 ] 2>/dev/null
+  [ -n "$NTP_STRATUM" ] && [ "$NTP_STRATUM" -ge 1 ] && [ "$NTP_STRATUM" -lt 10 ] 2>/dev/null
 }
 
 # A dead daemon is a real problem on its own, and ntpd -gq / ntpdate step in either direction

@@ -7,6 +7,7 @@
 # SYNC_ONCE=true meant one pass; anything else meant retry until it succeeds.
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${PI_HOME:=/home/pi}
 
 if ${SYNC_ONCE:-false}; then
   retry=1
@@ -14,4 +15,8 @@ else
   retry=0
 fi
 
-exec env FW_CLOCK_RETRY=$retry "${FIREWALLA_HOME}/scripts/sync_clock.sh" "$@"
+# prefer the bootstrap copy, for the same reason fire-time.sh does
+SYNC_CLOCK=$PI_HOME/scripts/sync_clock.sh
+[ -s "$SYNC_CLOCK" ] || SYNC_CLOCK=$FIREWALLA_HOME/scripts/sync_clock.sh
+
+exec env FW_CLOCK_RETRY=$retry "$SYNC_CLOCK" "$@"
