@@ -41,6 +41,10 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
 const OSI_RULES_KEY = "osi:rules:active";
+// updateOSIPool() rebuilds the pool into these and swaps them in with RENAME once the whole rebuild
+// has succeeded, so a crash or an exception mid-rebuild never leaves a truncated pool behind
+const OSI_KEY_TMP = "osi:active:tmp";
+const OSI_RULES_KEY_TMP = "osi:rules:active:tmp";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
 const OSI_ADMIN_TIMEOUT = "osi:admin:timeout";
 
@@ -453,23 +457,23 @@ class OSIPlugin extends Sensor {
     tagCache.set(cacheKey, 1);
   }
 
-  async processRule(policy) {
+  async processRule(policy, key) {
     // legacy device level internet access rule uses target to specify MAC address
     if (!_.isEmpty(policy.scope) || (policy.type === "mac" && policy.target &&hostTool.isMacAddress(policy.target))) {
       const macs = (policy.type === "mac" && policy.target && hostTool.isMacAddress(policy.target)) ? [policy.target] : policy.scope;
-      await rclient.saddAsync(OSI_RULES_KEY, macs.map((x) => `mac,${x}`));
+      await rclient.saddAsync(key, macs.map((x) => `mac,${x}`));
     } else if (!_.isEmpty(policy.tag)) {
       for (const tag of policy.tag) {
         // tag
         if (tag.startsWith("tag:")) {
           const tagId = tag.replace("tag:", "");
-          await this.processTagId(tagId, OSI_RULES_KEY);
+          await this.processTagId(tagId, key);
           // network
         } else if (tag.startsWith("intf:")) {
           const networkId = tag.replace("intf:", "");
           for (const network of Object.values(networkProfileManager.networkProfiles)) {
             if (network.getUniqueId() === networkId) {
-              this.processNetwork(network, OSI_RULES_KEY);
+              await this.processNetwork(network, key);
             }
           }
         }
@@ -485,7 +489,7 @@ class OSIPlugin extends Sensor {
           for (const identities of Object.values(identityManager.getAllIdentities())) {
             for (const identity of Object.values(identities)) {
               if (matchIdentity === identity.getUniqueId()) {
-                this.processIdentity(identity, OSI_RULES_KEY);
+                await this.processIdentity(identity, key);
               }
             }
           }
@@ -494,10 +498,19 @@ class OSIPlugin extends Sensor {
     } else { // all devices, add all networks in
       for (const network of Object.values(networkProfileManager.networkProfiles)) {
         if (network.isMonitoring()) {
-          this.processNetwork(network, OSI_RULES_KEY);
+          await this.processNetwork(network, key);
         }
       }
     }
+  }
+
+  // RENAME is atomic, but it errors when the source key does not exist. That is the legitimate
+  // "nothing qualifies for OSI" case, and there the live key has to be cleared instead.
+  async swapInPool(tmpKey, key) {
+    if (await rclient.existsAsync(tmpKey))
+      await rclient.renameAsync(tmpKey, key);
+    else
+      await rclient.unlinkAsync(key);
   }
 
   async updateOSIPool() {
@@ -513,30 +526,45 @@ class OSIPlugin extends Sensor {
     try {
       const policy = hostManager.getPolicyFast();
 
+      // strict (kill switch) clients, for the vpnClient policy paths below. A device/group/network
+      // assigned to a VPN client only gets a kill switch under strictVPN: VPNClient._prepareRoutes()
+      // pre-populates the device route ipset before the link is up only in that case.
       const profileIds = policy.vpnClient ? await hostManager.getAllActiveStrictVPNClients(policy.vpnClient) : [];
+      // enabled clients, for the route rule path below, which does not follow strictVPN
+      const activeProfileIds = policy.vpnClient ? hostManager.getAllActiveVPNClients(policy.vpnClient) : [];
 
       const rules = await pm2.getHighImpactfulRules();
 
-      await rclient.delAsync(OSI_RULES_KEY);
-      await rclient.delAsync(OSI_KEY);
+      // Build into the temp keys and swap them in at the end. The live pool is what the next boot's
+      // prepare_osi reads to arm the OSI ipsets before any rule is enforced, so rebuilding it in
+      // place would leave devices unprotected for a whole boot if the box went down, or a step here
+      // threw, halfway through.
+      await rclient.unlinkAsync([OSI_RULES_KEY_TMP, OSI_KEY_TMP]);
 
       const VWG_PREFIX_LEN = Constants.ACL_VIRT_WAN_GROUP_PREFIX.length;
       for (const rule of rules) {
+        // getHighImpactfulRules() only returns route rules that passed isRouteRuleToVPN(), so these
+        // all have routeType=hard, and a hard PBR rule always blocks when the tunnel is down: both
+        // the PBR hard ipset and the unreachable default route in the VPN routing table are
+        // populated independently of strictVPN (VPNClient._prepareRoutes, VirtWanGroup.refreshRT).
+        // So kill-switch coverage here does NOT follow strictVPN. Skip only a rule whose VPN is not
+        // enabled at all -- nothing marks its traffic then, so there is no kill switch to bridge and
+        // OSI would just block traffic that is going to flow anyway.
         if (rule.action === 'route') {
           if (rule.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
-            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(rule.wanUUID.substring(VWG_PREFIX_LEN));
-            if (vwgProfileIds && vwgProfileIds.length == 0) {
-              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            const vwgProfileIds = virtWanGroupManager.getAllEnabledVPNClients(rule.wanUUID.substring(VWG_PREFIX_LEN));
+            if (_.isEmpty(vwgProfileIds)) {
+              continue;
             }
           } else if (rule.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
-            if (!policy.vpnClient || !profileIds.includes(profileId)) {
-              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            if (!activeProfileIds.includes(profileId)) {
+              continue;
             }
           }
         }
 
-        await this.processRule(rule);
+        await this.processRule(rule, OSI_RULES_KEY_TMP);
       }
 
       // GROUP
@@ -547,11 +575,11 @@ class OSIPlugin extends Sensor {
           if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
             const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
             if (vwgProfileIds && vwgProfileIds.length > 0) {
-              await this.processTagId(tag.uid, OSI_KEY);
+              await this.processTagId(tag.uid, OSI_KEY_TMP);
             }
           } else {
             if (profileIds.includes(hostProfileId)) {
-              await this.processTagId(tag.uid, OSI_KEY);
+              await this.processTagId(tag.uid, OSI_KEY_TMP);
             }
           }
         }
@@ -564,12 +592,12 @@ class OSIPlugin extends Sensor {
           if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
             const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
             if (vwgProfileIds && vwgProfileIds.length > 0) {
-              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+              await rclient.saddAsync(OSI_KEY_TMP, `mac,${host.o.mac}`);
             }
           } else {
             if (profileIds.includes(hostProfileId)) {
               // mac,20:6D:31:00:00:01
-              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+              await rclient.saddAsync(OSI_KEY_TMP, `mac,${host.o.mac}`);
             }
           }
         }
@@ -582,11 +610,11 @@ class OSIPlugin extends Sensor {
           if (networkVPNProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
             const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(networkVPNProfileId.substring(VWG_PREFIX_LEN));
             if (vwgProfileIds && vwgProfileIds.length > 0) {
-              await this.processNetwork(network, OSI_KEY);
+              await this.processNetwork(network, OSI_KEY_TMP);
             }
           } else {
             if (profileIds.includes(networkVPNProfileId)) {
-              await this.processNetwork(network, OSI_KEY);
+              await this.processNetwork(network, OSI_KEY_TMP);
             }
           }
         }
@@ -600,19 +628,23 @@ class OSIPlugin extends Sensor {
             if (profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
               const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(profileId.substring(VWG_PREFIX_LEN));
               if (vwgProfileIds && vwgProfileIds.length > 0) {
-                await this.processIdentity(identity, OSI_KEY);
+                await this.processIdentity(identity, OSI_KEY_TMP);
               }
             } else {
               if (profileIds.includes(profileId)) {
-                await this.processIdentity(identity, OSI_KEY);
+                await this.processIdentity(identity, OSI_KEY_TMP);
               }
             }
           }
         }
       }
 
+      // only reached when every step above succeeded, so the live pool is replaced in one shot
+      await this.swapInPool(OSI_KEY_TMP, OSI_KEY);
+      await this.swapInPool(OSI_RULES_KEY_TMP, OSI_RULES_KEY);
     } catch (err) {
-      log.error("Got error when updating OSI pool", err);
+      log.error("Got error when updating OSI pool, keeping the previous pool", err);
+      await rclient.unlinkAsync([OSI_RULES_KEY_TMP, OSI_KEY_TMP]).catch((err) => { });
     }
 
     tagCache.reset(); // clear cache, so that cache is only valid within a single update session
