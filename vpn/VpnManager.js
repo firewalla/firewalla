@@ -40,6 +40,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const execAsync = util.promisify(cp.exec);
 const { execFile } = require('child-process-promise');
+const key = require('../extension/common/key.js');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
@@ -705,16 +706,6 @@ class VpnManager {
     }
   }
 
-  static generatePassword(len) {
-    var length = len,
-      charset = "0123456789",
-      retVal = "";
-    for (var i = 0, n = charset.length; i < length; ++i) {
-      retVal += charset.charAt(Math.floor(Math.random() * n));
-    }
-    return retVal;
-  }
-
   generateNetwork() {
     const ipRangeRandomMap = {
       "10.0.0.0/8": 16,
@@ -946,7 +937,9 @@ class VpnManager {
     }
 
     if (password == null) {
-      password = VpnManager.generatePassword(5);
+      // the profile travels off the box, so this passphrase is the only thing protecting the
+      // client private key embedded in it once the file leaves the app
+      password = key.randomPassword(10);
     }
 
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
