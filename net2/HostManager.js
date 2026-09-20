@@ -1045,6 +1045,19 @@ module.exports = class HostManager extends Monitorable {
     json.networkMonitorEvents = networkMonitorEvents;
   }
 
+  /*
+   * The classified events that last happened BEFORE the networkMonitorEvents window.
+   *
+   * networkMonitorEventsForInit() above covers the last 24 hours. A type whose most recent event is
+   * older than that is invisible there, so the app cannot tell "this has not happened in a day"
+   * from "this has never happened". These entries fill that in: one per classified type, each the
+   * whole event including last_ts, so the app can render how long a type has been quiet.
+   */
+  async previousEventsByTypeForInit(json) {
+    const begin = Date.now() - 86400 * 1000; // same 24 hour window as networkMonitorEventsForInit
+    json.previousEventsByType = await eventApi.listLastEventsBefore(begin);
+  }
+
   async policyRuleNumberForInit(json) {
       const count = await policyManager2.countActivePolicyNumber()
       json.policyRuleNumber = count
@@ -1700,6 +1713,7 @@ module.exports = class HostManager extends Monitorable {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
+      this.previousEventsByTypeForInit(json),
       // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
