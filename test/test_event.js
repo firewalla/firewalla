@@ -28,23 +28,25 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 describe('Test event api', async () => {
   it('Should get event by score', async () => {
     const ts = Date.now();
-    eventapi.addEvent({"event_type":"action", "action_type":"test"}, ts);
+    await eventapi.addEvent({"event_type":"action", "action_type":"test"}, ts);
 
     let result = await eventapi.getEventByTs(ts);
     expect(result.action_type).to.be.equal("test");
 
     await rclient.zremrangebyscoreAsync("event:log", ts, ts);
+    await rclient.hdelAsync("event:last:cache", 'action::["test"]');
   });
 
   it('Should get events', async() => {
     const ts = Date.now();
-    eventapi.addEvent({"event_type":"action", "action_type":"test"}, ts);
+    await eventapi.addEvent({"event_type":"action", "action_type":"test"}, ts);
 
     let result = await eventapi.getLatestEventsByType("test", 60000, 3);
 
     expect(result.length).to.equal(1);
     expect(result[0].ts).to.equal(ts);
     await rclient.zremrangebyscoreAsync("event:log", ts, ts);
+    await rclient.hdelAsync("event:last:cache", 'action::["test"]');
   });
 });
 
