@@ -1611,7 +1611,7 @@ check_events() {
   if [[ "$1" == 'utc' || "$JQ_HAS_LOCALTIME" != 'yes' ]]; then
     TIME_FUNC='strftime'
   fi
-  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
+  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | (if .last_ts then .last_ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) else . end) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
   # hint on stderr so won't impact stuff being piped
   if [[ "$TIME_FUNC" == 'strftime' ]]; then
     >&2 echo -e "\e[43m\e[30m  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<\e[0m"
