@@ -788,9 +788,7 @@ class LiveStatsPlugin extends Sensor {
     const nicStates = await platform.getNicStates()
     const wanNames = fireRouter.getWanIntfNames() || []
     const ports = []
-    for (const name of platform.getAllNicNames()) {
-      if (name.startsWith('wlan'))
-        continue
+    for (const name of platform.getEthernetNicNames()) {
       const nic = nicStates[name]
       if (!nic)
         continue
