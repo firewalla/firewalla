@@ -27,7 +27,7 @@ const dns = require('dns');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const { delay } = require('../util/util.js');
 
