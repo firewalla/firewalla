@@ -44,6 +44,7 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
+const networkTool = require('../net2/NetworkTool.js')();
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const FlowManager = require('../net2/FlowManager.js');
@@ -3116,6 +3117,17 @@ class netBot extends ControllerBot {
       case "resetBootingComplete":
         await f.resetBootingComplete()
         return
+      case "resetPort": {
+        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
+          throw { code: 400, msg: "'ports' should be a non-empty array" };
+        const ports = _.uniq(value.ports);
+        const legal = platform.getEthernetNicNames();
+        const illegal = ports.filter(p => !legal.includes(p));
+        if (!_.isEmpty(illegal))
+          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        log.info("Resetting link on ethernet ports", ports);
+        return await networkTool.resetEthernetPorts(ports);
+      }
       case "joinBeta":
         await this.switchBranch("beta")
         return
