@@ -36,6 +36,7 @@ const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_INIT_STATE = "LOCK_INIT_STATE";
+const LOCK_UPDATE_POOL = "LOCK_UPDATE_POOL";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -513,7 +514,16 @@ class OSIPlugin extends Sensor {
       await rclient.unlinkAsync(key);
   }
 
+  // Both the periodic timer and the MSG_OSI_UPDATE_NOW debounce in releaseBrake() call this, and a
+  // rebuild is a long chain of awaits over shared temp keys and a shared tagCache. Two overlapping
+  // runs would unlink each other's temp keys mid-flight, which can publish a truncated pool, skip a
+  // tag the other already cached, or leave a live key deleted when the swap finds its temp key
+  // gone. Serialize them so "a single update session" actually means one.
   async updateOSIPool() {
+    return lock.acquire(LOCK_UPDATE_POOL, () => this._updateOSIPool());
+  }
+
+  async _updateOSIPool() {
 
     if (await this.isAdminStop()) {
       log.info("OSI is admin stopped");
