@@ -2720,6 +2720,25 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  /// return a list of profile id of every enabled VPN client, kill switch or not. Route rules with
+  /// routeType=hard block on disconnect regardless of strictVPN, so OSI matches them against this.
+  getAllActiveVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        if (!client.state)
+          continue;
+        const type = client.type;
+        const profileId = client[type] && client[type].profileId;
+        if (profileId)
+          list.push(profileId);
+      }
+    }
+
+    return list;
+  }
+
   /// return a list of profile id
   async getAllActiveStrictVPNClients(policy) {
     const list = [];
