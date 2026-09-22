@@ -21,6 +21,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const pl = require('../platform/PlatformLoader.js');
+const Constants = require('./Constants.js');
 const platform = pl.getPlatform();
 const profilesKey = 'platform:profile';
 const activeProfileKey = 'platform:profile:active';
@@ -34,6 +35,11 @@ class CpuProfile {
         return instance;
     }
     async applyProfile(name) {
+        // name becomes the platform:profile:active redis value, which apply_profile.sh uses as a
+        // path, and is a path component of the profile file written below
+        if (typeof name !== 'string' || !Constants.REGEX_FILENAME.test(name)) {
+            throw new Error(`Invalid profile name: ${name}`);
+        }
         await rclient.setAsync(activeProfileKey, name);
         const content = await rclient.hgetAsync(profilesKey, name);
         await fs.writeFileAsync(`${profileUserDir}/${name}`, content);

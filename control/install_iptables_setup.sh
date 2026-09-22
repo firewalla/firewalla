@@ -27,15 +27,12 @@ create_filter_table
 
 # ============= NAT =============
 {
-sudo iptables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
+echo '*nat'
 
 cat << EOF
 -N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
-# ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
--I POSTROUTING -j FW_POSTROUTING
 
 
 # create POSTROUTING VPN chain
@@ -158,6 +155,10 @@ cat << EOF
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
 
+# fire.walla must always resolve via dnsmasq regardless of bypass status
+-N FW_PREROUTING_DNS_FIRE_WALLA
+-A FW_PREROUTING -j FW_PREROUTING_DNS_FIRE_WALLA
+
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
@@ -191,14 +192,12 @@ echo 'COMMIT'
 
 
 {
-sudo ip6tables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT"
+echo '*nat'
 
 cat << EOF
 -N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
 -N FW_VC_SNAT
 -A FW_POSTROUTING -j FW_VC_SNAT
 
@@ -222,12 +221,17 @@ cat << EOF
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
 
+# fire.walla must always resolve via dnsmasq regardless of bypass status
+-N FW_PREROUTING_DNS_FIRE_WALLA
+-A FW_PREROUTING -j FW_PREROUTING_DNS_FIRE_WALLA
+
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
 -N FW_PREROUTING_DNS_WG
 -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 -N FW_PREROUTING_DNS_DEFAULT
+# skip FW_PREROUTING_DNS_DEFAULT chain if acl or dns booster is off
 -A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken
@@ -250,14 +254,12 @@ create_qos_chains
 {
 cat << EOF
 -N FW_OUTPUT
--I OUTPUT -j FW_OUTPUT
 
 # restore fwmark for reply packets of inbound connections
 -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 
 # the sequence is important, higher priority rule is placed after lower priority rule
 -N FW_PREROUTING
--I PREROUTING -j FW_PREROUTING
 
 # do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir ORIGINAL -m set --match-set c_lan_set src,src -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
@@ -276,7 +278,6 @@ cat << EOF
 -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 
 -N FW_FORWARD
--I FORWARD -j FW_FORWARD
 EOF
 
 cat "$qos_file"
@@ -284,47 +285,149 @@ cat "$qos_file"
 } > "$mangle_file"
 
 {
-  sudo iptables-save -t mangle | grep -vE "^:FW_| FW_|^COMMIT"
+  echo '*mangle'
   cat "$mangle_file"
   echo 'COMMIT'
 } >> "$iptables_file"
 
 {
-  sudo ip6tables-save -t mangle | grep -vE "^:FW_| FW_|^COMMIT"
+  echo '*mangle'
   cat "$mangle_file"
   echo 'COMMIT'
 } >> "$ip6tables_file"
 
+function tlsModuleSupported() {
+  local module_name=$1
+  if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
+    return 1
+  fi
+  if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Return 0 (needs a kernel module (re)load) only when the module is supported on this
+# platform AND it is not loaded yet, or the loaded ko differs from the bundled one.
+# Return 1 otherwise so we can skip the disruptive rmmod/restore cycle.
+# The userspace .so is checked separately by tlsSoNeedsUpdate: installing it does not
+# require reloading the module, so a .so-only change must not trigger the cycle.
+function tlsKoNeedsUpdate() {
+  local module_name=$1
+  tlsModuleSupported "${module_name}" || return 1
+
+  # not loaded yet -> needs install
+  if ! lsmod | grep -wq "${module_name}"; then
+    return 0
+  fi
+
+  # loaded but its hostset proc directory is missing -> module is not working, needs reinstall
+  if [[ ! -d "/proc/net/${module_name}/hostset" ]]; then
+    return 0
+  fi
+
+  # is the loaded module the one built from the bundled .ko? srcversion when the build has
+  # one, GNU build-id otherwise (see scripts/tls_module_id.sh). When neither side yields a
+  # comparable id we cannot tell, and leave the loaded module alone.
+  local ko_path
+  ko_path=$(get_tls_ko_path "${module_name}")
+  if [[ -f $ko_path ]]; then
+    tls_module_matches_ko "${module_name}" "$ko_path"
+    case $? in
+      1)
+        echo "${module_name}: loaded module differs from the bundled ko, reload needed"
+        return 0
+        ;;
+      2)
+        echo "${module_name}: cannot determine whether the loaded module matches ${ko_path}, leaving it loaded"
+        ;;
+    esac
+  fi
+
+  return 1
+}
+
+# Return 0 when the bundled userspace .so differs from the installed one (or is not
+# installed at all). Only the .so needs to be copied in that case.
+function tlsSoNeedsUpdate() {
+  local module_name=$1
+  tlsModuleSupported "${module_name}" || return 1
+
+  local src_so installed_so
+  src_so=$(get_tls_so_path "${module_name}")
+  installed_so=$(get_tls_so_installed_path "${module_name}")
+  [[ -n "$src_so" ]] || return 1
+  if [[ ! -f $installed_so ]] || [[ $(sha256sum "$installed_so" | awk '{print $1}') != $(sha256sum "$src_so" | awk '{print $1}') ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
 if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
-  # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
   module_names=("tls" "udp_tls")
 
-  sudo iptables-save > "$iptables_file.orig"
-  sudo ip6tables-save > "$ip6tables_file.orig"
-
-  grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
-  grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
+  # ko and .so are checked separately: reloading the kernel module means rmmod plus a
+  # tls-rule-free iptables restore, while the .so is just a file copy. Modules whose ko
+  # changed are reloaded (installTLSModule installs their .so too), the rest only get
+  # their .so refreshed.
+  modules_to_reload=()
+  so_to_update=()
   for module_name in "${module_names[@]}"; do
-    if lsmod | grep -w "xt_${module_name}"; then
-      sudo rmmod "xt_${module_name}"
-      if [[ $? -eq 0 ]]; then
-        installTLSModule "xt_${module_name}"
-      fi
-    else
-      installTLSModule "xt_${module_name}"
+    if tlsKoNeedsUpdate "xt_${module_name}"; then
+      modules_to_reload+=("$module_name")
+    elif tlsSoNeedsUpdate "xt_${module_name}"; then
+      so_to_update+=("$module_name")
     fi
   done
 
-  sudo iptables-restore "$iptables_file.orig"
-  sudo ip6tables-restore "$ip6tables_file.orig"
+  echo "Modules to reload: ${modules_to_reload[*]}"
+  echo "Shared objects to update: ${so_to_update[*]}"
+
+  # a .so-only change affects neither the loaded module nor existing rules, install it in
+  # place. Must happen before the iptables-restore at the end of this script, which may
+  # contain "-m tls" rules parsed by this .so.
+  for module_name in "${so_to_update[@]}"; do
+    installTLSSharedObject "xt_${module_name}"
+  done
+
+  if [[ ${#modules_to_reload[@]} -gt 0 ]]; then
+    # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
+    sudo iptables-save > "$iptables_file.orig"
+    sudo ip6tables-save > "$ip6tables_file.orig"
+
+    grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
+    grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
+    for module_name in "${modules_to_reload[@]}"; do
+      if lsmod | grep -w "xt_${module_name}"; then
+        sudo rmmod "xt_${module_name}"
+        if [[ $? -eq 0 ]]; then
+          installTLSModule "xt_${module_name}"
+        fi
+      else
+        installTLSModule "xt_${module_name}"
+      fi
+    done
+
+    sudo iptables-restore "$iptables_file.orig"
+    sudo ip6tables-restore "$ip6tables_file.orig"
+  fi
 fi
 
 # install out-of-tree sch_cake.ko if applicable
 installSchCakeModule
 
+normalize_chain_declarations "$iptables_file" "$ip6tables_file"
+
+# jump rules from the builtin chains into the FW_ chains, applied in both modes since
+# the skeleton no longer carries them
+install_fw_hooks
+
 if [[ "$DRY_RUN" == "false" ]]; then
-  sudo iptables-restore "$iptables_file"
-  sudo ip6tables-restore "$ip6tables_file"
+  # --noflush: the skeleton only declares FW_ chains now, a flush would drop every
+  # rule owned by firerouter, docker and upnp
+  sudo iptables-restore --noflush "$iptables_file"
+  sudo ip6tables-restore --noflush "$ip6tables_file"
 else
   echo "Skipping iptables-restore in dry-run mode"
   echo "Would restore IPv4 rules from: $iptables_file"

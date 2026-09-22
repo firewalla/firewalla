@@ -33,6 +33,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
+const FlowAggrTool = require('../net2/FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
 const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
@@ -43,6 +45,8 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -88,6 +92,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.adblockPlugin = sl.getSensor("AdblockPlugin");
   }
 
   async job() {
@@ -128,6 +133,12 @@ class ACLAuditLogPlugin extends Sensor {
     } else {
       this.buffer[mac][descriptor] = record
     }
+  }
+
+  isAdblockTlsAuditRecord(record) {
+    return record
+      && record.ac === 'block'
+      && record.pid === Constants.RESERVED_PID_ADBLOCK_TLS;
   }
 
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
@@ -369,7 +380,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "qos" || record.ac === "disturb") {
-      record.qmark = Number(mark) & 0x3fff000;
+      record.qmark = Number(mark) & 0x3fff0000;
       const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
       if (matchedPids && matchedPids.length > 0){
         record.pid = matchedPids[0];
@@ -439,7 +450,7 @@ class ACLAuditLogPlugin extends Sensor {
         // resolve destination device mac address
         const dstHost = hostManager.getHostFast(record.dh, fam)
         if (dstHost) {
-          record.dmac = dstHost.o.mac
+          record.dmac = dstHost.getUniqueId();
         } else {
           const identity = IdentityManager.getIdentityByIP(record.dh);
           if (identity) {
@@ -447,6 +458,12 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             record.dmac = IdentityManager.getGUID(identity);
             record.drl = IdentityManager.getEndpointByIP(record.dh);
+          } else {
+            // fallback to get mac by ip with cache
+            const dmac = await hostTool.getMacByIPWithCache(record.dh);
+            if (dmac && !sysManager.isMyMac(dmac)) {
+              record.dmac = dmac;
+            }
           }
         }
         break;
@@ -492,8 +509,13 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
-      mac = await hostTool.getMacByIPWithCache(localIP)
-        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      const host = hostManager.getHostFast(localIP)
+      if (host) {
+        mac = host.getUniqueId();
+      } else {
+        mac = await hostTool.getMacByIPWithCache(localIP)
+          || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      }
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
@@ -541,7 +563,7 @@ class ACLAuditLogPlugin extends Sensor {
 
         if (connEntries && connEntries.host) {
           record.af = {};
-          record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+          record.af[connEntries.host] = _.pick(connEntries, ["proto"])
         }
       }
     } else {
@@ -658,6 +680,18 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
+    // prevent both adblock and global block rule for adblock domain hit count addition.
+    if (record.ac === 'block' && !record.pid) {
+      const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchedPIDs && matchedPIDs.length > 0)
+        record.pid = matchedPIDs[0];
+    }
+
+    if (record.ac === 'block' && !record.pid && record.reason === 'adblock') {
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
+    }
+
     this.writeBuffer(record);
   }
 
@@ -767,10 +801,21 @@ class ACLAuditLogPlugin extends Sensor {
           const block = record.ac == "block" || record.ac == "isolation";
           const disturb = record.ac == "disturb";
 
+          // adblock TLS block carries a reserved pid in the packet mark. Report it with a reason
+          // like a DNS adblock block does and drop the pid, it matches no rule the app knows about
+          const adblockTls = this.isAdblockTlsAuditRecord(record);
+          if (adblockTls) {
+            record.reason = 'adblock';
+            delete record.pid;
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
+          }
+
           // pid backtrace
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
-          if (type != 'ntp' && !(record.dmac && fd == 'out')) {
+          // adblock TLS matches no rule, skip backtrace so it is not attributed to an unrelated one
+          if (type != 'ntp' && !adblockTls && !(record.dmac && fd == 'out')) {
             if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
               const policy = await pm2.getPolicy(record.pid, true);
               // domain allow that uses IP-based matching
@@ -795,6 +840,19 @@ class ACLAuditLogPlugin extends Sensor {
               this.ruleStatsPlugin.accountRule(record);
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+
+              const matchedPolicy = await pm2.getPolicy(record.pid, true);
+              if (matchedPolicy) {
+                if (matchedPolicy.isAutoBlockPolicy()) {
+                  record.bType = 'category';
+                  record.bTarget = 'default_c';
+                } else if (matchedPolicy.type && matchedPolicy.target) {
+                  record.bType = matchedPolicy.type;
+                  record.bTarget = matchedPolicy.target;
+                }
+                if (matchedPolicy.purpose)
+                  record.purpose = matchedPolicy.purpose;
+              }
             }
           }
 
@@ -876,6 +934,20 @@ class ACLAuditLogPlugin extends Sensor {
           // use a dedicated switch for saving to audit:accpet as we still want rule stats
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
+          // bake the coded category snapshot (c) onto the block record, same as regular
+          // flow records: downstream consumers (audit:drop:* queries, FlowAggregationSensor
+          // sumflows) inherit it without doing their own intel lookups. Records here are
+          // already merged by descriptor so it's one lookup per destination per flush
+          if (block && dir != 'L' && !mac.startsWith(Constants.NS_INTERFACE + ':')) try {
+            const intel = type == 'dns'
+              ? await intelTool.getIntel(undefined, [record.dn])
+              : await intelTool.getIntel(fd == 'out' ? record.sh : record.dh, record.af && Object.keys(record.af));
+            if (intel && intel.category)
+              record.c = await intelTool.categoryToNumber(intel.category);
+          } catch (err) {
+            log.error('Failed to resolve intel for block record', record.dh || record.dn, err.message);
+          }
+
           delete record.dir
           if (type == 'ntp') delete record.dp
 
@@ -888,7 +960,7 @@ class ACLAuditLogPlugin extends Sensor {
           delete record.mac
           const recordJson = JSON.stringify(record);
           multi.zadd(key, _ts, recordJson);
-          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":") && flowAggrTool.shouldUpdateDeviceLastFlowTs(mac, _ts))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it
@@ -900,6 +972,25 @@ class ACLAuditLogPlugin extends Sensor {
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
 
+          // normalized block flow stats event, only for category/country block rules, consumed by BlockStatsSensor
+          if (block && dir != 'L' && record.bType && ['category', 'country'].includes(record.bType)) {
+            const afHost = record.af && Object.keys(record.af)[0];
+            const dest = type === 'dns' ? record.dn : (afHost || (fd == 'out' ? record.sh : record.dh));
+            if (dest) {
+              sem.emitLocalEvent({
+                type: Message.MSG_BLOCK_FLOW_STATS_UPDATE,
+                suppressEventLogging: true,
+                device: mac,
+                dest,
+                bType: record.bType,
+                bTarget: record.bTarget,
+                fd: fd || 'in',
+                ct: ct || 1,
+                _ts
+              });
+            }
+          }
+
           // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
           if (block) {
             pclient.publishAsync(Constants.REDIS_CHANNEL_FLOW_BLOCK, recordJson).catch(err => {
@@ -910,6 +1001,9 @@ class ACLAuditLogPlugin extends Sensor {
         await multi.execAsync()
       }
       timeSeries.exec()
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      if (this.adblockPlugin)
+        await this.adblockPlugin.flushAdblockStats();
     } catch (err) {
       log.error("Failed to write audit logs", err)
     }
