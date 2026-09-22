@@ -44,6 +44,21 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const envCreatedMap = {};
 
+// policies that are enforced on a tag and have to be unenforced before the tag is removed,
+// they are reset to the value in Monitorable.defaultPolicy(). Keys deliberately left out:
+// - tags/userTags/deviceTags: destroyEnv() still needs them to detach this tag from the ipsets
+//   of its parent tags, and Tag.tags() would write the policy back to redis
+// - monitor/acl/dnsmasq: no-op on a tag, acl of a group is handled by fwapc
+// - weak_password_scan: system level only
+// - extraTimeLimit: plain data read on demand, nothing is enforced
+const RESET_POLICY_KEYS = [
+  "vpnClient", // mangle rules on tag ipsets, dnsmasq vpn client config
+  Constants.POLICY_KEY_ISOLATION, // filter rules on tag device set, group config in fwapc
+  "adblock", // dnsmasq config, tls rules on tag ipsets
+  "family", "safeSearch", "doh", "unbound", // dnsmasq config
+  "device_service_scan" // per-tag setting kept in the scan sensor
+];
+
 
 class Tag extends Monitorable {
   static metaFieldsNumber = ["createTs"];
@@ -146,12 +161,22 @@ class Tag extends Monitorable {
   }
 
   async resetPolicies() {
+    // don't use setPolicy() here as event listener has been unsubscribed
+    const defaultPolicy = this.constructor.defaultPolicy();
+    const policy = {};
     await this.loadPolicyAsync();
     for (const key of Object.keys(this.policy)) {
       if (key === "freeradius_server") {
+        // radius server is not enforced in PolicyManager, reset its config directly
         await freeradius.reconfigServer(this.o.uid, {});
+        continue;
       }
+      // policies not in the list are cleaned up along with the ipsets and config files in destroyEnv()
+      if (RESET_POLICY_KEYS.includes(key))
+        policy[key] = defaultPolicy[key];
     }
+    const policyManager = require('./PolicyManager.js');
+    await policyManager.execute(this, this.getUniqueId(), policy);
   }
 
   async createEnv() {
@@ -191,7 +216,8 @@ class Tag extends Monitorable {
     await Ipset.destroy(Tag.getTagDeviceIPSetName(this.o.uid, 4));
     await Ipset.destroy(Tag.getTagDeviceIPSetName(this.o.uid, 6));
     // delete related dnsmasq config files
-    await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
+    // tag_<uid>.conf is the group-group entry written in tags(), the rest is tag_<uid>_<feature>.conf
+    await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
     dnsmasq.scheduleRestartDNSService();
     await this.fwapcDeleteGroup().catch((err) => {});
