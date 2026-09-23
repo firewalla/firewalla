@@ -85,6 +85,7 @@ class SafeSearchPlugin extends Sensor {
     sem.on('SAFESEARCH_RESET', async (event) => {
       try {
         await fc.disableDynamicFeature(featureName)
+        this.adminSystemSwitch = false;
         for (const tag in this.tagSettings) this.tagSettings[tag] = 0
         for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
         for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
@@ -299,7 +300,8 @@ class SafeSearchPlugin extends Sensor {
   }
 
   generateCnameEntry(safeDomain, targetDomains) {
-    return [`cname=${targetDomains.join(',')},${safeDomain}$${featureName}`];
+    // One entry per domain to avoid lines exceeding dnsmasq's read buffer
+    return targetDomains.map(domain => `cname=${domain},${safeDomain}$${featureName}`);
   }
 
   async patchHostRecordEntry(safeDomain) {

@@ -25,9 +25,8 @@ const sysManager = require('../net2/SysManager.js');
 const util = require('util');
 const net = require('net')
 const cp = require('child_process');
-const execAsync = util.promisify(cp.exec);
+const execFileAsync = util.promisify(cp.execFile);
 
-const kw = "ssh:notty";
 const _ = require('lodash');
 
 class AuthLogPlugin extends Sensor {
@@ -45,9 +44,15 @@ class AuthLogPlugin extends Sensor {
       try {
         log.debug("Start to check ssh login attempts");
         let sshLoginFailIPs;
-        const loginFailStr = await execAsync(`sudo lastb -s -${interval}min -t now |awk '$2 == "${kw}" { print $3 }'`).then(result => result.stdout.trim()).catch(() => null);
+        const loginFailStr = await execFileAsync('sudo', ['journalctl', '-t', 'sshd', '-t', 'sshd-session', '-o', 'cat', '--since', `-${interval}min`])
+          .then(result => result.stdout.trim()).catch(() => null);
         if (loginFailStr) {
-            sshLoginFailIPs = loginFailStr.split("\n");
+            sshLoginFailIPs = loginFailStr.split("\n").filter(line => line.includes('Failed password')).map(line => {
+                // a username of "from" could shift a naive first-match scan onto itself, match the last
+                // "from <address> port <number>" segment and validate the address before trusting it
+                const match = line.match(/.*from\s+(\S+)\s+port\s+\d+/);
+                return match ? match[1] : null;
+            }).filter(ip => ip && net.isIP(ip));
             if (!_.isArray(sshLoginFailIPs)) return;
             // weak password scan may trigger password guess alarm from box itself
             sshLoginFailIPs = sshLoginFailIPs.filter(ip => !sysManager.isMyIP(ip));
@@ -73,7 +78,7 @@ class AuthLogPlugin extends Sensor {
         "p.guessCount": guessCount
       }
       const fam = net.isIP(ip)
-      // if non-local IP, use WAN, lastb doesn't have interface info, guess with the active WAN here
+      // if non-local IP, use WAN, sshd log doesn't have interface info, guess with the active WAN here
       const intf = sysManager.getInterfaceViaIP(ip, fam, false) || sysManager.getWanInterfaces().find(i => i.active)
       if (!intf || intf.type == 'wan') {
         if (intf) {

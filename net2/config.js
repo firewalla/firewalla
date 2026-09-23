@@ -48,6 +48,10 @@ let dynamicFeatures = null
 let features = {}
 let firstFeaturesLoad = false
 
+// codeName -> epoch seconds the migration completed. Loaded from redis at startup and
+// kept current via the 'migration:updated' channel (published by DataMigrationSensor).
+let migrations = {}
+
 let callbacks = {}
 
 
@@ -301,6 +305,27 @@ async function syncDynamicFeatures() {
   reloadFeatures()
 }
 
+async function syncMigrations() {
+  try {
+    // only the migrations declared in DataMigrationSensor matter; read those keys
+    // directly instead of scanning migration:*
+    const codeNames = _.get(config || defaultConfig, ['sensors', 'DataMigrationSensor', 'migrationCodeNames'], []);
+    const result = {};
+    for (const codeName of codeNames) {
+      const v = await rclient.getAsync("migration:" + codeName);
+      if (v) result[codeName] = Number(v);
+    }
+    migrations = result;
+    log.debug('migrations reloaded', migrations);
+  } catch (err) {
+    log.error('Error syncing migrations', err);
+  }
+}
+
+function isMigrationComplete(codeName) {
+  return migrations[codeName];
+}
+
 async function syncHashsetConfig() {
   try {
     hashsetConfig = JSON.parse(await rclient.getAsync('sys:bone:config:features'))
@@ -402,6 +427,7 @@ sclient.subscribe("config:cloud:updated")
 sclient.subscribe("config:msp:updated")
 sclient.subscribe("config:user:updated")
 sclient.subscribe("config:version:updated")
+sclient.subscribe("migration:updated")
 
 sclient.on("message", (channel, message) => {
   if (channel.startsWith('config:'))
@@ -441,11 +467,23 @@ sclient.on("message", (channel, message) => {
       userConfig = JSON.parse(message)
       reloadConfig()
       break
+    case "migration:updated":
+      try {
+        const { codeName, ts } = JSON.parse(message)
+        if (codeName) {
+          if (ts) migrations[codeName] = Number(ts)
+          else delete migrations[codeName]
+        }
+      } catch (err) {
+        log.error('Error handling migration:updated', err)
+      }
+      break
   }
 });
 
 reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
+syncMigrations()
 
 syncHashsetConfig()
 syncCloudConfig()
@@ -531,6 +569,7 @@ module.exports = {
   getMspConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
+  isMigrationComplete,
   getFeatures,
   getDynamicFeatures,
   enableDynamicFeature: enableDynamicFeature,
