@@ -237,8 +237,12 @@ class RuleStatsPlugin extends Sensor {
       hash.update(String(record.dn));
     } else {
       hash.update(String(record.dh));
+      hash.update(String(record.sh));
     }
     hash.update(String(record.qmark));
+    // af carries hostname context that changes domain/dns rule matching; a hostless
+    // lookup must not share a cache entry with a later hostful lookup on the same dh
+    if (record.af) hash.update(Object.keys(record.af).sort().join(','));
     return hash.digest("hex");
   }
 
@@ -381,6 +385,14 @@ class RuleStatsPlugin extends Sensor {
           connHost = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, 'host')
         }
 
+        // global ip/net rules default to bidirectional matching (see Policy.direction), so
+        // they can hit on either endpoint of a flow, not just the destination
+        let sourceIp, srcAddr4, srcAddr6;
+        if (record.sh) {
+          sourceIp = record.sh;
+          srcAddr4 = new Address4(sourceIp);
+          srcAddr6 = new Address6(sourceIp);
+        }
 
         for (const policy of this.policyRulesMap.get(action)) {
           if (record.sec ^ policy.isSecurityBlockPolicy()) {
@@ -388,6 +400,8 @@ class RuleStatsPlugin extends Sensor {
           }
 
           const target = policy.target;
+          const matchDest = policy.direction !== 'inbound';
+          const matchSource = policy.direction !== 'outbound';
 
           switch (policy.type) {
             case 'dns':
@@ -400,22 +414,28 @@ class RuleStatsPlugin extends Sensor {
               }
               break
             case 'ip':
-              if (recordIp && recordIp === target) {
+              if ((matchDest && recordIp && recordIp === target) || (matchSource && sourceIp && sourceIp === target)) {
                 return [policy.pid];
               }
               break
-            case 'net':
-              if (!recordIp) break
-              if (addr4.isValid()) {
-                const targetNet4 = new Address4(target);
-                if (targetNet4.isValid() && addr4.isInSubnet(targetNet4))
+            case 'net': {
+              if (!recordIp && !sourceIp) break
+              const targetNet4 = new Address4(target);
+              const targetNet6 = new Address6(target);
+              if (matchDest && recordIp) {
+                if (addr4.isValid() && targetNet4.isValid() && addr4.isInSubnet(targetNet4))
                   return [policy.pid];
-              } else if (addr6.isValid()) {
-                const targetNet6 = new Address6(target);
-                if (targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                if (addr6.isValid() && targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                  return [policy.pid];
+              }
+              if (matchSource && sourceIp) {
+                if (srcAddr4.isValid() && targetNet4.isValid() && srcAddr4.isInSubnet(targetNet4))
+                  return [policy.pid];
+                if (srcAddr6.isValid() && targetNet6.isValid() && srcAddr6.isInSubnet(targetNet6))
                   return [policy.pid];
               }
               break
+            }
           }
 
           const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only)
