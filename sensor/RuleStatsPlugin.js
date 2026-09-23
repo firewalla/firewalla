@@ -375,7 +375,8 @@ class RuleStatsPlugin extends Sensor {
         if (!this.policyRulesMap.has(action)) {
           return [];
         }
-
+        
+        let sourceIp, srcAddr4, srcAddr6;
         if (record.type === "dns") {
           recordDomain = record.dn;
         } else {
@@ -383,15 +384,12 @@ class RuleStatsPlugin extends Sensor {
           addr4 = new Address4(recordIp);
           addr6 = new Address6(recordIp);
           connHost = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, 'host')
-        }
 
-        // global ip/net rules default to bidirectional matching (see Policy.direction), so
-        // they can hit on either endpoint of a flow, not just the destination
-        let sourceIp, srcAddr4, srcAddr6;
-        if (record.sh) {
-          sourceIp = record.sh;
-          srcAddr4 = new Address4(sourceIp);
-          srcAddr6 = new Address6(sourceIp);
+          if (record.sh) {
+            sourceIp = record.sh;
+            srcAddr4 = new Address4(sourceIp);
+            srcAddr6 = new Address6(sourceIp);
+          }
         }
 
         for (const policy of this.policyRulesMap.get(action)) {
