@@ -12,6 +12,7 @@
     }
   },
   "userFeatures": {
-    "local_flow": true
+    "local_flow": true,
+    "pcap_zeek_fleet": true
   }
 }
