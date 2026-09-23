@@ -103,6 +103,7 @@ class OSIPlugin extends Sensor {
     this.rulesDone = false;
     this.inboundRulesDone = false;
     this.networkInitialized = false;
+    this.enforcementApplied = false;
 
     this.knob1Lifted = false;
     this.knob2Lifted = false;
@@ -148,6 +149,18 @@ class OSIPlugin extends Sensor {
         await this.checkInitState();
       }).catch((err) => {
         log.error(`Failed to process ${Message.MSG_OSI_RULES_DONE}`, err.message);
+      });
+    });
+
+    sem.once('Policy:AllInitialized', async () => {
+      // the messages above are sent when enforcement was submitted; ipset and iptables work
+      // queued during startup is only applied when BlockControl.finishInitialization runs,
+      // which is the line this event follows
+      await lock.acquire(LOCK_INIT_STATE, async () => {
+        this.enforcementApplied = true;
+        await this.checkInitState();
+      }).catch((err) => {
+        log.error("Failed to process Policy:AllInitialized", err.message);
       });
     });
 
@@ -302,6 +315,10 @@ class OSIPlugin extends Sensor {
 
   async checkInitState() {
     if (!this.networkInitialized)
+      return;
+    // releasing a brake while the matching rules are still queued would hand the pool
+    // unfiltered traffic, so nothing is lifted before enforcement reaches the kernel
+    if (!this.enforcementApplied)
       return;
     if (this.inboundRulesDone) {
       log.info("Flushing osi_wan_inbound_set & osi_wan_inbound_set6");
