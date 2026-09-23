@@ -498,10 +498,12 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
-    // prevent too low value in sample interval
+    // prevent too low value in sample interval, clamp on a copy so that the caller's config object
+    // (which is kept in jobMeta and compared against the policy on the next reload) is left intact
+    let jobCfg = cfg;
     if (cfg.sampleInterval<SAMPLE_INTERVAL_MIN) {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-      cfg.sampleInterval = SAMPLE_INTERVAL_MIN
+      jobCfg = Object.assign({}, cfg, {sampleInterval: SAMPLE_INTERVAL_MIN});
     }
     const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
     if (intf)
@@ -509,20 +511,20 @@ class NetworkMonitorSensor extends Sensor {
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
-          this.samplePing(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.samplePing(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_DNS: {
         scheduledJob = setInterval(() => {
-          this.sampleDNS(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleDNS(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_HTTP: {
         scheduledJob = setInterval(() => {
-          this.sampleHTTP(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleHTTP(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
     }
