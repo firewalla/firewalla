@@ -1,0 +1,82 @@
+{
+  "smp_affinity": [
+    ["114:", 1 ],
+    ["115:", 1 ],
+    ["116:", 1 ],
+    ["117:", 1 ],
+    ["119:", 1 ],
+    ["eth1", 8 ],
+    ["eth2", 8 ],
+    ["eth3", 8 ]
+  ],
+  "rps_cpus": [
+    [ "eth0", "rx-0", "e" ],
+    [ "eth1", "rx-0", "e" ],
+    [ "eth1", "rx-1", "e" ],
+    [ "eth1", "rx-2", "e" ],
+    [ "eth1", "rx-3", "e" ],
+    [ "eth2", "rx-0", "e" ],
+    [ "eth2", "rx-1", "e" ],
+    [ "eth2", "rx-2", "e" ],
+    [ "eth2", "rx-3", "e" ],
+    [ "eth3", "rx-0", "e" ],
+    [ "eth3", "rx-1", "e" ],
+    [ "eth3", "rx-2", "e" ],
+    [ "eth3", "rx-3", "e" ],
+    [ "eth4", "rx-0", "e" ],
+    [ "vpn_*", "rx-0", 9 ],
+    [ "tun_fwvpn", "rx-0", 9 ]
+  ],
+  "taskset": [
+    ["zeek", "0"],
+    ["FireApi", "0-3"],
+    ["FireMain", "0-3"],
+    ["FireMon", "0-3"],
+    ["redis-server", "0-3"],
+    ["ovpn-server", "2", "match"],
+    ["vpnclient", "2", "match"]
+  ],
+  "cpufreqs": {
+    "default": [
+      [ 0, 816000, 1800000, "ondemand" ]
+    ],
+    "ARM:0": [
+      [ 0, 816000, 1800000, "ondemand" ]
+    ]
+  },
+  "nic_feature": [
+    [ "eth0", "rx-gro-list", "off" ],
+    [ "eth1", "rx-gro-list", "off" ],
+    [ "eth2", "rx-gro-list", "off" ],
+    [ "eth3", "rx-gro-list", "off" ],
+    [ "eth4", "rx-gro-list", "off" ],
+    [ "eth0", "rx-udp-gro-forwarding", "on" ],
+    [ "eth1", "rx-udp-gro-forwarding", "on" ],
+    [ "eth2", "rx-udp-gro-forwarding", "on" ],
+    [ "eth3", "rx-udp-gro-forwarding", "on" ],
+    [ "eth4", "rx-udp-gro-forwarding", "on" ]
+  ],
+  "rx_flow_hash": [
+    [ "eth1", "udp4", "sdfn" ],
+    [ "eth1", "udp6", "sdfn" ],
+    [ "eth2", "udp4", "sdfn" ],
+    [ "eth2", "udp6", "sdfn" ]
+  ],
+  "priority": [
+    ["ovpn-server", 0, "match"],
+    ["vpnclient", 0, "match"]
+  ],
+  "sysctl": [
+    [ "net.core.netdev_max_backlog", 1000 ]
+  ],
+  "iplink": [
+      [ "eth0", "txqueuelen", 1000]
+  ],
+  "tc": [
+  ],
+  "threaded_napi": [
+    [ "eth1", 1, "0,1,2,3" ],
+    [ "eth2", 1, "0,2" ],
+    [ "eth3", 1, "0,1,2,3,2" ]
+  ]
+}

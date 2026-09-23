@@ -29,7 +29,6 @@ const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
-
 const lock = new AsyncLock();
 
 const LOG_PREFIX = Constants.LOG_PREFIX_QUIC;
@@ -91,14 +90,28 @@ class QuicLogPlugin extends Sensor {
   }
 
   // process quic log line
-  // line format: [FW_QUIC]:{"src_addr":"192.168.169.166", "dst_addr":"142.250.189.14", "src_port":60956, "dst_port":443, "protocol":"UDP", "hostname":"calendar.google.com"}
+  // line format: 2026-05-12T19:04:48.484446+08:00 localhost kernel: [FW_QUIC]:{"src_addr":"192.168.169.166", "dst_addr":"142.250.189.14", "src_port":60956, "dst_port":443, "protocol":"UDP", "hostname":"calendar.google.com"}
+  // for repeated log, it will be like: 2026-05-12T18:48:55.197681+08:00 localhost kernel: message repeated 2 times: [ [FW_QUIC]:{"src_addr":"10.0.1.68", "dst_addr":"142.251.45.14", "src_port":51055, "dst_port":443, "protocol":"UDP", "hostname":"play.google.com"}]
   async _processQuicLog(line) {
     if (_.isEmpty(line)) return;
     // extract content after log prefix
-    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
+    const prefixIndex = line.lastIndexOf(LOG_PREFIX);
+    if (prefixIndex < 0) return;
+    const startIndex = prefixIndex + LOG_PREFIX.length;
+    let endIndex = line.length;
+    if (line.indexOf('message repeated') > 0) {
+      endIndex -= 1;
+    }
+
+    const content = line.substring(startIndex, endIndex).trim();
     if (!content || content.length == 0)
       return;
-    const obj = JSON.parse(content);
+    let obj;
+    try {
+      obj = JSON.parse(content);
+    } catch (e) {
+      log.info(`Failed to process quic log line: ${line} err: ${e}`);
+    }
     if (!obj || typeof obj !== 'object')
         return;
     const {src_addr, src_port, dst_addr, dst_port, protocol, hostname} = obj;
@@ -126,17 +139,19 @@ class QuicLogPlugin extends Sensor {
       await this._setConnEntryWithCache(connEntry);
     }
     this.localCache.set(connKey, true);
-    
   }
 
   async globalOn() { // relay on ACLAuditLogPlugin.globalOn
     super.globalOn();
 
     if (!platform.isUdpTLSBlockSupport()) {
-      log.info("UDP TLS block is not supported on this platform, skip setting up quic log iptables rule");
+      log.info("UDP TLS block is not supported or should be disabled on this platform, skip setting up quic log iptables rule");
       return;
     }
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);
@@ -150,7 +165,7 @@ class QuicLogPlugin extends Sensor {
     super.globalOff();
 
     if (!platform.isUdpTLSBlockSupport()) {
-      log.info("UDP TLS block is not supported on this platform, skip removing quic log iptables rule");
+      log.info("UDP TLS block is not supported or should be disabled on this platform, skip removing quic log iptables rule");
       return;
     }
 
@@ -158,6 +173,9 @@ class QuicLogPlugin extends Sensor {
     await this._flushConnEntryCache();
 
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);
