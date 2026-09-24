@@ -450,7 +450,7 @@ class ACLAuditLogPlugin extends Sensor {
         // resolve destination device mac address
         const dstHost = hostManager.getHostFast(record.dh, fam)
         if (dstHost) {
-          record.dmac = dstHost.o.mac
+          record.dmac = dstHost.getUniqueId();
         } else {
           const identity = IdentityManager.getIdentityByIP(record.dh);
           if (identity) {
@@ -509,8 +509,13 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
-      mac = await hostTool.getMacByIPWithCache(localIP)
-        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      const host = hostManager.getHostFast(localIP)
+      if (host) {
+        mac = host.getUniqueId();
+      } else {
+        mac = await hostTool.getMacByIPWithCache(localIP)
+          || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      }
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
@@ -801,9 +806,9 @@ class ACLAuditLogPlugin extends Sensor {
           const adblockTls = this.isAdblockTlsAuditRecord(record);
           if (adblockTls) {
             record.reason = 'adblock';
+            delete record.pid;
             this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
             this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
-            delete record.pid;
           }
 
           // pid backtrace
@@ -835,6 +840,19 @@ class ACLAuditLogPlugin extends Sensor {
               this.ruleStatsPlugin.accountRule(record);
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+
+              const matchedPolicy = await pm2.getPolicy(record.pid, true);
+              if (matchedPolicy) {
+                if (matchedPolicy.isAutoBlockPolicy()) {
+                  record.bType = 'category';
+                  record.bTarget = 'default_c';
+                } else if (matchedPolicy.type && matchedPolicy.target) {
+                  record.bType = matchedPolicy.type;
+                  record.bTarget = matchedPolicy.target;
+                }
+                if (matchedPolicy.purpose)
+                  record.purpose = matchedPolicy.purpose;
+              }
             }
           }
 
@@ -953,6 +971,25 @@ class ACLAuditLogPlugin extends Sensor {
             suppressEventLogging: true,
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
+
+          // normalized block flow stats event, only for category/country block rules, consumed by BlockStatsSensor
+          if (block && dir != 'L' && record.bType && ['category', 'country'].includes(record.bType)) {
+            const afHost = record.af && Object.keys(record.af)[0];
+            const dest = type === 'dns' ? record.dn : (afHost || (fd == 'out' ? record.sh : record.dh));
+            if (dest) {
+              sem.emitLocalEvent({
+                type: Message.MSG_BLOCK_FLOW_STATS_UPDATE,
+                suppressEventLogging: true,
+                device: mac,
+                dest,
+                bType: record.bType,
+                bTarget: record.bTarget,
+                fd: fd || 'in',
+                ct: ct || 1,
+                _ts
+              });
+            }
+          }
 
           // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
           if (block) {

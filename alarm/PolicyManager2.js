@@ -158,7 +158,7 @@ class PolicyManager2 {
 
       this.tlsInstalled = false;
 
-      this.policyCache = new LRU({max: 1000});
+      this.policyCache = new LRU({max: 2000});
       sem.on('Policy:Updated', (event) => {
         const pid = event && event.pid;
         if (!isNaN(pid)) {
@@ -903,6 +903,7 @@ class PolicyManager2 {
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let unenforcedRules = [];
 
     for (let rule of rules) {
       if (_.isEmpty(rule.tag) && rule.type !== "tag") continue;
@@ -918,6 +919,7 @@ class PolicyManager2 {
             if (unenforced) {
               policyIds.push(rule.pid);
               policyKeys.push('policy:' + rule.pid);
+              unenforcedRules.push(rule);
             }
           } else {
             const reducedTag = _.without(rule.tag, tagUid);
@@ -942,6 +944,7 @@ class PolicyManager2 {
         if (unenforced) {
           policyIds.push(rule.pid);
           policyKeys.push(`policy:${rule.pid}`);
+          unenforcedRules.push(rule);
         }
       }
     }
@@ -950,6 +953,11 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      for (const rule of unenforcedRules) {
+        await this.removeBypassChainForPolicy(rule).catch(err => {
+          log.error(`Failed to remove bypass chain for policy ${rule.pid} while deleting tag ${tag}`, err.message);
+        });
+      }
     }
     // invalidate once at the end, after iptables/redis are fully settled, so a concurrent
     // checkACL()/checkRoute() never rebuilds the cache from a half-updated state
@@ -1721,7 +1729,7 @@ class PolicyManager2 {
     // for now, targets is only used for multiple category block/app time limit/app disturb
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids,
-      parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
+      parentRgId, targetRgId, ipttl, resolver, ipOnly, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
     const qosRef = { pid, subKey: policy.qosSubKey };
 
     if (action === "app_block")
@@ -1871,7 +1879,7 @@ class PolicyManager2 {
             const scheduling = policy.isSchedulingPolicy();
             if (action != "block" || policy.dnsmasq_only) { // dnsmasq_only + block indicates if DNS block should be applied on internet block
               // empty string matches all domains
-              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID, routeType }).catch(() => { });
+              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, ipOnly, wanUUID, routeType }).catch(() => { });
               dnsmasq.scheduleRestartDNSService();
             }
           }
@@ -1900,7 +1908,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) { // always implement allow rule in dnsmasq, but implement block rule only in iptables
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
+            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, ipOnly, wanUUID, routeType }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -2701,11 +2709,7 @@ class PolicyManager2 {
           // user target list categories are activated on demand and never deactivated by the
           // built-in category refresh logic; once the last rule referencing one is removed,
           // stop polling its hashset instead of leaving it active until the next reboot
-          if (categoryUpdater.isUserTargetList(target) &&
-            !categoryUpdater.hasActivePolicies(target) &&
-            !(await exceptionManager.hasException(target))) {
-            await categoryUpdater.deactivateCategory(target);
-          }
+          await exceptionManager.maybeDeactivateCategory(target);
         }
 
         if (["allow", "block", "route"].includes(action)) {

@@ -38,6 +38,7 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+const sem = require('./SensorEventManager.js').getInstance();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
@@ -551,6 +552,12 @@ module.exports = class {
       if (mspRelatedEids.length) {
         log.info("Remove msp exceptions", mspRelatedEids);
         await exceptionManager.deleteExceptions(mspRelatedEids);
+        // same notification netbot sends on exception:delete, otherwise FireMain keeps a stale
+        // CategoryMatcher for the removed exception and can re-activate its target list
+        sem.sendEventToOthers({
+          type: "ExceptionChange",
+          message: "msp exceptions removed"
+        });
       }
 
       // reset no_auto_upgrade flags

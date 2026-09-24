@@ -64,6 +64,7 @@ let rateLimitInfo = null;
 let redisMemory = 0;
 
 let updateFlag = 0;
+let updateLoopStarted = false;
 
 let updateInterval = 600 * 1000; // every 10 minutes
 
@@ -96,6 +97,27 @@ let releaseInfo = {};
 let emmcLife = null;
 
 let dockerEmmcUsage = null;
+
+const USB_SYSFS_DIR = "/sys/bus/usb/devices";
+// USB-IF class codes, see https://www.usb.org/defined-class-codes. bluetooth is the only
+// accessory of interest with a standard class, wifi dongles use vendor specific classes
+const USB_CLASS_HUB = "09";
+const USB_CLASS_WIRELESS = "e0";
+const USB_SUBCLASS_RF = "01";
+const USB_PROTOCOL_BLUETOOTH = "01";
+// dongles known to be used with the box, a fallback for the case that the dongle is plugged in
+// but its driver did not come up. see also platform/*/files/udev/55-start_ble.rules
+const BT_DONGLE_IDS = ["0a12:0001", "0bda:a729"];
+// RTL8821CU family, 1a2b is the CD-ROM mode it enumerates as before usb_modeswitch kicks in
+const WIFI_DONGLE_IDS = ["0bda:c811", "0bda:c820", "0bda:1a2b"];
+// lsusb result is cached this long, so that a dongle plugged in shows up on the next init
+// without waiting for a full SysInfo update cycle, and repeated getSysInfo() stay cheap
+const USB_INFO_TTL = 60 * 1000;
+// {bluetooth, wifi, other, devices}, null if the USB bus cannot be listed at all
+let usbInfo = null;
+let usbInfoTs = 0;
+let usbInfoPromise = null;
+let lsusbFailed = false;
 
 const REDIS_DISKSTATS_DAILY_KEY = 'sys:diskstats:daily';
 
@@ -130,40 +152,46 @@ async function readRawDiskStats() {
 getMultiProfileSupportFlag();
 
 async function update() {
-  await Promise.all([
-    // this takes 10s
-    os.cpuUsage().then((v) => cpuUsage = v),
+  try {
+    await Promise.all([
+      // this takes 10s
+      os.cpuUsage().then((v) => cpuUsage = v),
 
-    // Redis
-    getRedisMemoryUsage()
-      .then(getConns)
-      .then(getIntelQueueSize)
-      .then(getRateLimitInfo),
+      // Redis
+      getRedisMemoryUsage()
+        .then(getConns)
+        .then(getIntelQueueSize)
+        .then(getRateLimitInfo),
 
-    // bash
-    getRealMemoryUsage()
-      .then(getTemp)
-      .then(getThreadInfo)
-      .then(getDiskInfo)
-      .then(getMultiProfileSupportFlag)
-      .then(getAutoUpgrade)
-      .then(getUptimeInfo)
-      .then(getMaxPid)
-      .then(getActiveContainers)
-      .then(getEthernetInfo)
-      .then(getWlanInfo)
-      .then(getSlabInfo)
-      .then(getDiskUsage)
-      .then(getDiskWriteStats)
-      .then(getReleaseInfo)
-      .then(getCPUModel)
-      .then(getDistributionCodename)
-      .then(getEmmcLife)
-      .then(getDockerEmmcUsage)
-  ]);
-
-  if(updateFlag) {
-    setTimeout(() => { update(); }, updateInterval);
+      // bash
+      getRealMemoryUsage()
+        .then(getTemp)
+        .then(getThreadInfo)
+        .then(getDiskInfo)
+        .then(getMultiProfileSupportFlag)
+        .then(getAutoUpgrade)
+        .then(getUptimeInfo)
+        .then(getMaxPid)
+        .then(getActiveContainers)
+        .then(getEthernetInfo)
+        .then(getWlanInfo)
+        .then(getSlabInfo)
+        .then(getDiskUsage)
+        .then(getDiskWriteStats)
+        .then(getReleaseInfo)
+        .then(getCPUModel)
+        .then(getDistributionCodename)
+        .then(getEmmcLife)
+        .then(getDockerEmmcUsage)
+    ]);
+  } catch (err) {
+    log.error("Failed to update sysinfo", err);
+  } finally {
+    if(updateFlag) {
+      setTimeout(() => { update(); }, updateInterval);
+    } else {
+      updateLoopStarted = false;
+    }
   }
 }
 
@@ -171,6 +199,8 @@ async function update() {
 
 async function startUpdating(options = {}) {
   updateFlag = 1;
+  if (updateLoopStarted) return;
+  updateLoopStarted = true;
   await update();
 }
 
@@ -288,6 +318,40 @@ async function getKernelVersion() {
   }
   return kernelVersion;
 }
+
+// Wraps an async producer with a TTL cache and in-flight de-dup, same pattern as the
+// usbInfoPromise guard on getUsbInfo() below: getSysInfo() can be called concurrently
+// (e.g. by both basicDataForInit() and extensionDataForInit() in the same init request),
+// so without de-dup a slow/expensive producer would otherwise run once per caller.
+// A falsy/null result is never cached, so a failed lookup is retried on the next call.
+// ttlMs === Infinity caches the first successful result forever.
+function cachedAsync(producer, ttlMs) {
+  let value, ts = 0, inflight = null;
+  return async function() {
+    if (ts && (ttlMs === Infinity || Date.now() - ts < ttlMs))
+      return value;
+    if (!inflight) {
+      inflight = producer().then((result) => {
+        if (result != null) {
+          value = result;
+          ts = Date.now();
+        }
+        inflight = null;
+        return result;
+      }).catch((err) => {
+        inflight = null;
+        throw err;
+      });
+    }
+    return inflight;
+  };
+}
+
+// /proc/version never changes without a reboot, so cache it forever like kernelVersion above.
+const getProcVersion = cachedAsync(
+  () => exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+  Infinity
+);
 
 async function getMultiProfileSupportFlag() {
   const cmd = "sudo bash -c 'test -e /etc/openvpn/easy-rsa/keys2/ta.key'"
@@ -443,37 +507,72 @@ async function getActiveContainers() {
   }
 }
 
-function getTop10RSSProcesses() {
+async function computeTop10RSSProcesses() {
   try {
-    const psOutput = execSync(
-      'ps -eo pid,rss,comm,args:256 --no-headers --sort=-rss | head -n 10',
-      { encoding: 'utf-8' }
-    ).trim().split('\n');
+    const psOutput = await exec('ps -eo pid,rss,comm,args:256 --no-headers --sort=-rss | head -n 10')
+      .then(result => result.stdout.trim().split('\n').filter(l => l));
 
-    return psOutput.map(line => {
+    const procs = psOutput.map(line => {
       const [pid, rss, comm, ...args] = line.trim().split(/\s+/);
-      let exePath = '';
+      return { pid: parseInt(pid), rss, comm, args: args.filter(a => a).join(' '), exe: null };
+    }).filter(p => Number.isInteger(p.pid) && p.pid > 0);
+
+    // Reading /proc/<pid>/exe directly needs no subprocess at all, and works for any
+    // process this user can ptrace (own uid, or already root) - which is most of them.
+    // Only processes owned by another user hit the sudo fallback below.
+    const needSudo = [];
+    await Promise.all(procs.map(async (p) => {
       try {
-        exePath = execSync(`sudo readlink /proc/${pid}/exe`, { encoding: 'utf-8' }).trim();
-      } catch (e) {
-        // if can't get exe path, use comm name
-        exePath = comm || 'unknown';
+        p.exe = await fs.promises.readlink(`/proc/${p.pid}/exe`);
+      } catch (err) {
+        needSudo.push(p);
       }
-      return {
-        pid: parseInt(pid),
-        rss: rss,
-        exe: exePath,
-        command: comm,
-        args: args.filter(a => a).join(' ')
-      };
-    });
+    }));
+
+    // Batch whatever's left into a single sudo call instead of one sudo spawn per pid -
+    // pids are guaranteed numeric (parsed above), so safe to interpolate into the script.
+    if (needSudo.length) {
+      const script = needSudo.map(p => `echo "${p.pid} $(readlink /proc/${p.pid}/exe 2>/dev/null)"`).join('; ');
+      const exeByPid = await exec(`sudo bash -c '${script}'`).then(result => {
+        const map = {};
+        for (const line of result.stdout.trim().split('\n')) {
+          const idx = line.indexOf(' ');
+          if (idx > 0) map[line.slice(0, idx)] = line.slice(idx + 1).trim();
+        }
+        return map;
+      }).catch(() => ({}));
+      for (const p of needSudo)
+        p.exe = exeByPid[p.pid] || null;
+    }
+
+    return procs.map(p => ({
+      pid: p.pid,
+      rss: p.rss,
+      exe: p.exe || p.comm || 'unknown',
+      command: p.comm,
+      args: p.args
+    }));
   } catch (err) {
     log.error("Failed to get top 10 RSS processes:", err);
     return [];
   }
 }
 
+// Diagnostic snapshot, doesn't need per-request freshness; short TTL + in-flight de-dup
+// keeps repeated/concurrent getSysInfo() calls cheap. See cachedAsync() above.
+const getTop10RSSProcesses = cachedAsync(computeTop10RSSProcesses, 5 * 1000);
+
 async function getSysInfo() {
+  // independent lookups (some cached, some live), run in parallel rather than serially
+  const [kernelVersionVal, procVersion, noAutoUpgrade, autoupgrade, usbInfoVal, processes] = await Promise.all([
+    getKernelVersion(),
+    getProcVersion(),
+    getAutoUpgrade(),
+    upgradeManager.getAutoUpgradeFlags(),
+    getUsbInfo(),
+    getTop10RSSProcesses(),
+  ]);
+
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
@@ -496,20 +595,21 @@ async function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    kernelVersion: await getKernelVersion(),
-    procVersion: await exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+    kernelVersion: kernelVersionVal,
+    procVersion,
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: await getAutoUpgrade(),
-    autoupgrade: await upgradeManager.getAutoUpgradeFlags(),
+    no_auto_upgrade: noAutoUpgrade,
+    autoupgrade,
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
+    usbInfo: usbInfoVal,
     slabInfo,
     diskUsage: diskUsage,
     diskWriteStats: diskWriteStats,
-    processes : getTop10RSSProcesses(),
+    processes,
     releaseInfo: releaseInfo
   }
 
@@ -624,7 +724,7 @@ async function getEthErrorStats(nic) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  for (const nic of platform.getAllNicNames().filter(nic => nic.startsWith("eth"))) {
+  for (const nic of platform.getEthernetNicNames()) {
     if (!await fileExist(`/sys/class/net/${nic}/ifindex`)) // NIC not present on this box
       continue;
     // negotiated link speed in Mbps, -1 when the link is down. a NIC running below the speed it
@@ -680,6 +780,163 @@ async function getWlanInfo() {
   wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
+}
+
+async function pathExists(path) {
+  return fs.promises.access(path, fs.constants.F_OK).then(() => true).catch(() => false);
+}
+
+async function readSysfsValue(path) {
+  return fs.promises.readFile(path, {encoding: "utf8"}).then((content) => content.trim()).catch((err) => null);
+}
+
+// a wireless netdev has either of these, a wired one has neither. used to tell a wifi dongle
+// apart from a NIC of the box that sits on the USB bus
+async function isWirelessNetdev(name) {
+  return await pathExists(`/sys/class/net/${name}/wireless`) || await pathExists(`/sys/class/net/${name}/phy80211`);
+}
+
+// reads what lsusb does not tell: the class of every USB device and the kernel devices its
+// driver brought up. keyed by "<busnum>-<devnum>" so it can be joined with the lsusb output
+async function readUsbSysfs() {
+  const devices = {};
+  const entries = await fs.promises.readdir(USB_SYSFS_DIR).catch((err) => {
+    log.info("Failed to read", USB_SYSFS_DIR, err.message);
+    return [];
+  });
+  for (const entry of entries) {
+    // interface directories are named <device>:<config>.<interface>, they are read below as
+    // part of their parent device
+    if (entry.includes(":"))
+      continue;
+    const dir = `${USB_SYSFS_DIR}/${entry}`;
+    const [busnum, devnum, deviceClass] = await Promise.all([
+      readSysfsValue(`${dir}/busnum`),
+      readSysfsValue(`${dir}/devnum`),
+      readSysfsValue(`${dir}/bDeviceClass`),
+    ]);
+    if (!busnum || !devnum)
+      continue;
+    const device = {class: deviceClass, interfaces: [], netdevs: [], hasBluetooth: false};
+    const children = await fs.promises.readdir(dir).catch((err) => []);
+    for (const child of children.filter(c => c.startsWith(`${entry}:`))) {
+      const ifDir = `${dir}/${child}`;
+      const [cls, subClass, protocol] = await Promise.all([
+        readSysfsValue(`${ifDir}/bInterfaceClass`),
+        readSysfsValue(`${ifDir}/bInterfaceSubClass`),
+        readSysfsValue(`${ifDir}/bInterfaceProtocol`),
+      ]);
+      device.interfaces.push({cls, subClass, protocol});
+      // the driver of the interface publishes its kernel device here, e.g. btusb creates
+      // bluetooth/hci0 and r8152 creates net/eth0
+      device.netdevs.push(...await fs.promises.readdir(`${ifDir}/net`).catch((err) => []));
+      if (await pathExists(`${ifDir}/bluetooth`))
+        device.hasBluetooth = true;
+    }
+    devices[`${Number(busnum)}-${Number(devnum)}`] = device;
+  }
+  return devices;
+}
+
+// hubs are skipped altogether, the hubs built into the box are indistinguishable from an
+// external one, and whatever is plugged into a hub is enumerated on its own anyway
+function isUsbHub(id, name, device) {
+  if (device.class === USB_CLASS_HUB || device.interfaces.some(i => i.cls === USB_CLASS_HUB))
+    return true;
+  // fallback in case sysfs is not readable, 1d6b is the vendor of the virtual root hubs
+  return id.startsWith("1d6b:") || /\bhub\b/i.test(name);
+}
+
+// devices that are part of the box are not accessories, e.g. eth0 of pse is a USB NIC
+async function isNativeUsbDevice(id, device, nativeIds, nicNames) {
+  if (nativeIds.includes(id))
+    return true;
+  for (const netdev of device.netdevs)
+    // wlan interfaces are reserved on the models taking a wifi dongle, so a netdev only counts
+    // as native when it is a wired one
+    if (nicNames.includes(netdev) && !await isWirelessNetdev(netdev))
+      return true;
+  return false;
+}
+
+function isUsbBluetooth(id, name, device) {
+  if (device.hasBluetooth)
+    return true;
+  if (device.interfaces.some(i => i.cls === USB_CLASS_WIRELESS && i.subClass === USB_SUBCLASS_RF && i.protocol === USB_PROTOCOL_BLUETOOTH))
+    return true;
+  // a dongle whose driver did not come up, or whose descriptors are not readable
+  return BT_DONGLE_IDS.includes(id) || /bluetooth/i.test(name);
+}
+
+async function isUsbWifi(id, name, device) {
+  for (const netdev of device.netdevs)
+    if (await isWirelessNetdev(netdev))
+      return true;
+  // wifi dongles use a vendor specific class, so there is nothing to check in the descriptors
+  // besides the id. the product string is the same thing firerouter greps for on install
+  return WIFI_DONGLE_IDS.includes(id) || /802\.11|wi-?fi|wlan|wireless (adapter|lan|nic)/i.test(name);
+}
+
+// which types of USB accessories are plugged into the box. bluetooth and wifi dongles are
+// reported with their id and product string, anything else is only counted as "other"
+async function readUsbInfo() {
+  const output = await exec("lsusb").then((result) => result.stdout).catch((err) => {
+    if (!lsusbFailed) { // this is retried on every refresh, only complain about it once
+      lsusbFailed = true;
+      log.error("Failed to list USB devices", err.message);
+    }
+    return null;
+  });
+  // report nothing at all instead of "nothing detected" if the USB bus cannot be listed
+  if (output === null)
+    return null;
+  lsusbFailed = false;
+
+  const sysfs = await readUsbSysfs();
+  const nativeIds = platform.getNativeUsbDeviceIds();
+  const nicNames = platform.getAllNicNames();
+  const info = {bluetooth: false, wifi: false, other: false, devices: []};
+  for (const line of output.trim().split("\n")) {
+    // e.g. "Bus 001 Device 004: ID 0bda:c820 Realtek Semiconductor Corp. 802.11ac NIC"
+    const match = line.match(/^Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f]{4}:[0-9a-f]{4})\s*(.*)$/i);
+    if (!match)
+      continue;
+    const [, bus, dev, rawId, rawName] = match;
+    const id = rawId.toLowerCase();
+    const name = rawName.trim();
+    const device = sysfs[`${Number(bus)}-${Number(dev)}`] || {interfaces: [], netdevs: []};
+    if (isUsbHub(id, name, device) || await isNativeUsbDevice(id, device, nativeIds, nicNames))
+      continue;
+    const types = [];
+    // a combo dongle provides both functions on a single USB device, it counts as both
+    if (isUsbBluetooth(id, name, device))
+      types.push("bluetooth");
+    if (await isUsbWifi(id, name, device))
+      types.push("wifi");
+    if (!types.length)
+      types.push("other");
+    for (const type of types)
+      info[type] = true;
+    info.devices.push({id, name, types});
+  }
+  log.verbose("[getUsbInfo] results", info);
+  return info;
+}
+
+async function getUsbInfo() {
+  if (usbInfoTs && Date.now() - usbInfoTs < USB_INFO_TTL)
+    return usbInfo;
+  if (!usbInfoPromise) // getSysInfo() can be called concurrently, refresh only once
+    usbInfoPromise = readUsbInfo().catch((err) => {
+      log.error("Failed to get USB info", err);
+      return null;
+    }).then((info) => {
+      usbInfo = info;
+      usbInfoTs = Date.now();
+      usbInfoPromise = null;
+      return info;
+    });
+  return usbInfoPromise;
 }
 
 async function getSlabInfo() {
@@ -855,4 +1112,5 @@ module.exports = {
   getAutoUpgrade,
   getDiskWriteStats,
   getEthErrorStats,
+  getUsbInfo,
 };

@@ -194,15 +194,22 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const switchMap = await fwapc.getSwitchStatus();
             let result;
-            if (switchMap && switchMap[target] !== undefined) {
-              const st = switchMap[target];
-              if (this.isSwitchStatusOnline(st)) {
+            const assetType = await this.getAssetType(target);
+            if (assetType === 'switch') {
+              const switchMap = await fwapc.getSwitchStatus();
+              if (this.isSwitchStatusOnline(switchMap && switchMap[target])) {
                 result = await this.getSwitchThroughput(target, cache);
               } else {
                 delete cache.switchMetricsPrev;
                 result = { target, type: 'switch', tx: 0, rx: 0, ports: [], lagPorts: [] };
+              }
+            } else if (assetType === 'ap') {
+              const apMap = await fwapc.getAssetsStatus();
+              if (this.isAPStatusOnline(apMap && apMap[target])) {
+                result = await this.getAPThroughput(target);
+              } else {
+                result = { target, type: 'ap', tx: 0, rx: 0 };
               }
             } else {
               result = await this.getDeviceThroughput(target);
@@ -266,6 +273,9 @@ class LiveStatsPlugin extends Sensor {
                   response.throughput.push({ name: intf.name, target: intf.uuid, devices })
               }
             }
+
+            response.ports = await this.getPortsThroughput()
+            response.bands = await this.getBandsThroughput()
             break;
           }
           case 'phyIntf': {
@@ -391,6 +401,63 @@ class LiveStatsPlugin extends Sensor {
       return false;
     const nowSec = Math.floor(Date.now() / 1000);
     return nowSec - Number(st.ts) < 60;
+  }
+
+  // heartbeat ts in 60s
+  isAPStatusOnline(ap) {
+    if (!ap || ap.ts == null)
+      return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return nowSec - Number(ap.ts) < 60;
+  }
+
+  /**
+   * Classify a MAC from the local apc.assets config, so an ordinary client never pays for
+   * a fwapc status round trip. Returns 'switch', 'ap' or null.
+   */
+  async getAssetType(mac) {
+    if (!mac)
+      return null;
+    const assets = _.get(await fireRouter.getConfig(false, false), ['apc', 'assets']);
+    if (!_.isObject(assets))
+      return null;
+    const asset = assets[mac];
+    if (!asset)
+      return null;
+    const model = String(asset.model || '').toLowerCase();
+    return model === 'switch' || model.startsWith('fwsw-') ? 'switch' : 'ap';
+  }
+
+  async getAPThroughput(target) {
+    const info = await fwapc.getAssetLiveStats(target);
+    const { ports = [], bands = [] } = this.formatAPThroughput(info) || {};
+    const rate = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const aggTx = ports.reduce((s, p) => s + rate(p.txRate), 0) + bands.reduce((s, p) => s + rate(p.txRate), 0);
+    const aggRx = ports.reduce((s, p) => s + rate(p.rxRate), 0) + bands.reduce((s, p) => s + rate(p.rxRate), 0);
+    return { target, type: 'ap', tx: aggTx, rx: aggRx, ports, bands };
+  }
+
+  formatAPThroughput(info) {
+    const ports = [];
+    const bands = [];
+    const portMap = info && info.ports && typeof info.ports === 'object' ? info.ports : null;
+    if (!portMap)
+      return { ports, bands };
+
+    for (const p of Object.values(portMap)) {
+      if (!p || typeof p !== 'object')
+        continue;
+      if (p.type === 'wifi') {
+        // by default, uplink is on 6g bands, not override original 6g uplink
+        if (info.uplink && p.band === '6g' && !p.uplink) {
+          p.uplink = info.uplink;
+        }
+        bands.push(p);
+      } else if (p.type === 'ether') {
+        ports.push(p);
+      }
+    }
+    return { ports, bands };
   }
 
   /**
@@ -717,6 +784,68 @@ class LiveStatsPlugin extends Sensor {
     return {rx: Number(rx), tx: Number(tx)};
   }
 
+  async getPortsThroughput() {
+    const nicStates = await platform.getNicStates()
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const ports = []
+    for (const name of platform.getEthernetNicNames()) {
+      const nic = nicStates[name]
+      if (!nic)
+        continue
+      // wanIntfNames comes from raw router config, sysinfo type is rewritten to lan in DHCP mode
+      const uplink = wanNames.includes(name)
+      const { tx, rx } = await this.getIntfThroughput(name)
+      ports.push({
+        name,
+        target: name,
+        type: 'phyIntf',
+        role: uplink ? 'wan' : 'lan',
+        uplink,
+        speed: Number(nic.speed) || -1,
+        carrier: Number(nic.carrier) || 0,
+        duplex: nic.duplex || 'unknown',
+        tx,
+        rx,
+      })
+    }
+    return ports
+  }
+
+  async getBandsThroughput() {
+    const intfs = await this.getWlanIntfs()
+    const bandMap = {}
+    for (const intf of intfs) {
+      const { ssid, band } = await this.getWlanIdentity(intf)
+      if (!band)
+        continue
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      if (!bandMap[band]) {
+        bandMap[band] = {
+          band,
+          type: 'wlanBand',
+          tx: 0,
+          rx: 0,
+          uplink: { intfs: [], tx: 0, rx: 0 },
+          downlink: { intfs: [], tx: 0, rx: 0 },
+        }
+      }
+      const entry = bandMap[band]
+      entry.tx += tx
+      entry.rx += rx
+      const wlanIntf = { name: intf.name, ssid, tx, rx }
+      if (intf.role === 'wan')
+        wlanIntf.rssi = await this.getWlanRssi(intf)
+
+      const link = intf.role === 'wan' ? entry.uplink : entry.downlink
+      link.intfs.push(wlanIntf)
+      link.tx += tx
+      link.rx += rx
+    }
+    const bands = Object.values(bandMap)
+    bands.sort((a, b) => (a.band || '').localeCompare(b.band || ''))
+    return bands
+  }
+
   async getWlanThroughput() {
     const intfs = await this.getWlanIntfs() // include wan and lan
     const result = []
@@ -728,6 +857,12 @@ class LiveStatsPlugin extends Sensor {
     return result
   }
 
+  // eg:
+  // [
+  //   { name: 'wlan24g_85db07', role: 'ap' },
+  //   { name: 'wlan5g_85db07', role: 'ap' },
+  //   { name: 'wlan0', role: 'wan' }
+  // ]
   async getWlanIntfs() {
     const apDir = `${f.getFireRouterRuntimeInfoFolder()}/hostapd`
     const wanNames = fireRouter.getWanIntfNames() || []
@@ -760,9 +895,12 @@ class LiveStatsPlugin extends Sensor {
     if (cached && now - cached.ts < 30000)
       return cached
 
-    const runDir = f.getFireRouterRuntimeInfoFolder()
-    const ctrlDir = intf.role == 'ap' ? `${runDir}/hostapd` : `${runDir}/wpa_supplicant/${intf.name}`
-    const identity = await exec(`sudo wpa_cli -p ${ctrlDir} -i ${intf.name} status`)
+    const wpaCli = await this.getWpaCli()
+    if (!wpaCli)
+      return { ssid: null, band: null }
+
+    const ctrlDir = this.getWpaCtrlDir(intf)
+    const identity = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} status`)
       .then(result => this.parseWpaStatus(result.stdout, intf.name))
       .catch(err => {
         log.error('Failed to get wpa status of', intf.name, err.message)
@@ -772,6 +910,33 @@ class LiveStatsPlugin extends Sensor {
     identity.ts = now
     this.wlanIdentityCache[intf.name] = identity
     return identity
+  }
+
+  async getWpaCli() {
+    if (this.wpaCli === undefined)
+      this.wpaCli = await platform.getWpaCliBinPath()
+    return this.wpaCli
+  }
+
+  getWpaCtrlDir(intf) {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    if (intf.role == 'ap')
+      return `${runDir}/hostapd`
+    return `${runDir}/wpa_supplicant/${intf.name}`
+  }
+
+  async getWlanRssi(intf) {
+    const wpaCli = await this.getWpaCli()
+    if (!wpaCli)
+      return null
+
+    const ctrlDir = this.getWpaCtrlDir(intf)
+    return exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
+      .then(result => this.parseWpaSignalPoll(result.stdout))
+      .catch(err => {
+        log.error('Failed to get wpa signal of', intf.name, err.message)
+        return null
+      })
   }
 
   parseWpaStatus(output, intf) {
@@ -808,6 +973,16 @@ class LiveStatsPlugin extends Sensor {
     else if (freq >= 5925 && freq <= 7125) band = '6g'
 
     return { ssid, band }
+  }
+
+  parseWpaSignalPoll(output) {
+    for (const line of String(output).split('\n')) {
+      if (!line.startsWith('RSSI='))
+        continue
+      const rssi = Number(line.substring(5).trim())
+      return isNaN(rssi) ? null : rssi
+    }
+    return null
   }
 
   // guard against shell injection and confirm the nic exists on the box
