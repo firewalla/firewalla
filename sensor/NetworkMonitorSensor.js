@@ -46,6 +46,8 @@ const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
+const JOB_SCOPE_SYSTEM = "system";
+const JOB_SCOPE_DEVICE = "device";
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 const fsp = require('fs').promises;
@@ -58,6 +60,9 @@ class NetworkMonitorSensor extends Sensor {
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
+    // scheduledKey -> { scope, target, cfg, active }, tracks what each running job was started with
+    // so that a reload can skip jobs whose target/config did not actually change
+    this.jobMeta = {};
     this.cachedPolicy = { "system": {}, "devices": {} };
     this.alerts = {};
   }
@@ -174,9 +179,7 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const systemPolicy = this.cachedPolicy.system;
       if ( systemPolicy && !_.isEmpty(systemPolicy) ) {
-        // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-        this.stopMonitorDeviceAll();
-        this.applyPolicySystem(systemPolicy);
+        this.reapplySystemPolicy(systemPolicy);
       }
       for (const mac in this.cachedPolicy.devices) {
         const deviceConfig = this.cachedPolicy.devices[mac]
@@ -211,12 +214,10 @@ class NetworkMonitorSensor extends Sensor {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
         if (systemPolicy && !_.isEmpty(systemPolicy)) {
-          // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-          this.stopMonitorDeviceAll();
-          this.applyPolicySystem(systemPolicy);
+          this.reapplySystemPolicy(systemPolicy);
         }
       } catch (err) {
-        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded");
+        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded", err);
       }
     });
 
@@ -229,6 +230,27 @@ class NetworkMonitorSensor extends Sensor {
       stop: this.stop
     });
 
+  }
+
+  /*
+   * Re-apply system policy without blindly restarting every job: a job whose target and config
+   * are unchanged keeps running with its original timer, so a burst of network reload events
+   * (e.g. flapping IPv6 prefix delegation) does not repeatedly cancel it before it ever fires.
+   * Only jobs no longer covered by the new policy are stopped.
+   */
+  reapplySystemPolicy(policy) {
+    for (const scheduledKey in this.jobMeta) {
+      if (this.jobMeta[scheduledKey].scope === JOB_SCOPE_SYSTEM)
+        this.jobMeta[scheduledKey].active = false;
+    }
+    this.applyPolicySystem(policy);
+    for (const scheduledKey of Object.keys(this.jobMeta)) {
+      const meta = this.jobMeta[scheduledKey];
+      if (meta.scope === JOB_SCOPE_SYSTEM && !meta.active) {
+        log.info(`${scheduledKey} is no longer covered by system policy, stop it`);
+        this.stopScheduledJob(scheduledKey);
+      }
+    }
   }
 
   applyPolicySystem(policy, intfUUID) {
@@ -252,7 +274,7 @@ class NetworkMonitorSensor extends Sensor {
           if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
             return;
           if (runtimeState && this.adminSwitch) {
-            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf);
+            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf, JOB_SCOPE_SYSTEM);
           } else {
             this.stopMonitorDevice(targetIP, intf);
           }
@@ -476,10 +498,12 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
-    // prevent too low value in sample interval
+    // prevent too low value in sample interval, clamp on a copy so that the caller's config object
+    // (which is kept in jobMeta and compared against the policy on the next reload) is left intact
+    let jobCfg = cfg;
     if (cfg.sampleInterval<SAMPLE_INTERVAL_MIN) {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-      cfg.sampleInterval = SAMPLE_INTERVAL_MIN
+      jobCfg = Object.assign({}, cfg, {sampleInterval: SAMPLE_INTERVAL_MIN});
     }
     const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
     if (intf)
@@ -487,20 +511,20 @@ class NetworkMonitorSensor extends Sensor {
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
-          this.samplePing(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.samplePing(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_DNS: {
         scheduledJob = setInterval(() => {
-          this.sampleDNS(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleDNS(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_HTTP: {
         scheduledJob = setInterval(() => {
-          this.sampleHTTP(target, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleHTTP(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
     }
@@ -563,56 +587,59 @@ class NetworkMonitorSensor extends Sensor {
     return result;
   }
 
-  startMonitorDevice(key, target, cfg, intf = null) {
-    log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with target(${target})`);
+  startMonitorDevice(key, target, cfg, intf = null, scope = JOB_SCOPE_DEVICE) {
+    log.debug(`check monitor jobs of ${key}${intf ? ` on ${intf}` : ""} against target(${target})`);
     log.debug("config: ", cfg);
     if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
-      if ( scheduledKey in this.sampleJobs ) {
-        log.warn(`${monitorType} on ${key} already started`);
+      const mtCfg = cfg[monitorType];
+      const meta = this.jobMeta[scheduledKey];
+      if ( meta && _.isEqual(meta.target, target) && _.isEqual(meta.cfg, mtCfg) ) {
+        // target and config are unchanged, keep the job running as is so its timer is not reset
+        log.debug(`${monitorType} on ${key}${intf ? ` on ${intf}` : ""} is running with the same target/config, keep it as is`);
+        meta.active = true;
       } else {
-        log.debug(`scheduling sample job ${monitorType} on ${key} ...`);
-        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, target, cfg[monitorType], intf);
+        if (meta) {
+          log.info(`target/config of ${scheduledKey} changed, rescheduling ...`);
+          this.stopScheduledJob(scheduledKey);
+        } else {
+          log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with target(${target})`);
+        }
+        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, target, mtCfg, intf);
         log.debug(`scheduling process job ${monitorType} on ${key} ...`);
-        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, target, cfg[monitorType], intf);
+        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, target, mtCfg, intf);
+        this.jobMeta[scheduledKey] = { scope, target, cfg: mtCfg, active: true };
       }
     }
+  }
+
+  stopScheduledJob(scheduledKey) {
+    if ( scheduledKey in this.sampleJobs ) {
+      log.debug(`UNscheduling sample job ${scheduledKey} ...`);
+      clearInterval(this.sampleJobs[scheduledKey]);
+      delete(this.sampleJobs[scheduledKey]);
+    }
+    if ( scheduledKey in this.processJobs ) {
+      log.debug(`UNscheduling process job ${scheduledKey} ...`);
+      clearInterval(this.processJobs[scheduledKey]);
+      delete(this.processJobs[scheduledKey]);
+    }
+    delete(this.jobMeta[scheduledKey]);
   }
 
   stopMonitorDevice(key, intf = null) {
     log.info(`stop monitoring ${key}${intf ? ` on ${intf}` : ""} ...`)
     for ( const monitorType of MONITOR_TYPES ) {
-      const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
-      if ( scheduledKey in this.sampleJobs ) {
-        log.debug(`UNscheduling sample ${monitorType} on ${key} ...`);
-        clearInterval(this.sampleJobs[scheduledKey]);
-        delete(this.sampleJobs[scheduledKey])
-      } else {
-        log.debug(`${monitorType} on ${key} NOT scheduled`);
-      }
-      if ( scheduledKey in this.processJobs ) {
-        log.debug(`UNscheduling process ${monitorType} on ${key} ...`);
-        clearInterval(this.processJobs[scheduledKey]);
-        delete(this.processJobs[scheduledKey])
-      } else {
-        log.debug(`${monitorType} on ${key} NOT scheduled`);
-      }
+      this.stopScheduledJob(`${key}-${monitorType}${intf ? `-${intf}` : ""}`);
     }
   }
 
   stopMonitorDeviceAll() {
     log.info(`stop ALL monitoring jobs ...`)
-    Object.keys(this.sampleJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
-      clearInterval(this.sampleJobs[scheduledKey]);
-      delete(this.sampleJobs[scheduledKey]);
-    })
-    Object.keys(this.processJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in process jobs ...`);
-      clearInterval(this.processJobs[scheduledKey]);
-      delete(this.processJobs[scheduledKey]);
-    })
+    for (const scheduledKey of _.union(Object.keys(this.sampleJobs), Object.keys(this.processJobs))) {
+      this.stopScheduledJob(scheduledKey);
+    }
   }
 
   applyPolicyDevice(host, state, cfg) {
@@ -637,9 +664,7 @@ class NetworkMonitorSensor extends Sensor {
     try {
         if (ip === '0.0.0.0') {
             this.cachedPolicy.system = policy;
-            // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-            this.stopMonitorDeviceAll();
-            this.applyPolicySystem(policy);
+            this.reapplySystemPolicy(policy);
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
