@@ -93,6 +93,23 @@ module.exports = class {
 
   async discoverMac(mac) {
     const list = sysManager.getMonitoringInterfaces();
+    const eligibleInterfaceNames = new Set(list
+      .filter(intf => intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg") && !intf.name.startsWith("awg"))
+      .map(intf => intf.name));
+
+    // DHCP-triggered discovery commonly runs after a lease has been assigned, so consult
+    // the kernel ARP table before starting an expensive subnet-wide Nmap scan.
+    let arpTable = {};
+    try {
+      arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    } catch (err) {
+      log.error("discoverMac: failed to read ARP table, falling back to Nmap: " + err);
+    }
+    if (arpTable[mac] && eligibleInterfaceNames.has(arpTable[mac].intf)) {
+      log.info("discoverMac:found via ARP", arpTable[mac]);
+      return arpTable[mac];
+    }
+
     let found = null;
     for (const intf of list) {
       if (intf == null) {
@@ -101,7 +118,7 @@ module.exports = class {
       if (found) {
         break;
       }
-      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg") && !intf.name.startsWith("awg")) {
+      if (eligibleInterfaceNames.has(intf.name)) {
         log.debug("Prepare to scan subnet", intf);
 
         log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
@@ -129,14 +146,8 @@ module.exports = class {
     if (found) {
       return found;
     } else {
-      const arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
       log.info("discoverMac:miss", mac);
-      if (arpTable[mac]) {
-        log.info("discoverMac:found via ARP", arpTable[mac]);
-        return arpTable[mac];
-      } else {
-        return null;
-      }
+      return null;
     }
   }
 
@@ -156,7 +167,7 @@ module.exports = class {
             let now = Date.now() / 1000;
             let mac = cols[3].toUpperCase();
             let ipv4 = cols[0];
-            let arpData = { ipv4Addr: cols[0], mac: mac, uid: ipv4, lastActiveTimestamp: now, firstFoundTimestamp: now };
+            let arpData = { ipv4Addr: cols[0], mac: mac, uid: ipv4, intf: cols[5], lastActiveTimestamp: now, firstFoundTimestamp: now };
             this.arpTable[mac] = arpData;
           }
         }
