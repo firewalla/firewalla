@@ -113,7 +113,11 @@ class ActionPlugin extends Sensor {
   async recordAction(action) {
     const ts = action.ts;
     if (_.get(action, 'appInfo.operator.id') === 'bg_job') return; // skip bg_job action
-    const newValue = _.get(action, 'action.value');
+    let newValue = _.get(action, 'action.value');
+    if (_.get(action, 'action.item') === 'msp.data' && newValue && newValue.list != null) {
+      newValue = newValue.list;
+      _.set(action, 'action.value', newValue);
+    }
     if (action.origin && newValue && !action.diff) {
       action.diff = difference(newValue, action.origin);
     }

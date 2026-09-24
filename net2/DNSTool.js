@@ -77,12 +77,19 @@ class DNSTool {
     const pending = this.dnsExpirePending;
     this.dnsExpirePending = new Map();
     const now = Date.now();
-    const multi = rclient.multi();
-    for (const [key, expr] of pending) {
-      multi.expire(key, expr);
+    for (const key of pending.keys()) {
       this.dnsExpireTs.set(key, now);
     }
-    await multi.execAsync().catch((err) => log.error("Failed to flush deferred rdns TTL refreshes", err.message));
+    if (pending.size === 1) {
+      const [key, expr] = pending.entries().next().value;
+      await rclient.expireAsync(key, expr).catch((err) => log.error("Failed to flush deferred rdns TTL refreshes", err.message));
+    } else {
+      const multi = rclient.multi();
+      for (const [key, expr] of pending) {
+        multi.expire(key, expr);
+      }
+      await multi.execAsync().catch((err) => log.error("Failed to flush deferred rdns TTL refreshes", err.message));
+    }
   }
 
   getDNSKey(ip) {

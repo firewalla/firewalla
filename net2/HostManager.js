@@ -105,6 +105,9 @@ const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+// matches EventSummarySensor's RETENTION_SECS (7 days), but counted in local calendar days
+const EVENT_SUMMARY_RETENTION_DAYS = 7;
+const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
@@ -434,6 +437,10 @@ module.exports = class HostManager extends Monitorable {
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
     json.kernelVersion = sysInfo.kernelVersion;
+    if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
+      json.usbInfo = sysInfo.usbInfo;
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0)
+      json.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -760,11 +767,6 @@ module.exports = class HostManager extends Monitorable {
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
     }
 
-    const sysInfo = await SysInfo.getSysInfo();
-    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
-      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
-    }
-
     json.extension = extdata;
   }
 
@@ -799,8 +801,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newAlarmDataForInit(json) {
-    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
-    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+    // alarms of the last 30 days, begin time is aligned to calendar date, same as MSP
+    const beginTs = alarmManager2.getAlarmWindowBeginTs();
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount(beginTs);
+    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync({ ts2: beginTs });
   }
 
   async pendingAlarmNumberForInit(json) {
@@ -1041,6 +1045,19 @@ module.exports = class HostManager extends Monitorable {
     json.networkMonitorEvents = networkMonitorEvents;
   }
 
+  /*
+   * The classified events that last happened BEFORE the networkMonitorEvents window.
+   *
+   * networkMonitorEventsForInit() above covers the last 24 hours. A type whose most recent event is
+   * older than that is invisible there, so the app cannot tell "this has not happened in a day"
+   * from "this has never happened". These entries fill that in: one per classified type, each the
+   * whole event including last_ts, so the app can render how long a type has been quiet.
+   */
+  async previousEventsByTypeForInit(json) {
+    const begin = Date.now() - 86400 * 1000; // same 24 hour window as networkMonitorEventsForInit
+    json.previousEventsByType = await eventApi.listLastEventsBefore(begin);
+  }
+
   async policyRuleNumberForInit(json) {
       const count = await policyManager2.countActivePolicyNumber()
       json.policyRuleNumber = count
@@ -1056,7 +1073,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else if (rule.action != "bypass") {
+      } else {
         policyRules.push(rule)
       }
     }
@@ -1294,6 +1311,7 @@ module.exports = class HostManager extends Monitorable {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
       }
+      json.stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
@@ -1695,6 +1713,7 @@ module.exports = class HostManager extends Monitorable {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
+      this.previousEventsByTypeForInit(json),
       // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
@@ -1703,6 +1722,8 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
+      this.recentBlockStatsForInit(json),
+      this.eventSummaryForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1762,6 +1783,119 @@ module.exports = class HostManager extends Monitorable {
         json.extraTimeRequests = [];
       }
     }
+  }
+
+  // drops records for devices that no longer exist, adds a `${field}Cnt` distinct-value count for
+  // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
+  // record set, and caps the returned records to the top 5 by cnt
+  summarizeBlockStatsEntry(entry) {
+    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device) || IdentityManager.getIdentityByGUID(r.device));
+    const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
+    const fieldCounts = {};
+    for (const field of fields) {
+      fieldCounts[`${field}Cnt`] = new Set(records.map(r => r[field]).filter(v => v != null)).size;
+    }
+    const topRecords = records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, 5);
+    return Object.assign({}, entry, { records: topRecords }, fieldCounts);
+  }
+
+  // reads raw persisted block stats bucket payloads for index entries with score in
+  // [minScore, maxScore] (redis score syntax - prefix a bound with "(" for exclusive),
+  // newest bucket first. Reads the index rather than guessing bucket timestamps from the
+  // current slotSecs config, since slotSecs may have changed since older buckets were written
+  async _getBlockStatsBuckets(minScore, maxScore) {
+    let bucketTimestamps;
+    try {
+      // ZREVRANGEBYSCORE takes max before min
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, maxScore, minScore);
+    } catch (err) {
+      log.error(`Failed to load block stats index: ${err.message}`);
+      return [];
+    }
+    if (_.isEmpty(bucketTimestamps)) return [];
+    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
+    const buckets = [];
+    try {
+      const values = await rclient.mgetAsync(keys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          buckets.push(JSON.parse(v));
+        } catch (err) {
+          log.error(`Failed to parse block stats bucket ${bucketTimestamps[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load block stats buckets: ${err.message}`);
+    }
+    return buckets;
+  }
+
+  async recentBlockStatsForInit(json) {
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
+    const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
+    const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
+    json.recentBlockStats = buckets.map(payload => {
+      if (Array.isArray(payload.blockStats))
+        payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
+      return payload;
+    });
+  }
+
+  // raw (unsummarized - no device filtering, no top-N truncation, no derived counts) block
+  // stats buckets whose ts falls in [begin, end), newest first
+  async getBlockStatsInRange(begin, end) {
+    return this._getBlockStatsBuckets(begin, `(${end}`);
+  }
+
+  // strips the sensor's internal bookkeeping fields (record group key, first/last event ts) and
+  // caps the record count to the busiest ones - MAX_RECORDS_PER_KEY x buckets x settings would
+  // otherwise be inlined in every init response, the same concern summarizeBlockStatsEntry
+  // addresses by truncating to top-5 by cnt
+  summarizeEventSummaryBucket(payload) {
+    const records = (payload.records || []).slice()
+      .sort((a, b) => b.cnt - a.cnt)
+      .slice(0, EVENT_SUMMARY_MAX_RECORDS)
+      .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
+    return { ts: payload.ts, du: payload.du, key: payload.key, records };
+  }
+
+  async eventSummaryForInit(json) {
+    // align the cutoff to local midnight so this is the last 7 CALENDAR days, "now - 604800" would
+    // yield 7 days plus a partial 8th. Same shape as AlarmManager2.getAlarmWindowBeginTs
+    const tz = sysManager.getTimezone();
+    const now = tz && moment.tz.zone(tz) ? moment().tz(tz) : moment();
+    const cutoff = now.subtract(EVENT_SUMMARY_RETENTION_DAYS - 1, 'days').startOf('day').unix();
+
+    let redisKeys;
+    try {
+      // ZREVRANGEBYSCORE takes max before min. Members are full key strings, so the bucket
+      // boundaries never have to be reconstructed from the (possibly since-changed) config
+      redisKeys = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_EVENT_SUMMARY_INDEX, '+inf', cutoff);
+    } catch (err) {
+      log.error(`Failed to load event summary index: ${err.message}`);
+      json.eventSummary = [];
+      return;
+    }
+    if (_.isEmpty(redisKeys)) {
+      json.eventSummary = [];
+      return;
+    }
+    const buckets = [];
+    try {
+      const values = await rclient.mgetAsync(redisKeys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          buckets.push(this.summarizeEventSummaryBucket(JSON.parse(v)));
+        } catch (err) {
+          log.error(`Failed to parse event summary bucket ${redisKeys[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load event summary buckets: ${err.message}`);
+    }
+    json.eventSummary = buckets;
   }
 
   async miscForInit(json) {
