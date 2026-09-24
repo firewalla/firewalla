@@ -314,10 +314,9 @@ async function run() {
 
     try {
       await pm2.cleanupPolicyData()
-      //await pm2.enforceAllPolicies()
-      await pm2.checkRunPolicies(true)
+      await pm2.enforceAllPolicies()
     } catch (err) {
-      log.error("Failed to cleanup policy & check run policy rules: ", err);
+      log.error("Failed to cleanup policy & enforce policy rules: ", err);
     }
     require('./UpgradeManager').finishUpgrade();
 
