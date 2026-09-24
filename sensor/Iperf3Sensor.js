@@ -25,101 +25,143 @@ const f = require('../net2/Firewalla.js');
 const { wrapIptables } = require('../net2/Iptables.js');
 
 const PID_FILE = `${f.getRuntimeInfoFolder()}/iperf3.pid`;
-const BYPASS_PORT_FILE = `${f.getRuntimeInfoFolder()}/iperf3.bypass_port`;
+const STORED_PORT_FILE = `${f.getRuntimeInfoFolder()}/iperf3.port`;
+const WATCHDOG_INTERVAL_MS = 20 * 1000; // Periodically check whether the iperf3 server still has an active client.
 
 class Iperf3Sensor extends Sensor {
   async apiRun() {
-    extensionManager.onCmd("iperf3:start", async (msg, data) => {
-      const bridgeMode = await sysManager.isBridgeMode();
-
-      // Clean up any lingering bypass rules from a previous run that didn't stop cleanly.
-      const oldPort = await this.readStoredBypassPort();
-      if (oldPort) {
-        await this.removeBypassRules(oldPort);
-        await this.clearStoredBypassPort();
-      }
-
-      let pid = await this.getPID();
-      if (!pid)
-        pid = await this.startIperf3Server();
-      if (!pid)
-        throw {msg: `Failed to start iperf3 server`, code: 500};
-      const port = await this.getPort(pid);
-      if (!port || isNaN(port))
-        throw {msg: `Failed to start iperf3 server`, code: 500};
-      const portNum = Number(port);
-
-      if (bridgeMode) {
-        try {
-          await this.addBypassRules(portNum);
-          await this.writeStoredBypassPort(portNum);
-        } catch (err) {
-          log.error(`Failed to setup iperf3 bypass rules for port ${portNum}`, err.message);
-          await this.removeBypassRules(portNum);
-          await this.clearStoredBypassPort();
-          await this.stopIperf3Server();
-          throw {msg: `Failed to setup iperf3 bypass rules`, code: 500};
-        }
-      }
-
-      return {port: portNum};
-    });
-
-    extensionManager.onCmd("iperf3:stop", async (msg, data) => {
-      // Cleanup is driven by the port file, not the live PID, so stale rules
-      // get removed even if the iperf3 process crashed before stop was called.
-      const storedPort = await this.readStoredBypassPort();
-      if (storedPort) {
-        await this.removeBypassRules(storedPort);
-        await this.clearStoredBypassPort();
-      }
-      await this.stopIperf3Server();
-      return;
-    })
+    this.watchdogTimer = null;
+    extensionManager.onCmd("iperf3:start", () => this.start());
+    extensionManager.onCmd("iperf3:stop", () => this.stop());
   }
 
-  // In bridge mode, Firewalla's WAN IP equals its LAN IP. With DMZ configured,
-  // FW_PREROUTING_DMZ_HOST's DNAT hijacks inbound iperf3 traffic to the DMZ host,
-  // so the local iperf3 process never sees the connection. Insert a RETURN at the
-  // chain head to bypass DNAT for this port, plus an ACCEPT in FW_INPUT_ACCEPT so
-  // the packet is allowed through the filter INPUT chain. Both are constrained to
-  // monitored_net_set so WAN-side traffic is unaffected.
-  async addBypassRules(port) {
+  async start() {
+    // Clean up any lingering state from a previous run that didn't stop cleanly.
+    await this.disableServerAccess();
+
+    let pid = await this.getPID();
+    if (!pid)
+      pid = await this.startIperf3Server();
+    if (!pid)
+      throw {msg: `Failed to start iperf3 server`, code: 500};
+    const port = await this.getPort(pid);
+    if (!port || isNaN(port))
+      throw {msg: `Failed to start iperf3 server`, code: 500};
+    const portNum = Number(port);
+
+    if (await sysManager.isBridgeMode()) {
+      try {
+        await this.enableServerAccess(portNum);
+      } catch (err) {
+        log.error(`Failed to enable iperf3 server access for port ${portNum}`, err.message);
+        await this.stop();
+        throw {msg: `Failed to enable iperf3 server access`, code: 500};
+      }
+    }
+
+    this.startWatchdog();
+    return {port: portNum};
+  }
+
+  async stop() {
+    this.stopWatchdog();
+    await this.disableServerAccess();
+    await this.stopIperf3Server();
+  }
+
+  // for bridge mode + dmz host
+  async enableServerAccess(port) {
+    await this.writeStoredPort(port);
+    await this.addIptablesRules(port);
+  }
+
+  // for bridge mode + dmz host
+  async disableServerAccess() {
+    const storedPort = await this.readStoredPort();
+    if (storedPort) {
+      await this.removeIptablesRules(storedPort);
+      await this.clearStoredPort();
+    }
+  }
+
+  startWatchdog() {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(async () => {
+      try {
+        const pid = await this.getPID();
+        if (!pid) {
+          log.info(`iperf3 process is gone, cleaning up residue`);
+          await this.stop();
+          return;
+        }
+        if (!await this.hasEstablishedConnection(pid)) {
+          log.info(`iperf3 has no active client connection, auto stopping`);
+          await this.stop();
+        }
+      } catch (err) {
+        // lsof or other transient failures: skip this tick instead of stopping,
+        // to avoid killing a server that actually has clients.
+        log.warn(`iperf3 watchdog check failed, will retry next tick: ${err.message}`);
+      }
+    }, WATCHDOG_INTERVAL_MS);
+  }
+
+  stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  // Throws on lsof failure so the watchdog can distinguish "no connection"
+  // from "couldn't check" and avoid false-positive auto stop.
+  async hasEstablishedConnection(pid) {
+    const result = await exec(`sudo lsof -n -p ${pid}`);
+    return result.stdout.includes('ESTABLISHED');
+  }
+
+  // In bridge mode + DMZ, add iptables rule to prevent flows go to dmz.
+  async addIptablesRules(port) {
     await exec(wrapIptables(`sudo iptables -w -t nat -I FW_PREROUTING_DMZ_HOST -p tcp --dport ${port} -m set --match-set monitored_net_set src,src -m comment --comment "iperf3 wifi test" -j RETURN`));
     await exec(wrapIptables(`sudo iptables -w -A FW_INPUT_ACCEPT -p tcp --dport ${port} -m set --match-set monitored_net_set src,src -m comment --comment "iperf3 wifi test" -j ACCEPT`));
   }
 
-  async removeBypassRules(port) {
+  async removeIptablesRules(port) {
     await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DMZ_HOST -p tcp --dport ${port} -m set --match-set monitored_net_set src,src -m comment --comment "iperf3 wifi test" -j RETURN`)).catch((err) => {
-      log.error(`Failed to remove PREROUTING bypass rule for iperf3 port ${port}`, err.message);
+      log.error(`Failed to remove PREROUTING rule for iperf3 port ${port}`, err.message);
     });
     await exec(wrapIptables(`sudo iptables -w -D FW_INPUT_ACCEPT -p tcp --dport ${port} -m set --match-set monitored_net_set src,src -m comment --comment "iperf3 wifi test" -j ACCEPT`)).catch((err) => {
-      log.error(`Failed to remove INPUT accept rule for iperf3 port ${port}`, err.message);
+      log.error(`Failed to remove INPUT rule for iperf3 port ${port}`, err.message);
     });
   }
 
-  async readStoredBypassPort() {
-    const content = await fsp.readFile(BYPASS_PORT_FILE, 'utf8').catch(() => null);
+  async readStoredPort() {
+    const content = await fsp.readFile(STORED_PORT_FILE, 'utf8').catch(() => null);
     if (!content) return null;
     const port = parseInt(content.trim());
     return isNaN(port) ? null : port;
   }
 
-  async writeStoredBypassPort(port) {
-    await fsp.writeFile(BYPASS_PORT_FILE, String(port));
+  async writeStoredPort(port) {
+    await fsp.writeFile(STORED_PORT_FILE, String(port));
   }
 
-  async clearStoredBypassPort() {
-    await fsp.unlink(BYPASS_PORT_FILE).catch(() => {});
+  async clearStoredPort() {
+    await fsp.unlink(STORED_PORT_FILE).catch(() => {});
   }
 
   async getPID() {
-    const pid = await fsp.readFile(PID_FILE, {"encoding": "utf8"}).then((content) => content.trim().replace('\0', '')).catch((err) => null); // there is a trailing null character in iperf3's pid file
+    // there is a trailing null character in iperf3's pid file
+    const pid = await fsp.readFile(PID_FILE, {"encoding": "utf8"})
+        .then((content) => content.trim().replace('\0', ''))
+        .catch((err) => null);
     if (pid) {
-      const comm = await fsp.readFile(`/proc/${pid}/comm`, {"encoding": "utf8"}).then((content) => content.trim()).catch((err) => null);
+      const comm = await fsp.readFile(`/proc/${pid}/comm`, {"encoding": "utf8"})
+          .then((content) => content.trim())
+          .catch((err) => null);
       return comm === "iperf3" ? pid : null;
     } else
-      return null;
+        return null;
   }
 
   async startIperf3Server() {
@@ -146,7 +188,9 @@ class Iperf3Sensor extends Sensor {
   }
 
   async getPort(pid) {
-    const listenAddr = await exec(`sudo lsof -n -p ${pid} | grep LISTEN | awk '{print $9}'`).then((result) => result.stdout.trim()).catch((err) => null);
+    const listenAddr = await exec(`sudo lsof -n -p ${pid} | grep LISTEN | awk '{print $9}'`)
+        .then((result) => result.stdout.trim())
+        .catch((err) => null);
     if (listenAddr)
       return listenAddr.split(':')[1];
     return null;

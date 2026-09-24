@@ -33,6 +33,11 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const featureName = "mesh_vpn";
 
+
+function isValidConfigId(id) {
+  return typeof id === 'string' && /^[0-9]+$/.test(id);
+}
+
 class MeshVPNPlugin extends Sensor {
   async run() {
     this.featureSwitch = false;
@@ -64,6 +69,10 @@ class MeshVPNPlugin extends Sensor {
     });
 
     extensionManager.onCmd("mesh:updateLocalConfig", async (msg, data) => {
+      if (data.id !== undefined && !isValidConfigId(data.id)) {
+        log.error(`Invalid mesh config id: ${data.id}`);
+        throw new Error("ERR_INVALID_CONFIG_ID");
+      }
       const newConfig = {
         state: data.state || false,
         type: data.type || "nebula",
@@ -247,7 +256,7 @@ class MeshVPNPlugin extends Sensor {
         return fs.readFileAsync("/home/pi/remoteConfig.json", {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => null);
       }
     }
-    const url = `${instanceURL}/v1/mesh/config/${cfgId}`;
+    const url = `${instanceURL}/v1/mesh/config/${encodeURIComponent(cfgId)}`;
     const Bone = require('../lib/Bone.js');
     const options = {
       uri: url,
@@ -266,6 +275,8 @@ class MeshVPNPlugin extends Sensor {
   }
 
   _getRemoteConfigPath(configId) {
+    if (!isValidConfigId(configId))
+      throw new Error(`ERR_INVALID_CONFIG_ID: ${configId}`);
     return `${f.getRuntimeInfoFolder()}/mesh_vpn/mesh_remote_${configId}.conf`;
   }
  
