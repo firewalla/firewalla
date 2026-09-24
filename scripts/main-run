@@ -76,6 +76,8 @@ logger "FIREWALLA:MAIN-RUN:FIRETIME:START "+`date`
 sudo rm -f $FIREWALLA_HIDDEN/config/crontab/*
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
+$FIREWALLA_HOME/scripts/update_ca_certificates.sh || true
+
 fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
 logger "FIREWALLA:MAIN-RUN:FIRETIME:END"+"set time to $fire_time_out"
 

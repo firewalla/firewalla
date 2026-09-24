@@ -76,6 +76,10 @@ class GoldProPlatform extends Platform {
     return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
   }
 
+  isUbuntu20() {
+    return this.getLSBCodeName() === 'focal';
+  }
+
   isUbuntu22() {
     return this.getLSBCodeName() === 'jammy';
   }
@@ -146,6 +150,14 @@ class GoldProPlatform extends Platform {
       log.error("Failed to get cpu temperature, use 0 as default, err:", err);
       return 0;
     }
+  }
+
+  async getWpaCliBinPath() {
+    if (this.isUbuntu22())
+      return 'wpa_cli';
+    if (this.isUbuntu20())
+      return `${f.getFireRouterHome()}/platform/goldpro/bin/u20/wpa_cli`;
+    return `${f.getFireRouterHome()}/platform/goldpro/bin/wpa_cli`;
   }
 
   getDefaultWlanIntfName() {

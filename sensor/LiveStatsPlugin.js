@@ -18,6 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 const extensionManager = require('./ExtensionManager.js')
+const f = require('../net2/Firewalla.js')
 const fireRouter = require('../net2/FireRouter.js')
 const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
@@ -193,15 +194,22 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const switchMap = await fwapc.getSwitchStatus();
             let result;
-            if (switchMap && switchMap[target] !== undefined) {
-              const st = switchMap[target];
-              if (this.isSwitchStatusOnline(st)) {
+            const assetType = await this.getAssetType(target);
+            if (assetType === 'switch') {
+              const switchMap = await fwapc.getSwitchStatus();
+              if (this.isSwitchStatusOnline(switchMap && switchMap[target])) {
                 result = await this.getSwitchThroughput(target, cache);
               } else {
                 delete cache.switchMetricsPrev;
                 result = { target, type: 'switch', tx: 0, rx: 0, ports: [], lagPorts: [] };
+              }
+            } else if (assetType === 'ap') {
+              const apMap = await fwapc.getAssetsStatus();
+              if (this.isAPStatusOnline(apMap && apMap[target])) {
+                result = await this.getAPThroughput(target);
+              } else {
+                result = { target, type: 'ap', tx: 0, rx: 0 };
               }
             } else {
               result = await this.getDeviceThroughput(target);
@@ -265,7 +273,21 @@ class LiveStatsPlugin extends Sensor {
                   response.throughput.push({ name: intf.name, target: intf.uuid, devices })
               }
             }
+
+            response.ports = await this.getPortsThroughput()
+            response.bands = await this.getBandsThroughput()
             break;
+          }
+          case 'phyIntf': {
+            if (!await this.validIntfName(target)) {
+              throw new Error(`Invalid interface ${target}`)
+            }
+            response.throughput = [ Object.assign( {name: target, target, type}, await this.getIntfThroughput(target) ) ]
+            break
+          }
+          case 'wlanIntfs': {
+            response.throughput = await this.getWlanThroughput()
+            break
           }
         }
       }
@@ -381,6 +403,63 @@ class LiveStatsPlugin extends Sensor {
     return nowSec - Number(st.ts) < 60;
   }
 
+  // heartbeat ts in 60s
+  isAPStatusOnline(ap) {
+    if (!ap || ap.ts == null)
+      return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return nowSec - Number(ap.ts) < 60;
+  }
+
+  /**
+   * Classify a MAC from the local apc.assets config, so an ordinary client never pays for
+   * a fwapc status round trip. Returns 'switch', 'ap' or null.
+   */
+  async getAssetType(mac) {
+    if (!mac)
+      return null;
+    const assets = _.get(await fireRouter.getConfig(false, false), ['apc', 'assets']);
+    if (!_.isObject(assets))
+      return null;
+    const asset = assets[mac];
+    if (!asset)
+      return null;
+    const model = String(asset.model || '').toLowerCase();
+    return model === 'switch' || model.startsWith('fwsw-') ? 'switch' : 'ap';
+  }
+
+  async getAPThroughput(target) {
+    const info = await fwapc.getAssetLiveStats(target);
+    const { ports = [], bands = [] } = this.formatAPThroughput(info) || {};
+    const rate = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const aggTx = ports.reduce((s, p) => s + rate(p.txRate), 0) + bands.reduce((s, p) => s + rate(p.txRate), 0);
+    const aggRx = ports.reduce((s, p) => s + rate(p.rxRate), 0) + bands.reduce((s, p) => s + rate(p.rxRate), 0);
+    return { target, type: 'ap', tx: aggTx, rx: aggRx, ports, bands };
+  }
+
+  formatAPThroughput(info) {
+    const ports = [];
+    const bands = [];
+    const portMap = info && info.ports && typeof info.ports === 'object' ? info.ports : null;
+    if (!portMap)
+      return { ports, bands };
+
+    for (const p of Object.values(portMap)) {
+      if (!p || typeof p !== 'object')
+        continue;
+      if (p.type === 'wifi') {
+        // by default, uplink is on 6g bands, not override original 6g uplink
+        if (info.uplink && p.band === '6g' && !p.uplink) {
+          p.uplink = info.uplink;
+        }
+        bands.push(p);
+      } else if (p.type === 'ether') {
+        ports.push(p);
+      }
+    }
+    return { ports, bands };
+  }
+
   /**
    * Totals plus per-port / per-LAG byte maps from a switch metrics NDJSON sample.
    * @param {object|null|undefined} sample - parsed SwitchMetricsEvent
@@ -413,8 +492,6 @@ class LiveStatsPlugin extends Sensor {
       const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
       const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
       lags[id] = Object.assign({}, p, { tx: ptx, rx: prx });
-      tx += ptx;
-      rx += prx;
     }
     let ts = sample.ts != null ? Number(sample.ts) : NaN;
     if (!Number.isFinite(ts) || ts <= 0) {
@@ -705,6 +782,214 @@ class LiveStatsPlugin extends Sensor {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
     return {rx: Number(rx), tx: Number(tx)};
+  }
+
+  async getPortsThroughput() {
+    const nicStates = await platform.getNicStates()
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const ports = []
+    for (const name of platform.getEthernetNicNames()) {
+      const nic = nicStates[name]
+      if (!nic)
+        continue
+      // wanIntfNames comes from raw router config, sysinfo type is rewritten to lan in DHCP mode
+      const uplink = wanNames.includes(name)
+      const { tx, rx } = await this.getIntfThroughput(name)
+      ports.push({
+        name,
+        target: name,
+        type: 'phyIntf',
+        role: uplink ? 'wan' : 'lan',
+        uplink,
+        speed: Number(nic.speed) || -1,
+        carrier: Number(nic.carrier) || 0,
+        duplex: nic.duplex || 'unknown',
+        tx,
+        rx,
+      })
+    }
+    return ports
+  }
+
+  async getBandsThroughput() {
+    const intfs = await this.getWlanIntfs()
+    const bandMap = {}
+    for (const intf of intfs) {
+      const { ssid, band } = await this.getWlanIdentity(intf)
+      if (!band)
+        continue
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      if (!bandMap[band]) {
+        bandMap[band] = {
+          band,
+          type: 'wlanBand',
+          tx: 0,
+          rx: 0,
+          uplink: { intfs: [], tx: 0, rx: 0 },
+          downlink: { intfs: [], tx: 0, rx: 0 },
+        }
+      }
+      const entry = bandMap[band]
+      entry.tx += tx
+      entry.rx += rx
+      const wlanIntf = { name: intf.name, ssid, tx, rx }
+      if (intf.role === 'wan')
+        wlanIntf.rssi = await this.getWlanRssi(intf)
+
+      const link = intf.role === 'wan' ? entry.uplink : entry.downlink
+      link.intfs.push(wlanIntf)
+      link.tx += tx
+      link.rx += rx
+    }
+    const bands = Object.values(bandMap)
+    bands.sort((a, b) => (a.band || '').localeCompare(b.band || ''))
+    return bands
+  }
+
+  async getWlanThroughput() {
+    const intfs = await this.getWlanIntfs() // include wan and lan
+    const result = []
+    for (const intf of intfs) {
+      const { ssid, band } = await this.getWlanIdentity(intf)
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      result.push({ name: intf.name, target: intf.name, type: 'wlanIntf', role: intf.role, ssid, band, tx, rx })
+    }
+    return result
+  }
+
+  // eg:
+  // [
+  //   { name: 'wlan24g_85db07', role: 'ap' },
+  //   { name: 'wlan5g_85db07', role: 'ap' },
+  //   { name: 'wlan0', role: 'wan' }
+  // ]
+  async getWlanIntfs() {
+    const apDir = `${f.getFireRouterRuntimeInfoFolder()}/hostapd`
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const intfs = []
+
+    for (const path of await this.listCtrlSockets()) {
+      const name = path.substring(path.lastIndexOf('/') + 1)
+      const role = path.startsWith(`${apDir}/`) ? 'ap' : 'wan'
+      if (role == 'wan' && !wanNames.includes(name))
+        continue
+      if (await this.validIntfName(name))
+        intfs.push({ name, role })
+    }
+    return intfs
+  }
+
+  async listCtrlSockets() {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    const dirs = `${runDir}/hostapd ${runDir}/wpa_supplicant` // one dir per station intf, hence maxdepth 2
+    const { stdout } = await exec(`sudo find ${dirs} -maxdepth 2 -type s -printf "%p\\n" 2>/dev/null || true`)
+      .catch(err => { log.error('Failed to list wlan ctrl sockets', err.message); return { stdout: '' } })
+    return stdout.split('\n').map(path => path.trim()).filter(Boolean)
+  }
+
+  async getWlanIdentity(intf) {
+    if (!this.wlanIdentityCache)
+      this.wlanIdentityCache = {}
+    const cached = this.wlanIdentityCache[intf.name]
+    const now = Date.now()
+    if (cached && now - cached.ts < 30000)
+      return cached
+
+    const wpaCli = await this.getWpaCli()
+    if (!wpaCli)
+      return { ssid: null, band: null }
+
+    const ctrlDir = this.getWpaCtrlDir(intf)
+    const identity = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} status`)
+      .then(result => this.parseWpaStatus(result.stdout, intf.name))
+      .catch(err => {
+        log.error('Failed to get wpa status of', intf.name, err.message)
+        return { ssid: null, band: null }
+      })
+
+    identity.ts = now
+    this.wlanIdentityCache[intf.name] = identity
+    return identity
+  }
+
+  async getWpaCli() {
+    if (this.wpaCli === undefined)
+      this.wpaCli = await platform.getWpaCliBinPath()
+    return this.wpaCli
+  }
+
+  getWpaCtrlDir(intf) {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    if (intf.role == 'ap')
+      return `${runDir}/hostapd`
+    return `${runDir}/wpa_supplicant/${intf.name}`
+  }
+
+  async getWlanRssi(intf) {
+    const wpaCli = await this.getWpaCli()
+    if (!wpaCli)
+      return null
+
+    const ctrlDir = this.getWpaCtrlDir(intf)
+    return exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
+      .then(result => this.parseWpaSignalPoll(result.stdout))
+      .catch(err => {
+        log.error('Failed to get wpa signal of', intf.name, err.message)
+        return null
+      })
+  }
+
+  parseWpaStatus(output, intf) {
+    const kv = {}
+    for (const line of String(output).split('\n')) {
+      const idx = line.indexOf('=')
+      if (idx > 0)
+        kv[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+    }
+
+    let ssid = kv.ssid // station
+    if (ssid === undefined) {
+      for (const key of Object.keys(kv)) { // ap, e.g. bss[1]=wlan5g_7e4c3d -> ssid[1]
+        if (key.startsWith('bss[') && kv[key] === intf) {
+          ssid = kv[`ssid${key.substring(3)}`]
+          break
+        }
+      }
+    }
+    if (ssid === undefined)
+      ssid = null
+    else if (ssid.includes('\\x')) // hostap escapes non-printable bytes, a UTF-8 ssid comes as \xe4\xb8\xad
+      ssid = Buffer.from(
+          ssid.replace(/\\x([0-9a-f]{2})/gi, (_, hex) =>
+              String.fromCharCode(parseInt(hex, 16))
+          ),
+          'latin1'
+      ).toString('utf8');
+
+    const freq = Number(kv.freq) // band from frequency, channel numbers collide across bands
+    let band = null
+    if (freq >= 2400 && freq < 2500) band = '2g'
+    else if (freq >= 4900 && freq < 5925) band = '5g'
+    else if (freq >= 5925 && freq <= 7125) band = '6g'
+
+    return { ssid, band }
+  }
+
+  parseWpaSignalPoll(output) {
+    for (const line of String(output).split('\n')) {
+      if (!line.startsWith('RSSI='))
+        continue
+      const rssi = Number(line.substring(5).trim())
+      return isNaN(rssi) ? null : rssi
+    }
+    return null
+  }
+
+  // guard against shell injection and confirm the nic exists on the box
+  async validIntfName(name) {
+    if (!name || !/^[a-zA-Z0-9._-]+$/.test(name))
+      return false
+    return fsp.access(`/sys/class/net/${name}`).then(() => true).catch(() => false)
   }
 
   async getFlows(type, target, ts, opts) {

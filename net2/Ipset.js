@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 const ipsetControl = require('../control/IpsetControl.js');
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock({maxPending: 3000});
@@ -191,32 +191,32 @@ function create(name, type, v6 = false, options = {}) {
   return ipsetControl.addRule(cmd);
 }
 
-function add(name, target, options = {}) {
+function add(name, target, options = {}, allowDeferredExec = false) {
   const { timeout, comment, skbmark, skbprio, skbqueue } = options;
   let cmd = `add ${name} ${target}`;
-  if (timeout) cmd += ` timeout ${timeout}`;
+  if (timeout !== undefined && timeout !== null && Number.isInteger(Number(timeout))) cmd += ` timeout ${timeout}`;
   if (comment) cmd += ` comment ${comment}`;
   if (skbmark) cmd += ` skbmark ${skbmark}`;
   if (skbprio) cmd += ` skbprio ${skbprio}`;
   if (skbqueue) cmd += ` skbqueue ${skbqueue}`;
-  return ipsetControl.addRule(cmd);
+  return ipsetControl.addRule(cmd, allowDeferredExec);
 }
 
-function del(name, target) {
-  return ipsetControl.addRule(`del ${name} ${target}`);
+function del(name, target, allowDeferredExec = false) {
+  return ipsetControl.addRule(`del ${name} ${target}`, allowDeferredExec);
 }
 
 function swap(name1, name2) {
   return ipsetControl.addRule(`swap ${name1} ${name2}`);
 }
 
-function restore(ops) {
-  return ipsetControl.restore(ops);
+function restore(ops, allowDeferredExec = false) {
+  return ipsetControl.restore(ops, allowDeferredExec);
 }
 
 async function list(name) {
   try {
-    const result = await exec(`sudo ipset -S ${name}`);
+    const result = await execFile('sudo', ['ipset', '-S', name]);
     const lines = result.stdout.split('\n')
     lines.pop()
     return lines
@@ -232,43 +232,8 @@ async function list(name) {
   }
 }
 
-let interactiveIpset = null;
-let interactiveIpsetStartTs = null;
-
-function initInteractiveIpset() {
-  log.info(`Starting interactive ipset for batch operations`)
-  interactiveIpset = spawn("sudo", ["ipset", "-", "-!"]);
-  interactiveIpsetStartTs = Date.now();
-  interactiveIpset.stderr.on('data', (data) => {
-    log.error(`Error in interactive ipset stderr`, data.toString());
-  });
-  interactiveIpset.on('error', (err) => {
-    log.error(`Error in interactive ipset`, err);
-    initInteractiveIpset();
-  });
-  interactiveIpset.stdout.on('data', (data) => {});
-}
-// this spawn eats all CR from node cli output for some reason
-if (f.isMain()) initInteractiveIpset();
-
-// deprecated
-// with exclusive set to true, the interactive process stalls other requests until the current batch
-async function batchOp(operations) {
-  if (!Array.isArray(operations) || operations.length === 0)
-    return;
-  try {
-    if (Date.now() - interactiveIpsetStartTs > 600000 && interactiveIpset) {
-      log.info(`Interactive ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
-      interactiveIpset.stdin.write("quit\n");
-      initInteractiveIpset();
-    }
-    log.verbose('batchOp:', operations)
-    interactiveIpset.stdin.write(operations.join('\n') + '\n');
-  } catch (err) {
-    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
-    initInteractiveIpset();
-    await batchOp(operations);
-  }
+function batchOp(operations) {
+  return ipsetControl.restore(operations, true);
 }
 
 let testProcess, testResolve, testResults, testCount, remainingBuffer, testProcessStartTs
@@ -386,7 +351,16 @@ const CONSTANTS = {
   IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set',
-  IPSET_NETWORK_GATEWAY_SET: "c_network_gateway_set"
+  IPSET_NETWORK_GATEWAY_SET: "c_network_gateway_set",
+  IPSET_CLASH_BLACKLIST: "fw_clash_blacklist",
+  IPSET_CLASH_WHITELIST: "fw_clash_whitelist",
+  IPSET_CLASH_WHITELIST_NET: "fw_clash_whitelist_net",
+  IPSET_CLASH_WHITELIST_MAC: "fw_clash_whitelist_mac",
+  // never send traffic destined to these into clash
+  CLASH_EXCLUDED_NETS: [
+    "0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
+    "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4"
+  ]
 }
 
 module.exports = {
