@@ -1017,6 +1017,7 @@ class BroDetect {
       }
 
       let flowdir = "in";
+      let connFd = "in";
       let lhost = null;
       let dhost = null;
       const origMac = obj.orig_l2_addr && (obj.orig_l2_addr.length == 17 ? obj.orig_l2_addr.toUpperCase() : obj.orig_l2_addr);
@@ -1060,14 +1061,20 @@ class BroDetect {
         // Switch ACL accounting has no initiator/responder concept; use 'lo' so
         // these flows do not contribute to directional (in/out) sumflow buckets.
         if (obj.switch) flowdir = 'lo'
+        // connFd is the connection's actual policy direction (which domain ipset an
+        // allow rule's IP mapping was recorded under), and must stay the same on both
+        // the forward and reverse local pass, unlike flowdir which flips per-view.
+        connFd = reverseLocal ? 'in' : flowdir;
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
+        connFd = "in";
         lhost = orig;
         dhost = resp;
         localMac = origMac;
       } else if (localOrig == false && localResp == true) {
         flowdir = "out";
+        connFd = "out";
         lhost = resp;
         dhost = orig;
         localMac = respMac;
@@ -1495,7 +1502,7 @@ class BroDetect {
           const matchedHost = afhost || (connEntry && connEntry.host);
           const matchedPIDs = await ruleStatsPlugin.getMatchedPids({
             ac: 'allow', type: 'ip', sh: orig, sp: [orig_p], dh: resp, dp: resp_p,
-            pr: obj.proto, fd: flowdir,
+            pr: obj.proto, fd: connFd,
             af: matchedHost ? { [matchedHost]: _.get(tmpspec, ["af", matchedHost], {}) } : undefined,
             sec: 0
           });
