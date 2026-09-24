@@ -166,4 +166,16 @@ describe('test rule stats policy cache', function(){
     const pids = await this.plugin.getMatchedPids(record);
     expect(pids).to.eql([]);
   });
+
+  it('should NOT match a dns record against a bidirectional ip/net rule targeting the querying device', async () => {
+    const ts = new Date() / 1000;
+    const netPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "net", action: "block", target: "10.0.1.0/24", dnsmasq_only: false, direction: "bidirection", pid: 206});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("block", [netPolicy]);
+
+    // record.sh identifies the querying device, not a flow endpoint of the queried domain
+    const record = { fd: "in", ac: "block", type: "dns", sec: false, sh: "10.0.1.55", dn: "ads.example.com", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([]);
+  });
 });

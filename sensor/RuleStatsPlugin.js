@@ -229,20 +229,22 @@ class RuleStatsPlugin extends Sensor {
   static cachekeyRecord(record) {
     // use cache to reduce computation and redis operation.
     const hash = crypto.createHash("md5");
-    hash.update(String(record.ac));
-    hash.update(String(record.type));
-    hash.update(String(record.fd));
-    hash.update(String(record.sec));
+    // \x1f (unit separator) between fields so e.g. dh="10.0.0.11",sh="1.1.1.1" can't
+    // hash the same as dh="10.0.0.1",sh="11.1.1.1" (plain concatenation collides)
+    hash.update(String(record.ac)); hash.update('\x1f');
+    hash.update(String(record.type)); hash.update('\x1f');
+    hash.update(String(record.fd)); hash.update('\x1f');
+    hash.update(String(record.sec)); hash.update('\x1f');
     if (record.type == 'dns') {
       hash.update(String(record.dn));
     } else {
-      hash.update(String(record.dh));
+      hash.update(String(record.dh)); hash.update('\x1f');
       hash.update(String(record.sh));
     }
-    hash.update(String(record.qmark));
+    hash.update('\x1f'); hash.update(String(record.qmark));
     // af carries hostname context that changes domain/dns rule matching; a hostless
     // lookup must not share a cache entry with a later hostful lookup on the same dh
-    if (record.af) hash.update(Object.keys(record.af).sort().join(','));
+    if (record.af) { hash.update('\x1f'); hash.update(Object.keys(record.af).sort().join(',')); }
     return hash.digest("hex");
   }
 
