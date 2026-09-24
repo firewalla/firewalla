@@ -30,7 +30,6 @@ const policyActiveKey = "policy_active";
 const activeBypassPolicyKey = "active_bypass_policy";
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
-const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const POLICY_MAX_ID = 65535; // iptables log use last 16 bit MARK as rule id
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -148,7 +147,6 @@ class PolicyManager2 {
       }
 
       this.enabledTimers = {}
-      this.disableAllTimer = null;
 
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
@@ -391,11 +389,6 @@ class PolicyManager2 {
           })
         }
       }
-    })
-
-    // deprecated
-    sem.on("PolicySetDisableAll", async (event) => {
-      await this.checkRunPolicies(false);
     })
   }
 
@@ -642,10 +635,6 @@ class PolicyManager2 {
       return policy // do nothing, since it's already enabled
     }
     await this._enablePolicy(policy)
-
-    if (await this.isDisableAll()) {
-      return policy;  // temporarily by DisableAll flag
-    }
 
     this.tryPolicyEnforcement(policy, "enforce")
     Bone.submitIntelFeedback('enable', policy)
@@ -1343,10 +1332,6 @@ class PolicyManager2 {
 
   async enforce(policy) {
     try {
-      if (await this.isDisableAll()) {
-        return policy; // temporarily by DisableAll flag
-      }
-
       if (policy.disabled == 1) {
         const idleInfo = policy.getIdleInfo();
         if (idleInfo) {
@@ -3242,111 +3227,6 @@ class PolicyManager2 {
     result.polices = _.uniqWith(polices, _.isEqual);
     result.crossIps = _.uniqWith(crossIps, _.isEqual);
     return result;
-  }
-
-  async checkRunPolicies(initialFlag) {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    if (this.disableAllTimer) {
-      clearTimeout(this.disableAllTimer);
-    }
-
-    if (disableAllFlag == "on") {
-      // just firemain started, not need unenforce all
-      if (!initialFlag) {
-        this.unenforceAllPolicies();
-      }
-      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
-      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
-      if (expireMinute) {
-        expireMinute = parseFloat(expireMinute);
-      } else {
-        expireMinute = 0;
-      }
-
-      if (startTime && expireMinute > 0) {
-        const expiredTime = parseFloat(startTime) + expireMinute * 60;
-        const timeoutSecond = expiredTime - new Date() / 1000;
-        if (timeoutSecond > 60) {
-          this.disableAllTimer = setTimeout(async () => { // set timeout(when disableAll flag expires, it will enforce all policy)
-            await this.enforceAllPolicies();
-            await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
-          }, timeoutSecond * 1000);
-        } else {
-          // disableAll flag expired or expire soon
-          await this.enforceAllPolicies();
-          await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
-        }
-      }
-    } else {
-      await this.enforceAllPolicies();
-    }
-  }
-
-  // deprecated
-  async setDisableAll(flag, expireMinute) {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    const expire = await rclient.hgetAsync(policyDisableAllKey, "expire");
-    await rclient.hmsetAsync(policyDisableAllKey, {
-      flag: flag,
-      expire: expireMinute || 0,
-      startTime: Date.now() / 1000
-    });
-    if (disableAllFlag !== flag || expire !== expireMinute || (flag == "on" && expireMinute)) {
-      sem.emitEvent({
-        type: 'PolicySetDisableAll',
-        toProcess: 'FireMain',
-        message: 'Policy SetDisableAll: ' + flag
-      })
-    }
-  }
-
-  async unenforceAllPolicies() {
-    const rules = await this.loadActivePoliciesAsync();
-
-    const unEnforcement = rules.filter(rule => rule.direction !== "inbound").map((rule) => {
-      return new Promise((resolve, reject) => {
-        try {
-          if (this.queue) {
-            const job = this.queue.createJob({
-              policy: rule,
-              action: "unenforce",
-              booting: true
-            })
-            job.timeout(60000).save();
-            job.on('succeeded', resolve);
-            job.on('failed', resolve);
-          }
-        } catch (err) {
-          log.error(`Failed to queue policy ${rule.pid}`, err)
-          resolve(err)
-        }
-      })
-    })
-
-    await Promise.all(unEnforcement);
-    log.info("All policy rules are unenforced");
-  }
-
-  async isDisableAll() {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    if (disableAllFlag == "on") {
-      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
-      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
-      if (expireMinute) {
-        expireMinute = parseFloat(expireMinute);
-      } else {
-        expireMinute = 0;
-      }
-
-      if (startTime && expireMinute > 0 && parseFloat(startTime) + expireMinute * 60 < new Date() / 1000) { // expired
-        return false;
-      }
-      return true;
-    } else if (disableAllFlag == "off") {
-      return false
-    }
-
-    return false;
   }
 
   async _getDerivedAppTargetsForCategory(category) {

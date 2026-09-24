@@ -2891,9 +2891,6 @@ class netBot extends ControllerBot {
         }
         return data
       }
-      case "policy:setDisableAll":
-        await pm2.setDisableAll(value.flag, value.expireMinute);
-        return
       case "acl:check": {
         const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
         return { matchedRule: matchedRule }
