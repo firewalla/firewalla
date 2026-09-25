@@ -1017,6 +1017,7 @@ class BroDetect {
       }
 
       let flowdir = "in";
+      let connFd = "in";
       let lhost = null;
       let dhost = null;
       const origMac = obj.orig_l2_addr && (obj.orig_l2_addr.length == 17 ? obj.orig_l2_addr.toUpperCase() : obj.orig_l2_addr);
@@ -1060,14 +1061,20 @@ class BroDetect {
         // Switch ACL accounting has no initiator/responder concept; use 'lo' so
         // these flows do not contribute to directional (in/out) sumflow buckets.
         if (obj.switch) flowdir = 'lo'
+        // connFd is the connection's actual policy direction (which domain ipset an
+        // allow rule's IP mapping was recorded under), and must stay the same on both
+        // the forward and reverse local pass, unlike flowdir which flips per-view.
+        connFd = reverseLocal ? 'in' : flowdir;
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
+        connFd = "in";
         lhost = orig;
         dhost = resp;
         localMac = origMac;
       } else if (localOrig == false && localResp == true) {
         flowdir = "out";
+        connFd = "out";
         lhost = resp;
         dhost = orig;
         localMac = respMac;
@@ -1488,21 +1495,20 @@ class BroDetect {
       }
 
       const ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
-      // account rule hits for allow/disturb/route.
-      // disturb and allow are mutually exclusive (disturb wins); route is independent.
-      // with emitted flows and only skip the reverse local pass.
-      if (!reverseLocal && ruleStatsPlugin) {
+      if (ruleStatsPlugin) {
         if (tmpspec.apid && tmpspec.apid === Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT) {
+          // matchedHost lets getPolicyIds() also check domain/dns type allow rules;
+          // ip/net type rules match on dh alone, so still try when there's no host
           const matchedHost = afhost || (connEntry && connEntry.host);
-          if (matchedHost) {
-            const matchedPIDs = await ruleStatsPlugin.getMatchedPids({
-              ac: 'allow', type: 'ip', sh: orig, sp: [orig_p], dh: resp, dp: resp_p,
-              pr: obj.proto, fd: flowdir, af: { [matchedHost]: _.get(tmpspec, ["af", matchedHost], {}) }, sec: 0
-            });
-            if (matchedPIDs && matchedPIDs.length > 0) {
-              log.debug('Conn:MatchedAllowRuleByHost', obj.uid, orig, resp, obj['id.resp_p'], matchedHost, matchedPIDs);
-              tmpspec.apid = matchedPIDs[0];
-            }
+          const matchedPIDs = await ruleStatsPlugin.getMatchedPids({
+            ac: 'allow', type: 'ip', sh: orig, sp: [orig_p], dh: resp, dp: resp_p,
+            pr: obj.proto, fd: connFd,
+            af: matchedHost ? { [matchedHost]: _.get(tmpspec, ["af", matchedHost], {}) } : undefined,
+            sec: 0
+          });
+          if (matchedPIDs && matchedPIDs.length > 0) {
+            log.debug('Conn:MatchedAllowRuleByHost', obj.uid, orig, resp, obj['id.resp_p'], matchedHost, matchedPIDs);
+            tmpspec.apid = matchedPIDs[0];
           }
           if (tmpspec.apid === Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT) {
             log.verbose(`failed to match any allow rule pid for connection with host ${afhost} and five tuple ${orig}:${orig_p} -> ${resp}:${resp_p}`);
@@ -1510,16 +1516,21 @@ class BroDetect {
           }
         }
 
-        const lastHitFlow = Object.assign({}, tmpspec, { mac: localMac }, localFlow ? { local: true } : {});
-        const hitPid = tmpspec.dpid || tmpspec.apid;
-        const hitAc = tmpspec.dpid ? "disturb" : "allow";
-        if (hitPid) {
-          ruleStatsPlugin.accountRule({ pid: hitPid, ac: hitAc, ct: 1, ts: tmpspec.ts });
-          ruleStatsPlugin.recordLastHitFlow(hitPid, lastHitFlow, 'flow');
-        }
-        if (tmpspec.rpid) {
-          ruleStatsPlugin.accountRule({ pid: tmpspec.rpid, ac: "route", ct: 1, ts: tmpspec.ts });
-          ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, lastHitFlow, 'flow');
+        // account rule hits for allow/disturb/route.
+        // disturb and allow are mutually exclusive (disturb wins); route is independent.
+        // with emitted flows and only skip the reverse local pass.
+        if (!reverseLocal) {
+          const lastHitFlow = Object.assign({}, tmpspec, { mac: localMac }, localFlow ? { local: true } : {});
+          const hitPid = tmpspec.dpid || tmpspec.apid;
+          const hitAc = tmpspec.dpid ? "disturb" : "allow";
+          if (hitPid) {
+            ruleStatsPlugin.accountRule({ pid: hitPid, ac: hitAc, ct: 1, ts: tmpspec.ts });
+            ruleStatsPlugin.recordLastHitFlow(hitPid, lastHitFlow, 'flow');
+          }
+          if (tmpspec.rpid) {
+            ruleStatsPlugin.accountRule({ pid: tmpspec.rpid, ac: "route", ct: 1, ts: tmpspec.ts });
+            ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, lastHitFlow, 'flow');
+          }
         }
       }
 
