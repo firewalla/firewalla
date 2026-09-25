@@ -73,6 +73,7 @@ let threadInfo = {};
 let diskInfo = null;
 
 let ethInfo = {};
+let sfpInfo = {};
 let wlanInfo = {}
 let slabInfo = {};
 
@@ -174,6 +175,7 @@ async function update() {
         .then(getMaxPid)
         .then(getActiveContainers)
         .then(getEthernetInfo)
+        .then(getSfpDeviceInfo)
         .then(getWlanInfo)
         .then(getSlabInfo)
         .then(getDiskUsage)
@@ -604,6 +606,7 @@ async function getSysInfo() {
     autoupgrade,
     maxPid: maxPid,
     ethInfo,
+    sfpInfo,
     wlanInfo,
     usbInfo: usbInfoVal,
     slabInfo,
@@ -744,6 +747,50 @@ async function getEthernetInfo() {
 
   const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
+}
+
+const SFP_FIELDS = {
+  "Connector": "connector",
+  "Transceiver type": "transceiverType",
+  "Encoding": "encoding",
+  "Vendor name": "vendorName",
+  "Vendor OUI": "vendorOUI",
+  "Vendor PN": "vendorPN",
+  "Vendor rev": "vendorRev",
+  "Vendor SN": "vendorSN",
+  "Date code": "dateCode",
+};
+
+async function getSfpInfo(nic) {
+  const output = await execFile("sudo", ["ethtool", "-m", nic]).then((result) => result.stdout).catch((err) => null);
+  if (!output)
+    return null;
+  const info = {};
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(\S.*?)\s*:\s(.*)$/);
+    if (!match)
+      continue;
+    const key = SFP_FIELDS[match[1]];
+    if (!key)
+      continue;
+    const parenMatch = match[2].match(/^0x[0-9a-fA-F]+\s*\((.*)\)\s*$/);
+    const value = parenMatch ? parenMatch[1].trim() : match[2].trim();
+    if (key in info)
+      info[key] += "; " + value;
+    else
+      info[key] = value;
+  }
+  return Object.keys(info).length ? info : null;
+}
+
+async function getSfpDeviceInfo() {
+  const localSfpInfo = {};
+  for (const nic of platform.getSfpNicNames()) {
+    const info = await getSfpInfo(nic);
+    if (info)
+      localSfpInfo[nic] = info;
+  }
+  sfpInfo = localSfpInfo;
 }
 
 async function getWlanInfo() {
@@ -1112,5 +1159,6 @@ module.exports = {
   getAutoUpgrade,
   getDiskWriteStats,
   getEthErrorStats,
+  getSfpInfo,
   getUsbInfo,
 };
