@@ -32,7 +32,9 @@ keepalive = 30
 
 cert_refresh_delay = 240
 
-fallback_resolver = '%DNSCRYPT_FALLBACK_DNS%:53'
+bootstrap_resolvers = ['%DNSCRYPT_FALLBACK_DNS%:53']
+
+%DNSCRYPT_FWMARK%
 
 ignore_system_dns = false
 netprobe_timeout = 60

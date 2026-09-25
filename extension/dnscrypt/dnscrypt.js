@@ -40,7 +40,12 @@ const allServerKey = "ext.dnscrypt.allServers";
 const customizedServerkey = "ext.dnscrypt.customizedServers"
 const settingsKey = "ext.dnscrypt.settings";
 
+const DOH_VPN_MARK_UNAVAILABLE = "DOH_VPN_MARK_UNAVAILABLE";
+
 const bone = require("../../lib/Bone");
+const Constants = require('../../net2/Constants.js');
+const VPNClient = require('../vpnclient/VPNClient');
+const VirtWanGroup = require('../../net2/VirtWanGroup.js');
 
 class DNSCrypt {
   constructor() {
@@ -61,12 +66,43 @@ class DNSCrypt {
     return `127.0.0.1#${this.config.localPort || 8854}`;
   }
 
+  get DOH_VPN_MARK_UNAVAILABLE() {
+    return DOH_VPN_MARK_UNAVAILABLE;
+  }
+
+  // Resolves the vpnClient setting to the numeric fwmark already used by
+  // that VPN client's (or Virtual WAN Group's) policy routing rule, so
+  // dnscrypt-proxy can mark its own outgoing sockets to match, the same way
+  // any other traffic gets steered into that client's routing table.
+  // Throws when a client is selected but its mark is not resolvable (e.g. it
+  // has never been started): writing a config without the mark would send
+  // DoH out over the plain WAN, which is what the setting exists to prevent.
+  async getOutgoingFWMark(vpnClientConfig) {
+    if (!vpnClientConfig || !vpnClientConfig.state || !vpnClientConfig.profileId)
+      return null;
+    const profileId = vpnClientConfig.profileId;
+    const markKey = profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)
+      ? VirtWanGroup.getRouteMarkKey(profileId.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length))
+      : VPNClient.getRouteMarkKey(profileId);
+    const mark = Number(await rclient.getAsync(markKey));
+    if (!mark) {
+      const err = new Error(`No route mark found for DoH vpnClient ${profileId}`);
+      err.code = DOH_VPN_MARK_UNAVAILABLE;
+      throw err;
+    }
+    return mark;
+  }
+
   async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
     let content = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
     content = content.replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
+
+    const settings = await this.getSettings();
+    const fwmark = await this.getOutgoingFWMark(settings.vpnClient);
+    content = content.replace("%DNSCRYPT_FWMARK%", fwmark ? `fwmark = ${fwmark}` : '');
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
     const allServerNames = allServers.map((x) => x.name).filter(Boolean);
