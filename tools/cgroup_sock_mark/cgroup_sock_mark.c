@@ -1,5 +1,10 @@
 /*
  * Auto mark sockets with give mark argument for any sockets within a cgroup
+ *
+ * BPF program load path:
+ *   - libbpf >= 1.0 (e.g. Ubuntu 26.04 LTS, kernel 6.6.x): bpf_prog_load + opts.
+ *   - Older libbpf: bpf_load_program (removed in libbpf 1.0).
+ * Override: -DCGROUP_SOCK_MARK_LIBBPF_USE_PROG_LOAD=0|1
  */
 
 #include <stdio.h>
@@ -14,6 +19,21 @@
 #include <inttypes.h>
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
+
+#ifdef __has_include
+#  if __has_include(<bpf/libbpf_version.h>)
+#    include <bpf/libbpf_version.h>
+#  endif
+#endif
+
+#ifndef CGROUP_SOCK_MARK_LIBBPF_USE_PROG_LOAD
+#  if defined(LIBBPF_MAJOR_VERSION) && LIBBPF_MAJOR_VERSION >= 1
+#    define CGROUP_SOCK_MARK_LIBBPF_USE_PROG_LOAD 1
+#  else
+#    define CGROUP_SOCK_MARK_LIBBPF_USE_PROG_LOAD 0
+#  endif
+#endif
+
 #include "bpf_insn.h"
 
 char bpf_log_buf[BPF_LOG_BUF_SIZE];
@@ -56,8 +76,21 @@ static int prog_load(__u32 mark)
   p += sizeof(prog_end);
 
   insns_cnt /= sizeof(struct bpf_insn);
-  ret = bpf_load_program(BPF_PROG_TYPE_CGROUP_SOCK, prog, insns_cnt,
-                         "GPL", 0, bpf_log_buf, BPF_LOG_BUF_SIZE);
+#if CGROUP_SOCK_MARK_LIBBPF_USE_PROG_LOAD
+  {
+    struct bpf_prog_load_opts opts = {};
+
+    opts.sz = sizeof(opts);
+    opts.log_buf = bpf_log_buf;
+    opts.log_size = BPF_LOG_BUF_SIZE;
+    opts.log_level = 1;
+    ret = bpf_prog_load(BPF_PROG_TYPE_CGROUP_SOCK, "cgroup_sock_mark", "GPL",
+                        prog, insns_cnt, &opts);
+  }
+#else
+  ret = bpf_load_program(BPF_PROG_TYPE_CGROUP_SOCK, prog, insns_cnt, "GPL", 0,
+                         bpf_log_buf, BPF_LOG_BUF_SIZE);
+#endif
 
   free(prog);
   return ret;

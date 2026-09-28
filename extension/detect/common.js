@@ -1,4 +1,4 @@
-/*    Copyright 2023 Firewalla Inc.
+/*    Copyright 2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,6 +31,23 @@ async function nameToType(name) {
   return null
 }
 
+// Given a host's macVendor (OUI lookup string), return the list of device types
+// this vendor is known to produce — or null if the asset has no opinion.
+// Each asset key is treated as a case-insensitive substring of macVendor, so
+// a single short key (e.g. "TP-Link") covers all OUI registration variants
+// ("TP-LINK TECHNOLOGIES CO.,LTD.", "TP-Link Corporation Limited",
+// "TP-Link Systems Inc.", ...). First match wins
+async function getMacVendorAllowedTypes(macVendor) {
+  if (!macVendor) return null
+  const map = await assetsManager.get('detect/common/macTypeConstraint.json')
+  if (!map) return null
+  const v = macVendor.toLowerCase()
+  for (const key of Object.keys(map))
+    if (v.includes(key.toLowerCase())) return map[key]
+  return null
+}
+
 module.exports = {
   nameToType,
+  getMacVendorAllowedTypes,
 }

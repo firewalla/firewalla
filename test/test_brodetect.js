@@ -145,4 +145,33 @@ describe('test process conn data', function(){
     await bro.processSignatureData(data);
   });
 
+  describe('_dropLocalSameNetworkFlow', () => {
+    // Same/unknown stpPort: keep the bridge flow, drop zeek's copy (original behavior)
+    it('same stpPort, bridge=false -> drop (zeek copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', 'eth1')).to.equal(true);
+    });
+    it('same stpPort, bridge=true -> keep (AP/switch copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, 'eth1', 'eth1')).to.equal(false);
+    });
+
+    // Different stpPort: router is common ancestor; keep zeek's copy, drop the bridge copy
+    it('different stpPort, bridge=false -> keep (zeek copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', 'eth2')).to.equal(false);
+    });
+    it('different stpPort, bridge=true -> drop (AP duplicate)', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, 'eth1', 'eth2')).to.equal(true);
+    });
+
+    // Unknown stpPort: fall back to original behavior
+    it('srcStpPort unknown, bridge=false -> drop', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, null, 'eth1')).to.equal(true);
+    });
+    it('dstStpPort unknown, bridge=false -> drop', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', null)).to.equal(true);
+    });
+    it('both stpPort unknown, bridge=true -> keep', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, null, null)).to.equal(false);
+    });
+  });
+
 });

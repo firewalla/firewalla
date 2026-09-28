@@ -14,17 +14,29 @@ GATEWAY6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.gateway6"
 echo ${ifconfig_ipv6_remote} > $GATEWAY6_FILE
 
 SUBNET_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet"
-echo "${route_network_1}/${route_netmask_1}" > $SUBNET_FILE
+if [[ -n "$route_network_1" && -n "$route_netmask_1" ]]; then
+  echo "${route_network_1}/${route_netmask_1}" > $SUBNET_FILE
+else
+  subnet4=$(ipcalc -nb $ifconfig_local/$ifconfig_netmask |awk '$1 == "Prefix:" {print $2}')
+  if [[ -z "$subnet4" ]]; then
+    subnet4=$(python3 -c "import ipaddress; print(ipaddress.IPv4Network(u'${ifconfig_local}/${ifconfig_netmask}', strict=False).with_prefixlen)")
+  fi
+  echo "${subnet4}" > $SUBNET_FILE
+fi
 
 SUBNET6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet6"
 subnetwork6=$(ipcalc -nb $ifconfig_ipv6_local/$ifconfig_ipv6_netbits |awk '$1 == "Prefix:" {print $2}')
-if [ -z "$subnetwork6" ]; then
+if [[ -z "$subnetwork6" ]]; then
   subnetwork6=$(python3 -c "import ipaddress; print(ipaddress.IPv6Network(u'${ifconfig_ipv6_local}/${ifconfig_ipv6_netbits}', strict=False).with_prefixlen)")
 fi
 echo "${subnetwork6}" > $SUBNET6_FILE
 
 LOCAL_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local"
-echo "${ifconfig_local}/${route_netmask_1}" > $LOCAL_FILE
+if [[ -n "$ifconfig_local" && -n "$route_netmask_1" ]]; then
+  echo "${ifconfig_local}/${route_netmask_1}" > $LOCAL_FILE
+else
+  echo "${ifconfig_local}/${ifconfig_netmask}" > $LOCAL_FILE
+fi
 
 LOCAL6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local6"
 echo "${ifconfig_ipv6_local}/${ifconfig_ipv6_netbits}" > $LOCAL6_FILE

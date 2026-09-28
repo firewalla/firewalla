@@ -22,6 +22,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 const _ = require('lodash');
+const LRU = require('lru-cache');
 
 // helper functions for scan
 redis.RedisClient.prototype.scanAll = async function(pattern, handler, count = 1000) {
@@ -117,34 +118,49 @@ class RedisManager {
       this.mclient.on('error', (err) => {
         log.error("Redis metrics client got error:", err);
       })
-      this.mclientHincrbyBuffer = {};
-      this.mclientHincrbyMultiBuffer = {};
+      this.mclientHincrbyBuffer = new Map();
+      this.mclientHincrbyMultiBuffer = new Map();
+
+      // Skip redundant EXPIREAT: a TS key's expire target is constant, so set it once; an LRU eviction just costs one extra EXPIREAT.
+      this.mclientExpireAtCache = new LRU({max: 100000, maxAge: 7 * 24 * 3600 * 1000});
+      const expireAtChanged = (key, expr) => this.mclientExpireAtCache.get(key) !== expr;
+      const rememberExpireAt = (key, expr) => this.mclientExpireAtCache.set(key, expr);
+
       // a helper function to merge multiple hincrby operations on the same key
-      this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr, multi = false) => {
-        const bufferKey = `${key}::${hkey}`;
+      this.mclient.hincrbyAndExpireatBulk = (key, hkey, incr, expr, multi = false) => {
+        const bufferKey = key + '::' + hkey;
         const buffer = multi ? this.mclientHincrbyMultiBuffer : this.mclientHincrbyBuffer
-        if (!buffer.hasOwnProperty(bufferKey)) {
-          buffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
+        const existing = buffer.get(bufferKey);
+        if (existing === undefined) {
+          buffer.set(bufferKey, {key, hkey, incr, expr, bulk: 1});
         } else {
-          buffer[bufferKey].incr += incr;
-          buffer[bufferKey].expr = expr;
-          buffer[bufferKey].bulk++;
+          existing.incr += incr;
+          existing.expr = expr;
+          existing.bulk++;
         }
-        if (!multi && buffer[bufferKey].bulk >= 20) {
-          const tempBuf = buffer[bufferKey];
-          delete buffer[bufferKey];
-          await this.mclient.hincrbyAsync(key, hkey, tempBuf.incr);
-          await this.mclient.expireatAsync(key, expr);
+        if (!multi && buffer.get(bufferKey).bulk >= 20) {
+          const tempBuf = buffer.get(bufferKey);
+          buffer.delete(bufferKey);
+          return this.mclient.hincrbyAsync(key, hkey, tempBuf.incr).then(async () => {
+            if (expireAtChanged(key, tempBuf.expr)) {
+              await this.mclient.expireatAsync(key, tempBuf.expr);
+              rememberExpireAt(key, tempBuf.expr);
+            }
+          });
         }
+        return null;
       };
+
       this.mclient.execBatch = async () => {
         try {
           const batch = this.mclient.batch()
-          for (const k in this.mclientHincrbyMultiBuffer) {
-            const {key, hkey, incr, expr} = this.mclientHincrbyMultiBuffer[k];
+          for (const [k, {key, hkey, incr, expr}] of this.mclientHincrbyMultiBuffer) {
             batch.hincrby(key, hkey, incr);
-            batch.expireat(key, expr);
-            delete this.mclientHincrbyMultiBuffer[k];
+            if (expireAtChanged(key, expr)) {
+              batch.expireat(key, expr);
+              rememberExpireAt(key, expr);
+            }
+            this.mclientHincrbyMultiBuffer.delete(k);
           }
           await batch.execAsync()
         } catch(err) {
@@ -152,13 +168,36 @@ class RedisManager {
         }
       }
 
+      this.mclient.forgetExpireAt = (keys) => {
+        for (const key of keys) this.mclientExpireAtCache.del(key);
+      };
+
+      this.mclient.snapAndFlushMetricsBatch = async () => {
+        const snapshot = this.mclientHincrbyMultiBuffer;
+        this.mclientHincrbyMultiBuffer = new Map();
+        try {
+          const batch = this.mclient.batch();
+          for (const { key, hkey, incr, expr } of snapshot.values()) {
+            batch.hincrby(key, hkey, incr);
+            if (expireAtChanged(key, expr)) {
+              batch.expireat(key, expr);
+              rememberExpireAt(key, expr);
+            }
+          }
+          await batch.execAsync();
+        } catch (err) {
+          log.error('Error flushing metrics batch snapshot', err);
+        }
+      };
+
       setInterval(async () => {
-        for (const k of Object.keys(this.mclientHincrbyBuffer)) {
-          if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {
-            const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
-            delete this.mclientHincrbyBuffer[k];
-            await this.mclient.hincrbyAsync(key, hkey, incr);
+        const snapshot = this.mclientHincrbyBuffer;
+        this.mclientHincrbyBuffer = new Map();
+        for (const {key, hkey, incr, expr} of snapshot.values()) {
+          await this.mclient.hincrbyAsync(key, hkey, incr);
+          if (expireAtChanged(key, expr)) {
             await this.mclient.expireatAsync(key, expr);
+            rememberExpireAt(key, expr);
           }
         }
       }, 60000);

@@ -39,10 +39,14 @@ const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const mclient = require('../util/redis_manager.js').getMetricsRedisClient();
 
 const bone = require("../lib/Bone.js");
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
+const _ = require('lodash');
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries();
+const auditTool = require('../net2/AuditTool.js');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -57,23 +61,256 @@ const policyExtKeyName = "adblock_ext";
 const CategoryUpdater = require('../control/CategoryUpdater');
 const categoryUpdater = new CategoryUpdater();
 
+const Block = require('../control/Block.js');
+const tlsc = require('../control/TLSSetControl.js');
+const iptc = require('../control/IptablesControl.js');
+const Ipset = require('../net2/Ipset.js');
+const { Rule } = require('../net2/Iptables.js');
+
+const Constants = require('../net2/Constants.js');
+
 const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
+const ADBLOCK_TLS_RULE_PID = Constants.RESERVED_PID_ADBLOCK_TLS;
+
+const FAMILIES = [4, 6];
+
+// ipset match dimensions: device sets take 1 (src), network sets take 2 (src,src)
+const DIM_DEVICE = 1;
+const DIM_NETWORK = 2;
+
+const LEVEL_DEV = "DEV";
+const LEVEL_DEV_G = "DEV_G";
+const LEVEL_NET = "NET";
+const LEVEL_NET_G = "NET_G";
+const LEVEL_GLOBAL = "GLOBAL";
+const LEVELS = [LEVEL_DEV, LEVEL_DEV_G, LEVEL_NET, LEVEL_NET_G, LEVEL_GLOBAL];
+
+const FW_BLOCK_CHAINS = {
+  [LEVEL_DEV]: "FW_FIREWALL_DEV_BLOCK",
+  [LEVEL_DEV_G]: "FW_FIREWALL_DEV_G_BLOCK",
+  [LEVEL_NET]: "FW_FIREWALL_NET_BLOCK",
+  [LEVEL_NET_G]: "FW_FIREWALL_NET_G_BLOCK",
+  [LEVEL_GLOBAL]: "FW_FIREWALL_GLOBAL_BLOCK",
+};
+
+//   app sends true  → settings stores 1  → SCOPE_ON       explicitly enabled, adds a rule on its own entry chain
+//   app sends null  → settings stores -1 → SCOPE_EXCLUDED explicitly excluded, adds a RETURN rule on its own tier chain
+//   app sends false → settings stores 0  → SCOPE_INHERIT  no stance, inherits the coarser tier, produces no rule
+const SCOPE_ON = "on";
+const SCOPE_EXCLUDED = "excluded";
+const SCOPE_INHERIT = "inherit";
+
+
+
+// Entry chain, one per tier
+function entryChainOf(level) {
+  return `FW_ADBLOCK_ENTRY_${level}`;
+}
+
+// Tier chain. Exclusions live here; the last rule is always the jump to the next tier.
+function adBlockChainOf(level) {
+  return `FW_ADBLOCK_${level}`;
+}
+
+// Cascade tail. The tls match and the mark exist only here.
+const ADBLOCK_CHAIN_DO = "FW_ADBLOCK_DO";
+
+// Coarse to fine, the ladder reversed: enter at your own tier, only finer tiers can veto you
+const CASCADE_CHAINS = LEVELS.slice().reverse().map(adBlockChainOf).concat([ADBLOCK_CHAIN_DO]);
+
+class AdblockScope {
+  constructor(label, state, level, set4, set6, dim) {
+    this.label = label;
+    this.state = state; // state: SCOPE_ON / SCOPE_EXCLUDED / SCOPE_INHERIT
+    this.level = level; // dev, dev_g, ...
+    this.set4 = set4;
+    this.set6 = set6;
+    this.dim = dim; // 1/2
+  }
+
+  setOf(family) {
+    return family === 4 ? this.set4 : this.set6;
+  }
+
+  spec() {
+    return this.dim === DIM_NETWORK ? 'src,src' : 'src';
+  }
+}
+
+class AdblockStats {
+  constructor() {
+    this.lastHitFlow = null;
+    this.lastHitTs = 0;
+    this.resetTs = 0;
+    this.pendingHits = 0;
+    this.resetGeneration = 0;
+    this.persistPromise = null;
+  }
+
+  recordHit(record) {
+    if (!record || record.ac !== 'block' || record.reason !== 'adblock')
+      return;
+
+    const recordTs = Number(record._ts || record.ts || 0);
+    if (recordTs <= this.resetTs)
+      return;
+
+    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct);
+    this.pendingHits += Math.floor(Number(record.ct) || 1);
+    if (!this.lastHitTs || record._ts >= this.lastHitTs) {
+      const flow = _.cloneDeep(record);
+      if (record.dir === 'L')
+        flow.local = true;
+      this.lastHitTs = record._ts;
+      this.lastHitFlow = flow;
+    }
+  }
+
+  async flush() {
+    if (this.persistPromise)
+      await this.persistPromise;
+
+    if (this.pendingHits <= 0)
+      return;
+
+    const payload = {
+      kind: 'audit',
+      raw: _.cloneDeep(this.lastHitFlow)
+    };
+    const hitsToFlush = this.pendingHits;
+    const flushGeneration = this.resetGeneration;
+    this.pendingHits = 0;
+    const batch = mclient.multi();
+    batch.hset('ext.adblock.stats', 'lastHitTs', String(this.lastHitTs));
+    batch.hset('ext.adblock.stats', 'lastHitFlow', JSON.stringify(payload));
+    batch.hincrby('ext.adblock.stats', 'totalHits', hitsToFlush);
+    const persistPromise = batch.execAsync().catch((err) => {
+      log.error('Failed to persist adblock stats', err);
+      if (flushGeneration === this.resetGeneration)
+        this.pendingHits += hitsToFlush;
+    }).finally(() => {
+      if (this.persistPromise === persistPromise)
+        this.persistPromise = null;
+    });
+    this.persistPromise = persistPromise;
+    await persistPromise;
+  }
+
+  async reset() {
+    // bump resetGeneration first so an in-flight flush() can't
+    // re-add hits after the wipe. A hit landing mid-wipe can still slip
+    // through -- rare, manual-trigger-only, not worth guarding further.
+    this.resetGeneration++;
+    if (this.persistPromise)
+      await this.persistPromise;
+    await mclient.snapAndFlushMetricsBatch();
+    const keys = await mclient.scanResults('timedTraffic:feature:adblock:block:*');
+    if (keys.length) {
+      await mclient.unlinkAsync(keys);
+      mclient.forgetExpireAt(keys);
+    }
+    const resetTs = Math.floor(Date.now() / 1000);
+    const batch = mclient.multi();
+    batch.hdel('ext.adblock.stats', 'totalHits', 'lastHitTs', 'lastHitFlow');
+    batch.hset('ext.adblock.stats', 'lastResetTs', String(resetTs));
+    
+    const persistPromise = batch.execAsync().catch(() => {}).finally(() => {
+      if (this.persistPromise === persistPromise)
+        this.persistPromise = null;
+    });
+    this.persistPromise = persistPromise;
+    await persistPromise;
+    this.resetTs = resetTs;
+    this.lastHitFlow = null;
+    this.lastHitTs = 0;
+    this.pendingHits = 0;
+  }
+
+  async getStats() {
+    // One real MULTI/EXEC for all three reads.
+    const multi = mclient.multi();
+    let results = null, q24h = null, q7d = null;
+    try {
+      q24h = timeSeries.queueHits(multi, 'feature:adblock:block', '1hour', 24);
+      q7d = timeSeries.queueHits(multi, 'feature:adblock:block', '1day', 7);
+      multi.hgetall('ext.adblock.stats');
+      results = await multi.execAsync();
+    } catch (err) {
+      log.error('Failed to read adblock stats', err.message);
+    }
+
+    let buckets24h = [], buckets7d = [], stored = null;
+    if (results) {
+      let offset = 0;
+      buckets24h = timeSeries.parseQueuedHits(q24h, results.slice(offset, offset += q24h.resultSlots), 24);
+      buckets7d = timeSeries.parseQueuedHits(q7d, results.slice(offset, offset += q7d.resultSlots), 7);
+      stored = results[offset];
+    }
+    const total24h = buckets24h.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    let total7d = buckets7d.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    const daily7d = buckets7d;
+    let totalHits = 0;
+    let lastResetTs = null;
+    let lastHitTs = null;
+    let lastHitFlow = null;
+    if (stored) {
+      totalHits = Number(stored.totalHits) || 0;
+      lastResetTs = stored.lastResetTs ? Number(stored.lastResetTs) : null;
+      lastHitTs = stored.lastHitTs ? Number(stored.lastHitTs) : null;
+      try {
+        const payload = stored.lastHitFlow ? JSON.parse(stored.lastHitFlow) : null;
+        lastHitFlow = payload ? await auditTool.formatHitFlow(payload) : null;
+      } catch (err) {
+        log.warn('Failed to format adblock lastHitFlow', err.message);
+      }
+    }
+
+    if (total24h > total7d) {
+      const delta = total24h - total7d;
+      log.warn(`adblock total24h (${total24h}) is ahead of total7d (${total7d})`);
+      total7d = total24h;
+      if (daily7d.length)
+        daily7d[daily7d.length - 1][1] += delta;
+    }
+    if (totalHits < total7d) {
+      log.warn(`adblock totalHits (${totalHits}) is behind total7d (${total7d})`);
+      totalHits = total7d;
+    }
+    return { total24h, total7d, daily7d, totalHits, lastResetTs, lastHitTs, lastHitFlow };
+  }
+}
+
 class AdblockPlugin extends Sensor {
+    // ===== life cycle and register =====
+    constructor(config) {
+      super(config);
+      this.adblockStats = new AdblockStats();
+    }
+
     async run() {
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
+
         this.macAddressSettings = {};
         this.networkSettings = {};
         this.tagSettings = {};
         this.identitySettings = {};
+
         this.nextReloadFilter = [];
         this.reloadCount = 0;
         this.fastMode = true;
+        this.tlsGateQueue = null;
+        this.tlsScopeStates = {};
+        this.tlsGateOpen = null;
+        this.tlsTopologyReady = false;
+
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.globalOn,
             stop: this.globalOff,
         });
+
+        // strict mode hook
         extensionManager.registerExtension(policyExtKeyName, this, {
           applyPolicy: this.applyAdblock
         });
@@ -92,9 +329,14 @@ class AdblockPlugin extends Sensor {
             const filterKeys = await rclient.scanResults(adBlockRedisKeyPrefix + '*')
             filterKeys.length && await rclient.unlinkAsync(filterKeys)
             this._cleanUpFilter();
+            // applyAdblock() above already reset every scope to INHERIT, only the gate is left
+            this._scheduleTlsGateSync();
           } catch(err) {
             log.error('Error reseting ADBlock', err)
           }
+        });
+        sem.on('ADBLOCK_STATS_RESET', () => {
+          this.resetAdblockStats().catch(err => log.error('Failed to reset adblock stats', err));
         });
     }
 
@@ -109,36 +351,24 @@ class AdblockPlugin extends Sensor {
           type: 'ADBLOCK_RESET'
         });
       });
+
+      extensionManager.onCmd('adblockStatsReset', async (msg, data) => {
+        sem.sendEventToFireMain({ type: 'ADBLOCK_STATS_RESET' });
+      });
     }
 
-    async getAdblockConfig() {
-      const result = {};
-      try {
-        if (!platform.isAdblockCustomizedSupported()) {
-          result["ads"] = "on"
-        } else {
-          log.info(`Load config list from bone: ${configlistKey}`);
-          const data = await bone.hashsetAsync(configlistKey);
-          const adlist = JSON.parse(data);
-          // from redis
-          const configObj = this.userconfig;
-          if (configObj == undefined) {
-            for (const key in adlist) {
-              const value = adlist[key];
-              if (value.default && value.default == true) result[key] = "on";
-              else result[key] = "off";
-            }
-          } else {
-            for (const key in configObj) {
-              if (Object.keys(adlist).includes(key)) result[key] = configObj[key]
-            }
-          }
-        }
-      } catch(err) {
-        log.error(`Got error when loading config from adblock`, err);
-      }
-      return result;
+    async globalOn() {
+        this.adminSystemSwitch = true;
+        this.applyAdblock();
+        this._scheduleTlsGateSync();
     }
+
+    async globalOff() {
+        this.adminSystemSwitch = false;
+        this.applyAdblock();
+        this._scheduleTlsGateSync();
+    }
+
 
     async applyPolicy(host, ip, policy) {
       log.info("Applying adblock policy:", ip, policy);
@@ -214,186 +444,15 @@ class AdblockPlugin extends Sensor {
         log.error("Got error when applying adblock policy", err);
       }
     }
-    _scheduleNextReload(oldNextState, curNextState) {
-      if (oldNextState === curNextState) {
-        // no need immediate reload when next state not changed during reloading
-        this.nextReloadFilter.forEach(t => clearTimeout(t));
-        this.nextReloadFilter = [];
-        log.info(`schedule next reload for adblock in ${RELOAD_INTERVAL / 1000}s`);
-        this.nextReloadFilter.push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL));
-      } else {
-        log.warn(`adblock's next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
-        if (this.reloadFilterImmediate) {
-          clearImmediate(this.reloadFilterImmediate)
-        }
-        this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
-      }
-    }
-
-    async updateFilter() {
-      const config = await this.getAdblockConfig();
-      if (config["ads-adv"] === "on") {
-        // enable bloom filter for strict mode only.
-        await this._updateBloomFilter();
-        this._cleanUpFilter();
-      } else {
-        await this._updateFilter(config);
-        await this._cleanupBloomFilter();
-      }
-    }
-
-    async _cleanupBloomFilter() {
-      await categoryUpdater.deactivateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
-    }
-
-    async _updateBloomFilter() {
-      log.info("Activate adblock_strict category");
-      await categoryUpdater.activateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
-    }
-
-    async _updateFilter(config) {
-      this._cleanUpFilter(config);
-      for (const key in config) {
-        const configFilePath = `${dnsmasqConfigFolder}/${key}${adBlockConfigSuffix}`;
-        const value = config[key];
-        if (value === 'off') {
-          try {
-            if (fs.existsSync(configFilePath)) {
-              await fs.unlinkAsync(configFilePath);
-            }
-          } catch (err) {
-            log.error(`Failed to remove file: '${configFilePath}'`, err);
-          }
-          continue;
-        }
-        let data = null;
-        try {
-          data = await bone.hashsetAsync(key);
-        } catch (err) {
-          log.error("Error when load adblocks from bone", err);
-          continue;
-        }
-        let arr = null;
-        try {
-          arr = JSON.parse(data);
-        } catch (err) {
-          log.error("Error when parse adblocks", err);
-          continue;
-        }
-        try {
-          if (arr.length > 0) {
-            await this.writeToFile(adBlockRedisKeyPrefix + key, arr, configFilePath + ".tmp", this.fastMode);
-            await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
-            await fs.renameAsync(configFilePath + ".tmp", configFilePath);
-          }
-        } catch (err) {
-          log.error(`Error when write to file: '${configFilePath}'`, err);
-        }
-      }
-    }
-
-    async writeToFile(key, hashes, file, fastMode = true) {
-      return new Promise( (resolve, reject) =>  {
-        log.info("Writing hash filter file:", file);
-        let writer = fs.createWriteStream(file);
-        writer.on('finish', () => {
-          log.info("Finished writing hash filter file", file);
-          resolve();
-        });
-        writer.on('error', err => {
-          reject(err);
-        });
-        if (fastMode) {
-          this.preprocess(key, hashes).then(() => {
-            let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
-            writer.write(line);
-          }).catch((err) => {
-            log.error(`Failed to generate adblock config in fast mode`, err.message);
-          }).then(() => {
-            writer.end();
-          });
-        } else {
-          hashes.forEach((hash) => {
-            let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
-            writer.write(line);
-          });
-          writer.end();
-        }
-      });
-    }
-
-    async preprocess(key, hashes) {
-      await rclient.unlinkAsync(key);
-      const cmd = [key];
-      const result = cmd.concat(hashes);
-      await rclient.saddAsync(result);
-    }
-
-    _cleanUpFilter(config) {
-      try {
-        const result = []
-        if (typeof config == 'object') {
-          for (const key in config) {
-            if(config[key] == "on") result.push(key+adBlockConfigSuffix)
-          }
-        }
-        fs.readdirSync(dnsmasqConfigFolder).forEach(file => {
-          if (file.endsWith(adBlockConfigSuffix) && !result.includes(file)) {
-            fs.unlinkSync(`${dnsmasqConfigFolder}/${file}`);
-          }
-        })
-      } catch (err) {
-        log.err("Failed to delete file,", err)
-      }
-    }
-
-    _reloadFilter() {
-      let preState = this.state;
-      let nextState = this.nextState;
-      this.state = nextState;
-      log.info(`in reloadFilter(adblock): preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
-      if (nextState === true) {
-        log.info(`Start to update adblock filters.`);
-        this.updateFilter()
-        .then(()=> {
-          log.info(`Update adblock filters successful.`);
-          dnsmasq.scheduleRestartDNSService();
-          this._scheduleNextReload(nextState, this.nextState);
-        })
-        .catch(err=>{
-          log.error(`Update adblock filters Failed!`, err);
-        })
-      } else {
-        if (preState === false && nextState === false) {
-          // disabled, no need do anything
-          this._scheduleNextReload(nextState, this.nextState);
-          return;
-        }
-        log.info(`Start to clean up adblock filters.`);
-        this._cleanUpFilter();
-        void this._cleanupBloomFilter();
-        dnsmasq.scheduleRestartDNSService();
-        this._scheduleNextReload(nextState, this.nextState);
-      }
-    }
-    controlFilter(state) {
-      this.nextState = state;
-      log.info(`adblock nextState is: ${this.nextState}`);
-      if (this.state !== undefined) {
-        this.nextReloadFilter.forEach(t => clearTimeout(t));
-        this.nextReloadFilter = [];
-      }
-      if (this.reloadFilterImmediate) {
-        clearImmediate(this.reloadFilterImmediate)
-      }
-      this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
-    }
 
     async applyAdblock(host, ip, policy) {
       log.info("Apply adblock_ext policy", policy);
       if (typeof policy !== 'undefined') {
         this.userconfig = policy.userconfig
         this.fastMode = policy.fastmode;
+        // userconfig above is the only source of strict mode, so sync the gate here.
+        // Most of the time the mode did not change and _syncTlsGate() short-circuits
+        this._scheduleTlsGateSync();
       }
       this.controlFilter(this.adminSystemSwitch);
       if (typeof policy !== "undefined")
@@ -470,12 +529,16 @@ class AdblockPlugin extends Sensor {
       return this.perIdentityReset(guid);
     }
 
+
+    // ===== per-scope enforcement: dnsmasq conf + TLS rules =====
+
     async systemStart() {
       log.info("apply adblock globally");
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({}, SCOPE_ON);
     }
   
     async systemStop() {
@@ -484,6 +547,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({}, SCOPE_INHERIT);
     }
   
     async perTagStart(tagUid) {
@@ -492,6 +556,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\ngroup-tag=@${tagUid}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ tag: tagUid }, SCOPE_ON);
     }
   
     async perTagStop(tagUid) {
@@ -499,6 +564,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\ngroup-tag=@${tagUid}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ tag: tagUid }, SCOPE_EXCLUDED);
     }
   
     async perTagReset(tagUid) {
@@ -506,6 +572,7 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ tag: tagUid }, SCOPE_INHERIT);
     }
   
     async perNetworkStart(uuid) {
@@ -520,6 +587,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\nmac-address-tag=%00:00:00:00:00:00$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._applyTlsRules({ uuid }, SCOPE_ON);
     }
   
     async perNetworkStop(uuid) {
@@ -534,6 +602,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\nmac-address-tag=%00:00:00:00:00:00$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ uuid }, SCOPE_EXCLUDED);
     }
   
     async perNetworkReset(uuid) {
@@ -548,6 +617,7 @@ class AdblockPlugin extends Sensor {
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ uuid }, SCOPE_INHERIT);
     }
   
     async perDeviceStart(macAddress) {
@@ -556,6 +626,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\nmac-address-tag=%${macAddress.toUpperCase()}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ mac: macAddress }, SCOPE_ON);
     }
   
     async perDeviceStop(macAddress) {
@@ -563,6 +634,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\nmac-address-tag=%${macAddress.toUpperCase()}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ mac: macAddress }, SCOPE_EXCLUDED);
     }
   
     async perDeviceReset(macAddress) {
@@ -571,6 +643,7 @@ class AdblockPlugin extends Sensor {
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._applyTlsRules({ mac: macAddress }, SCOPE_INHERIT);
     }
 
     async perIdentityStart(guid) {
@@ -582,6 +655,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\ngroup-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._applyTlsRules({ guid }, SCOPE_ON);
       }
     }
   
@@ -593,6 +667,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\ngroup-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._applyTlsRules({ guid }, SCOPE_EXCLUDED);
       }
     }
   
@@ -604,18 +679,457 @@ class AdblockPlugin extends Sensor {
         const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
         await fs.unlinkAsync(configFile).catch((err) => { });
         dnsmasq.scheduleRestartDNSService();
+        await this._applyTlsRules({ guid }, SCOPE_INHERIT);
       }
     }
 
-    // global on/off
-    async globalOn() {
-        this.adminSystemSwitch = true;
-        this.applyAdblock();
+
+    // ===== list download and dnsmasq config =====
+
+    async getAdblockConfig() {
+      const result = {};
+      try {
+        if (!platform.isAdblockCustomizedSupported()) {
+          result["ads"] = "on"
+        } else {
+          log.info(`Load config list from bone: ${configlistKey}`);
+          const data = await bone.hashsetAsync(configlistKey);
+          const adlist = JSON.parse(data);
+          // from redis
+          const configObj = this.userconfig;
+          if (configObj == undefined) {
+            for (const key in adlist) {
+              const value = adlist[key];
+              if (value.default && value.default == true) result[key] = "on";
+              else result[key] = "off";
+            }
+          } else {
+            for (const key in configObj) {
+              if (Object.keys(adlist).includes(key)) result[key] = configObj[key]
+            }
+          }
+        }
+      } catch(err) {
+        log.error(`Got error when loading config from adblock`, err);
+      }
+      return result;
     }
 
-    async globalOff() {
-        this.adminSystemSwitch = false;
-        this.applyAdblock();
+    controlFilter(state) {
+      this.nextState = state;
+      log.info(`adblock nextState is: ${this.nextState}`);
+      if (this.state !== undefined) {
+        this.nextReloadFilter.forEach(t => clearTimeout(t));
+        this.nextReloadFilter = [];
+      }
+      if (this.reloadFilterImmediate) {
+        clearImmediate(this.reloadFilterImmediate)
+      }
+      this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
+    }
+
+    _reloadFilter() {
+      let preState = this.state;
+      let nextState = this.nextState;
+      this.state = nextState;
+      log.info(`in reloadFilter(adblock): preState: ${preState}, nextState: ${this.state}, this.reloadCount: ${this.reloadCount++}`);
+      if (nextState === true) {
+        log.info(`Start to update adblock filters.`);
+        this.updateFilter()
+        .then(()=> {
+          log.info(`Update adblock filters successful.`);
+          dnsmasq.scheduleRestartDNSService();
+          this._scheduleNextReload(nextState, this.nextState);
+        })
+        .catch(err=>{
+          log.error(`Update adblock filters Failed!`, err);
+        })
+      } else {
+        if (preState === false && nextState === false) {
+          // disabled, no need do anything
+          this._scheduleNextReload(nextState, this.nextState);
+          return;
+        }
+        log.info(`Start to clean up adblock filters.`);
+        this._cleanUpFilter();
+        void this._cleanupBloomFilter();
+        dnsmasq.scheduleRestartDNSService();
+        this._scheduleNextReload(nextState, this.nextState);
+      }
+    }
+
+    _scheduleNextReload(oldNextState, curNextState) {
+      if (oldNextState === curNextState) {
+        // no need immediate reload when next state not changed during reloading
+        this.nextReloadFilter.forEach(t => clearTimeout(t));
+        this.nextReloadFilter = [];
+        log.info(`schedule next reload for adblock in ${RELOAD_INTERVAL / 1000}s`);
+        this.nextReloadFilter.push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL));
+      } else {
+        log.warn(`adblock's next state changed from ${oldNextState} to ${curNextState} during reload, will reload again immediately`);
+        if (this.reloadFilterImmediate) {
+          clearImmediate(this.reloadFilterImmediate)
+        }
+        this.reloadFilterImmediate = setImmediate(this._reloadFilter.bind(this));
+      }
+    }
+
+    async updateFilter() {
+      const config = await this.getAdblockConfig();
+      const strict = config["ads-adv"] === "on";
+      if (strict) {
+        // enable bloom filter for strict mode only.
+        await this._updateBloomFilter();
+        this._cleanUpFilter();
+      } else {
+        await this._updateFilter(config);
+        await this._cleanupBloomFilter();
+      }
+    }
+
+    async _updateFilter(config) {
+      this._cleanUpFilter(config);
+      for (const key in config) {
+        const configFilePath = `${dnsmasqConfigFolder}/${key}${adBlockConfigSuffix}`;
+        const value = config[key];
+        if (value === 'off') {
+          try {
+            if (fs.existsSync(configFilePath)) {
+              await fs.unlinkAsync(configFilePath);
+            }
+          } catch (err) {
+            log.error(`Failed to remove file: '${configFilePath}'`, err);
+          }
+          continue;
+        }
+        let data = null;
+        try {
+          data = await bone.hashsetAsync(key);
+        } catch (err) {
+          log.error("Error when load adblocks from bone", err);
+          continue;
+        }
+        let arr = null;
+        try {
+          arr = JSON.parse(data);
+        } catch (err) {
+          log.error("Error when parse adblocks", err);
+          continue;
+        }
+        try {
+          if (arr.length > 0) {
+            await this.writeToFile(adBlockRedisKeyPrefix + key, arr, configFilePath + ".tmp", this.fastMode);
+            await fs.accessAsync(configFilePath + ".tmp", fs.constants.F_OK);
+            await fs.renameAsync(configFilePath + ".tmp", configFilePath);
+          }
+        } catch (err) {
+          log.error(`Error when write to file: '${configFilePath}'`, err);
+        }
+      }
+    }
+
+    async _updateBloomFilter() {
+      log.info("Activate adblock_strict category");
+      await categoryUpdater.activateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
+    }
+
+    async _cleanupBloomFilter() {
+      await categoryUpdater.deactivateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
+    }
+
+    _cleanUpFilter(config) {
+      try {
+        const result = []
+        if (typeof config == 'object') {
+          for (const key in config) {
+            if(config[key] == "on") result.push(key+adBlockConfigSuffix)
+          }
+        }
+        fs.readdirSync(dnsmasqConfigFolder).forEach(file => {
+          if (file.endsWith(adBlockConfigSuffix) && !result.includes(file)) {
+            fs.unlinkSync(`${dnsmasqConfigFolder}/${file}`);
+          }
+        })
+      } catch (err) {
+        log.err("Failed to delete file,", err)
+      }
+    }
+
+    async writeToFile(key, hashes, file, fastMode = true) {
+      return new Promise( (resolve, reject) =>  {
+        log.info("Writing hash filter file:", file);
+        let writer = fs.createWriteStream(file);
+        writer.on('finish', () => {
+          log.info("Finished writing hash filter file", file);
+          resolve();
+        });
+        writer.on('error', err => {
+          reject(err);
+        });
+        if (fastMode) {
+          this.preprocess(key, hashes).then(() => {
+            let line = util.format("redis-hash-match=/%s/%s%s\n", key, "", "$adblock");
+            writer.write(line);
+          }).catch((err) => {
+            log.error(`Failed to generate adblock config in fast mode`, err.message);
+          }).then(() => {
+            writer.end();
+          });
+        } else {
+          hashes.forEach((hash) => {
+            let line = util.format("hash-address=/%s/%s%s\n", hash.replace(/\//g, '.'), "", "$adblock")
+            writer.write(line);
+          });
+          writer.end();
+        }
+      });
+    }
+
+    async preprocess(key, hashes) {
+      await rclient.unlinkAsync(key);
+      const cmd = [key];
+      const result = cmd.concat(hashes);
+      await rclient.saddAsync(result);
+    }
+
+
+    // ===== TLS blocking: scope rules =====
+    async _applyTlsRules(target, state) {
+      if (this._getSupportedTlsProtos().length === 0)
+        return;
+      const Host = require('../net2/Host.js');
+      const Tag = require('../net2/Tag.js');
+      let scopes = [];
+
+      if (target.mac) {
+        await Host.ensureCreateEnforcementEnv(target.mac);
+        const set = Host.getDeviceSetName(target.mac);
+        scopes = [new AdblockScope(`device:${target.mac}`, state, LEVEL_DEV, set, set, DIM_DEVICE)];
+      } else if (target.guid) {
+        const identityClass = IdentityManager.getIdentityClassByGUID(target.guid);
+        if (!identityClass) {
+          log.warn("Cannot find identity class of guid", target.guid);
+          return;
+        }
+        const uid = IdentityManager.getNSAndUID(target.guid).uid;
+        await identityClass.ensureCreateEnforcementEnv(uid);
+        scopes = [new AdblockScope(`identity:${target.guid}`, state, LEVEL_DEV,
+          identityClass.getEnforcementIPsetName(uid, 4),
+          identityClass.getEnforcementIPsetName(uid, 6), DIM_DEVICE)];
+      } else if (target.tag) {
+        await Tag.ensureCreateEnforcementEnv(target.tag);
+        const devSet = Tag.getTagDeviceSetName(target.tag);
+        const netSet = Tag.getTagNetSetName(target.tag);
+        scopes = [
+          new AdblockScope(`group:${target.tag}:dev`, state, LEVEL_DEV_G, devSet, devSet, DIM_DEVICE),
+          new AdblockScope(`group:${target.tag}:net`, state, LEVEL_NET_G, netSet, netSet, DIM_NETWORK)
+        ];
+      } else if (target.uuid) {
+        await NetworkProfile.ensureCreateEnforcementEnv(target.uuid);
+        const set = NetworkProfile.getNetListIpsetName(target.uuid);
+        scopes = [new AdblockScope(`network:${target.uuid}`, state, LEVEL_NET, set, set, DIM_NETWORK)];
+      } else {
+        const set = platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null;
+        scopes = [new AdblockScope("all devices", state, LEVEL_GLOBAL, set, set, DIM_NETWORK)];
+      }
+
+      for (const scope of scopes)
+        await this._applyTlsScope(scope);
+    }
+
+    async _applyTlsScope(scope) {
+      const key = `${scope.level}|${scope.set4}`;
+      if (this.tlsScopeStates[key] === scope.state)
+        return;
+      await this._ensureTlsTopology();
+
+      const entry = this._tlsEntryRules(scope);
+      const exclusion = this._tlsExclusionRules(scope);
+      let install = [];
+      let remove = [];
+      if (scope.state === SCOPE_ON) {
+        install = entry;
+        remove = exclusion;
+      } else if (scope.state === SCOPE_EXCLUDED) {
+        install = exclusion;
+        remove = entry;
+      } else {
+        remove = entry.concat(exclusion);
+      }
+      // Remove before install
+      await iptc.addRuleBatch(remove.map(rule => rule.clone().opr('-D')));
+      await iptc.addRuleBatch(install);
+      this.tlsScopeStates[key] = scope.state;
+      log.info(`Adblock TLS scope ${scope.label} = ${scope.state}`);
+    }
+
+    // Append: scope rules within an entry chain are mutually exclusive, order does not matter
+    _tlsEntryRules(scope) {
+      const rules = [];
+      for (const family of FAMILIES) {
+        const set = scope.setOf(family);
+        const rule = new Rule('filter').fam(family).chn(entryChainOf(scope.level));
+        // A tier with no ipset covers all traffic at that level, e.g. global on a non-FireRouter box
+        if (set)
+          rule.set(set, scope.spec());
+        rules.push(rule.jmp(adBlockChainOf(scope.level)).opr('-A'));
+      }
+      return rules;
+    }
+
+    // Insert at the head: the jump to the next tier sits at the tail, an appended RETURN is dead
+    _tlsExclusionRules(scope) {
+      const rules = [];
+      for (const family of FAMILIES) {
+        const set = scope.setOf(family);
+        // Never emit an unconditional RETURN, it would disable the whole tier
+        if (!set)
+          continue;
+        rules.push(new Rule('filter').fam(family).chn(adBlockChainOf(scope.level))
+          .set(set, scope.spec()).jmp("RETURN").opr('-I'));
+      }
+      return rules;
+    }
+
+
+    // ===== TLS blocking: chain topology and gate =====
+    async _ensureTlsTopology() {
+      if (this.tlsTopologyReady)
+        return;
+      const chains = LEVELS.map(entryChainOf).concat(CASCADE_CHAINS);
+      const rules = [];
+      for (const family of FAMILIES) {
+        for (const chain of chains)
+          rules.push(new Rule('filter').fam(family).chn(chain).opr('-N'));
+        // Coarse to fine. This jump is always the chain's last rule, so exclusions must be -I'd above it
+        for (let i = 0; i < CASCADE_CHAINS.length - 1; i++) {
+          rules.push(new Rule('filter').fam(family)
+            .chn(CASCADE_CHAINS[i]).jmp(CASCADE_CHAINS[i + 1]).opr('-A'));
+        }
+      }
+      await iptc.addRuleBatch(rules);
+      this.tlsTopologyReady = true;
+    }
+
+    // Called when the feature switch or strict mode changes. Scope rules are unaffected.
+    // Queued because opening waits on the hostset backfill (up to 30s) and overlapping runs collide
+    _scheduleTlsGateSync() {
+      this.tlsGateQueue = (this.tlsGateQueue || Promise.resolve())
+        .then(() => this._refreshTlsGate())
+        .catch((err) => log.error("Failed to sync adblock TLS gate", err.message));
+    }
+
+    async _refreshTlsGate() {
+      if (this._getSupportedTlsProtos().length === 0)
+        return;
+      await this._ensureTlsTopology();
+      await this._syncTlsGate();
+    }
+
+    async _syncTlsGate() {
+      const open = Boolean(this.adminSystemSwitch && this._isStrictMode());
+      if (this.tlsGateOpen === open)
+        return;
+      if (open)
+        await this._openTlsGate();
+      else
+        await this._closeTlsGate();
+      this.tlsGateOpen = open;
+      log.info("Adblock TLS gate is now", open ? "open" : "closed");
+    }
+
+    async _openTlsGate() {
+      await platform.installTLSModules()
+        .catch(err => log.error("Failed to install TLS modules for adblock", err.message));
+      await iptc.addRuleBatch(this._tlsMatchRules('-A'));
+      this._deactivateTlsHostSet();
+      await this._activateTlsHostSet();
+      await iptc.addRuleBatch(this._tlsHookRules('-A'));
+    }
+
+    async _closeTlsGate() {
+      await iptc.addRuleBatch(this._tlsHookRules('-D'));
+      await iptc.addRuleBatch(this._tlsMatchRules('-D'));
+      this._deactivateTlsHostSet();
+    }
+
+    _tlsHookRules(op) {
+      const rules = [];
+      for (const level of LEVELS) {
+        for (const family of FAMILIES) {
+          rules.push(new Rule('filter').fam(family)
+            .chn(FW_BLOCK_CHAINS[level]).jmp(entryChainOf(level)).opr(op));
+        }
+      }
+      return rules;
+    }
+
+    _tlsMatchRules(op) {
+      const tlsHostSet = Block.getTLSHostSet(ADBLOCK_STRICT_BF_CATEGORY_ID);
+      const mark = `MARK --set-xmark ${Rule.stdMark(ADBLOCK_TLS_RULE_PID)}`;
+      const rules = [];
+      for (const proto of this._getSupportedTlsProtos()) {
+        const tlsModule = proto === "tcp" ? "tls" : "udp_tls";
+        for (const family of FAMILIES) {
+          rules.push(new Rule('filter').fam(family).chn(ADBLOCK_CHAIN_DO)
+            .pro(proto).mdl(tlsModule, `--tls-hostset ${tlsHostSet}`).jmp(mark).opr(op));
+        }
+      }
+      return rules;
+    }
+
+
+    // ===== TLS blocking: mode and hostset =====
+    _isStrictMode() {
+      if (!platform.isAdblockCustomizedSupported())
+        return false;
+      return _.get(this, ["userconfig", "ads-adv"]) === "on";
+    }
+
+    _getSupportedTlsProtos() {
+      const protos = [];
+      if (platform.isTLSBlockSupport()) {
+        protos.push("tcp");
+      }
+      if (platform.isUdpTLSBlockSupport()) {
+        protos.push("udp");
+      }
+      return protos;
+    }
+
+    async _activateTlsHostSet() {
+      for (const proto of this._getSupportedTlsProtos()) {
+        try {
+          await categoryUpdater.activateTLSCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, proto);
+        } catch (err) {
+          log.error("Failed to activate adblock TLS category", proto, err.message);
+        }
+      }
+    }
+
+    _deactivateTlsHostSet() {
+      const tlsHostSet = Block.getTLSHostSet(ADBLOCK_STRICT_BF_CATEGORY_ID);
+      for (const proto of this._getSupportedTlsProtos())
+        tlsc.deactivateTLSSet(tlsHostSet, proto);
+    }
+
+
+    // ===== stats (delegated to AdblockStats) =====
+
+    recordAdblockHit(record) {
+      return this.adblockStats.recordHit(record);
+    }
+
+    async flushAdblockStats() {
+      return this.adblockStats.flush();
+    }
+
+    async resetAdblockStats() {
+      return this.adblockStats.reset();
+    }
+
+    async getAdblockStats() {
+      return this.adblockStats.getStats();
     }
 }
 

@@ -1,0 +1,37 @@
+init_state: normal
+booting_threshold: 120
+booted_duration: 60
+leds:
+  - /sys/class/leds/status:blue/trigger
+  - /sys/class/leds/status:red/trigger
+  - /sys/class/leds/status:green/trigger
+  - /sys/class/leds/sfp:speed:orange/trigger
+states:
+  - state: force_blue_on
+    leds: ["default-on", "none", "none", "netdev"]
+  - state: force_red_on
+    leds: ["none", "default-on", "none", "netdev"]
+  - state: force_off
+    leds: ["none", "none", "none", "netdev"]
+  - state: critical_error
+    leds: ["none", "default-on", "none", "netdev"]
+  - state: reset
+    leds: ["none", "timer", "none", "netdev"]
+  - state: network_down
+    leds: ["none", "timer", "none", "netdev"]
+  - state: bluetooth_connected
+    leds: ["heartbeat", "none", "none", "netdev"]
+  - state: writing_disk
+    leds: ["heartbeat", "none", "none", "netdev"]
+  - state: booted
+    leds: ["default-on", "none", "none", "default-on"]
+  - state: booting
+    leds: ["timer", "none", "none", "timer"]
+  - state: normal_visible
+    leds: ["default-on", "none", "none", "netdev"]
+  - state: ready_for_pairing
+    leds: ["none", "none", "none", "netdev"]
+  - state: normal
+    leds: ["none", "none", "none", "netdev"]
+  - state: force_green_on
+    leds: ["none", "none", "default-on", "netdev"]

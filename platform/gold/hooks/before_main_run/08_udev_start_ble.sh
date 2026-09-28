@@ -10,4 +10,4 @@ sudo cp "${FW_PLATFORM_CUR_DIR}/files/udev/55-start_ble.rules" /etc/udev/rules.d
 sudo cp /lib/systemd/system/systemd-udevd.service /etc/systemd/system/systemd-udevd.service
 sudo tee -a /etc/systemd/system/systemd-udevd.service 1> /dev/null <<< 'IPAddressAllow=127.0.0.1'
 sudo systemctl daemon-reload
-sudo systemctl restart udev
+sudo systemctl restart systemd-udevd

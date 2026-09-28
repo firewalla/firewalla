@@ -39,41 +39,42 @@ class WGVPNClient extends VPNClient {
     let peer = null;
     let currentSection = null;
     for (const line of lines) {
-      if (line === "[Interface]" || line === "[Peer]") {
-        if (line === "[Peer]") {
+      const section = line.toLowerCase();
+      if (section === "[interface]" || section === "[peer]") {
+        if (section === "[peer]") {
           // use 20 seconds as default persistentKeepalive value
           peer = {persistentKeepalive: 20};
           peers.push(peer);
         }
-        currentSection = line;
+        currentSection = section;
         continue;
       }
       if (!line.includes('='))
         continue;
-      const key = line.substring(0, line.indexOf('=')).trim();
+      const key = line.substring(0, line.indexOf('=')).trim().toLowerCase();
       const value = line.substring(line.indexOf('=') + 1).trim();
       switch (currentSection) {
-        case "[Interface]": {
-          if (key === "Address")
+        case "[interface]": {
+          if (key === "address")
             addresses = addresses.concat(value.split(',').map(v => v.trim()));
-          if (key === "PrivateKey")
+          if (key === "privatekey")
             config.privateKey = value;
-          if (key === "DNS")
+          if (key === "dns")
             dns = dns.concat(value.split(',').map(v => v.trim())).filter(v => v != '');
-          if (key === "MTU")
+          if (key === "mtu")
             config.mtu = value;
           break;
         }
-        case "[Peer]": {
-          if (key === "PublicKey")
+        case "[peer]": {
+          if (key === "publickey")
             peer.publicKey = value;
-          if (key === "Endpoint")
+          if (key === "endpoint")
             peer.endpoint = value;
-          if (key === "AllowedIPs")
+          if (key === "allowedips")
             peer.allowedIPs = value.split(',').map(v => v.trim());
-          if (key === "PresharedKey")
+          if (key === "presharedkey")
             peer.presharedKey = value;
-          if (key === "PersistentKeepalive")
+          if (key === "persistentkeepalive")
             peer.persistentKeepalive = value;
           break;
         }

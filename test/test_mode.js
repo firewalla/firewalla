@@ -63,7 +63,7 @@ describe.skip('Test mode feature', function() {
   });
 
   afterEach((done) => {
-    cp.exec("sudo pkill bitbridge7", (err) => {
+    cp.exec("sudo pkill -x bitbridge7", (err) => {
       s._stop()
         .then(() => {
           done();

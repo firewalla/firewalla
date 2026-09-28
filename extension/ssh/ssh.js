@@ -35,6 +35,7 @@ var RSAComment = "firewalla";
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const execAsync = util.promisify(cp.exec);
+const execFileAsync = util.promisify(cp.execFile);
 const readFileAsync = util.promisify(fs.readFile);
 
 module.exports = class {
@@ -183,26 +184,31 @@ module.exports = class {
     }
 
     async generateRSAKeyPair(identity) {
+      this._validateIdentity(identity);
       identity = identity || "id_rsa_firewalla";
-      const cmd = util.format('/bin/bash -c \'/bin/echo "y\n" | ssh-keygen -q -t rsa -f ~/.ssh/%s -N "" -C "%s"\'', identity, identity);
-      await execAsync(cmd);
+      const keyPath = `${f.getUserHome()}/.ssh/${identity}`;
+      // remove existing key files to avoid interactive overwrite prompt
+      if (fs.existsSync(keyPath)) await fs.unlinkAsync(keyPath);
+      if (fs.existsSync(`${keyPath}.pub`)) await fs.unlinkAsync(`${keyPath}.pub`);
+      await execFileAsync('ssh-keygen', ['-q', '-t', 'rsa', '-f', keyPath, '-N', '', '-C', identity]);
     }
 
     async getRSAPublicKey(identity) {
+      this._validateIdentity(identity);
       identity = identity || "id_rsa_firewalla";
       const filename = util.format("%s/.ssh/%s.pub", f.getUserHome(), identity);
       if (fs.existsSync(filename)) {
         const pubKey = await readFileAsync(filename, 'utf8');
         return pubKey;
-      } else return null;      
+      } else return null;
     }
 
     async getRSAPEMPublicKey(identity) {
+      this._validateIdentity(identity);
       identity = identity || "id_rsa_firewalla";
-      const filename = util.format("%s/.ssh/%s.pub", f.getUserHome(), identity);
+      const filename = `${f.getUserHome()}/.ssh/${identity}.pub`;
       if (fs.existsSync(filename)) {
-        const cmd = util.format("ssh-keygen -f %s -e -m PKCS8", filename);
-        const result = await execAsync(cmd);
+        const result = await execFileAsync('ssh-keygen', ['-f', filename, '-e', '-m', 'PKCS8']);
         if (result.stderr) {
           throw result.stderr;
         }
@@ -211,6 +217,7 @@ module.exports = class {
     }
 
     async getRSAPEMPrivateKey(identity) {
+      this._validateIdentity(identity);
       identity = identity || "id_rsa_firewalla";
       const filename = util.format("%s/.ssh/%s", f.getUserHome(), identity);
       if (fs.existsSync(filename)) {
@@ -220,37 +227,40 @@ module.exports = class {
     }
 
     async saveRSAPublicKey(content, identity) {
+      this._validateIdentity(identity);
       const filename = identity || "id_rsa_firewalla";
-      let cmd = util.format("echo -n '%s' > ~/.ssh/%s.pub && chmod 600 ~/.ssh/%s.pub", content, filename, filename);
-      await execAsync(cmd);
-      cmd = util.format("echo -n '%s' >> ~/.ssh/authorized_keys && chmod 644 ~/.ssh/authorized_keys", content);
-      await execAsync(cmd);
+      const pubKeyPath = `${f.getUserHome()}/.ssh/${filename}.pub`;
+      await fs.writeFileAsync(pubKeyPath, content);
+      await fs.chmodAsync(pubKeyPath, 0o600);
+      await fs.appendFileAsync(fileAuthorizedKeys, content);
+      await fs.chmodAsync(fileAuthorizedKeys, 0o644);
     }
 
     async saveRSAPrivateKey(content, identity) {
+      this._validateIdentity(identity);
       const filename = identity || "id_rsa_firewalla";
-      const cmd = util.format("echo -n '%s' > ~/.ssh/%s && chmod 600 ~/.ssh/%s", content, filename, filename);
-      await execAsync(cmd);
+      const privKeyPath = `${f.getUserHome()}/.ssh/${filename}`;
+      await fs.writeFileAsync(privKeyPath, content);
+      await fs.chmodAsync(privKeyPath, 0o600);
     }
 
     async remoteCommand(host, command, username, identity) {
+      this._validateIdentity(identity);
       username = username || "pi";
       identity = identity || "id_rsa_firewalla";
-      const identity_file = util.format("~/.ssh/%s", identity);
-      const cmd = util.format("ssh -o StrictHostKeyChecking=no -i %s %s@%s '%s'", identity_file, username, host, command);
-      await execAsync(cmd);
+      const identity_file = `${f.getUserHome()}/.ssh/${identity}`;
+      await execFileAsync('ssh', ['-o', 'StrictHostKeyChecking=no', '-i', identity_file, `${username}@${host}`, command]);
     }
 
     async scpFile(host, sourcePath, destPath, recursive, identity, username) {
+      this._validateIdentity(identity);
       username = username || "pi";
       identity = identity || "id_rsa_firewalla";
-      const identity_file = util.format("~/.ssh/%s", identity);
-      var extraOpts = "";
-      if (recursive) {
-        extraOpts = "-r"
-      }
-      const cmd = util.format("scp -o StrictHostKeyChecking=no -i %s %s %s %s@%s:%s", identity_file, extraOpts, sourcePath, username, host, destPath);
-      await execAsync(cmd);
+      const identity_file = `${f.getUserHome()}/.ssh/${identity}`;
+      const args = ['-o', 'StrictHostKeyChecking=no', '-i', identity_file];
+      if (recursive) args.push('-r');
+      args.push(sourcePath, `${username}@${host}:${destPath}`);
+      await execFileAsync('scp', args);
     }
 
     removePreviousKeyFromAuthorizedKeys(callback) {
@@ -272,4 +282,11 @@ module.exports = class {
         callback(err);
       });
     }
+
+
+  _validateIdentity(identity) {
+    if (identity && !/^[A-Za-z0-9_-]+$/.test(identity)) {
+      throw new Error(`Invalid SSH identity name: ${identity}`);
+    }
+  }
 }

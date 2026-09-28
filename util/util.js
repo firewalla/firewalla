@@ -15,6 +15,7 @@
 'use strict';
 
 const fsp = require('fs').promises
+const { spawn } = require('child_process');
 
 const _ = require('lodash');
 const stream = require('stream');
@@ -214,6 +215,11 @@ function isDomainValid(domain) {
   return validDomainRegex.test(domain);
 }
 
+function isValidCommonName(cn) {
+  if (!cn || typeof cn !== 'string') return false;
+  return /^[a-zA-Z0-9]{1,32}$/.test(cn);
+}
+
 function generateStrictDateTs(ts) {
   const now = ts ? new Date(ts) : new Date();
   const offset = now.getTimezoneOffset(); // in mins
@@ -310,15 +316,26 @@ function difference(obj1, obj2) {
   return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
 }
 
+// check if a value is the default value
+function _isDefaultValue(v) {
+  return v === undefined || v === null || v === false || v === "";
+}
+
 function _diff(obj1, obj2) {
   if (!obj1 || !_.isObject(obj1)) {
     return [];
   }
   if (!obj2 || !_.isObject(obj2)) {
-    return Object.keys(obj1);
+    // obj2 has no properties at all; only non-default values count as differences
+    return Object.keys(obj1).filter(key => !_isDefaultValue(obj1[key]));
   }
   return _.reduce(obj1, function(result, value, key) {
-    return _.isEqual(value, obj2[key]) ?
+    const other = _.has(obj2, key) ? obj2[key] : undefined;
+    // both sides are absent/default -> considered equal
+    if (_isDefaultValue(value) && _isDefaultValue(other)) {
+      return result;
+    }
+    return _.isEqual(value, other) ?
         result : result.concat(key);
   }, []);
 }
@@ -371,6 +388,22 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+// run a command whose stdout/stderr is not needed and may be large enough to
+// exceed child_process's maxBuffer if captured (exec/execFile always buffer
+// output in memory); stdio is fully ignored so it's discarded at the OS level
+function spawnQuiet(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      if (code === 0)
+        resolve();
+      else
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}${signal ? `, signal ${signal}` : ''}`));
+    });
+  });
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -393,4 +426,6 @@ module.exports = {
   batchKeyExists,
   waitFor,
   withTimeout,
+  spawnQuiet,
+  isValidCommonName,
 };

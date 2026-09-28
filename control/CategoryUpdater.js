@@ -172,7 +172,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 // mark initialized after all processing (recycleIPSet sets this too for
                 // ipset-enabled categories, but dns-only categories like adblock_strict
                 // skip recycleIPSet and still need to be marked)
-                this.initializedCategories[event.category] = true;
+                this.attemptedCategories[event.category] = true;
               }
 
               // check if category filter exists to update
@@ -405,6 +405,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
   }
 
+  // whether any active policy rule still references this category
+  hasActivePolicies(category) {
+    const categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    if (!categoryPolicies) return false;
+    return categoryPolicies.numDefaultPolicies > 0 || categoryPolicies.numDomainOnlyPolicies > 0;
+  }
+
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
     if (!category || !devOpts) return;
     const { tags, intfs, scope, guids } = devOpts;
@@ -472,10 +479,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async getCustomizedCategories() {
     const result = {};
-    for (const c in this.customizedCategories) {
+    await Promise.all(Object.keys(this.customizedCategories).map(async c => {
       const elements = await this.getIncludedElements(c);
       result[c] = Object.assign({}, this.customizedCategories[c], { elements: elements });
-    }
+    }));
     return result;
   }
 
@@ -1096,7 +1103,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const sigCfg = this.getSignatureConfig(sigId);
     if (!sigCfg || !sigCfg.categories || !_.isArray(sigCfg.categories) || !sigCfg.categories.includes(category)) {
-      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${sigEntry.id} to category ${category}`);
+      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${remoteAddr}:${remotePorts} to category ${category}`);
       return;
     }
     let serverEntry  = this.composeSigDetectedServerEntry(remoteAddr, protocol, remotePorts, sigId);
@@ -1299,6 +1306,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     ))
   }
 
+  _buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix) {
+    const ops = [];
+    const isIcmpFamily = portObj && (portObj.proto === 'icmp' || portObj.proto === 'icmpv6');
+    if (isIcmpFamily) {
+      const icmpPortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmp' });
+      const icmpv6PortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmpv6' });
+      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+        .map(ip => `add ${ipsetName} ${ip},${icmpPortStr}${commentSuffix}`)
+      );
+      ops.push(...categoryIps.filter(ip => ip.includes(':'))
+        .map(ip => `add ${ipset6Name} ${ip},${icmpv6PortStr}${commentSuffix}`)
+      );
+      return ops;
+    }
+    ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+      .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
+    );
+    ops.push(...categoryIps.filter(ip => ip.includes(':'))
+      .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
+    );
+    return ops;
+  }
+
   async updateIPSetByDomainPort(category, domainObj, options) {
     if (!this.inited) return;
     log.debug(`About to update category ${category} with domain object ${domainObj}`);
@@ -1322,18 +1352,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     
     const portObj = domainObj.port;
     const portStr = CategoryEntry.toPortStr(portObj);
-    
     const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-    const ops = [];
-    if (!portObj || portObj.proto !== 'icmpv6')
-      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-        .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-      );
-    if (!portObj || portObj.proto !== 'icmp')
-      ops.push(...categoryIps.filter(ip => ip.includes(':'))
-        .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-      )
-    await Ipset.restore(ops);
+    await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
   }
 
   async filterIPSetByDomain(category, options) {
@@ -1490,16 +1510,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const portObj = domainObj.port;
       const portStr = CategoryEntry.toPortStr(portObj);
       const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-      const ops = [];
-      if (!portObj || portObj.proto !== 'icmpv6')
-        ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-          .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-        );
-      if (!portObj || portObj.proto !== 'icmp')
-        ops.push(...categoryIps.filter(ip => ip.includes(':'))
-          .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-        );
-      await Ipset.restore(ops);
+      await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
     }
   }
 
@@ -1536,7 +1547,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return;
     }
     this.recycleTasks[category] = true;
+    try {
+      await this._recycleIPSet(category);
+    } finally {
+      this.recycleTasks[category] = false;
+    }
+  }
 
+  async _recycleIPSet(category) {
     let ondemand = false;
 
     const ipsetNeedComment = this.needIpSetComment(category);
@@ -1734,10 +1752,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
           domainSuffix = domainSuffix.substring(2);
         }
 
-        const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-        if (!existing) { // a new domain
-          log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
-          await domainBlock.resolveDomain(domainSuffix)
+        // in domainOnly mode non-static domains are not translated into IPs at all,
+        // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
+        const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
+        if (!domainOnly) {
+          const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+          if (!existing) { // a new domain
+            log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
+            await domainBlock.resolveDomain(domainSuffix)
+          }
         }
         const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
         const port = v.port || null;
@@ -1753,7 +1776,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         );
         const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
         if (!v.port) {
-          if (currentRecyclemode === "domainOnly" && !v.isStatic) {
+          if (domainOnly) {
             options.domainOnly = true;
           }
           await this.updateIPSetByDomain(category, domain, options);
@@ -1857,8 +1880,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.recycleTasks[category] = false;
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }
 
@@ -2001,7 +2023,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           }
         };
       case "adblock":
-      // only enable dnsmasq for adblock strict mode.
+      // enable dnsmasq + tls for adblock strict mode.
       return {
         needOptimization: true,
 
@@ -2010,7 +2032,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         useHitSetDefault: true,
         tls: {
-          enabled: false,
+          enabled: true,
           useHitSet: true
         },
         dnsmasq: {

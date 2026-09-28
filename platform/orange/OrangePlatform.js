@@ -109,10 +109,6 @@ class OrangePlatform extends Platform {
   isTLSBlockSupport() {
     return true;
   }
-  
-  isUdpTLSBlockSupport() {
-    return true;
-  }
 
   isFireRouterManaged() {
     return true;
@@ -403,6 +399,10 @@ class OrangePlatform extends Platform {
 
   async getWlanVendor() {
     return "mt7996e";
+  }
+
+  async getWpaCliBinPath() {
+    return 'wpa_cli';
   }
 
   getDefaultWlanIntfName() {

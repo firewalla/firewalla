@@ -18,6 +18,8 @@ const log = require('./logger.js')(__filename);
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const Constants = require('./Constants.js');
 const LogQuery = require('./LogQuery.js')
+const IntelTool = require('./IntelTool.js');
+const intelTool = new IntelTool();
 
 const _ = require('lodash');
 
@@ -125,6 +127,15 @@ class AuditTool extends LogQuery {
     if (entry.pid) {
       f.pid = entry.pid
     }
+    if (entry.bType) {
+      f.bType = entry.bType
+    }
+    if (entry.bTarget) {
+      f.bTarget = entry.bTarget
+    }
+    if (entry.purpose) {
+      f.purpose = entry.purpose
+    }
     if (entry.reason) {
       f.reason = entry.reason
     }
@@ -139,6 +150,12 @@ class AuditTool extends LogQuery {
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
+    }
+
+    // decode the intel snapshot baked at record-write time (c = coded category)
+    if (entry.c != null) {
+      const category = intelTool.numberToCategory(entry.c);
+      if (category) f.category = category;
     }
     if (options.local)
       f.local = true
@@ -179,6 +196,18 @@ class AuditTool extends LogQuery {
       return options.dns ? `flow:dns:${mac}`
         : options.auditDNSSuccess ? `audit:dns:${mac}`
         : `audit:accept:${mac}`
+  }
+
+  async formatHitFlow(payload, options = {}) {
+    const { kind, raw } = payload || {};
+    if (kind !== 'audit' || !raw) return null;
+    const simpleLog = this.toSimpleFormat(raw, {
+      block: true,
+      local: !!(raw.local || raw.dmac || raw.dir === 'L')
+    });
+    if (!simpleLog) return null;
+    if (raw.mac) simpleLog.device = raw.mac;
+    return this.enrichSimpleLog(simpleLog, options).catch((err) => { log.warn('Failed to enrich lastHitFlow', err.message); return simpleLog; });
   }
 }
 

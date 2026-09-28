@@ -56,19 +56,20 @@ module.exports = class {
       }
     }
 
-    cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
+    // decryptRequest parses the { iv, message } envelope once and returns usedIv;
+    // a request that carried an iv gets its reply mirrored with a fresh iv.
+    cloudWrapper.getCloud().decryptRequest(gid, message).then(({ decrypted: decryptedMessage, scheme }) => {
+      req.reqScheme = scheme;
+      decryptedMessage.mtype = decryptedMessage.message.mtype;
+      req.body = decryptedMessage;
+      req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
+      log.debug(req.id, 'Message decrypted')
+      next();
+    }).catch((err) => {
       if(err && err.message === "decrypt_error") {
         res.status(412).json({"error" : err});
-        return;
-      } else if(err) {
-        res.status(400).json({"error" : err});
-        return;
       } else {
-        decryptedMessage.mtype = decryptedMessage.message.mtype;
-        req.body = decryptedMessage;
-        req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
-        log.debug(req.id, 'Message decrypted')
-        next();
+        res.status(400).json({"error" : err});
       }
     });
   }
@@ -87,22 +88,25 @@ module.exports = class {
       return;
     }
 
+    // Mirror the request scheme (gcm / cbc-iv / legacy) on the reply. Streaming
+    // stays on the legacy zero IV for now (its SSE frame carries no envelope).
+    const scheme = streaming ? 'legacy' : (req.reqScheme || 'legacy');
+
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
-    cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
+    cloudWrapper.getCloud().encryptResponse(gid, body, scheme).then((encryptedResponse) => {
       log.debug(`${req.id} Encrypt Cost Time: ${process.hrtime(time)[1]/1e6} ms`);
 
-      if(err) {
-        res.json({error: err});
-        return;
+      if(streaming){
+        res.body = encryptedResponse;
+        next();
       } else {
-        if(streaming){
-          res.body = encryptedResponse;
-          next();
-        }else{
-          res.json({ message : encryptedResponse });
-        }
+        // encryptedResponse is the scheme envelope (gcm/cbc-iv) or legacy bare
+        // base64; iv/tag travel inside message, not as top-level fields.
+        res.json({ message: encryptedResponse });
       }
+    }).catch((err) => {
+      res.json({error: err});
     });
   }
 }

@@ -100,6 +100,84 @@ describe.skip('Test freeradius service', function () {
 
 });
 
+
+describe('Test freeradius certs', function () {
+  this.timeout(30000);
+
+  const rootCAContent = `-----BEGIN CERTIFICATE-----
+MIICBDCCAYqgAwIBAgIUJMNsSGxaSSyIQn/yxx+ydIBuXBUwCgYIKoZIzj0EAwMw
+OTELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUZpcmV3YWxsYTEWMBQGA1UEAwwNZmly
+ZXdhbGxhLmNvbTAeFw0yNjAzMzAxMTEzMTRaFw0zNjAzMjcxMTEzMTRaMDkxCzAJ
+BgNVBAYTAlVTMRIwEAYDVQQKDAlGaXJld2FsbGExFjAUBgNVBAMMDWZpcmV3YWxs
+YS5jb20wdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARnzF1oSBI73iHD1rdb3BzCrHH6
+V6wXReJGyPJLvzwND00Mj8zS0UZkdqldj87UbuCTGbmTa+gteMskfOlP+SaNj47d
+Ax/HSp+Uof0c/5mgO1MRld2u45JKrPI2NYp+5dyjUzBRMB0GA1UdDgQWBBSMyIKW
+UOYGsg9gLbiZYBXYFxjO8jAfBgNVHSMEGDAWgBSMyIKWUOYGsg9gLbiZYBXYFxjO
+8jAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMDA2gAMGUCMQDFPhfJdreja4VV
+MwtVchXFnSnaZE6byk1BywJf1bPLIOQivGjLSYbCxiSzCNyYbKECMC2vCt+yEM3T
+VQ8t5UrTtcxrQsyChRdw2JHwv59rpHoLZk69QpVzE31/MrhL6aXJfQ==
+-----END CERTIFICATE-----`;
+
+  const serverKeyContent = `-----BEGIN EC PARAMETERS-----
+BgUrgQQAIg==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MIGkAgEBBDCBxdKvSeH3NXly5lPX2IvtK6/L750sOjnfs13WmU+RhLavqgTsDxCa
+XxhXCAvl5xKgBwYFK4EEACKhZANiAAQEEqOEZMSScKE7hIF7MMpROapzBzAbf5PF
+95L1Fvi7OvDple0Vj4G8E6aTQtxRmBOr6cI1z1kN/V2o+ld1bbGTNq58qZmaavog
+zXAYexS5gYC6EvYCp/9iuKMENAln/qI=
+-----END EC PRIVATE KEY-----`;
+
+  const serverCAContent = `-----BEGIN CERTIFICATE-----
+MIIB8jCCAXigAwIBAgIUQ4zlSijSWbhjNaX2UyzvObTsy2MwCgYIKoZIzj0EAwMw
+OTELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUZpcmV3YWxsYTEWMBQGA1UEAwwNZmly
+ZXdhbGxhLmNvbTAeFw0yNjAzMzAxMTE0MTdaFw0yNzAzMzAxMTE0MTdaMHwxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJDQTERMA8GA1UEBwwIU2FuIEpvc2UxEjAQBgNV
+BAoMCUZpcmV3YWxsYTEhMB8GCSqGSIb3DQEJARYSaGVscEBmaXJld2FsbGEuY29t
+MRYwFAYDVQQDDA1maXJld2FsbGEuY29tMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE
+BBKjhGTEknChO4SBezDKUTmqcwcwG3+TxfeS9Rb4uzrw6ZXtFY+BvBOmk0LcUZgT
+q+nCNc9ZDf1dqPpXdW2xkzaufKmZmmr6IM1wGHsUuYGAuhL2Aqf/YrijBDQJZ/6i
+MAoGCCqGSM49BAMDA2gAMGUCMH2gNCEsj7BtOG1NU4m4JIYIdnn4uPvq0g55iJIR
+YPlf5Ic3nsUheRIFyCciXv2pWwIxAPMTGdKBdN4ktB3Z1CjE/JEPglomiSmEjZfq
+vb8caklM8vVkoVYLXmgox/ZyXZhndg==
+-----END CERTIFICATE-----`;
+
+  before(async () => {
+    await exec(`mkdir -p /tmp/certs`).catch(e => { });
+  });
+
+  after(async () => {
+    await exec(`rm -rf /tmp/certs`).catch(e => { });
+  });
+
+
+  it('should save certs', async () => {
+    const certs = await freeradius._saveCerts({
+      ca: rootCAContent,
+      serverCA: serverCAContent,
+      serverKey: serverKeyContent,
+      keypass: "test",
+    }, "/tmp/certs");
+    expect(certs).to.be.true;
+  });
+
+  it('should verify certs', async () => {
+    const verified = await freeradius._verifyCerts("/tmp/certs");
+    expect(verified).to.be.true;
+  });
+
+  it('should get certs', async () => {
+    const certs = await freeradius._getCerts("/tmp/certs");
+    expect(certs).to.not.be.null;
+    expect(certs.keypass).to.be.equal("test");
+    expect(certs.ca).to.be.equal(rootCAContent);
+    expect(certs.serverCA).to.be.equal(serverCAContent);
+    expect(certs.serverKey).to.be.equal(serverKeyContent);
+    expect(certs.hash).to.be.equal("9942234dd0fe31771218eb2286fa384739d7187adfb0a4937ebf580dcb0dac57");
+  });
+
+});
+
 describe('Test freeradius sensor', function () {
   this.timeout(1200000);
   this.plugin = new FreeRadiusSensor({});
@@ -133,7 +211,7 @@ describe('Test freeradius sensor', function () {
 
   it('should generateOptions', async () => {
     await this.plugin.generateOptions({ ssl: true, debug: true, timeout: 10 });
-    const options = await fs.promises.readFile(`${f.getHiddenFolder()}/config/freeradius/.freerc`, { encoding: "utf8" });
+    const options = await fs.readFile(`${f.getRuntimeInfoFolder()}/docker/freeradius/config/.env`, { encoding: "utf8" });
     expect(options).to.contains("ssl=true");
     expect(options).to.contains("debug=true");
     expect(options).to.contains("timeout=10");
@@ -153,5 +231,85 @@ describe('Test freeradius sensor', function () {
     await this.plugin.applyPolicy("0.0.0.0", "", { radius: radiusConfig2, options: { ssl: true } });
 
     await this.plugin.applyPolicy("0.0.0.0", "", { radius: radiusConfig2, options: { ssl: true } });
+  });
+});
+
+// simulates docker pull failures by feeding fake commands to _dockerPull (no docker/disk needed)
+describe('Test freeradius image pull backoff', function () {
+  this.timeout(30000);
+
+  const DISK_FAULT_CMD = `echo "failed to convert whiteout file etc/raddb/mods-enabled/.wh.redis: operation not permitted" 1>&2; exit 1`;
+  const TRANSIENT_CMD = `echo "Error response from daemon: TLS handshake timeout" 1>&2; exit 1`;
+  const HOUR = 3600000;
+  const MIN5 = 300000;
+
+  beforeEach(async () => {
+    await freeradius._clearPullBackoff();
+  });
+
+  after(async () => {
+    await freeradius._clearPullBackoff();
+  });
+
+  it('should back off ~1h on a disk fault', async () => {
+    const r = await freeradius._dockerPull(DISK_FAULT_CMD);
+    expect(r.ok).to.be.false;
+    expect(freeradius.pullBackoff).to.not.be.null;
+    expect(freeradius.pullBackoff.diskFault).to.be.true;
+    expect(freeradius.pullBackoff.attempts).to.be.equal(1);
+    const delay = freeradius.pullBackoff.nextTs - Date.now();
+    expect(delay).to.be.within(HOUR - 5000, HOUR);
+    expect(await freeradius._inPullBackoff()).to.be.true;
+  });
+
+  it('should skip the next pull while in the backoff window', async () => {
+    await freeradius._dockerPull(DISK_FAULT_CMD);
+    // if this command ran, /tmp/fr_backoff_probe would be created
+    await exec(`rm -f /tmp/fr_backoff_probe`).catch(() => { });
+    const r = await freeradius._dockerPull(`touch /tmp/fr_backoff_probe`);
+    expect(r.skipped).to.be.true;
+    expect(r.ok).to.be.false;
+    const ran = await exec(`test -f /tmp/fr_backoff_probe`).then(() => true).catch(() => false);
+    expect(ran).to.be.false;
+  });
+
+  it('should back off ~5m on a transient (non-disk) error', async () => {
+    await freeradius._dockerPull(TRANSIENT_CMD);
+    expect(freeradius.pullBackoff.diskFault).to.be.false;
+    const delay = freeradius.pullBackoff.nextTs - Date.now();
+    expect(delay).to.be.within(MIN5 - 5000, MIN5);
+  });
+
+  it('should grow the delay exponentially on repeated disk faults', async () => {
+    await freeradius._recordPullFailure("no space left on device");   // attempt 1 -> 1h
+    await freeradius._recordPullFailure("input/output error");        // attempt 2 -> 2h
+    expect(freeradius.pullBackoff.attempts).to.be.equal(2);
+    const delay = freeradius.pullBackoff.nextTs - Date.now();
+    expect(delay).to.be.within(2 * HOUR - 5000, 2 * HOUR);
+  });
+
+  it('should cap the disk-fault delay at 24h', async () => {
+    for (let i = 0; i < 10; i++) {
+      await freeradius._recordPullFailure("read-only file system");
+    }
+    const delay = freeradius.pullBackoff.nextTs - Date.now();
+    expect(delay).to.be.within(24 * HOUR - 5000, 24 * HOUR);
+  });
+
+  it('should clear backoff on a successful pull', async () => {
+    await freeradius._dockerPull(DISK_FAULT_CMD);
+    expect(await freeradius._inPullBackoff()).to.be.true;
+    await freeradius._clearPullBackoff();
+    const r = await freeradius._dockerPull(`echo "Status: Image is up to date"`);
+    expect(r.ok).to.be.true;
+    expect(freeradius.pullBackoff).to.be.null;
+    expect(await freeradius._inPullBackoff()).to.be.false;
+  });
+
+  it('should honor a redis-only backoff window (cross-process)', async () => {
+    freeradius.pullBackoff = null; // no in-memory state, simulate a fresh process
+    await rclient.setAsync("freeradius:image:pull:backoff",
+      JSON.stringify({ attempts: 3, diskFault: true, nextTs: Date.now() + HOUR }));
+    expect(await freeradius._inPullBackoff()).to.be.true;
   });
 });

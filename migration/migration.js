@@ -146,6 +146,10 @@ async function transferDataPartition(host, partition, transferIdentity) {
 async function transferHiddenFolder(host, transferIdentity) {
   await _ensureRemoteHiddenFolder(host, transferIdentity);
   await ssh.scpFile(host, `${f.getHiddenFolder()}/config`, f.getHiddenFolder(), true, transferIdentity);
+  // recursively transfer certs folder
+  if (fs.existsSync(`${f.getHiddenFolder()}/certs`)) {
+    await ssh.scpFile(host, `${f.getHiddenFolder()}/certs`, f.getHiddenFolder(), true, transferIdentity);
+  }
   // the reason why not just copy the whole /run folder lies in that saved_xx should not be override on target host
   await ssh.scpFile(host, `${f.getHiddenFolder()}/run/dnsmasq-*`, f.getHiddenFolder() + "/run/", false, transferIdentity); // this should take care of dnsmasq-hosts and dnsmasq-alt-hosts
   await ssh.scpFile(host, `${f.getHiddenFolder()}/run/dnsmasq.resolv.conf`, f.getHiddenFolder() + "/run/", false, transferIdentity);
