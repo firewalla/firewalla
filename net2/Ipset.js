@@ -18,20 +18,10 @@
 const log = require('./logger.js')(__filename);
 const ipsetControl = require('../control/IpsetControl.js');
 const { exec, execFile } = require('child-process-promise');
-const { spawn } = require('child_process');
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock({maxPending: 3000});
-
-const maxIpsetQueue = 158;
-const ipsetInterval = 3000;
 const f = require('./Firewalla.js');
 const _ = require('lodash');
 
 const REGEX_SETNAME = /^[A-Za-z0-9_][A-Za-z0-9_:/+-]{0,30}$/;
-
-let ipsetQueue = [];
-let ipsetTimerSet = false;
-let ipsetProcessing = false;
 
 // without setName, read all sets and always returns an array
 // with setName, read one set and returns either an object or null
@@ -93,73 +83,6 @@ async function isReferenced(ipset) {
   } catch(err) {
     log.error(`Failed to check if ipset ${ipset} is referenced`, err.message);
     return false;
-  }
-}
-
-function enqueue(ipsetCmd) {
-  if (ipsetCmd != null) {
-    ipsetQueue.push(ipsetCmd);
-  }
-  if (ipsetProcessing == false && ipsetQueue.length > 0 && (ipsetQueue.length > maxIpsetQueue || ipsetCmd == null)) {
-    ipsetProcessing = true;
-    let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
-    ipsetQueue = [];
-    let child = spawn('sudo', ['ipset', 'restore', '-!']);
-    child.stdin.setEncoding('utf-8');
-    child.on('exit', (code, signal) => {
-      ipsetProcessing = false;
-      log.info("Control:Ipset:Processing:END", code);
-      enqueue(null);
-    });
-    child.on('error', (code, signal) => {
-      ipsetProcessing = false;
-      log.info("Control:Ipset:Processing:Error", code);
-      enqueue(null);
-    });
-    let errorOccurred = false;
-    child.stderr.on('data', (data) => {
-      log.error("ipset restore error: " + data);
-    });
-    child.stdin.on('error', (err) => {
-      errorOccurred = true;
-      log.error("Failed to write to stdin", err);
-    });
-    writeToStdin(0);
-    function writeToStdin(i) {
-      const stdinReady = child.stdin.write(_ipsetQueue[i] + "\n", (err) => {
-        if (err) {
-          errorOccurred = true;
-          log.error("Failed to write to stdin", err);
-        } else {
-          if (i == _ipsetQueue.length - 1) {
-            child.stdin.end();
-          }
-        }
-      });
-      if (!stdinReady) {
-        child.stdin.once('drain', () => {
-          if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
-            writeToStdin(i + 1);
-          }
-        });
-      } else {
-        if (i !== _ipsetQueue.length - 1 && !errorOccurred) {
-          writeToStdin(i + 1);
-        }
-      }
-    }
-    log.info("Control:Ipset:Processing:Launched", _ipsetQueue.length);
-  } else {
-    if (ipsetTimerSet == false) {
-      setTimeout(() => {
-        if (ipsetQueue.length > 0) {
-          log.info("Control:Ipset:Timer", ipsetQueue.length);
-          enqueue(null);
-        }
-        ipsetTimerSet = false;
-      }, ipsetInterval);
-      ipsetTimerSet = true;
-    }
   }
 }
 
@@ -244,106 +167,6 @@ function batchOp(operations) {
   return ipsetControl.restore(operations, true);
 }
 
-let testProcess, testResolve, testResults, testCount, remainingBuffer, testProcessStartTs
-
-// use seperate process for ipset test, so we have a guarantee of no unfinished operations
-function initTestProcess() {
-  log.info(`Starting interactive ipset for entry test`)
-  testProcess = spawn("sudo", ["ipset", "-"]);
-  testProcessStartTs = Date.now();
-  testProcess.stderr.on('data', parseTestResult);
-  testProcess.on('error', err => {
-    log.error(`Error in interactive ipset`, err);
-    initTestProcess();
-  });
-  testProcess.stdout.on('data', () => { });
-}
-// this spawn eats all CR from node cli output for some reason
-if (f.isMain()) initTestProcess();
-
-function parseTestResult(data) {
-  const lines = (remainingBuffer + data.toString()).split('\n')
-  remainingBuffer = lines.pop()
-
-  log.debug('got', lines.length, 'lines')
-
-  for (const line of lines) {
-    if (line.includes('is NOT')) {
-      // log.debug(false, line)
-      testResults.push(false)
-    } else if (line.includes('is in')) {
-      // log.debug(true, line)
-      testResults.push(true)
-    } else {
-      log.warn('Extraneous', line)
-      testResults.push(null)
-    }
-  }
-  // log.info('tested', testResults.length)
-  if (testCount == testResults.length) {
-    testResolve(testResults)
-  }
-}
-
-async function batchTest(targets, setName, timeout = 10) {
-  if (!Array.isArray(targets) || !targets.length)
-    return;
-
-  return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
-    if (Date.now() - testProcessStartTs > 600000 && testProcess) {
-      log.info(`Interactive test ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
-      try {
-        testProcess.stdin.write("quit\n");
-      } finally {
-        initTestProcess();
-      }
-    }
-    log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
-    testResults = []
-    testCount = targets.length
-    remainingBuffer = ""
-    const testDone = new Promise((resolve, reject) => {
-      testResolve = resolve
-      setTimeout(() => {
-        // reject after resolve has no effect
-        reject(new Error(`Tests against ${setName} timed out after ${timeout}s, tested ${testResults.length}`))
-      }, timeout * 1000)
-    })
-
-    let success = false;
-    let retry = 3;
-    while (!success && retry-- > 0) {
-      try {
-        testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n');
-        success = true;
-      } catch (err) {
-        log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
-        testResults = []
-        testCount = targets.length
-        remainingBuffer = ""
-        initTestProcess();
-      }
-    }
-
-    await testDone
-
-    log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
-    return testResults
-  }).catch((err) => {
-    log.error(`Error occurred in lock area of ipset batchTest on ${setName}`, err);
-    return testResults;
-  })
-}
-
-// deprecated
-async function testAndAdd(targets, setName, timeout = 10) {
-  const exists = await batchTest(targets, setName, timeout)
-
-  const operations = targets.filter((v,i) => !exists[i]).map(v => `add ${setName} ${v}`)
-
-  await batchOp(operations)
-}
-
 const CONSTANTS = {
   IPSET_MONITORED_NET: "monitored_net_set",
   IPSET_LAN: "c_lan_set",
@@ -372,7 +195,6 @@ const CONSTANTS = {
 }
 
 module.exports = {
-  enqueue,
   isReferenced,
   destroy,
   flush,
@@ -383,8 +205,6 @@ module.exports = {
   restore,
   list,
   batchOp,
-  batchTest,
-  testAndAdd,
   CONSTANTS,
   REGEX_SETNAME,
   read,

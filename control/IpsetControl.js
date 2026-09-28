@@ -24,6 +24,12 @@ const uuid = require('uuid');
 const { execFile } = require('child-process-promise');
 const { spawn } = require('child_process');
 
+// recycle the long lived ipset process at this age to avoid a potential memory leak
+const INTERACTIVE_MAX_AGE_MS = 600000;
+// lower bound between spawn attempts, so an ipset that dies on startup does not get
+// forked once per batch
+const INTERACTIVE_RESPAWN_INTERVAL_MS = 5000;
+
 /**
  * - Queues ipset operations as ipset-restore lines (e.g. "create -! ...", "add -! ...")
  * - Writes operations to a file and applies via "ipset restore -! -f <file>"
@@ -35,33 +41,106 @@ class IpsetControl extends ModuleControl {
     this.queuedRules = []; // array of ipset-restore lines
     this.existingSets = new Set(); // maintain a set of existing ipset set names to filter out invalid operations
     this.interactiveIpset = null;
-    this.interactiveIpsetStartTs = null;
+    // spawn time of the current process, or of the last attempt if it is gone. Drives
+    // both the age based recycle and the respawn interval.
+    this.interactiveIpsetStartTs = 0;
     if (f.isMain()) this._initInteractiveIpset();
   }
 
   _initInteractiveIpset() {
     log.info('Starting interactive ipset for batch operations');
-    this.interactiveIpset = spawn('sudo', ['ipset', '-', '-!']);
     this.interactiveIpsetStartTs = Date.now();
-    this.interactiveIpset.stderr.on('data', data => log.error('Error in interactive ipset stderr', data.toString()));
-    this.interactiveIpset.on('error', err => { log.error('Error in interactive ipset', err); this._initInteractiveIpset(); });
-    this.interactiveIpset.stdout.on('data', () => {});
+    const child = spawn('sudo', ['ipset', '-', '-!']);
+    this.interactiveIpset = child;
+
+    // a handler must never act on a child that has already been replaced, otherwise a
+    // late error from an old process tears down the healthy one that took its place.
+    // Nothing respawns from in here either, _batchWrite does that lazily.
+    const retire = (reason) => {
+      if (this.interactiveIpset !== child) return; // already replaced, expected
+      this.interactiveIpset = null;
+      log.error('Interactive ipset is gone,', reason);
+    };
+
+    child.stdout.on('data', () => {});
+    child.stderr.on('data', data => log.error('Error in interactive ipset stderr', data.toString()));
+    child.on('error', err => retire(`spawn failed: ${err.message}`));
+    child.on('exit', (code, signal) => retire(`exited code=${code} signal=${signal}`));
+    // when the child is still up but no longer reading (ipset failed and is on its way
+    // out, or sudo is lingering after it), a write gets a real EPIPE, delivered
+    // asynchronously. The try/catch in _batchWrite never sees it, and with no listener
+    // here it is an uncaught exception that takes the whole process down.
+    child.stdin.on('error', err => retire(`stdin error: ${err.message}`));
   }
 
+  _recycleInteractiveIpset() {
+    const previous = this.interactiveIpset;
+    // spawn the replacement first, so retire() sees the old child is no longer current
+    // and treats its exit as expected rather than logging a failure
+    this._initInteractiveIpset();
+    try {
+      previous.stdin.write('quit\n');
+      previous.stdin.end(); // in case quit is not honored, EOF still ends it
+    } catch (err) {
+      log.verbose('Failed to quit previous interactive ipset', err.message);
+    }
+  }
+
+  /**
+   * Write ipset-restore lines to the long lived ipset process.
+   *
+   * That process is an optimization, not a dependency: it saves a fork and a temp file
+   * on the hot path, and anything that cannot be written to it falls back to the same
+   * "ipset restore -f" path restore() uses, so operations are never silently dropped.
+   * Every line is applied with -!, so replaying a whole batch after a failed write is
+   * harmless even when the child consumed part of it before dying.
+   * @param {string[]} ops - array of ipset-restore lines
+   */
   async _batchWrite(ops) {
     if (!Array.isArray(ops) || !ops.length) return;
-    try {
-      if (Date.now() - this.interactiveIpsetStartTs > 600000 && this.interactiveIpset) {
-        log.info('Interactive ipset living > 600s, restarting to avoid potential memory leak');
-        this.interactiveIpset.stdin.write('quit\n');
-        this._initInteractiveIpset();
-      }
-      log.verbose('batchWrite:', ops);
-      this.interactiveIpset.stdin.write(ops.join('\n') + '\n');
-    } catch (err) {
-      log.error('Failed to write to ipset stream, will restart ipset stream process', err.message);
+
+    if (this.interactiveIpset && Date.now() - this.interactiveIpsetStartTs > INTERACTIVE_MAX_AGE_MS) {
+      log.info('Interactive ipset living > 600s, restarting to avoid potential memory leak');
+      this._recycleInteractiveIpset();
+    }
+
+    if (!this.interactiveIpset) {
+      if (Date.now() - this.interactiveIpsetStartTs < INTERACTIVE_RESPAWN_INTERVAL_MS)
+        return this.restore(ops, false); // respawned too recently, do not fork per batch
       this._initInteractiveIpset();
-      await this._batchWrite(ops);
+    }
+
+    // once the child exits node destroys its stdin, and writes to a destroyed stream are
+    // discarded silently: they neither throw nor emit, so a write that "succeeds" here
+    // proves nothing. Check before trusting it, rather than relying on the exit handler
+    // having already run.
+    const child = this.interactiveIpset;
+    const stdin = child.stdin;
+    if (stdin.destroyed || stdin.writableEnded) {
+      log.error('Interactive ipset stdin is closed, falling back to ipset restore');
+      this.interactiveIpset = null;
+      return this.restore(ops, false);
+    }
+
+    try {
+      log.verbose('batchWrite:', ops);
+      const flushed = stdin.write(ops.join('\n') + '\n', err => {
+        if (!err) return;
+        // EPIPE arrives after write() has already returned, so this callback is the only
+        // place the in flight batch can still be recovered. Replaying it whole is safe,
+        // every line carries -!
+        log.error('Interactive ipset write failed, falling back to ipset restore', err.message);
+        if (this.interactiveIpset === child) this.interactiveIpset = null;
+        this.restore(ops, false).catch(e => log.error('ipset restore fallback failed', e.message));
+      });
+      if (!flushed)
+        log.warn('Interactive ipset stdin is backed up, buffering', ops.length, 'operations');
+    } catch (err) {
+      // the stream is unusable, apply this batch through the file path rather than
+      // retrying into a pipe that is already broken
+      log.error('Failed to write to ipset stream, falling back to ipset restore', err.message);
+      this.interactiveIpset = null;
+      return this.restore(ops, false);
     }
   }
 
