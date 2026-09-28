@@ -185,7 +185,12 @@ function installQdiscModule {
   reloadQdiscModule "$module_name" "$dst_path"
 }
 
+QDISC_HOTFIX_KERNEL='7.0.6+'
+
 function installSchCakeModule {
+  if [[ $(uname -r) != "$QDISC_HOTFIX_KERNEL" ]]; then
+    return 0
+  fi
   if ! unsignedModuleAllowed; then
     echo "Skip installing qdisc modules, unsigned kernel modules are not allowed"
     return 0
