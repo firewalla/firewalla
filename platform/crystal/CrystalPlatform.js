@@ -173,6 +173,10 @@ class CrystalPlatform extends Platform {
     return false;
   }
 
+  isBluetoothAvailable() {
+    return false;
+  }
+
   isIFBSupported() {
     return true;
   }
