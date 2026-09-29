@@ -145,10 +145,22 @@ module.exports = class {
     log.info("Discovery::DiscoveryMAC:Found", found);
     if (found) {
       return found;
-    } else {
-      log.info("discoverMac:miss", mac);
-      return null;
     }
+
+    // The target may populate the ARP cache while the subnet scans are running.
+    // Refresh it before declaring a miss so a late response is not discarded.
+    try {
+      arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    } catch (err) {
+      log.error("discoverMac: failed to refresh ARP table: " + err);
+    }
+    if (arpTable[mac] && eligibleInterfaceNames.has(arpTable[mac].intf)) {
+      log.info("discoverMac:found via ARP", arpTable[mac]);
+      return arpTable[mac];
+    }
+
+    log.info("discoverMac:miss", mac);
+    return null;
   }
 
   getAndSaveArpTable(cb) {

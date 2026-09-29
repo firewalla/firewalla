@@ -15,7 +15,7 @@
 'use strict';
 
 const expect = require('chai').expect;
-const proxyquire = require('proxyquire').noPreserveCache();
+const proxyquire = require('proxyquire').noCallThru().noPreserveCache();
 
 describe('Discovery.discoverMac', () => {
   const targetMac = 'AA:BB:CC:DD:EE:FF';
@@ -29,7 +29,7 @@ describe('Discovery.discoverMac', () => {
   function createDiscovery(nmapScanAsync, monitoringInterfaces = [{
     name: 'eth0',
     subnet: '192.168.1.0/24'
-  }]) {
+  }], fs = null) {
     const nmap = {
       scanAsync: nmapScanAsync
     };
@@ -50,7 +50,13 @@ describe('Discovery.discoverMac', () => {
       isFireRouterManaged: () => false
     };
 
-    const Discovery = proxyquire('../net2/Discovery.js', {
+    const dependencies = {
+      './logger.js': () => ({
+        debug: () => {},
+        error: () => {},
+        info: () => {},
+        warn: () => {}
+      }),
       './Nmap.js': nmap,
       './SysManager.js': sysManager,
       '../sensor/SensorEventManager.js': {
@@ -77,7 +83,12 @@ describe('Discovery.discoverMac', () => {
       },
       './Message.js': {},
       './MessageBus.js': MessageBus
-    });
+    };
+    if (fs) {
+      dependencies.fs = fs;
+    }
+
+    const Discovery = proxyquire('../net2/Discovery.js', dependencies);
 
     return new Discovery('test-discovery');
   }
@@ -218,5 +229,45 @@ describe('Discovery.discoverMac', () => {
 
     expect(result).to.equal(null);
     expect(scanCalled).to.equal(true);
+  });
+
+  it('refreshes ARP after unsuccessful scans and returns a late eligible match', async () => {
+    let arpReadCount = 0;
+    const discovery = createDiscovery(async () => []);
+
+    discovery.getAndSaveArpTable = (callback) => {
+      arpReadCount += 1;
+      callback(null, arpReadCount === 1 ? {} : {
+        [targetMac]: arpHost
+      });
+    };
+
+    const result = await discovery.discoverMac(targetMac);
+
+    expect(result).to.deep.equal(arpHost);
+    expect(arpReadCount).to.equal(2);
+  });
+
+  it('parses the ARP interface used by interface eligibility checks', async () => {
+    const arpContents = [
+      'IP address       HW type     Flags       HW address            Mask     Device',
+      `192.168.1.20     0x1         0x2         ${targetMac}     *        eth0`,
+      ''
+    ].join('\n');
+    const fs = {
+      readFile: (path, callback) => callback(null, Buffer.from(arpContents))
+    };
+    const discovery = createDiscovery(async () => [], undefined, fs);
+
+    const arpTable = await new Promise((resolve, reject) => {
+      discovery.getAndSaveArpTable((err, result) => err ? reject(err) : resolve(result));
+    });
+
+    expect(arpTable[targetMac]).to.include({
+      ipv4Addr: '192.168.1.20',
+      mac: targetMac,
+      uid: '192.168.1.20',
+      intf: 'eth0'
+    });
   });
 });
