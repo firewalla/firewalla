@@ -111,6 +111,10 @@ case "$UNAME" in
         export FIREWALLA_PLATFORM=goldpro
         export MANAGED_BY_FIREROUTER=yes
         ;;
+      crystal)
+        export FIREWALLA_PLATFORM=crystal
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
     esac
     ;;
   "aarch64")

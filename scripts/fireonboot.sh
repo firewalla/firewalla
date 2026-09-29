@@ -9,8 +9,8 @@ setup_folders
 logger Onboot start clean_log
 ${FIREWALLA_HOME}/scripts/clean_log.sh &> $LOGDIR/clean_log.log &
 
-logger Onboot start sync_time
-${FIREWALLA_HOME}/scripts/sync_time.sh &> $LOGDIR/sync_time.log &
+logger Onboot start sync_clock
+FW_CLOCK_RETRY=0 ${FIREWALLA_HOME}/scripts/sync_clock.sh &> $LOGDIR/sync_clock.log &
 
 # check redis.conf in root-ro partition and remove defualt maxmemory config
 if sudo grep -q "^maxmemory " /media/root-ro/etc/redis/redis.conf; then

@@ -44,6 +44,7 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
+const networkTool = require('../net2/NetworkTool.js')();
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const FlowManager = require('../net2/FlowManager.js');
@@ -147,7 +148,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -385,16 +386,23 @@ class netBot extends ControllerBot {
       bodyLocalKey: notifEvent.bodyLocalKey || `NEW_EVENT_BODY_${event_type}`,
       bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
         : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
-      bodyLocalMsg: notifEvent.msg,
+      // no bodyLocalMsg, body_loc_msg is not supported by Android notification
       payload: notifEvent.args,
       category: notifEvent.category,
     }
   }
 
-  // time of the day in the timezone of the box, e.g. 03:00 AM, defaults to now
+  // time of the day of a timestamp in seconds, in the timezone of the box, defaults to now
   _localizedTimeOfDay(ts = Date.now() / 1000) {
+    return this._localizedTime(ts * 1000);
+  }
+
+  // localized short time of a timestamp in milliseconds, e.g. 3:00 AM, same format as the one used
+  // by alarms, e.g. ALARM_VPN_RESTORE. Returns "" if the timestamp is unknown
+  _localizedTime(ts) {
+    if (!ts) return "";
     const timezone = sysManager.getTimezone();
-    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
+    return (timezone ? moment(ts).tz(timezone) : moment(ts)).format("LT");
   }
 
   // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
@@ -415,7 +423,9 @@ class netBot extends ControllerBot {
         payload.args.deviceName = dName; // legacy key, kept for apps that do not read dName yet
         payload.args.name = name;
         payload.args.ts = ts;
-        payload.localArgs = [eid, dName, ts, name];
+        // loc-args/body_loc_args carry the localized time of the box instead of the raw timestamp
+        payload.localArgs = [eid, dName, this._localizedTime(ts), name];
+        payload.category = Constants.NOTIF_CATEGORY_PHONE_PAIRED;
         break;
       }
       case "weak_password_scan_start": {
@@ -789,6 +799,9 @@ class netBot extends ControllerBot {
             "action_value": 1,
             "labels": { "version": fc.getSimpleVersion() }
           }
+          // NOTE: this writes event:log directly and thus bypasses EventRequestHandler.sendEvent,
+          // so it does NOT fan out Message.MSG_EVENT_GENERATED. That is fine here - netbot runs in
+          // FireApi, where the consumers of that message don't exist.
           await ea.addEvent(eventRequest, eventRequest.ts);
         } catch (err) {
           log.error("failed to add action event on firewalla_upgrade:", err);
@@ -1813,24 +1826,11 @@ class netBot extends ControllerBot {
       }
       case "vpnProfile":
       case "ovpnProfile": {
-        const type = (value && value.type) || "openvpn";
-        const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
-        let vpnClient = VPNClient.getInstance(profileId);
-        if (!vpnClient) {
-          const exists = await c.profileExists(profileId);
-          if (!exists) {
-            throw { code: 404, msg: "Specified profileId is not found." }
-          }
-          vpnClient = new c({ profileId });
-        }
+        const vpnClient = await netBotTool.getVPNClient({ 
+          type: (value && value.type) || "openvpn",
+          profileId: value.profileId,
+          mustExist: true
+        });
         return vpnClient.getAttributes(true);
       }
       case "vpnProfiles":
@@ -2407,13 +2407,13 @@ class netBot extends ControllerBot {
         sysTool.restartFireKickService();
         return
       case "restartFirereset":
-        await execAsync("sudo systemctl restart firereset");
+        await execFile("sudo", ["systemctl", "restart", "firereset"]);
         return
       case "restartFirestatus":
-        await execAsync("sudo systemctl restart firestatus");
+        await execFile("sudo", ["systemctl", "restart", "firestatus"]);
         return
       case "restartBluetoothRTKService":
-        await execAsync("sudo systemctl restart rtk_hciuart");
+        await execFile("sudo", ["systemctl", "restart", "rtk_hciuart"]);
         return
       case "cleanIntel":
         await sysTool.cleanIntel();
@@ -2828,7 +2828,7 @@ class netBot extends ControllerBot {
               });
               await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
               await pm2.deletePoliciesData(pAudit)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`, [])
 
               // always recreate inbound firewall and active protect
               if (await mode.isRouterModeOn()) {
@@ -2844,7 +2844,7 @@ class netBot extends ControllerBot {
               log.info('Reseting qos policies', pQos.length)
               await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
               await pm2.deletePoliciesData(pQos)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`, [])
 
             } else if (value.audit) {
               log.info('Reenforcing qos policies', pQos.length)
@@ -2856,7 +2856,7 @@ class netBot extends ControllerBot {
               log.info('Reseting route policies', pRoute.length)
               await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
               await pm2.deletePoliciesData(pRoute)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`, [])
 
             } else if (value.audit) {
               log.info('Reenforcing route policies', pRoute.length)
@@ -2891,9 +2891,6 @@ class netBot extends ControllerBot {
         }
         return data
       }
-      case "policy:setDisableAll":
-        await pm2.setDisableAll(value.flag, value.expireMinute);
-        return
       case "acl:check": {
         const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
         return { matchedRule: matchedRule }
@@ -3112,6 +3109,17 @@ class netBot extends ControllerBot {
       case "resetBootingComplete":
         await f.resetBootingComplete()
         return
+      case "resetPort": {
+        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
+          throw { code: 400, msg: "'ports' should be a non-empty array" };
+        const ports = _.uniq(value.ports);
+        const legal = platform.getEthernetNicNames();
+        const illegal = ports.filter(p => !legal.includes(p));
+        if (!_.isEmpty(illegal))
+          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        log.info("Resetting link on ethernet ports", ports);
+        return await networkTool.resetEthernetPorts(ports);
+      }
       case "joinBeta":
         await this.switchBranch("beta")
         return
@@ -3192,8 +3200,7 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         const category = value.category
         let domain = value.domain
-        const regex = /^[-a-zA-Z0-9.*]+?/;
-        if (!regex.test(domain)) {
+        if (!isCategoryDomainValid(domain)) {
           throw { code: 400, msg: "Invalid domain." }
         }
 
@@ -3217,6 +3224,9 @@ class netBot extends ControllerBot {
       case "removeIncludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3236,6 +3246,9 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         const category = value.category
         let domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         domain = domain.toLowerCase();
         await categoryUpdater.addExcludedDomain(category, domain)
         const event = {
@@ -3256,6 +3269,9 @@ class netBot extends ControllerBot {
       case "removeExcludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeExcludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3275,6 +3291,11 @@ class netBot extends ControllerBot {
       case "updateIncludedElements": {
         const category = value.category;
         const elements = value.elements;
+        // elements end up in a dnsmasq config file parsed by root, a valid element (domain, address,
+        // port or regex) is printable ASCII without whitespace. anything but an array is refused
+        if (!_.isArray(elements) || elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
+          throw { code: 400, msg: "Invalid elements." }
+        }
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3287,11 +3308,19 @@ class netBot extends ControllerBot {
       case "createOrUpdateCustomizedCategory": {
         const category = value.category;
         const obj = value.obj;
+        // category becomes a dnsmasq config file name and an ipset name, a new one is a generated uuid
+        if (category && (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category))) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
         return c
       }
       case "removeCustomizedCategory": {
         const category = value.category;
+        // category becomes a dnsmasq config file name and an ipset name
+        if (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category)) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         await categoryUpdater.removeCustomizedCategory(category);
         return
       }
@@ -3431,18 +3460,8 @@ class netBot extends ControllerBot {
       }
       case "startVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         await vpnClient.setup()
         const { result, errMsg } = await vpnClient.start().catch(err => {
           log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
@@ -3458,18 +3477,8 @@ class netBot extends ControllerBot {
       }
       case "stopVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         // error in setup should not interrupt stop vpn client
         await vpnClient.setup().catch((err) => {
           log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
@@ -3480,21 +3489,9 @@ class netBot extends ControllerBot {
       }
       case "saveVpnProfile":
       case "saveOvpnProfile": {
-        let type = value.type || "openvpn";
         const profileId = value.profileId;
         const settings = value.settings || {};
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified" }
-        }
-        const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-        if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
           await vpnClient.saveSettings(settings);
@@ -3506,14 +3503,7 @@ class netBot extends ControllerBot {
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         const profileId = value.profileId;
-        if (!profileId || profileId === "") {
-          throw { code: 400, msg: "'profileId' is not specified" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         const status = await vpnClient.status();
         if (status) {
           throw { code: 400, msg: `${type} VPN client ${profileId} is still running` }
@@ -4127,7 +4117,7 @@ class netBot extends ControllerBot {
     }
     log.info("Going to switch to branch", targetBranch);
     try {
-      await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+      await execFile(`${f.getFirewallaHome()}/scripts/switch_branch.sh`, [targetBranch])
       if (platform.isFireRouterManaged()) {
         // firerouter switch branch will trigger fireboot and restart firewalla services
         await FireRouter.switchBranch(target);
@@ -4543,7 +4533,7 @@ class netBot extends ControllerBot {
     if (restartUPnPTask[intfName])
       clearTimeout(restartUPnPTask[intfName]);
     restartUPnPTask[intfName] = setTimeout(() => {
-      execAsync(`sudo systemctl restart firerouter_upnpd@${intfName}`).catch((err) => { });
+      execFile("sudo", ["systemctl", "restart", `firerouter_upnpd@${intfName}`]).catch((err) => { });
     }, 3000);
   }
 
@@ -4631,7 +4621,7 @@ class netBot extends ControllerBot {
             break;
           }
         }
-        await execAsync("sync");
+        await execFile("sync", []);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }

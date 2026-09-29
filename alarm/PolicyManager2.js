@@ -30,7 +30,6 @@ const policyActiveKey = "policy_active";
 const activeBypassPolicyKey = "active_bypass_policy";
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
-const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const POLICY_MAX_ID = 65535; // iptables log use last 16 bit MARK as rule id
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -88,11 +87,11 @@ const ipset = require('../net2/Ipset.js');
 const blockControl = require('../control/BlockControl.js');
 const _ = require('lodash');
 
-const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
+const { delay, isSameOrSubDomain, batchKeyExists, isDomainTargetValid } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const LRU = require('lru-cache');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -148,7 +147,6 @@ class PolicyManager2 {
       }
 
       this.enabledTimers = {}
-      this.disableAllTimer = null;
 
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
@@ -391,11 +389,6 @@ class PolicyManager2 {
           })
         }
       }
-    })
-
-    // deprecated
-    sem.on("PolicySetDisableAll", async (event) => {
-      await this.checkRunPolicies(false);
     })
   }
 
@@ -642,10 +635,6 @@ class PolicyManager2 {
       return policy // do nothing, since it's already enabled
     }
     await this._enablePolicy(policy)
-
-    if (await this.isDisableAll()) {
-      return policy;  // temporarily by DisableAll flag
-    }
 
     this.tryPolicyEnforcement(policy, "enforce")
     Bone.submitIntelFeedback('enable', policy)
@@ -1343,10 +1332,6 @@ class PolicyManager2 {
 
   async enforce(policy) {
     try {
-      if (await this.isDisableAll()) {
-        return policy; // temporarily by DisableAll flag
-      }
-
       if (policy.disabled == 1) {
         const idleInfo = policy.getIdleInfo();
         if (idleInfo) {
@@ -1486,15 +1471,9 @@ class PolicyManager2 {
   async _applyBypass(bypassPolicy, action="enforce") {
     let {affectedPids, tag, pid, type, target, targets, scope, guids} = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.verbose(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, action);
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     if (_.isEmpty(targets)) {
       targets = [target];
@@ -1715,6 +1694,31 @@ class PolicyManager2 {
     return { intfs, tags }
   }
 
+  // Resolve a rule's tag/interface scope. Returns null when the rule's tag field is
+  // non-empty but names nothing usable, meaning the caller should stop.
+  //
+  // The existence filter applies to enforcement only. On enforce, a tag that no longer
+  // exists must be dropped: Block.setupTagsRules() would call ensureCreateEnforcementEnv()
+  // and create ipsets nothing will ever clean up. On unenforce the opposite holds -- the
+  // tag being gone is the reason teardown must run, and the uid has to survive into
+  // commonOptions.tags or the -D commands won't match what enforcement installed,
+  // stranding FW_DISTURB_QOS_* jumps that pin the tag's ipsets at References != 0.
+  async resolveRuleScope(tag, pid, action) {
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    if (action === "enforce") {
+      const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+      tags = tags.filter((_, index) => tagExistenceChecks[index])
+    }
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      const logFn = action === "enforce" ? log.verbose : log.warn;
+      logFn(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
+      return null;
+    }
+    return { intfs, tags };
+  }
+
   async _enforce(policy) {
     log.info(`Enforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
@@ -1752,15 +1756,9 @@ class PolicyManager2 {
     }
 
 
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.verbose(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, "enforce");
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type);
@@ -1893,7 +1891,11 @@ class PolicyManager2 {
         remoteSet6 = Block.getDstSet6(pid);
 
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
-          if (!policy.domainExactMatch && !target.startsWith("*."))
+          // the tls host is interpolated into an iptables command line that runs as root, only a
+          // plain domain can go there. an odd target still gets ipset enforcement below
+          if (!isDomainTargetValid(target))
+            log.error(`Target of policy ${pid} is not a valid domain, skip TLS rule`, target);
+          else if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
@@ -1901,7 +1903,10 @@ class PolicyManager2 {
 
         if (action === "allow" && policy.trust) {
           const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
-          await tm.addDomain(finalTarget);
+          if (isDomainTargetValid(finalTarget))
+            await tm.addDomain(finalTarget);
+          else
+            log.error(`Target of policy ${pid} is not a valid domain, skip trust domain`, target);
         }
 
         if (["allow", "block", "resolve", "address", "route"].includes(action)) {
@@ -2448,15 +2453,9 @@ class PolicyManager2 {
       return this._unenforceBypass(policy);
     }
 
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
-      return;
-    }
+    const ruleScope = await this.resolveRuleScope(tag, pid, "unenforce");
+    if (!ruleScope) return;
+    let { intfs, tags } = ruleScope;
 
     const devOpts = { tags, intfs, scope, guids };
 
@@ -2573,7 +2572,11 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
-          if (!policy.domainExactMatch && !target.startsWith("*."))
+          // mirrors _enforce: a target that is not a plain domain never got a TLS rule, so leave
+          // tlsHost null here too, otherwise the delete is issued without its --tls-host match
+          if (!isDomainTargetValid(target))
+            log.error(`Target of policy ${pid} is not a valid domain, skip TLS rule`, target);
+          else if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
@@ -2581,7 +2584,10 @@ class PolicyManager2 {
 
         if (action === "allow" && policy.trust) {
           const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
-          await tm.removeDomain(finalTarget);
+          if (isDomainTargetValid(finalTarget))
+            await tm.removeDomain(finalTarget);
+          else
+            log.error(`Target of policy ${pid} is not a valid domain, skip trust domain`, target);
         }
 
         if (!policy.dnsmasq_only) {
@@ -3063,7 +3069,7 @@ class PolicyManager2 {
     try {
       let cmdResult = await exec("sudo iptables -w -S | grep -E 'FW_FIREWALL'");
       let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
-      cmdResult = await exec(`sudo ipset -S`);
+      cmdResult = await execFile("sudo", ["ipset", "-S"]);
       let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
       for (const line of cmdResultContent) {
         const splitCurrent = line.split(" ");
@@ -3221,111 +3227,6 @@ class PolicyManager2 {
     result.polices = _.uniqWith(polices, _.isEqual);
     result.crossIps = _.uniqWith(crossIps, _.isEqual);
     return result;
-  }
-
-  async checkRunPolicies(initialFlag) {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    if (this.disableAllTimer) {
-      clearTimeout(this.disableAllTimer);
-    }
-
-    if (disableAllFlag == "on") {
-      // just firemain started, not need unenforce all
-      if (!initialFlag) {
-        this.unenforceAllPolicies();
-      }
-      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
-      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
-      if (expireMinute) {
-        expireMinute = parseFloat(expireMinute);
-      } else {
-        expireMinute = 0;
-      }
-
-      if (startTime && expireMinute > 0) {
-        const expiredTime = parseFloat(startTime) + expireMinute * 60;
-        const timeoutSecond = expiredTime - new Date() / 1000;
-        if (timeoutSecond > 60) {
-          this.disableAllTimer = setTimeout(async () => { // set timeout(when disableAll flag expires, it will enforce all policy)
-            await this.enforceAllPolicies();
-            await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
-          }, timeoutSecond * 1000);
-        } else {
-          // disableAll flag expired or expire soon
-          await this.enforceAllPolicies();
-          await rclient.hsetAsync(policyDisableAllKey, "flag", "off"); // set flag = off
-        }
-      }
-    } else {
-      await this.enforceAllPolicies();
-    }
-  }
-
-  // deprecated
-  async setDisableAll(flag, expireMinute) {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    const expire = await rclient.hgetAsync(policyDisableAllKey, "expire");
-    await rclient.hmsetAsync(policyDisableAllKey, {
-      flag: flag,
-      expire: expireMinute || 0,
-      startTime: Date.now() / 1000
-    });
-    if (disableAllFlag !== flag || expire !== expireMinute || (flag == "on" && expireMinute)) {
-      sem.emitEvent({
-        type: 'PolicySetDisableAll',
-        toProcess: 'FireMain',
-        message: 'Policy SetDisableAll: ' + flag
-      })
-    }
-  }
-
-  async unenforceAllPolicies() {
-    const rules = await this.loadActivePoliciesAsync();
-
-    const unEnforcement = rules.filter(rule => rule.direction !== "inbound").map((rule) => {
-      return new Promise((resolve, reject) => {
-        try {
-          if (this.queue) {
-            const job = this.queue.createJob({
-              policy: rule,
-              action: "unenforce",
-              booting: true
-            })
-            job.timeout(60000).save();
-            job.on('succeeded', resolve);
-            job.on('failed', resolve);
-          }
-        } catch (err) {
-          log.error(`Failed to queue policy ${rule.pid}`, err)
-          resolve(err)
-        }
-      })
-    })
-
-    await Promise.all(unEnforcement);
-    log.info("All policy rules are unenforced");
-  }
-
-  async isDisableAll() {
-    const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
-    if (disableAllFlag == "on") {
-      const startTime = await rclient.hgetAsync(policyDisableAllKey, "startTime");
-      let expireMinute = await rclient.hgetAsync(policyDisableAllKey, "expire");
-      if (expireMinute) {
-        expireMinute = parseFloat(expireMinute);
-      } else {
-        expireMinute = 0;
-      }
-
-      if (startTime && expireMinute > 0 && parseFloat(startTime) + expireMinute * 60 < new Date() / 1000) { // expired
-        return false;
-      }
-      return true;
-    } else if (disableAllFlag == "off") {
-      return false
-    }
-
-    return false;
   }
 
   async _getDerivedAppTargetsForCategory(category) {

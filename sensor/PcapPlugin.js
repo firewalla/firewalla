@@ -27,7 +27,7 @@ const sysManager = require('../net2/SysManager.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
 
-const { exec } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -187,7 +187,7 @@ class PcapPlugin extends Sensor {
             const intf = intfNameMap[intfName];
             if (intfName.startsWith('br') && Array.isArray(_.get(intf, 'config.intf', null)) && intf.state.gateway) {
               const gatewayMac = await sysManager.myGatewayMac(intfName);
-              const { stdout } = await exec(`bridge fdb show br ${intfName}`);
+              const { stdout } = await execFile("bridge", ["fdb", "show", "br", intfName]);
               const lines = stdout.split('\n');
               for (const line of lines) {
                 const [mac, , intf] = line.split(/\s+/)

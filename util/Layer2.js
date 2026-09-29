@@ -36,7 +36,7 @@ sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
 })
 
 const permanentArpCache = {};
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const util = require('util')
 
@@ -73,7 +73,7 @@ async function updatePermanentArpEntries(activeMacs) {
     const timestamp = permanentArpCache[ipv4] && permanentArpCache[ipv4].timestamp;
     if (timestamp && Date.now() / 1000 - timestamp > 3600) {
       log.info(`An out-dated permanent ARP entry is removed: ${ipv4} --> ${permanentArpCache[ipv4].mac}`)
-      await exec(`sudo arp -d ${ipv4}`).catch((err) => {
+      await execFile("sudo", ["arp", "-d", ipv4]).catch((err) => {
         log.error(`Failed to remove ARP entry of ${ipv4}`, err.message);
       });
       delete permanentArpCache[ipv4];
@@ -82,7 +82,7 @@ async function updatePermanentArpEntries(activeMacs) {
   const fileEntries = Object.keys(permanentArpCache).map(ipv4 => `${ipv4} ${permanentArpCache[ipv4].mac}`);
   log.verbose("Update arp cache with the following permanent entries", fileEntries);
   await fsp.writeFile(`${f.getHiddenFolder()}/run/permanent_arp_entries`, fileEntries.join("\n")).then(() => {
-    exec(`sudo arp -f ${f.getHiddenFolder()}/run/permanent_arp_entries`);
+    execFile("sudo", ["arp", "-f", `${f.getHiddenFolder()}/run/permanent_arp_entries`]);
   }).catch((err) => {
     log.error("Failed to update arp cache", err.message);
   });

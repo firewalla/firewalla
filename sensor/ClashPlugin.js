@@ -31,7 +31,7 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const sysManager = require('../net2/SysManager.js');
 
@@ -52,7 +52,7 @@ class ClashPlugin extends Sensor {
     }
     
     this.adminSystemSwitch = false;
-    await exec(`mkdir -p ${dnsmasqConfigFolder}`);
+    await execFile("mkdir", ["-p", dnsmasqConfigFolder]);
     extensionManager.registerExtension(policyKeyName, this, {
       applyPolicy: this.applyPolicy
     });
@@ -92,9 +92,9 @@ class ClashPlugin extends Sensor {
     }
 
     if (policy === false) {
-      await exec(`sudo ipset -! add fw_clash_whitelist_mac ${macAddress}`).catch(() => {});
+      await execFile("sudo", ["ipset", "-!", "add", "fw_clash_whitelist_mac", macAddress]).catch(() => {});
     } else {
-      await exec(`sudo ipset -! del fw_clash_whitelist_mac ${macAddress}`).catch(() => {});
+      await execFile("sudo", ["ipset", "-!", "del", "fw_clash_whitelist_mac", macAddress]).catch(() => {});
     }
   }
 
