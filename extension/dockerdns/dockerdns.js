@@ -39,7 +39,7 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const VPNClient = require('../vpnclient/VPNClient.js');
 
 // FIXME:
@@ -68,7 +68,7 @@ class DockerDNS {
       stop: this.stop
     });
 
-    await exec(`mkdir -p ${dnsmasqConfigFolder}`);
+    await execFile("mkdir", ["-p", dnsmasqConfigFolder]);
 
     this.applySync = new scheduler.UpdateJob(this.applyFeature.bind(this), 0);
   }

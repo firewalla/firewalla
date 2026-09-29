@@ -227,12 +227,10 @@ describe('SSH saveRSAPublicKey / saveRSAPrivateKey', function () {
         getPlatform: () => ({ getSSHPasswdFilePath: () => path.join(tmpHome, '.ssh_passwd') }),
       },
       '../common/key.js': {},
-      'child_process': {
-        exec: require('child_process').exec,
-        execFile: (file, args, opts, cb) => {
-          if (typeof opts === 'function') { cb = opts; }
+      'child-process-promise': {
+        execFile: async (file, args) => {
           captures.push({ file, args });
-          cb(null, '', '');
+          return { stdout: '', stderr: '' };
         },
       },
     });

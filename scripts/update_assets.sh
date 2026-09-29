@@ -73,25 +73,43 @@ while IFS= read -r line; do
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
   signature_url="${bin_url}.sig"
-  lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
+  lock_file="$(dirname "$file_path")/.$(basename "$file_path").lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
     continue
   fi
-  expected_hash=$(curl -m 30 --connect-timeout 10 -s $hash_url)
-  if [[ $? -ne 0 ]]; then
-    echo "Failed to get hash of $file_path from $hash_url"
-    continue
-  fi
+  # retry with backoff: at boot the network (WAN/DNS) may still be settling
+  expected_hash=""
+  for attempt in 1 2 3 4 5; do
+    expected_hash=$(curl -sf --connect-timeout 10 -m 30 "$hash_url")
+    curl_rc=$?
+    if [ "$curl_rc" = 0 ] && [ ${#expected_hash} = 64 ]; then
+      break
+    fi
+    if [ "$curl_rc" = 22 ]; then
+      echo "Attempt $attempt: $hash_url returned an HTTP error, not retrying"
+      break
+    fi
+    if [ "$curl_rc" = 0 ]; then
+      echo "Attempt $attempt: $hash_url returned ${#expected_hash} bytes, expecting 64, not retrying"
+      break
+    fi
+    if [ "$attempt" = 5 ]; then
+      echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc)"
+      break
+    fi
+    echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc), retry in $((attempt*5))s"
+    sleep $((attempt * 5))
+  done
   if [ ${#expected_hash} != 64 ]; then
-    echo "Invalid hash from $hash_url"
+    echo "Failed to get valid hash of $file_path from $hash_url after retries"
     continue
   fi
 
   # verify signature
   if [ "$VERIFY_SIGNATURE" = "true" ]; then
     signature_file="$TEMP_DIR"/$(cat /dev/urandom | tr -dc '[:alpha:]' |  head -c 20)
-    wget -T 30 --tries=2 -qO "$signature_file" "$signature_url"
+    wget -qO "$signature_file" --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
       continue
@@ -106,16 +124,16 @@ while IFS= read -r line; do
 
   current_hash=""
   if [[ -f $file_path ]]; then
-    current_hash=$(sha256sum $file_path | awk '{print $1}')
+    current_hash=$(sha256sum "$file_path" | awk '{print $1}')
   fi
   changed=""
   if [[ $expected_hash != $current_hash ]]; then
     echo "Hash of $file_path mismatches with $hash_url, will fetch latest file from $bin_url"
 
-    sudo mkdir -p $(dirname "${file_path}")
+    sudo mkdir -p "$(dirname "$file_path")"
     temp_file="$file_path".download
-    sudo wget -T 60 --tries=2 "$bin_url" -O "$temp_file"
-    verify_hash=$(sha256sum $temp_file | awk '{print $1}')
+    sudo wget --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$bin_url" -O "$temp_file"
+    verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
       continue
@@ -135,8 +153,8 @@ while IFS= read -r line; do
     echo "Hash of $file_path matches with $hash_url"
   fi
   if [[ -f $file_path ]]; then
-    sudo chown pi:pi $file_path
-    sudo chmod $perm $file_path
+    sudo chown pi:pi "$file_path"
+    sudo chmod "$perm" "$file_path"
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
     eval "$exec_post"

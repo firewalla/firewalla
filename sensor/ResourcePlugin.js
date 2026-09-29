@@ -25,7 +25,7 @@ Promise.promisifyAll(fs);
 
 const crypto = require('crypto');
 const path = require('path');
-const execAsync = require('child-process-promise').exec;
+const { exec: execAsync, execFile } = require('child-process-promise');
 const CronJob = require('cron').CronJob;
 const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -188,13 +188,13 @@ class ResourcePlugin extends Sensor {
       }
 
       // Create directory with root permissions
-      await execAsync(`sudo mkdir -p ${RESOURCES_DIR}`);
+      await execFile("sudo", ["mkdir", "-p", RESOURCES_DIR]);
       
       // Change ownership to pi user
-      await execAsync(`sudo chown pi:pi ${RESOURCES_DIR}`);
+      await execFile("sudo", ["chown", "pi:pi", RESOURCES_DIR]);
       
       // Set permissions
-      await execAsync(`sudo chmod 755 ${RESOURCES_DIR}`);
+      await execFile("sudo", ["chmod", "755", RESOURCES_DIR]);
       
       this.initialized = true;
       log.info(`Resources directory created: ${RESOURCES_DIR}`);

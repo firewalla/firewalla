@@ -17,7 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
@@ -108,7 +108,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
 
   async getStatistics() {
     // a self-made hy_stats.sh script to get the stats
-    const result = await exec(`sudo docker exec ${this.getContainerName()} hy_stats.sh`)
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "hy_stats.sh"])
     .then(output => output.stdout.trim())
     .catch((err) => {
       log.error(`Failed to check hysteria stats on ${this.profileId}`, err.message);

@@ -23,7 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 const IdentityManager = require('../net2/IdentityManager.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const scheduler = require('../util/scheduler');
 const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
 
@@ -41,7 +41,7 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     this._init(featureName, `${f.getUserConfigFolder()}/dnsmasq`);
     this.applyDoHSync = new scheduler.UpdateJob(this.applyDoH.bind(this), 0);
 
-    await exec(`mkdir -p ${this.dnsmasqConfigFolder}`);
+    await execFile("mkdir", ["-p", this.dnsmasqConfigFolder]);
 
     sem.on('DOH_REFRESH', () => {
       void this.applyDoHSync.exec(true);

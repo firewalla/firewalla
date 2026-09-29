@@ -121,7 +121,7 @@ module.exports = class {
       // check availability of UPnP
       const defaultWanIp = sysManager.myDefaultWanIp();
       if (defaultWanIp && ipUtil.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
-        const wanUpnpClient = natupnp.createClient({listenAddr: defaultWanIp});
+        const wanUpnpClient = natupnp.createClient({listenAddr: defaultWanIp, allowedSourceAddress: sysManager.myDefaultGateway()});
         wanUpnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
             log.info(`UPnP write client may not work on WAN ${defaultWanIp}`);
@@ -155,7 +155,7 @@ module.exports = class {
           continue;
         if (!iface.ip_address)
           continue;
-        const upnpClient = natupnp.createClient({listenAddr: iface.ip_address});
+        const upnpClient = natupnp.createClient({listenAddr: iface.ip_address, allowedSourceAddress: iface.gateway || iface.ip_address});
         upnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
             log.info(`UPnP monitor client may not work on ${iface.ip_address}`);
@@ -350,4 +350,3 @@ module.exports = class {
     });
   }
 }
-
