@@ -40,6 +40,11 @@ class PcapZeekPlugin extends PcapPlugin {
   }
 
   async restart() {
+    // a restart queued before the role was switched off
+    if (this.enabled === false)
+      return;
+    if (this.deferWhileApplying())
+      return;
     const zeekOptions = await this.calculateZeekOptions();
     if (platform.isFireRouterManaged())
       await broControl.writeClusterConfig(zeekOptions);

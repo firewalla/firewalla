@@ -21,8 +21,18 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async restart() {
+    // a restart queued before the role was switched off
+    if (this.enabled === false)
+      return;
+    // before the binary update and the rule watchers too: the rule directories
+    // may not exist until the deferred restart prepares the assets
+    if (this.deferWhileApplying())
+      return;
     await suricataControl.tryUpdateSuricataBinary();
-    await this._restart();
+    // an apply that started during the binary update defers _restart() too;
+    // the watchers wait for the deferred restart, which prepares the assets
+    if (await this._restart() === false)
+      return;
     suricataControl.watchRulesDir((eventType, filename) => {
       if (!this.isEnabled())
         return;
@@ -40,7 +50,11 @@ class PcapSuricataPlugin extends PcapPlugin {
     });
   }
 
+  // resolves false when deferred to after a flow-engine apply
   async _restart() {
+    // the rule watchers call this directly
+    if (this.deferWhileApplying())
+      return false;
     const yaml = await this.generateSuricataYAML();
     await suricataControl.cleanupRuntimeConfig();
     await suricataControl.writeSuricataYAML(yaml);

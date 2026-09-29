@@ -32,6 +32,10 @@ export ZSSIDS_ENGINE_TEST_MODE=true
 export FW_EFFECTIVE_FEATURES=$T/features.json
 # a stand-in for the asset: it answers --capabilities like a current zssids
 printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "zssids test";; esac\n' > "$ZSSIDS_BIN"; chmod 755 "$ZSSIDS_BIN"
+# the IDS role exists only where suricata can run (platform.sh
+# suricata_role_supported); the sandbox stands in a binary for one that can
+export SURICATA_BIN=$T/suricata
+printf '#!/bin/sh\nexit 0\n' > "$SURICATA_BIN"; chmod 755 "$SURICATA_BIN"
 mkdir -p "$SYSTEMD_DIR" "$ZSSIDS_RUN_DIR" "$T/bin"
 # the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
 # not answer: a stub on PATH keeps the box's own values out of the way
@@ -483,6 +487,33 @@ p2=$!
 wait $p1; r1=$?; wait $p2; r2=$?
 check "both concurrent applies ended cleanly" '[[ $r1 -eq 0 && $r2 -eq 0 ]]'
 check "the drop-ins are consistent afterwards" 'grep -q "^ExecStart=$RUNNER " "$B" && [[ -f $S ]]'
+
+echo "== a platform without the IDS role keeps suricata stock"
+setf 1 1
+mkdir -p "$(dirname "$S")"; echo "stale" > "$S"
+# no suricata binary, and a kernel no platform takes the suricata asset on
+# (gold does on 6.5.0-25-generic): only uname -r is answered, the rest passes
+mkdir -p "$T/noids"
+printf '#!/bin/sh\n[ "$1" = -r ] && { echo 0.0.0-zssids-test; exit 0; }\nexec %s "$@"\n' "$(command -v uname)" > "$T/noids/uname"
+chmod 755 "$T/noids/uname"
+NOIDS=(env "PATH=$T/noids:$T/bin:$PATH" SURICATA_BIN=$T/no-suricata)
+"${NOIDS[@]}" "$ENGINE" apply >/dev/null 2>&1; rc=$?
+check "apply succeeds" '[[ $rc -eq 0 ]]'
+check "the ids drop-in is removed, so zssids-ids-run cannot restart in a loop" '[[ ! -e $S ]]'
+check "the flow role still goes to zssids, on its own" 'grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
+check "status says why" '"${NOIDS[@]}" "$ENGINE" status 2>&1 | grep -q "no IDS role"'
+check "the gold override mirrors GoldPlatform.isSuricataFromAssetsSupported" 'grep -q "6.5.0-25-generic" "$FIREWALLA_HOME/platform/gold/platform.sh" && grep -q "6.5.0-25-generic" "$FIREWALLA_HOME/platform/gold/GoldPlatform.js"'
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+
+echo "== a restart during an apply is retried once it is over, not dropped"
+check "both pcap plugins defer while an apply runs" 'grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapZeekPlugin.js" && grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+check "the wait runs in the background, never inside restart()" '! grep -q "await FlowEngine.waitForApply" "$FIREWALLA_HOME/sensor/PcapPlugin.js" "$FIREWALLA_HOME/net2/BroControl.js" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "FlowEngine.waitForApply().then" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.enabled === false || !Config.isFeatureOn(this.getFeatureName())" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "a queued restart for a role switched off does nothing" 'for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/this.enabled === false/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || exit 1; done'
+check "an inner deferral stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/{getline; if (\$0 ~ /return false;/) ok=1; exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+check "suricata defers before its rule watchers are set up" 'awk "/async restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/&&!d{d=NR} r&&/watchRulesDir/&&!w{w=NR} END{exit !(d && w && d<w)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+lock=$(sed -n 's/^LOCK=${ZSSIDS_ENGINE_LOCK:-\(.*\)}$/\1/p' "$ENGINE")
+check "node looks for the lock the script takes" '[[ -n $lock ]] && grep -qF "$lock" "$FIREWALLA_HOME/net2/FlowEngine.js"'
 
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]
