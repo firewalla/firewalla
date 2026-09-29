@@ -30,6 +30,7 @@ const extensionManager = require('./ExtensionManager.js');
 const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+const FlowEngine = require('../net2/FlowEngine.js');
 
 class PcapPlugin extends Sensor {
 
@@ -88,6 +89,33 @@ class PcapPlugin extends Sensor {
 
   isEnabled() {
     return this.enabled;
+  }
+
+  // A flow-engine apply in progress holds brofish and suricata for its
+  // transaction: BroControl / SuricataControl refuse to start them while its
+  // marker exists, so a restart now would be dropped and the service left down.
+  // Returns true when that is the case, having scheduled the restart again for
+  // once the apply is over. The wait runs in the background: holding up
+  // restart() would hold up the first globalOn(), before Sensor.hookFeature
+  // has hooked the feature listener. The retry is skipped if the role has been
+  // switched off by then.
+  deferWhileApplying() {
+    if (!(FlowEngine.applyHeld() && FlowEngine.applyRunning()))
+      return false;
+    if (!this.retryAfterApply) {
+      log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} once it is done`);
+      this.retryAfterApply = FlowEngine.waitForApply().then(() => {
+        this.retryAfterApply = null;
+        // `enabled` is never set in the API process, which only runs apiRun()
+        if (this.enabled === false || !Config.isFeatureOn(this.getFeatureName()))
+          return;
+        return this.restartJob ? this.restartJob.exec() : this.restart();
+      }).catch((err) => {
+        this.retryAfterApply = null;
+        log.error(`Failed to restart ${this.getFeatureName()} after the flow engine apply`, err.message);
+      });
+    }
+    return true;
   }
 
   async globalOn() {
