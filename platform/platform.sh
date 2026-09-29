@@ -157,8 +157,24 @@ function get_flow_engine_zeek {
   if _fw_feature_on pcap_zeek_fleet && zssids_available; then echo zssids; else echo zeek; fi
 }
 
+# The IDS role exists only where PcapSuricataPlugin.isSupported() holds: a
+# suricata binary on the box, or one the platform takes from its assets
+# (Platform.isSuricataFromAssetsSupported, overridden per platform below). Only
+# then does the plugin write listen_interfaces.rc, the interface list an
+# IDS-only zssids captures on; without it zssids-ids-run could only exit, and
+# suricata.service (Restart=always) would restart it forever.
+SURICATA_BIN=${SURICATA_BIN:-/usr/bin/suricata}
+
+function suricata_from_assets_supported {
+  return 1
+}
+
+function suricata_role_supported {
+  [[ -e $SURICATA_BIN ]] || suricata_from_assets_supported
+}
+
 function get_flow_engine_suricata {
-  if _fw_feature_on pcap_suricata_fleet && zssids_available; then echo zssids; else echo suricata; fi
+  if _fw_feature_on pcap_suricata_fleet && zssids_available && suricata_role_supported; then echo zssids; else echo suricata; fi
 }
 
 # the roles themselves can be switched off by the box: pcap_zeek governs flow
