@@ -512,6 +512,86 @@ check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.en
 check "a queued restart for a role switched off does nothing" 'for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/this.enabled === false/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || exit 1; done'
 check "an inner deferral stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/{getline; if (\$0 ~ /return false;/) ok=1; exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
 check "suricata defers before its rule watchers are set up" 'awk "/async restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/&&!d{d=NR} r&&/watchRulesDir/&&!w{w=NR} END{exit !(d && w && d<w)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+if command -v node >/dev/null 2>&1; then
+  echo "== behaviour: a restart refused by an apply that began during preparation is retried"
+  cat > "$T/defer.js" <<'NODE'
+// Runs the real PcapZeekPlugin.restart / PcapSuricataPlugin._restart with their
+// dependencies stubbed: the controller refuses because an apply began while
+// the plugin was preparing, and the plugin must retry once the apply is over.
+const Module = require('module');
+const home = process.env.FIREWALLA_HOME;
+const builtin = new Set(Module.builtinModules);
+const orig = Module._load;
+const FE = { held: false, running: false, waits: 0, release: null,
+  applyHeld() { return this.held; }, applyRunning() { return this.running; },
+  waitForApply() { this.waits++; return new Promise((r) => { this.release = () => { FE.held = FE.running = false; r(true); }; }); } };
+function control(name) {
+  return { name, crons: 0, restarts: 0, refuseWith: null,
+    async restart() { this.restarts++; if (this.refuseWith) { this.refuseWith(); return false; } },
+    async addCronJobs() { this.crons++; }, async removeCronJobs() {}, async stop() {},
+    async writeClusterConfig() {}, async writeNetworksConfig() {}, async cleanupRuntimeConfig() {},
+    async writeSuricataYAML() {}, async prepareAssets() {}, async getRuleFiles() { return ['x.rules']; },
+    async tryUpdateSuricataBinary() {}, watchRulesDir() {} };
+}
+const bro = control('bro'), suri = control('suri');
+const inert = () => new Proxy(function () {}, { get: (t, k) => k === 'then' ? undefined : inert(), apply: () => inert(), construct: () => inert() });
+Module._load = function (req, parent) {
+  if (req === 'fs' && parent && /Pcap(Suricata|Zeek)Plugin\.js$/.test(parent.filename))
+    return Object.assign({}, require('fs'), { writeFileAsync: async () => {} });
+  if (builtin.has(req)) return orig.apply(this, arguments);
+  if (/Pcap(Zeek|Suricata)?Plugin\.js$/.test(req)) return orig.apply(this, arguments);
+  if (req.endsWith('FlowEngine.js')) return FE;
+  if (req.endsWith('Firewalla.js')) return { getRuntimeInfoFolder: () => '/nonexistent', getFirewallaHome: () => home, getUserConfigFolder: () => '/nonexistent' };
+  if (req.endsWith('BroControl.js')) return bro;
+  if (req.endsWith('SuricataControl.js')) return suri;
+  if (req.endsWith('Sensor.js')) return { Sensor: class { constructor(c) { this.config = c; } } };
+  if (req.endsWith('config.js')) return { isFeatureOn: () => true, onFeature() {}, getConfig: async () => ({}) };
+  if (req.endsWith('logger.js')) return () => ({ info() {}, warn() {}, error() {}, debug() {} });
+  if (req === 'lodash') return { isArray: Array.isArray, isEmpty: (x) => x == null || (typeof x === 'object' ? Object.keys(x).length === 0 : String(x).length === 0) };
+  if (req === 'bluebird') return Object.assign(function () {}, { promisify: () => async () => {}, promisifyAll() {} });
+  return inert();
+};
+const Zeek = require(`${home}/sensor/PcapZeekPlugin.js`);
+const Suri = require(`${home}/sensor/PcapSuricataPlugin.js`);
+const tick = () => new Promise((r) => setTimeout(r, 20));
+let failed = 0;
+const ok = (c, m) => { console.log(`  ${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) failed++; };
+function plugin(Cls) {
+  const p = new Cls({}); p.enabled = true; p.jobs = 0; p.restartJob = { exec: async () => { p.jobs++; } };
+  p.calculateZeekOptions = async () => ({}); p.calculateLocalNetworks = () => ({});
+  p.generateSuricataYAML = async () => ({}); p.calculateListenInterfaces = async () => ({});
+  return p;
+}
+(async () => {
+  for (const [Cls, ctl, run] of [[Zeek, bro, (p) => p.restart()], [Suri, suri, (p) => p._restart()]]) {
+    const n = Cls.name;
+    // the apply begins while the plugin prepares: the controller refuses
+    FE.held = FE.running = false; FE.waits = 0; ctl.crons = 0;
+    ctl.refuseWith = () => { FE.held = FE.running = true; };
+    const p = plugin(Cls);
+    await run(p);
+    ok(ctl.crons === 0 && FE.waits === 1, `${n}: refused by an apply begun during preparation, a retry is scheduled, no watchdog yet`);
+    ctl.refuseWith = null; FE.release(); await tick();
+    ok(p.jobs === 1, `${n}: restarted once the apply is over`);
+    // a failed apply (marker, no live lock): refused as before, no retry
+    FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = true; FE.running = false; };
+    await run(plugin(Cls));
+    ok(FE.waits === 0 && ctl.crons === 1, `${n}: a failed apply is not retried, as before`);
+    // no apply at all: an ordinary restart
+    FE.held = FE.running = false; ctl.refuseWith = null; ctl.crons = 0;
+    await run(plugin(Cls));
+    ok(ctl.crons === 1 && FE.waits === 0, `${n}: an ordinary restart is unchanged`);
+  }
+  process.exit(failed ? 1 : 0);
+})();
+NODE
+  out=$(cd "$FIREWALLA_HOME" && FIREWALLA_HOME="$FIREWALLA_HOME" node "$T/defer.js" 2>&1); rc=$?
+  echo "$out" | sed 's/^/  /'
+  check "the plugins retry a restart refused by an apply begun during preparation" '[[ $rc -eq 0 ]] && ! grep -q FAIL <<< "$out"'
+else
+  echo "== (node not installed: skipping the plugin restart behaviour checks)"
+fi
+
 lock=$(sed -n 's/^LOCK=${ZSSIDS_ENGINE_LOCK:-\(.*\)}$/\1/p' "$ENGINE")
 check "node looks for the lock the script takes" '[[ -n $lock ]] && grep -qF "$lock" "$FIREWALLA_HOME/net2/FlowEngine.js"'
 
