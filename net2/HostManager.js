@@ -1213,11 +1213,6 @@ module.exports = class HostManager extends Monitorable {
     json.boxMetrics = result;
   }
 
-  async getSysInfo(json) {
-    const result = await sysManager.getSysInfoAsync();
-    json.sysInfo = result;
-  }
-
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -1244,7 +1239,6 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json),
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
