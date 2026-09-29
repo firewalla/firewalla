@@ -20,7 +20,7 @@ const fs = require('fs');
 const sem = require('../../../sensor/SensorEventManager.js').getInstance();
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
@@ -68,7 +68,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
 
     if(_.isEmpty(config)) return;
 
-    await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
+    await execFile("touch", [`${f.getUserHome()}/.forever/clash.log`]); // prepare the log file
     await this._prepareDockerCompose();
     await this.prepareConfig(config);
   }
@@ -104,7 +104,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
 
   async getStatistics() {
     // a self-made hy_stats.sh script to get the stats
-    const result = await exec(`sudo docker exec ${this.getContainerName()} clash_stats.sh`)
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "clash_stats.sh"])
     .then(output => output.stdout.trim())
     .catch((err) => {
       log.error(`Failed to check clash stats on ${this.profileId}`, err.message);

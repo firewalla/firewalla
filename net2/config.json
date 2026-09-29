@@ -143,6 +143,7 @@
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZssidsEnginePlugin": {},
     "IntelSensor": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
@@ -715,8 +716,12 @@
         "expires": 3600
       },
       "action_history":{
-        "expires": 2592000,
-        "count": 10000
+        "expires": 604800,
+        "count": 1000,
+        "limits": {
+          "maxMem": 5242880,
+          "keepCount": 100
+        }
       },
       "cpu_usage": {
         "expires": 86400,
@@ -821,6 +826,39 @@
       "eventsLimit": 10000,
       "eventsExpire": 604800,
       "latestStateEventsExpire": 2592000,
+      "eventClassifierSettings": [
+        {
+          "key": "wan_monitor",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              {
+                "or": [
+                  { "field": "action_type", "value": "ping_RTT" },
+                  { "field": "action_type", "value": "dns_RTT" },
+                  { "field": "action_type", "value": "http_RTT" },
+                  { "field": "action_type", "value": "ping_lossrate" },
+                  { "field": "action_type", "value": "dns_lossrate" },
+                  { "field": "action_type", "value": "http_lossrate" }
+                ]
+              }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["wan_intf_uuid"]
+        },
+        {
+          "key": "weak_password_scan_complete",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              { "field": "action_type", "value": "weak_password_scan_complete" }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["found"]
+        }
+      ],
       "intervals": {
         "cleanEventsByTime": 3600,
         "cleanEventsByCount": 300,
@@ -881,6 +919,7 @@
     },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZssidsEnginePlugin": {},
     "ZeekDPISensor": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
@@ -940,6 +979,131 @@
           "increaseLatency": 150
         }
       }
+    },
+    "EventSummarySensor": {
+      "eventSummarySettings": [
+        {
+          "period": 86400,
+          "key": "event::dap_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "dap_state"
+              }
+            ]
+          },
+          "labelKeys": [
+            "mac"
+          ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ethernet_state"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::nic_speed",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "nic_speed"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_state"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_state"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
+        }
+      ]
     },
     "BlockStatsSensor": {
       "slotSecs": 10800,
@@ -1170,6 +1334,8 @@
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
+    "pcap_zeek_fleet": false,
+    "pcap_suricata_fleet": false,
     "local_flow": false,
     "local_audit": true,
     "category_filter": true,

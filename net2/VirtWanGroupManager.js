@@ -175,11 +175,13 @@ class VirtWanGroupManager {
     });
   }
 
-  // return a list of profile id
-  async getAllEnabledStrictVPNClients(uuid) {
+  // return a list of profile id of the group's enabled members, regardless of the group's kill
+  // switch. A hard PBR rule to this group blocks on disconnect whether or not strictVPN is set,
+  // see refreshRT().
+  getAllEnabledVPNClients(uuid) {
     const list = [];
     const vwg = this.virtWanGroups[uuid];
-    if (vwg && vwg.strictVPN == true && vwg.connState) {
+    if (vwg && vwg.connState) {
       for (const client of Object.keys(vwg.connState)) {
         const clientState = vwg.connState[client];
         if (clientState && clientState.enabled == true && clientState.profileId) {
@@ -188,6 +190,13 @@ class VirtWanGroupManager {
       }
     }
     return list;
+  }
+
+  async getAllEnabledStrictVPNClients(uuid) {
+    const vwg = this.virtWanGroups[uuid];
+    if (!vwg || vwg.strictVPN != true)
+      return [];
+    return this.getAllEnabledVPNClients(uuid);
   }
 
 }

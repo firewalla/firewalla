@@ -21,7 +21,7 @@ const f = require('../../net2/Firewalla.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
 class WGVPNClient extends VPNClient {
@@ -206,13 +206,13 @@ class WGVPNClient extends VPNClient {
   async _start() {
     await this._generateConfig();
     const intf = this.getInterfaceName();
-    await exec(`sudo ip link add dev ${intf} type ${this.constructor.getProtocol()}`).catch((err) => {
+    await execFile("sudo", ["ip", "link", "add", "dev", intf, "type", this.constructor.getProtocol()]).catch((err) => {
       log.warn(`Failed to create ${this.constructor.getProtocol()} interface ${intf}`, err.message);
     });
-    await exec(`sudo ip link set ${intf} up`).catch((err) => {});
-    await exec(`sudo ip addr flush dev ${intf}`).catch((err) => {});
-    await exec(`sudo ip -6 addr flush dev ${intf}`).catch((err) => {});
-    await exec(`sudo ${this.wgCmd} setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
+    await execFile("sudo", ["ip", "link", "set", intf, "up"]).catch((err) => {});
+    await execFile("sudo", ["ip", "addr", "flush", "dev", intf]).catch((err) => {});
+    await execFile("sudo", ["ip", "-6", "addr", "flush", "dev", intf]).catch((err) => {});
+    await execFile("sudo", [this.wgCmd, "setconf", intf, this._getConfigPath()]).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
     await exec(`sudo bash -c 'echo f > /sys/class/net/${intf}/queues/rx-0/rps_cpus'`).catch((err) => {});
@@ -223,14 +223,14 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     const mtu = (config && config.mtu) || this.constructor.getDefaultMTU();
-    await exec(`sudo ip link set ${intf} mtu ${mtu}`);
+    await execFile("sudo", ["ip", "link", "set", intf, "mtu", String(mtu)]);
     const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
-        await exec(`sudo ip addr add ${addr} dev ${intf}`).catch((err) => {});
+        await execFile("sudo", ["ip", "addr", "add", addr, "dev", intf]).catch((err) => {});
       } else {
         if (new Address6(addr).isValid()) {
-          await exec(`sudo ip -6 addr add ${addr} dev ${intf}`).catch((err) => {});
+          await execFile("sudo", ["ip", "-6", "addr", "add", addr, "dev", intf]).catch((err) => {});
         }
       }
     }
@@ -238,8 +238,8 @@ class WGVPNClient extends VPNClient {
 
   async _stop() {
     const intf = this.getInterfaceName();
-    await exec(`sudo ip link set ${intf} down`).catch((err) => {});
-    await exec(`sudo ip link del dev ${intf}`).catch((err) => {});
+    await execFile("sudo", ["ip", "link", "set", intf, "down"]).catch((err) => {});
+    await execFile("sudo", ["ip", "link", "del", "dev", intf]).catch((err) => {});
   }
 
   async checkAndSaveProfile(value) {
@@ -258,7 +258,7 @@ class WGVPNClient extends VPNClient {
 
   async _isLinkUp() {
     const intf = this.getInterfaceName();
-    const intfUp = await exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    const intfUp = await execFile("ip", ["link", "show", "dev", intf]).then(() => true).catch((err) => false);
     if (!intfUp)
       return false;
     // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
@@ -269,7 +269,7 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
     }
-    const handshakeDetected = await exec(`sudo ${this.wgCmd} show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
+    const handshakeDetected = await execFile("sudo", [this.wgCmd, "show", intf, "latest-handshakes"]).then(result => result.stdout.trim().split('\n').some(line => {
       const [pubKey, handshakeTimestamp] = line.split('\t');
       const peer = config && config.peers.find(p => p.publicKey === pubKey);
       // consider as connected if latest handshake happens no more than (120 + 2 x persistentKeepalive) seconds ago
@@ -317,7 +317,7 @@ class WGVPNClient extends VPNClient {
 
     // TODO: make VPNClient.logDir configurable, NEVER defined here
     const logPath = `${this.logDir || "/var/log/wg"}/vpn_${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "100", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     if (content) {
       return WGVPNClient._getLastNSession(content, "Interface created", N_SESS);
     }

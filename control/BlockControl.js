@@ -23,7 +23,7 @@ const tlsset = require('./TLSSetControl.js');
 const SensorEventManager = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('../net2/SysManager.js');
 
-const { exec } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const { spawnQuiet } = require('../util/util.js');
 
 // BlockControl class coordinates multiple modules (ipset, iptables, tlsset) to apply networking rules efficiently.
@@ -185,7 +185,7 @@ class BlockControl {
     try {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
-      await exec(`${setupScriptPath} --dry-run`, { timeout: 60000 });
+      await execFile(setupScriptPath, ["--dry-run"], { timeout: 60000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       throw err;
