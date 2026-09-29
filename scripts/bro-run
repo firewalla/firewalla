@@ -3,6 +3,13 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+if [[ $(get_flow_engine_zeek) == zssids ]]; then
+  # brofish.service runs zssids through its drop-in (scripts/zssids-engine.sh);
+  # zeek must not be deployed beside it, they would write the same spool
+  logger 'FIREWALLA.BROFISH flow engine is zssids, not deploying zeek'
+  exit 0
+fi
+
 logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla

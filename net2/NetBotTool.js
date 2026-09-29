@@ -34,6 +34,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('./Message.js');
 
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const Constants = require('./Constants.js');
 
 let instance = null;
 
@@ -360,6 +362,43 @@ class NetBotTool {
     })).catch((err) => {
       log.error(`Failed to sync app time usage data from ${uid}`, err);
     });
+  }
+
+  /**
+   * Resolve a { type, profileId } pair from a cloud control payload into a VPN client, applying the
+   * checks every caller needs. The caller decides its own default type, since some APIs require one
+   * and others fall back to openvpn. Set mustExist for a read of an existing profile: the running
+   * singleton is preferred, which is how a payload carrying no type still reaches its client.
+   * Throws the { code, msg } shape the netbot handlers propagate.
+   */
+  async getVPNClient(options = {}) {
+    const { type, profileId, mustExist } = options;
+    if (!type)
+      throw { code: 400, msg: "'type' is not specified" };
+    if (!profileId)
+      throw { code: 400, msg: "'profileId' is not specified" };
+    // profileId becomes an interface name and a routing table name that are used in commands run as
+    // root. the length ceiling is the interface name: getInterfaceName() prefixes VC_INTF_PREFIX
+    // and the kernel takes at most 15 characters, so anything longer could never come up anyway
+    const maxLength = 15 - Constants.VC_INTF_PREFIX.length;
+    if (!_.isString(profileId) || profileId.length > maxLength || !/^[a-zA-Z0-9_]+$/.test(profileId))
+      throw { code: 400, msg: "invalid profileId" };
+    // getClass throws for an unrecognized type rather than returning null, so without this catch
+    // the Error escapes as a 500 instead of the 400 the callers mean to return
+    let c;
+    try {
+      c = VPNClient.getClass(type);
+    } catch (err) {
+      throw { code: 400, msg: `Unsupported VPN client type: ${type}` };
+    }
+    if (mustExist) {
+      const instance = VPNClient.getInstance(profileId);
+      if (instance)
+        return instance;
+      if (!await c.profileExists(profileId))
+        throw { code: 404, msg: "Specified profileId is not found." };
+    }
+    return new c({ profileId });
   }
 }
 

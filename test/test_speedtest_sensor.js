@@ -104,6 +104,23 @@ describe('Test internet speedtest', function(){
       expect(result).to.equal(null);
     });
 
+    it('should parse extra envs into an object', async() => {
+      expect(this.plugin.parseRunEnv('GODEBUG=netedns0=0,netdns=cgo+1')).to.deep.equal({GODEBUG: 'netedns0=0,netdns=cgo+1'});
+      expect(this.plugin.parseRunEnv('FOO=bar')).to.deep.equal({FOO: 'bar'});
+      expect(this.plugin.parseRunEnv('A=1 B=2')).to.deep.equal({A: '1', B: '2'});
+      expect(this.plugin.parseRunEnv('LD_LIBRARY_PATH=/usr/local/lib:/opt/lib')).to.deep.equal({LD_LIBRARY_PATH: '/usr/local/lib:/opt/lib'});
+      expect(this.plugin.parseRunEnv('')).to.deep.equal({});
+      expect(this.plugin.parseRunEnv(undefined)).to.deep.equal({});
+      expect(this.plugin.parseRunEnv({a: 1})).to.deep.equal({});
+      // a malformed token is dropped whole, not repaired into a value
+      expect(this.plugin.parseRunEnv('; printf PWNED; #')).to.deep.equal({});
+      expect(this.plugin.parseRunEnv('FOO=bar; printf PWNED; #')).to.deep.equal({});
+      expect(this.plugin.parseRunEnv('FOO=$(id)')).to.deep.equal({});
+      expect(this.plugin.parseRunEnv('FOO=`id`')).to.deep.equal({});
+      // a good token still survives alongside a bad one
+      expect(this.plugin.parseRunEnv('A=1 B=$(id) C=3')).to.deep.equal({A: '1', C: '3'});
+    });
+
     it('should only run one test', async() => {
       await this.plugin.apiRun();
       const msg = {"mtype": "cmd", "id": "EAF9E470-D5A1-4A04-8B35-5C17892D6EC3"};

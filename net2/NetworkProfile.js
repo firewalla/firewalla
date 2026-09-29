@@ -20,7 +20,7 @@ const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
 const Ipset = require('./Ipset.js');
 const iptc = require('../control/IptablesControl.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 const _ = require('lodash');
@@ -405,7 +405,7 @@ class NetworkProfile extends Monitorable {
 
       // ensure existence of dnsmasq per-network config directory
       if (uuid) {
-        await exec(`mkdir -p ${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`).catch((err) => {
+        await execFile("mkdir", ["-p", `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`]).catch((err) => {
           log.error(`Failed to create dnsmasq config directory for ${uuid}`);
         });
       }
