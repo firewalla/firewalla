@@ -52,8 +52,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const localNetworks = this.calculateLocalNetworks();
     await broControl.writeNetworksConfig(localNetworks);
     // an apply that started while the configuration above was written makes
-    // BroControl refuse: defer to after it like the check at the top
-    await broControl.restart().then((started) => started === false && this.deferWhileApplying() ? null : broControl.addCronJobs()).then(() => {
+    // BroControl refuse: retry after it (or now, if it is already over)
+    await broControl.restart().then((started) => started === false && this.retryRefusedRestart() ? null : broControl.addCronJobs()).then(() => {
       log.info("Zeek restarted");
     });
   }

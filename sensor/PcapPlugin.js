@@ -97,25 +97,42 @@ class PcapPlugin extends Sensor {
   // Returns true when that is the case, having scheduled the restart again for
   // once the apply is over. The wait runs in the background: holding up
   // restart() would hold up the first globalOn(), before Sensor.hookFeature
-  // has hooked the feature listener. The retry is skipped if the role has been
-  // switched off by then.
+  // has hooked the feature listener.
   deferWhileApplying() {
     if (!(FlowEngine.applyHeld() && FlowEngine.applyRunning()))
       return false;
-    if (!this.retryAfterApply) {
-      log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} once it is done`);
-      this.retryAfterApply = FlowEngine.waitForApply().then(() => {
-        this.retryAfterApply = null;
-        // `enabled` is never set in the API process, which only runs apiRun()
-        if (this.enabled === false || !Config.isFeatureOn(this.getFeatureName()))
-          return;
-        return this.restartJob ? this.restartJob.exec() : this.restart();
-      }).catch((err) => {
-        this.retryAfterApply = null;
-        log.error(`Failed to restart ${this.getFeatureName()} after the flow engine apply`, err.message);
-      });
-    }
+    this.retryRestart(() => FlowEngine.waitForApply(), 'once it is done');
     return true;
+  }
+
+  // BroControl / SuricataControl refused the restart because of the hold. By now
+  // the apply may still run (retry after it), be over (retry now) or have failed
+  // (its hold stays: refuse, as before). True when a retry was scheduled.
+  retryRefusedRestart() {
+    if (this.deferWhileApplying())
+      return true;
+    if (FlowEngine.applyHeld())
+      return false;
+    this.retryRestart(() => Promise.resolve(), 'now that it is over');
+    return true;
+  }
+
+  // One retry at a time (and one wait), skipped if the role has been switched
+  // off by then.
+  retryRestart(wait, when) {
+    if (this.retryAfterApply)
+      return;
+    log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} ${when}`);
+    this.retryAfterApply = wait().then(() => {
+      this.retryAfterApply = null;
+      // `enabled` is never set in the API process, which only runs apiRun()
+      if (this.enabled === false || !Config.isFeatureOn(this.getFeatureName()))
+        return;
+      return this.restartJob ? this.restartJob.exec() : this.restart();
+    }).catch((err) => {
+      this.retryAfterApply = null;
+      log.error(`Failed to restart ${this.getFeatureName()} after the flow engine apply`, err.message);
+    });
   }
 
   async globalOn() {
