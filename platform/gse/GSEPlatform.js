@@ -17,7 +17,7 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const rp = require('request-promise');
 
@@ -188,7 +188,7 @@ class GSEPlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }
@@ -398,7 +398,7 @@ class GSEPlatform extends Platform {
     const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
     const kernelChecksum = await exec(`sudo dd if=${emmcDev} bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'`).then(result => result.stdout.trim());
 
-    const compiler = await exec("grep -o 'aarch64.*-linux-gnu-gcc' /proc/version").then(result => result.stdout.trim());
+    const compiler = await execFile("grep", ["-o", "aarch64.*-linux-gnu-gcc", "/proc/version"]).then(result => result.stdout.trim());
     const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
     if (fileExists) {
       koPath = `${koPath}.${kernelChecksum}`;

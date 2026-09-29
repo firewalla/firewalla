@@ -82,12 +82,26 @@ module.exports = {
   REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG: "block_stats_cloud_config",
-  REDIS_KEY_BLOCK_STATS_CONFIG: "block_stats_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_STATS_CONFIG: "block_stats_config",
   REDIS_KEY_BLOCK_STATS_PREFIX: "blockStats::",
   // zset tracking which blockStats::<ts> bucket keys actually exist (score = member = ts), so
   // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
+  // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
+  // full key string), so readers don't have to reconstruct bucket boundaries from the current config
+  REDIS_KEY_EVENT_SUMMARY_INDEX: "eventSummary:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_CLASSIFIER_CLOUD_CONFIG: "event_classifier_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_CLASSIFIER_CONFIG: "event_classifier_config",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
@@ -104,6 +118,8 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+  REDIS_HKEY_CONN_BPID: "bpid", // block rule id; presence flags the 5-tuple as blocked
+  REDIS_HKEY_CONN_BPID_TS: "bpidts", // epoch seconds bpid was last (re)written; ages the marker off its own write time
 
   NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
   NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
@@ -126,6 +142,7 @@ module.exports = {
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
+  NOTIF_CATEGORY_PHONE_PAIRED: "com.firewalla.category.phone_paired",
 
   STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
@@ -196,6 +213,12 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
+  FEATURE_PCAP_ZEEK_FLEET: "pcap_zeek_fleet",
+  FEATURE_PCAP_SURICATA_FLEET: "pcap_suricata_fleet",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
@@ -220,5 +243,14 @@ module.exports = {
 
   // a plain file name: no path separators, so a value matching this cannot leave the directory it
   // is resolved against. use it wherever an untrusted value becomes a path component
-  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+  REGEX_FILENAME: /^[a-z0-9][a-z0-9._-]*$/i,
+
+  // matches if a value contains any control character. use it on untrusted values that end up in a
+  // line-oriented config file or on the stdin of a command interpreter, where a line break in the
+  // value injects a directive or a command
+  REGEX_CONTROL_CHARS: /[\x00-\x1f\x7f]/,
+
+  // same as above but tolerates CR and LF, for free text fields that are never written to a config
+  // file or a command line
+  REGEX_CONTROL_CHARS_MULTILINE: /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/,
 };

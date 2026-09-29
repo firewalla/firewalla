@@ -33,7 +33,7 @@
 
 'use strict';
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const fs = require('fs');
 const io2 = require('socket.io-client');
 const os = require('os');
@@ -88,7 +88,7 @@ async function isBooted() {
     return false;
   } catch (err) {
     log("System was booted.");
-    await exec(`touch ${fwHeartbeatFile}`);
+    await execFile("touch", [fwHeartbeatFile]);
     return true;
   }
 }
@@ -130,7 +130,7 @@ async function getGatewayMacPrefix() {
 
 async function getGitBranchName(cwd) {
   try {
-    const result = await exec("git rev-parse --abbrev-ref HEAD", { cwd: cwd, encoding: 'utf8' });
+    const result = await execFile("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: cwd, encoding: 'utf8' });
     return result && result.stdout && result.stdout.trim();
   } catch(err) {
     //log(`ERROR: failed to get latest branch name in ${cwd}`+err);
@@ -140,7 +140,7 @@ async function getGitBranchName(cwd) {
 
 async function getLatestCommitHash(cwd) {
   try {
-    const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    const result = await execFile("git", ["rev-parse", "HEAD"], { cwd: cwd, encoding: 'utf8' });
     return result && result.stdout && result.stdout.trim();
   } catch(err) {
     //log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
@@ -315,7 +315,7 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
   //log("sysStateCurrent:"+sysStateCurrent);
   //log("sysStateInRedis:"+sysStateInRedis);
   if ( sysStateCurrent === sysStateInRedis ) { return; }
-  await exec(`redis-cli set sys:state ${sysStateCurrent}`, { encoding: 'utf8' });
+  await execFile("redis-cli", ["set", "sys:state", sysStateCurrent], { encoding: 'utf8' });
 
   const featureFlag = await getShellOutput("redis-cli hget sys:features temp_monitor_notif");
   if (featureFlag != "1") {
@@ -387,7 +387,7 @@ socket.on('update', () => {
 
 socket.on('upgrade', () => {
   log("Upgrade started via heartbeat");
-  exec("/home/pi/firewalla/scripts/fireupgrade_check.sh");
+  execFile("/home/pi/firewalla/scripts/fireupgrade_check.sh", []);
 });
 
 socket.on('reconnect', () => {

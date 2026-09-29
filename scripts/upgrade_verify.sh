@@ -50,7 +50,10 @@
 : ${UV_FLOOR_FILE:=/home/pi/.firewalla/config/upgrade_min_version}
 : ${UV_FLOOR_ASSET:=/home/pi/.firewalla/run/assets/fw_min_version}
 : ${UV_OTA_CONFIG_URL:=https://ota.firewalla.com/fapp/fbox.json}
-: ${UV_LOGGER:="/usr/bin/logger -t FWUPGRADE.VERIFY"}
+case $UV_OFFICIAL_REPO in
+  firerouter) : ${UV_LOGGER:="/usr/bin/logger -t FRUPGRADE.VERIFY.FR"} ;;
+  *)          : ${UV_LOGGER:="/usr/bin/logger -t FWUPGRADE.VERIFY.FW"} ;;
+esac
 
 uv_log() {
   echo "upgrade_verify: $@"
@@ -305,7 +308,7 @@ uv_verify_release_commit() {
     # gpgv trusts exactly the keys in the keyring, so a good signature there
     # already means "signed by us" - no separate fingerprint match needed
     if ! uv_gpgv_verify_tag "$tag" "$keyring"; then
-      uv_log "tag $tag signature not from a trusted key"
+      uv_log "tag $tag is unsigned or not signed by a trusted key"
       continue
     fi
     if [[ -n "$floor" ]]; then

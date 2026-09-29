@@ -19,7 +19,7 @@ let freeradius = require("../extension/freeradius/freeradius.js");
 const fc = require('../net2/config.js')
 const f = require('../net2/Firewalla.js');
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const log = require('../net2/logger.js')(__filename);
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -391,7 +391,7 @@ class FreeRadiusSensor extends Sensor {
     log.info("Adding freeradius image update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
     await fsp.symlink(`${f.getFirewallaHome()}/etc/crontab.freeradius`, `${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
     });
   }
@@ -399,7 +399,7 @@ class FreeRadiusSensor extends Sensor {
   async removeCronJobs() {
     log.info("Removing freeradius image update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
