@@ -19,7 +19,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const fsp = require('fs').promises;
 const f = require('../net2/Firewalla.js');
 const { wrapIptables } = require('../net2/Iptables.js');
@@ -116,7 +116,7 @@ class Iperf3Sensor extends Sensor {
   // Throws on lsof failure so the watchdog can distinguish "no connection"
   // from "couldn't check" and avoid false-positive auto stop.
   async hasEstablishedConnection(pid) {
-    const result = await exec(`sudo lsof -n -p ${pid}`);
+    const result = await execFile("sudo", ["lsof", "-n", "-p", String(pid)]);
     return result.stdout.includes('ESTABLISHED');
   }
 
@@ -167,7 +167,7 @@ class Iperf3Sensor extends Sensor {
   async startIperf3Server() {
     for (let i = 0; i != 3; i++) {
       const port = Math.ceil(Math.random() * 10000) + 10000;
-      await exec(`iperf3 -s -p ${port} -I ${PID_FILE} -D`).catch((err) => {});
+      await execFile("iperf3", ["-s", "-p", String(port), "-I", PID_FILE, "-D"]).catch((err) => {});
       const pid = await this.getPID();
       if (pid)
         return pid;
@@ -178,11 +178,11 @@ class Iperf3Sensor extends Sensor {
   async stopIperf3Server() {
     let pid = await this.getPID();
     if (pid) {
-      await exec(`kill ${pid}`).catch((err) => { });
+      await execFile("kill", [String(pid)]).catch((err) => { });
       pid = await this.getPID();
       if (pid) {
         log.info(`iperf3 process ${pid} is not killed by SIGTERM, using SIGKILL instead`);
-        await exec(`kill -9 ${pid}`).catch((err) => { });
+        await execFile("kill", ["-9", String(pid)]).catch((err) => { });
       }
     }
   }

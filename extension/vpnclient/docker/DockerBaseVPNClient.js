@@ -21,7 +21,7 @@ const f = require('../../../net2/Firewalla.js');
 const VPNClient = require('../VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {Address4, Address6} = require('ip-address');
 const {BigInteger} = require('jsbn');
 const sysManager = require('../../../net2/SysManager.js');
@@ -88,12 +88,12 @@ class DockerBaseVPNClient extends VPNClient {
   async destroy() {
     await super.destroy();
     await fs.unlinkAsync(this._getSubnetFilePath()).catch((err) => {});
-    await exec(`rm -rf ${this._getDockerConfigDirectory()}`).catch((err) => {
+    await execFile("rm", ["-rf", this._getDockerConfigDirectory()]).catch((err) => {
       log.error(`Failed to remove config directory ${this._getDockerConfigDirectory()}`, err.message);
     });
-    await exec(`sudo rm -f ${this._getSyslogFilePath()}`).catch((err) => {});
+    await execFile("sudo", ["rm", "-f", this._getSyslogFilePath()]).catch((err) => {});
     // use sudo to remove directory as some files/directories may be created by root in mapped volume
-    await exec(`sudo rm -rf ${this._getWorkingDirectory()}`).catch((err) => {
+    await execFile("sudo", ["rm", "-rf", this._getWorkingDirectory()]).catch((err) => {
       log.error(`Failed to remove working directory ${this._getWorkingDirectory()}`, err.message);
     });
   }
@@ -296,40 +296,40 @@ if $programname == 'docker_vpn_${this.profileId}' then {
 }`;
     const tempConfPath = `${this._getDockerConfigDirectory()}/40-docker_vpn_${this.profileId}.conf`;
     await fs.writeFileAsync(tempConfPath, content, {encoding: "utf8"});
-    await exec(`sudo cp ${tempConfPath} /etc/rsyslog.d/`).catch((err) => {});
+    await execFile("sudo", ["cp", tempConfPath, "/etc/rsyslog.d/"]).catch((err) => {});
     await fs.unlinkAsync(tempConfPath).catch((err) => {});
     sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _removeRsyslogConf() {
-    await exec(`sudo rm /etc/rsyslog.d/40-docker_vpn_${this.profileId}.conf`).catch((err) => {});
+    await execFile("sudo", ["rm", `/etc/rsyslog.d/40-docker_vpn_${this.profileId}.conf`]).catch((err) => {});
     sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _testAndStartDocker() {
-    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    const active = await execFile("sudo", ["systemctl", "-q", "is-active", "docker"]).then(() => true).catch((err) => false);
     if (!active) {
       // starting docker service will load br_netfilter, it may cause problem with QoS enabled which uses act_mirred.ko to redirect packets to ifb
       // fixed act_mirred.ko is only available on dev branch now
       const brNetfilterLoaded = await exec(`lsmod | grep -w br_netfilter`).then(() => true).catch((err) => false);
-      await exec(`sudo systemctl start docker`).catch((err) => {});
+      await execFile("sudo", ["systemctl", "start", "docker"]).catch((err) => {});
       if (!brNetfilterLoaded)
-        await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+        await execFile("sudo", ["rmmod", "br_netfilter"]).catch((err) => {});
     }
   }
 
   async _start() {
     await this._testAndStartDocker();
-    await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
+    await execFile("mkdir", ["-p", this._getDockerConfigDirectory()]);
     await this.__prepareAssets();
-    await exec(`mkdir -p ${this._getWorkingDirectory()}`);
-    await exec(`cp -f -a ${this._getDockerConfigDirectory()}/. ${this._getWorkingDirectory()}`);
+    await execFile("mkdir", ["-p", this._getWorkingDirectory()]);
+    await execFile("cp", ["-f", "-a", `${this._getDockerConfigDirectory()}/.`, this._getWorkingDirectory()]);
     await this._createNetwork();
     await this._updateComposeYAML();
     await this._createRsyslogConf();
     // some vpn client container still uses iptables-legacy, need to load ko in advance
-    await exec(`sudo modprobe ip_tables`).catch((err) => {});
-    await exec(`sudo modprobe ip6_tables`).catch((err) => {});
+    await execFile("sudo", ["modprobe", "ip_tables"]).catch((err) => {});
+    await execFile("sudo", ["modprobe", "ip6_tables"]).catch((err) => {});
     // docker network is already created, add ip route and SNAT rule before container is started by docker-compose
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
@@ -342,7 +342,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE'))
       await routing.addRouteToTable(remoteIP6, null, this.getInterfaceName(), "wan_routable", 1024, 6).catch((err) => {});
     }
-    await exec(`sudo systemctl start docker-compose@${this.profileId}`);
+    await execFile("sudo", ["systemctl", "start", `docker-compose@${this.profileId}`]);
     let t = 0;
     while (t < 30) {
       const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
@@ -362,7 +362,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE').opr('-D'))
     if (remoteIP6)
       await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE').opr('-D'))
-    await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
+    await execFile("sudo", ["systemctl", "stop", `docker-compose@${this.profileId}`]);
     await this._removeNetwork();
     await this._removeRsyslogConf();
   }
@@ -389,10 +389,10 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _isLinkUp() {
-    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    const active = await execFile("sudo", ["systemctl", "-q", "is-active", "docker"]).then(() => true).catch((err) => false);
     if (!active)
       return false;
-    const serviceUp = await exec(`sudo docker container ls -f "name=${this.getInterfaceName()}" --format "{{.Status}}"`).then(result => result.stdout.trim().startsWith("Up ")).catch((err) => {
+    const serviceUp = await execFile("sudo", ["docker", "container", "ls", "-f", `name=${this.getInterfaceName()}`, "--format", "{{.Status}}"]).then(result => result.stdout.trim().startsWith("Up ")).catch((err) => {
       log.error(`Failed to run docker container ls on ${this.profileId}`, err.message);
       return false;
     });
@@ -480,7 +480,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
 
   async getLatestSessionLog() {
     const logPath = `/var/log/docker_vpn_${this.profileId}.log`;
-    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    const content = await execFile("sudo", ["tail", "-n", "200", logPath]).then(result => result.stdout.trim()).catch((err) => null);
     return content;
   }
 }

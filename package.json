@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node ./bin/www",
     "test": "NODE_ENV=test mocha --exit",
-    "coverage": "NODE_ENV=test nyc mocha --exit"
+    "coverage": "NODE_ENV=test nyc mocha --exit",
+    "report": "nyc report --reporter=text"
   },
   "devDependencies": {
     "mocha": "^9.2.2",

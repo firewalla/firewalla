@@ -31,6 +31,15 @@ check() { # check <desc> <expected-rc> <actual-rc>
   if [[ $2 -eq $3 ]]; then ok "$1"; else bad "$1 (expected rc=$2 got rc=$3)"; fi
 }
 
+# Isolate from a real box before sourcing, because the UV_ defaults are bound at
+# source time. On a box the stock FIREWALLA_HOME holds an executable
+# update_assets.sh (which uv_ensure_release_key would run, reaching the network)
+# and the default asset path holds the real release keyring, which then wins the
+# precedence check and makes the bootstrap-key cases fail. Neither exists on a
+# dev machine, so this only shows up on the hardware.
+export FIREWALLA_HOME=$T/no-fw-home
+export UV_RELEASE_KEYRING_ASSET=$T/no-asset
+
 source $FW_HOME/scripts/upgrade_verify.sh
 
 # --- unit: version compare ---
@@ -63,7 +72,9 @@ GNUPGHOME=$GNUPGHOME_SIGN gpg --batch --passphrase '' --quick-generate-key "Test
 FPR=$(GNUPGHOME=$GNUPGHOME_SIGN gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
 [[ -n "$FPR" ]] && ok "test key generated ($FPR)" || bad "keygen"
 
-git init -q -b rel $T/origin
+# `git init -b` needs git >= 2.28; the boxes ship older, so name the branch by hand
+git init -q $T/origin
+git -C $T/origin symbolic-ref HEAD refs/heads/rel
 GITC="git -C $T/origin -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false"
 echo one > $T/origin/f; $GITC add f; $GITC commit -qm c1
 GNUPGHOME=$GNUPGHOME_SIGN $GITC -c user.signingkey=$FPR tag -s goldse-alph-v1.983.001 -m rel1
@@ -103,6 +114,15 @@ echo three > $T/origin/f; $GITC commit -qam c3
 GNUPGHOME=$GNUPGHOME_EVIL $GITC -c user.signingkey=$EFPR tag -s goldse-alph-v1.983.003 -m fake
 git fetch -q origin rel
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "commit with wrong-key signature rejected" 1 $?
+
+# --- e2e: a lightweight and an unsigned tag are both rejected ---
+$GITC tag goldse-alph-v1.983.004                                  # lightweight: no tag object
+$GITC tag -a goldse-alph-v1.983.005 -m unsigned                   # annotated, never signed
+git fetch -q origin "+refs/tags/*:refs/tags/*"
+git fetch -q origin rel      # the tag fetch above rewrote FETCH_HEAD; put the branch tip back
+uv_gpgv_verify_tag goldse-alph-v1.983.004 "$UV_TEST_KEYRING"; check "lightweight tag rejected" 1 $?
+uv_gpgv_verify_tag goldse-alph-v1.983.005 "$UV_TEST_KEYRING"; check "unsigned annotated tag rejected" 1 $?
+uv_gpgv_verify_tag goldse-alph-v1.983.001 "$UV_TEST_KEYRING"; check "good signed tag accepted" 0 $?
 
 # --- e2e: no test key on non-official remote -> skip (accept) ---
 UV_TEST_KEYRING=$T/nonexistent
@@ -159,7 +179,8 @@ cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "no asset, no keyring: fall
 git remote set-url origin "$SAVED_URL"
 
 # --- e2e: strict node modules pin sync ---
-git init -q -b rel $T/nm-origin
+git init -q $T/nm-origin
+git -C $T/nm-origin symbolic-ref HEAD refs/heads/rel
 NMGIT="git -C $T/nm-origin -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false"
 echo m1 > $T/nm-origin/m; $NMGIT add m; $NMGIT commit -qm nm1
 PIN=$($NMGIT rev-parse HEAD)
@@ -221,6 +242,26 @@ git -C $T/origin reset -q --hard 'goldse-alph-v1.983.001^{commit}'
 git fetch -q origin rel
 uv_is_enforced() { return 0; }
 uv_gate FETCH_HEAD rel >/dev/null; check "enforced: passing verify proceeds" 0 $?
+
+# --- every dispatched platform has a node_modules pin ---
+# A platform added without one is not an error at runtime: switch_branch.sh skips
+# uv_sync_node_modules and checks node_modules out at the branch tip unpinned, so
+# the pin silently stops applying for that platform. Catch it here instead.
+# The list comes from platform.sh's own dispatch, so a new platform is covered the
+# moment it is added there. 'unknown' is the no-match fallback, not a platform.
+for plat in $(grep -oE 'export FIREWALLA_PLATFORM=[a-z0-9_]+' $FW_HOME/platform/platform.sh |
+              sed 's/.*=//' | grep -vx unknown | sort -u); do
+  # run through the real resolver, in a subshell so the overrides do not leak
+  pin=$(FIREWALLA_PLATFORM=$plat FIREWALLA_HOME=$FW_HOME uv_node_modules_pin_file)
+  if [[ ! -s $pin ]]; then
+    # -s follows symlinks, so this also catches a link pointing at nothing
+    bad "node modules pin for platform $plat (missing or dangling: ${pin##*/})"
+  elif [[ ! $(tr -d '[:space:]' < $pin) =~ ^[0-9a-f]{40}$ ]]; then
+    bad "node modules pin for platform $plat is not a 40-hex revision"
+  else
+    ok "node modules pin for platform $plat"
+  fi
+done
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
