@@ -40,8 +40,8 @@ class PcapZeekPlugin extends PcapPlugin {
   }
 
   async restart() {
-    // a restart queued before the role was switched off
-    if (this.enabled === false)
+    // a restart queued or retried after the role was switched off
+    if (!this.roleOn())
       return;
     if (this.deferWhileApplying())
       return;
