@@ -46,6 +46,12 @@ describe('gateway_ip6_sync', function () {
     expect(linux.gateway_ip6_sync('eth1')).to.equal('fe80::2');
   });
 
+  it('returns an ordinary gateway when device-filtered output omits dev', () => {
+    execFileSync = () => 'default via fe80::1 proto ra metric 100\n';
+
+    expect(linux.gateway_ip6_sync('eth0')).to.equal('fe80::1');
+  });
+
   it('ignores an ordinary default route for another interface', () => {
     execFileSync = () => 'default via fe80::1 dev eth0 proto ra metric 100\n';
 
@@ -71,6 +77,14 @@ describe('gateway_ip6_sync', function () {
   it('returns the gateway from a source-specific default route', () => {
     execFileSync = () => (
       'default from 2001:db8:100::/64 via fe80::2 dev eth1 proto ra metric 100\n'
+    );
+
+    expect(linux.gateway_ip6_sync('eth1')).to.equal('fe80::2');
+  });
+
+  it('returns a source-specific gateway when device-filtered output omits dev', () => {
+    execFileSync = () => (
+      'default from 2001:db8:100::/64 via fe80::2 proto ra metric 100\n'
     );
 
     expect(linux.gateway_ip6_sync('eth1')).to.equal('fe80::2');
