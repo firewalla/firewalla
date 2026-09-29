@@ -16,8 +16,10 @@
 'use strict';
 
 const net = require('net');
+const EventEmitter = require('events');
 const chai = require('chai');
 const expect = chai.expect;
+const proxyquire = require('proxyquire').noPreserveCache();
 
 const whoisClient = require('../lib/whois');
 
@@ -50,6 +52,31 @@ describe('WHOIS response size limit', function () {
         port = server.address().port;
         resolve();
       });
+    });
+  }
+
+  function clientWithImmediateEnotfound(hostname) {
+    return proxyquire('../lib/whois', {
+      net: {
+        connect: (port, host, callback) => {
+          if (host !== hostname) {
+            return net.connect(port, host, callback);
+          }
+
+          const socket = new EventEmitter();
+          socket.destroy = () => {};
+          process.nextTick(() => {
+            const error = new Error('getaddrinfo ENOTFOUND ' + hostname);
+            error.code = 'ENOTFOUND';
+            socket.emit('error', error);
+            socket.emit('close', true);
+          });
+          return socket;
+        }
+      },
+      '../../net2/logger.js': () => ({
+        error: () => {}
+      })
     });
   }
 
@@ -116,9 +143,107 @@ describe('WHOIS response size limit', function () {
 
     expect(result).to.equal(response);
   });
-});
 
-const proxyquire = require('proxyquire').noPreserveCache();
+  it('keeps the deadline active until delayed parser discovery completes', async () => {
+    let existsCallback;
+    const client = proxyquire('../lib/whois', {
+      fs: {
+        exists: (parser, callback) => {
+          existsCallback = callback;
+        }
+      }
+    });
+    await listen('registrar: example');
+
+    let error;
+    try {
+      await client.lookup('example.com', {
+        host: '127.0.0.1',
+        port,
+        deadline: Date.now() + 50,
+      });
+    } catch (err) {
+      error = err;
+    }
+
+    expect(existsCallback).to.be.a('function');
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('WHOIS lookup timed out');
+
+    // A late worker-pool callback must not change the settled result.
+    existsCallback(false);
+  });
+
+  it('does not perform parser discovery for a raw response', async () => {
+    const client = proxyquire('../lib/whois', {
+      fs: {
+        exists: () => {
+          throw new Error('unexpected parser discovery');
+        }
+      }
+    });
+    await listen('registrar: example');
+
+    const result = await client.lookup('example.com', {
+      host: '127.0.0.1',
+      port,
+      raw: true,
+      deadline: Date.now() + 1000,
+    });
+
+    expect(result).to.equal('registrar: example');
+  });
+
+  it('retries a successful ENOTFOUND lookup using the fallback IP', async () => {
+    const hostname = 'whois-test.invalid';
+    const client = clientWithImmediateEnotfound(hostname);
+    await listen('registrar: example');
+
+    const result = await client.lookup('example.com', {
+      host: hostname,
+      ip: '127.0.0.1',
+      port,
+      raw: true,
+      deadline: Date.now() + 1000,
+    });
+
+    expect(result).to.equal('registrar: example');
+  });
+
+  it('preserves the deadline and closes a stalled fallback connection', async () => {
+    const hostname = 'whois-test.invalid';
+    const client = clientWithImmediateEnotfound(hostname);
+    await new Promise((resolve, reject) => {
+      server = net.createServer(socket => {
+        connectionClosed = new Promise(resolve => socket.once('close', resolve));
+        socket.on('data', () => {});
+      });
+
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        port = server.address().port;
+        resolve();
+      });
+    });
+
+    let error;
+    try {
+      await client.lookup('example.com', {
+        host: hostname,
+        ip: '127.0.0.1',
+        port,
+        raw: true,
+        deadline: Date.now() + 200,
+      });
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('WHOIS lookup timed out');
+    await connectionClosed;
+  });
+});
 
 describe('WHOIS referral handling', function () {
   it('limits referral depth instead of following an unbounded chain', async function () {
