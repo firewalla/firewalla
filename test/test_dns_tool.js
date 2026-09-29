@@ -10,11 +10,13 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   let dnsTool;
   let redisClient;
   let operations;
+  let transactions;
   let warnings;
   let metricIncrements;
 
   beforeEach(() => {
     operations = [];
+    transactions = [];
     warnings = [];
     metricIncrements = [];
     redisClient = {
@@ -25,10 +27,17 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
         operations.push([key, expr]);
         return Promise.resolve(1);
       },
-      multi: () => ({
-        expire: (key, expr) => operations.push([key, expr]),
-        execAsync: () => Promise.resolve([])
-      })
+      multi: () => {
+        const transaction = [];
+        transactions.push(transaction);
+        return {
+          expire: (key, expr) => {
+            operations.push([key, expr]);
+            transaction.push([key, expr]);
+          },
+          execAsync: () => Promise.resolve([])
+        };
+      }
     };
     const DNSTool = proxyquire('../net2/DNSTool.js', {
       './logger.js': () => ({
@@ -91,11 +100,31 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       expire: (key, expr) => operations.push([key, expr]),
       execAsync: () => {
         calls++;
+        if (calls > 1)
+          return Promise.resolve([]);
         return new Promise((res, rej) => { resolve = res; reject = rej; });
       }
     });
     return {resolve: () => resolve([]), reject: () => reject(new Error('unavailable')),
       calls: () => calls};
+  }
+
+  async function verifyActiveRemoval(key, remove, readd) {
+    defer(key);
+    defer('companion');
+    const held = holdBatch();
+    const drain = dnsTool._drainDnsTTL();
+    await remove();
+    expect(dnsTool.dnsExpireActive.has(key)).to.equal(true);
+    assertBound(2);
+    held.reject();
+    await drain;
+    expect(dnsTool.dnsExpireRetry.has(key)).to.equal(false);
+    expect(dnsTool.dnsExpireRetry.has('companion')).to.equal(true);
+    expect(dnsTool.dnsExpireActiveInvalidated.size).to.equal(0);
+    operations = [];
+    await readd();
+    expect(operations).to.deep.equal([[key, 60]]);
   }
 
   it('preserves leading-edge and deferred TTL writes through both callers', async () => {
@@ -135,8 +164,12 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 10000]]);
     expect(dnsTool.dnsExpireDroppedCount).to.equal(0);
     assertBound(1000);
+    expect(transactions).to.have.length(49);
+    expect(transactions.every(transaction => transaction.length <= 1000)).to.equal(true);
     await dnsTool._drainDnsTTL();
     expect(operations.length).to.equal(MAX_PENDING);
+    expect(transactions).to.have.length(50);
+    expect(transactions.every(transaction => transaction.length <= 1000)).to.equal(true);
     expect(warnings.length).to.equal(1);
     expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 10000]]);
     assertBound(0);
@@ -340,5 +373,34 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       assertBound(0);
       expect(dnsTool.tryRefreshDnsTTL(key, 60)).to.equal(true);
     }
+  });
+
+  it('does not retry an active DNS refresh invalidated by removal', async () => {
+    const key = 'rdns:ip:1.2.3.4';
+    await verifyActiveRemoval(key,
+      () => dnsTool.removeDns('1.2.3.4', 'example.com'),
+      () => dnsTool.addDns('1.2.3.4', 'example.com', 60));
+  });
+
+  it('does not retry an active reverse DNS refresh invalidated by removal', async () => {
+    const key = 'rdns:domain:example.com';
+    await verifyActiveRemoval(key,
+      () => dnsTool.removeReverseDns('example.com', '1.2.3.4'),
+      () => dnsTool.addReverseDns('example.com', ['1.2.3.4'], 60));
+  });
+
+  it('reports dropped refreshes after removal empties the queues', async () => {
+    defer('rdns:ip:1.2.3.4');
+    dnsTool.dnsExpireDroppedCount = 1;
+    await dnsTool.removeDns('1.2.3.4', 'example.com');
+    assertBound(0);
+    await dnsTool._drainDnsTTL();
+    expect(warnings).to.have.length(1);
+    expect(warnings[0]).to.contain('1');
+    expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 1]]);
+    expect(dnsTool.dnsExpireDroppedCount).to.equal(0);
+    await dnsTool._drainDnsTTL();
+    expect(warnings).to.have.length(1);
+    expect(metricIncrements).to.deep.equal([['dnsExpireDroppedCount', 1]]);
   });
 });

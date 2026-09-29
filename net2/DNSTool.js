@@ -41,6 +41,9 @@ const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
 const MAX_DNS_EXPIRE_PENDING = 50000;
 const MAX_DNS_EXPIRE_OVERFLOW = 1000;
 const DNS_EXPIRE_PENDING_LIMIT = MAX_DNS_EXPIRE_PENDING - MAX_DNS_EXPIRE_OVERFLOW;
+// Bound each Redis transaction so a drain cannot monopolize Redis with one request
+// containing the entire main queue.
+const DNS_EXPIRE_BATCH_SIZE = 1000;
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -67,6 +70,9 @@ class DNSTool {
       // A failed drain is retried before newer pending refreshes. This is bounded to one batch.
       this.dnsExpireRetry = new Map();
       this.dnsExpireActive = null;
+      // Removal cannot cancel a Redis command already submitted, but it must prevent
+      // an unsent or failed active entry from being restored to the retry queue.
+      this.dnsExpireActiveInvalidated = new Set();
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
       this.dnsExpireDroppedCount = 0;
@@ -159,16 +165,28 @@ class DNSTool {
       (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
   }
 
+  _invalidateDnsTTLRefresh(key) {
+    this.dnsExpireTs.del(key);
+    this.dnsExpirePending.delete(key);
+    this.dnsExpireOverflow.delete(key);
+    this.dnsExpireRetry.delete(key);
+    this.dnsExpireActiveUpdates.delete(key);
+    // Keep an active entry counted until its Redis operation settles, but ensure
+    // an unsent or failed command cannot resurrect the removed refresh.
+    if (this.dnsExpireActive && this.dnsExpireActive.has(key))
+      this.dnsExpireActiveInvalidated.add(key);
+  }
+
   _drainDnsTTL() {
     if (this.dnsExpireDrainPromise)
       return this.dnsExpireDrainPromise;
     if (this.dnsExpireRetry.size === 0 && this.dnsExpireActiveUpdates.size === 0 &&
-      this.dnsExpirePending.size === 0 && this.dnsExpireOverflow.size === 0)
+      this.dnsExpirePending.size === 0 && this.dnsExpireOverflow.size === 0 &&
+      this.dnsExpireDroppedCount === 0)
       return Promise.resolve();
 
-    const retryBatch = this.dnsExpireRetry.size > 0;
     let pending;
-    if (retryBatch) {
+    if (this.dnsExpireRetry.size > 0) {
       pending = this.dnsExpireRetry;
       this.dnsExpireRetry = new Map();
     } else if (this.dnsExpireActiveUpdates.size > 0) {
@@ -191,25 +209,40 @@ class DNSTool {
       }
       const drainBatch = async (batch) => {
         this.dnsExpireActive = batch;
-        const now = Date.now();
-        for (const key of batch.keys()) {
-          this.dnsExpireTs.set(key, now);
-        }
-        if (batch.size === 1) {
-          const [key, expr] = batch.entries().next().value;
-          await rclient.expireAsync(key, expr);
-        } else {
-          const multi = rclient.multi();
-          for (const [key, expr] of batch) {
-            multi.expire(key, expr);
+        while (batch.size > 0) {
+          for (const key of this.dnsExpireActiveInvalidated)
+            batch.delete(key);
+          if (batch.size === 0)
+            break;
+          const chunk = [];
+          for (const entry of batch) {
+            chunk.push(entry);
+            if (chunk.length === DNS_EXPIRE_BATCH_SIZE)
+              break;
           }
-          await multi.execAsync();
+          const now = Date.now();
+          for (const [key] of chunk)
+            this.dnsExpireTs.set(key, now);
+          if (chunk.length === 1) {
+            const [key, expr] = chunk[0];
+            await rclient.expireAsync(key, expr);
+          } else {
+            const multi = rclient.multi();
+            for (const [key, expr] of chunk)
+              multi.expire(key, expr);
+            await multi.execAsync();
+          }
+          for (const [key] of chunk)
+            batch.delete(key);
         }
       };
       try {
-        await drainBatch(pending);
+        if (pending)
+          await drainBatch(pending);
       } catch (err) {
         // Retry the failed bounded batch before newer refreshes on the next drain.
+        for (const key of this.dnsExpireActiveInvalidated)
+          pending.delete(key);
         this.dnsExpireRetry = pending;
         this.dnsExpireActive = null;
         for (const key of this.dnsExpireActiveUpdates.keys())
@@ -227,6 +260,7 @@ class DNSTool {
       }
     })().finally(() => {
       this.dnsExpireActive = null;
+      this.dnsExpireActiveInvalidated.clear();
       this.dnsExpireDrainPromise = null;
     });
     return this.dnsExpireDrainPromise;
@@ -392,21 +426,13 @@ class DNSTool {
   async removeDns(ip, domain) {
     let key = this.getDNSKey(ip);
     // drop throttle state so a later re-add re-issues EXPIRE instead of deferring on a stale ts
-    this.dnsExpireTs.del(key);
-    this.dnsExpirePending.delete(key);
-    this.dnsExpireOverflow.delete(key);
-    this.dnsExpireRetry.delete(key);
-    this.dnsExpireActiveUpdates.delete(key);
+    this._invalidateDnsTTLRefresh(key);
     await rclient.zremAsync(key, domain);
   }
 
   async removeReverseDns(domain, ip) {
     let key = this.getReverseDNSKey(domain);
-    this.dnsExpireTs.del(key);
-    this.dnsExpirePending.delete(key);
-    this.dnsExpireOverflow.delete(key);
-    this.dnsExpireRetry.delete(key);
-    this.dnsExpireActiveUpdates.delete(key);
+    this._invalidateDnsTTLRefresh(key);
     await rclient.zremAsync(key, ip);
   }
 
