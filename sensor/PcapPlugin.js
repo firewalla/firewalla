@@ -117,6 +117,15 @@ class PcapPlugin extends Sensor {
     return true;
   }
 
+  // Whether a restart about to run is still wanted. A queued or retried restart
+  // can run after the role was switched off, and during the first globalOn()
+  // the feature listener is not hooked yet, so `enabled` alone can miss that:
+  // the feature is read directly too. `enabled` is never set in the API process,
+  // which only runs apiRun().
+  roleOn() {
+    return this.enabled !== false && Config.isFeatureOn(this.getFeatureName());
+  }
+
   // One retry at a time (and one wait), skipped if the role has been switched
   // off by then.
   retryRestart(wait, when) {
@@ -125,8 +134,7 @@ class PcapPlugin extends Sensor {
     log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} ${when}`);
     this.retryAfterApply = wait().then(() => {
       this.retryAfterApply = null;
-      // `enabled` is never set in the API process, which only runs apiRun()
-      if (this.enabled === false || !Config.isFeatureOn(this.getFeatureName()))
+      if (!this.roleOn())
         return;
       return this.restartJob ? this.restartJob.exec() : this.restart();
     }).catch((err) => {
