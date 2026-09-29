@@ -69,8 +69,8 @@ class PcapSuricataPlugin extends PcapPlugin {
       return;
     }
     // an apply that started while the assets above were prepared makes
-    // SuricataControl refuse: defer to after it like the check at the top
-    await suricataControl.restart().then((started) => started === false && this.deferWhileApplying() ? null : suricataControl.addCronJobs()).then(() => {
+    // SuricataControl refuse: retry after it (or now, if it is already over)
+    await suricataControl.restart().then((started) => started === false && this.retryRefusedRestart() ? null : suricataControl.addCronJobs()).then(() => {
       log.info("Suricata restarted");
     });
   }
