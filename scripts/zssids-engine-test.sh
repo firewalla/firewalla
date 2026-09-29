@@ -507,7 +507,7 @@ check "the gold override mirrors GoldPlatform.isSuricataFromAssetsSupported" 'gr
 
 echo "== a restart during an apply is retried once it is over, not dropped"
 check "both pcap plugins defer while an apply runs" 'grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapZeekPlugin.js" && grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
-check "the wait runs in the background, never inside restart()" '! grep -q "await FlowEngine.waitForApply" "$FIREWALLA_HOME/sensor/PcapPlugin.js" "$FIREWALLA_HOME/net2/BroControl.js" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "FlowEngine.waitForApply().then" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "the wait runs in the background, never inside restart()" '! grep -q "await FlowEngine.waitForApply" "$FIREWALLA_HOME/sensor/PcapPlugin.js" "$FIREWALLA_HOME/net2/BroControl.js" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "retryRestart(() => FlowEngine.waitForApply()" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
 check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.enabled === false || !Config.isFeatureOn(this.getFeatureName())" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
 check "a queued restart for a role switched off does nothing" 'for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/this.enabled === false/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || exit 1; done'
 check "an inner deferral stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/{getline; if (\$0 ~ /return false;/) ok=1; exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
@@ -573,10 +573,15 @@ function plugin(Cls) {
     ok(ctl.crons === 0 && FE.waits === 1, `${n}: refused by an apply begun during preparation, a retry is scheduled, no watchdog yet`);
     ctl.refuseWith = null; FE.release(); await tick();
     ok(p.jobs === 1, `${n}: restarted once the apply is over`);
+    // the apply finishes between the refusal and the plugin's continuation
+    FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = FE.running = false; };
+    const q = plugin(Cls);
+    await run(q); await tick();
+    ok(q.jobs === 1 && ctl.crons === 0, `${n}: an apply over by the time the refusal is seen: restarted now`);
     // a failed apply (marker, no live lock): refused as before, no retry
     FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = true; FE.running = false; };
     await run(plugin(Cls));
-    ok(FE.waits === 0 && ctl.crons === 1, `${n}: a failed apply is not retried, as before`);
+    ok(FE.waits === 0 && ctl.crons === 1 && !p.retryAfterApply, `${n}: a failed apply is not retried, as before`);
     // no apply at all: an ordinary restart
     FE.held = FE.running = false; ctl.refuseWith = null; ctl.crons = 0;
     await run(plugin(Cls));
