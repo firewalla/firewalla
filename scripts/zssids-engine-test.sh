@@ -508,9 +508,9 @@ check "the gold override mirrors GoldPlatform.isSuricataFromAssetsSupported" 'gr
 echo "== a restart during an apply is retried once it is over, not dropped"
 check "both pcap plugins defer while an apply runs" 'grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapZeekPlugin.js" && grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
 check "the wait runs in the background, never inside restart()" '! grep -q "await FlowEngine.waitForApply" "$FIREWALLA_HOME/sensor/PcapPlugin.js" "$FIREWALLA_HOME/net2/BroControl.js" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "retryRestart(() => FlowEngine.waitForApply()" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
-check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.enabled === false || !Config.isFeatureOn(this.getFeatureName())" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
-check "a queued restart for a role switched off does nothing" 'for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/this.enabled === false/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || exit 1; done'
-check "an inner deferral stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/{getline; if (\$0 ~ /return false;/) ok=1; exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.enabled !== false && Config.isFeatureOn(this.getFeatureName())" "$FIREWALLA_HOME/sensor/PcapPlugin.js" && grep -q "if (!this.roleOn())" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "a queued restart for a role switched off does nothing" 'all=1; for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/if \\(!this.roleOn\\(\\)\\)/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || all=0; done; [[ $all -eq 1 ]]'
+check "an inner deferral or abort stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/roleOn|deferWhileApplying/{getline; if (\$0 ~ /return false;/) n++; if (n == 2) exit} END{exit !(n == 2)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
 check "suricata defers before its rule watchers are set up" 'awk "/async restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/&&!d{d=NR} r&&/watchRulesDir/&&!w{w=NR} END{exit !(d && w && d<w)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
 if command -v node >/dev/null 2>&1; then
   echo "== behaviour: a restart refused by an apply that began during preparation is retried"
@@ -534,6 +534,7 @@ function control(name) {
     async tryUpdateSuricataBinary() {}, watchRulesDir() {} };
 }
 const bro = control('bro'), suri = control('suri');
+let featureOn = true;
 const inert = () => new Proxy(function () {}, { get: (t, k) => k === 'then' ? undefined : inert(), apply: () => inert(), construct: () => inert() });
 Module._load = function (req, parent) {
   if (req === 'fs' && parent && /Pcap(Suricata|Zeek)Plugin\.js$/.test(parent.filename))
@@ -545,9 +546,10 @@ Module._load = function (req, parent) {
   if (req.endsWith('BroControl.js')) return bro;
   if (req.endsWith('SuricataControl.js')) return suri;
   if (req.endsWith('Sensor.js')) return { Sensor: class { constructor(c) { this.config = c; } } };
-  if (req.endsWith('config.js')) return { isFeatureOn: () => true, onFeature() {}, getConfig: async () => ({}) };
+  if (req.endsWith('config.js')) return { isFeatureOn: () => featureOn, onFeature() {}, getConfig: async () => ({}) };
   if (req.endsWith('logger.js')) return () => ({ info() {}, warn() {}, error() {}, debug() {} });
-  if (req === 'lodash') return { isArray: Array.isArray, isEmpty: (x) => x == null || (typeof x === 'object' ? Object.keys(x).length === 0 : String(x).length === 0) };
+  if (req.endsWith('scheduler.js')) return orig.apply(this, arguments);
+  if (req === 'lodash') return { isEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b), isArray: Array.isArray, isEmpty: (x) => x == null || (typeof x === 'object' ? Object.keys(x).length === 0 : String(x).length === 0) };
   if (req === 'bluebird') return Object.assign(function () {}, { promisify: () => async () => {}, promisifyAll() {} });
   return inert();
 };
@@ -582,6 +584,28 @@ function plugin(Cls) {
     FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = true; FE.running = false; };
     await run(plugin(Cls));
     ok(FE.waits === 0 && ctl.crons === 1 && !p.retryAfterApply, `${n}: a failed apply is not retried, as before`);
+    // the feature went off while the listener is not hooked yet: a queued
+    // restart must not start the role
+    FE.held = FE.running = false; ctl.refuseWith = null; ctl.restarts = 0; featureOn = false;
+    await run(plugin(Cls));
+    ok(ctl.restarts === 0, `${n}: a queued restart after the feature went off does not start the role`);
+    featureOn = true;
+    // the real scheduler: the first restart runs through the job, the refusal
+    // comes after the apply ended, so a retry now is queued into that same
+    // job; the feature goes off during the job's delay and the queued restart
+    // must not start the role
+    {
+      const { UpdateJob } = require(`${home}/util/scheduler.js`);
+      FE.held = FE.running = false; ctl.restarts = 0;
+      ctl.refuseWith = () => { FE.held = FE.running = false; ctl.refuseWith = null; };
+      const s = plugin(Cls);
+      s.restartJob = new UpdateJob(n === 'PcapSuricataPlugin' ? s._restart.bind(s) : s.restart.bind(s), 100);
+      const first = s.restartJob.exec();
+      setTimeout(() => { featureOn = false; }, 150);
+      await first; await tick();
+      ok(ctl.restarts === 1, `${n}: with the real scheduler, a retry queued behind the first restart is dropped once the feature is off`);
+      featureOn = true;
+    }
     // no apply at all: an ordinary restart
     FE.held = FE.running = false; ctl.refuseWith = null; ctl.crons = 0;
     await run(plugin(Cls));
