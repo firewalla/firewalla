@@ -96,4 +96,86 @@ describe('test rule stats policy cache', function(){
     expect(blockPids).to.not.include(101);
     expect(blockPids).to.not.include(102);
   });
+
+  it('should not let a hostless lookup poison a later hostful lookup on the same dh (issue #8012)', async () => {
+    const ts = new Date() / 1000;
+    const domainPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "domain", action: "allow", target: "example.org", dnsmasq_only: false, direction: "outbound", pid: 201});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("allow", [domainPolicy]);
+
+    const base = { fd: "out", ac: "allow", type: "ip", sec: false, sh: "10.0.0.11", sp: [12345], dh: "93.184.216.34", dp: 443, pr: "tcp", qmark: null, ct: 1, ts };
+
+    // hostless lookup misses, nothing to match the domain rule against yet
+    let pids = await this.plugin.getMatchedPids(Object.assign({}, base));
+    expect(pids).to.eql([]);
+
+    // same five-tuple, but this call now carries the resolved hostname
+    pids = await this.plugin.getMatchedPids(Object.assign({}, base, { af: { "example.org": {} } }));
+    expect(pids).to.eql([201]);
+  });
+
+  it('should match an ip-type global allow rule against the source, not only the destination (issue #8012)', async () => {
+    const ts = new Date() / 1000;
+    const ipPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "ip", action: "allow", target: "10.0.0.21", dnsmasq_only: false, direction: "bidirection", pid: 202});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("allow", [ipPolicy]);
+
+    // rule targets the source (A), not the destination (B) - this is the local A->B flow shape
+    const record = { fd: "in", ac: "allow", type: "ip", sec: false, sh: "10.0.0.21", sp: [23456], dh: "8.8.8.8", dp: 443, pr: "tcp", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([202]);
+  });
+
+  it('should match a net-type global allow rule against the source, not only the destination (issue #8012)', async () => {
+    const ts = new Date() / 1000;
+    const netPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "net", action: "allow", target: "10.0.1.0/24", dnsmasq_only: false, direction: "bidirection", pid: 203});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("allow", [netPolicy]);
+
+    const record = { fd: "in", ac: "allow", type: "ip", sec: false, sh: "10.0.1.55", sp: [34567], dh: "8.8.4.4", dp: 443, pr: "tcp", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([203]);
+  });
+
+  it('should NOT match an outbound-only ip rule against the source (direction must gate src/dst matching)', async () => {
+    const ts = new Date() / 1000;
+    // control/Block.js's generateRules(): direction "outbound" only ever enforces
+    // target-as-destination; matching it against the source too would widen the
+    // rule's effect beyond what enforcement actually does.
+    const ipPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "ip", action: "allow", target: "10.0.0.22", dnsmasq_only: false, direction: "outbound", pid: 204});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("allow", [ipPolicy]);
+
+    // target is the source here, not the destination - an outbound-only rule must not match
+    // (distinct sh/dh from the earlier bidirection test, to avoid a stale cache hit)
+    const record = { fd: "in", ac: "allow", type: "ip", sec: false, sh: "10.0.0.22", sp: [23457], dh: "8.8.8.9", dp: 443, pr: "tcp", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([]);
+  });
+
+  it('should NOT match an inbound-only ip rule against the destination', async () => {
+    const ts = new Date() / 1000;
+    // direction "inbound" only ever enforces target-as-source (see control/Block.js's
+    // generateRules()); matching it against the destination too would widen the rule.
+    const ipPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "ip", action: "allow", target: "9.9.9.9", dnsmasq_only: false, direction: "inbound", pid: 205});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("allow", [ipPolicy]);
+
+    // target is the destination here, not the source - an inbound-only rule must not match
+    const record = { fd: "out", ac: "allow", type: "ip", sec: false, sh: "10.0.0.5", sp: [23456], dh: "9.9.9.9", dp: 443, pr: "tcp", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([]);
+  });
+
+  it('should NOT match a dns record against a bidirectional ip/net rule targeting the querying device', async () => {
+    const ts = new Date() / 1000;
+    const netPolicy = new Policy({trust: true, protocol: "", disabled: 0, type: "net", action: "block", target: "10.0.1.0/24", dnsmasq_only: false, direction: "bidirection", pid: 206});
+    this.plugin.policyRulesMap = new Map();
+    this.plugin.policyRulesMap.set("block", [netPolicy]);
+
+    // record.sh identifies the querying device, not a flow endpoint of the queried domain
+    const record = { fd: "in", ac: "block", type: "dns", sec: false, sh: "10.0.1.55", dn: "ads.example.com", qmark: null, ct: 1, ts };
+    const pids = await this.plugin.getMatchedPids(record);
+    expect(pids).to.eql([]);
+  });
 });
