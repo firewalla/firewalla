@@ -58,7 +58,7 @@ const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
 const _ = require('lodash');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require("./Constants.js");
@@ -584,7 +584,7 @@ class FireRouter {
 
         log.info("adopting firerouter network change according to mode", mode)
         if (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br")) {
-          await exec(`sudo modprobe br_netfilter`).catch((err) => { });
+          await execFile("sudo", ["modprobe", "br_netfilter"]).catch((err) => { });
         }
 
         switch (mode) {
@@ -854,18 +854,18 @@ class FireRouter {
     }
     for (const intf of Object.keys(pcapTapIntfs)) {
       // clear previous tc filters
-      await exec(`sudo tc qdisc del dev ${intf} root`).catch(() => {});
-      await exec(`sudo tc qdisc del dev ${intf} parent ffff:`).catch(() => {});
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "root"]).catch(() => {});
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "parent", "ffff:"]).catch(() => {});
       if (!pcapTapIntfs[intf])
         continue;
       // add tc filters to redirect traffic to the pcap tap ifb
-      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", intf, "clsact"]).catch((err) => {
         log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "ingress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_TAP]).catch((err) => {
         log.error(`Failed to add pcap tap tc ingress redirect filter for ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} egress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "egress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_TAP]).catch((err) => {
         log.error(`Failed to add pcap tap tc egress redirect filter for ${intf}`, err.message);
       });
     }
@@ -890,7 +890,7 @@ class FireRouter {
     const prevRspanIntfNames = this._rspanIntfNames || [];
     for (const intf of prevRspanIntfNames) {
       if (!rspanIntfNames.includes(intf)) {
-        await exec(`sudo tc qdisc del dev ${intf} clsact`).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "clsact"]).catch(() => {});
       }
     }
     this._rspanIntfNames = rspanIntfNames.slice();
@@ -899,10 +899,10 @@ class FireRouter {
     }
     for (const intf of rspanIntfNames) {
       // add tc filter to redirect ingress traffic to the rspan ifb (RSPAN is receive-only, no egress redirect)
-      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", intf, "clsact"]).catch((err) => {
         log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_RSPAN}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "ingress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_RSPAN]).catch((err) => {
         log.error(`Failed to add rspan tc ingress redirect filter for ${intf}`, err.message);
       });
     }
@@ -917,31 +917,31 @@ class FireRouter {
     if (this._qosIfaces) {
       log.info("Clearing tc filters ...", this._qosIfaces);
       for (const iface of this._qosIfaces) {
-        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => {});
-        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => {});
       }
     } else {
       log.info("No existing tc filters, clear both lan and wan interfaces");
       for (const iface of lanIntfs.concat(wanIntfs)) {
-        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
-        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => { });
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => { });
       }
     }
     const ifaces = qosNetworkType === 'lan' ? lanIntfs : wanIntfs;
     log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
-      await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
-      await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => { });
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => { });
     }
 
     await platform.reloadActMirredKernelModule();
 
     for (const iface of ifaces) {
-      await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "add", "dev", iface, "ingress"]).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
         ret = false;
       });
-      await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", iface, "root", "handle", "1:", "htb", "default", "1"]).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
         ret = false;
       })
@@ -1169,7 +1169,7 @@ class FireRouter {
 
   scheduleRestartFireBoot(delay = 10) {
     setTimeout(() => {
-      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => exec(`sudo systemctl restart fireboot`));
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => execFile("sudo", ["systemctl", "restart", "fireboot"]));
     }, delay * 1000);
   }
 

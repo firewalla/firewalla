@@ -26,6 +26,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const { delay } = require('./util.js');
 
+const CRYSTAL_RESET_SCRIPT = "system-reset-all-crystal.sh";
+
 let instance = null;
 class DeviceMgmtTool {
   constructor() {
@@ -52,9 +54,9 @@ class DeviceMgmtTool {
   async bluetoothReset() {
     log.info("Resetting box via firereset...");
     try {
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR1", "firereset"]);
       return true;
     } catch(err) {
       log.error("Got error when resetting box via firereset, err:", err);
@@ -65,9 +67,9 @@ class DeviceMgmtTool {
   async bluetoothResetAndShutdown() {
     log.info("Resetting box and Shutdown via firereset...")
     try {
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
-      await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
+      await cpp.execFile("sudo", ["pkill", "-x", "-SIGUSR2", "firereset"]);
       return true;
     } catch(err) {
       log.error("Got error when resetting box and shutdown via firereset, err:", err);
@@ -90,10 +92,42 @@ class DeviceMgmtTool {
     }
   }
 
+  async scriptReset(scriptName, config) {
+    const script = `${Firewalla.getFirewallaHome()}/scripts/${scriptName}`;
+    try {
+      fs.accessSync(script, fs.constants.X_OK);
+    } catch(err) {
+      log.error(`Reset script ${script} is missing or not executable`, err.message);
+      return false;
+    }
+    try {
+      await cpp.exec(`${script} --check`);
+    } catch(err) {
+      log.error(`Reset script ${script} refused to run, aborting reset:`, err.stderr || err.message);
+      return false;
+    }
+
+    const env = Object.assign({}, process.env);
+    if (config && config.shutdown)
+      env.FIREWALLA_POST_RESET_OP = "shutdown";
+    try {
+      await cpp.exec(`setsid nohup ${script} >/dev/null 2>&1 &`, { env });
+    } catch(err) {
+      log.error(`Failed to launch reset script ${script}`, err.message);
+      return false;
+    }
+    log.info(`Reset script ${script} launched`);
+    return true;
+  }
+
   async resetDevice(config) {
     log.info("Resetting device to factory defaults...");
 
     this.switchCleanSupportFlag(config && !config.keepLog);
+
+    if(platform.getName() === 'crystal') {
+      return this.scriptReset(CRYSTAL_RESET_SCRIPT, config);
+    }
 
     if(platform.isFireRouterManaged()) {
       if(config && config.shutdown) {

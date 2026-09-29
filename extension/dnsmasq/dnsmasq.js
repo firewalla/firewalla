@@ -27,7 +27,7 @@ const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
-const execFileAsync = util.promisify(childProcess.execFile);
+const { execFile } = require('child-process-promise');
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -312,7 +312,7 @@ module.exports = class DNSMASQ {
 
     let reloaded = true;
     for (const pid of pids) {
-      const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
+      const ok = await execFile("sudo", ["kill", "-RTMIN", String(pid)]).then(() => true).catch((err) => {
         // ESRCH means the process already exited — not a failure, the service will restart a fresh instance
         if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
           return true;
@@ -326,7 +326,7 @@ module.exports = class DNSMASQ {
   }
 
   async restartDNSService() {
-    await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
+    await execFile("sudo", ["systemctl", "stop", SERVICE_NAME]).catch((err) => { });
     this.counter.restart++;
     log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
     const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
@@ -388,7 +388,7 @@ module.exports = class DNSMASQ {
       }
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
-      await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "reload", SERVICE_NAME]).then(() => {
         log.verbose(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
       }).catch((err) => {
         log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
@@ -414,10 +414,10 @@ module.exports = class DNSMASQ {
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
-      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
+      await execFile("sudo", ["systemctl", "stop", DHCP_SERVICE_NAME]).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
-      await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "restart", DHCP_SERVICE_NAME]).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
@@ -439,7 +439,7 @@ module.exports = class DNSMASQ {
       }
       this.counter.reloadDHCP++;
       log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
-      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "reload", DHCP_SERVICE_NAME]).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
       }).catch((err) => {
         log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
@@ -1953,7 +1953,7 @@ module.exports = class DNSMASQ {
     const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    await execAsync(`mkdir -p ${HOSTFILE_PATH}`)
+    await execFile("mkdir", ["-p", HOSTFILE_PATH])
     const staleFiles = new Set(await fsp.readdir(HOSTFILE_PATH).catch(err => { log.error('Error listing', HOSTFILE_PATH, err.message); return []; }))
 
     for (const h of hosts) try {
@@ -2345,7 +2345,7 @@ module.exports = class DNSMASQ {
         const digArgs = ['-4', 'A', '+short', '+time=3', '+tries=2', '-p', String(MASQ_PORT), '-b', `${intfIP}#${Constants.PORT_DNS_TEST_SRC}`, `@${intfIP}`, domain];
         log.debug(`Verifying DNS resolution to ${domain} on ${intfIP} ...`);
         try {
-          let { stdout, stderr } = await execFileAsync('dig', digArgs);
+          let { stdout, stderr } = await execFile('dig', digArgs);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`Error verifying dns resolution to ${domain} on ${intfIP}`, stderr, stdout);
           } else {
@@ -2396,7 +2396,7 @@ module.exports = class DNSMASQ {
       for (const {dnsServer, args} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
-          let { stdout, stderr } = await execFileAsync('dig', args);
+          let { stdout, stderr } = await execFile('dig', args);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
           } else {
@@ -2470,7 +2470,7 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await execAsync(`mkdir -p ${FILTER_DIR}`).catch((err) => {
+      await execFile("mkdir", ["-p", FILTER_DIR]).catch((err) => {
         log.error(`Failed to create ${FILTER_DIR}`, err);
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR, HOSTS_DIR];
@@ -2698,7 +2698,7 @@ module.exports = class DNSMASQ {
     return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
       // delete and write to stdout at the same time
-      const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
+      const result = await execFile("sudo", ["sed", "-i", "-r", "-e", `/${regex}/{w /dev/stdout`, "-e", "d}", leaseFile]).catch(err => {
         log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
       })
       return _.get(result, 'stdout', '').split('\n').filter(line => line.length).map(line => {
