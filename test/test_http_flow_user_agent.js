@@ -21,6 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const configModule = require('../net2/config.js');
 const Getter = configModule.Getter;
 const httpFlow = require('../extension/flow/HttpFlow.js');
+const DeviceIdentificationSensor = require('../sensor/DeviceIdentificationSensor.js');
 
 const broConfig = new Getter('bro');
 
@@ -150,7 +151,7 @@ describe('HttpFlow User-Agent history retention', function () {
 
     const key = `host:user_agent2:test-score-collision:${process.pid}:${Date.now()}`;
     const expireTime = broConfig.get('userAgent.expires');
-    const futureScore = (Date.now() + 60000) * 1000;
+    const futureScore = Date.now() / 1000 + 60;
     configModule.getConfig().sensors.OldDataCleanSensor.user_agent2.count = 1;
 
     try {
@@ -162,6 +163,60 @@ describe('HttpFlow User-Agent history retention', function () {
 
       const members = await rclient.zrangeAsync(key, 0, -1);
       expect(members).to.eql(['newest-agent']);
+    } finally {
+      await rclient.delAsync(key);
+    }
+  });
+
+  it('stores epoch-second scores readable by device identification', async function () {
+    this.timeout(30000);
+
+    const mac = `test-identification:${process.pid}:${Date.now()}`;
+    const key = `host:user_agent2:${mac}`;
+    const expireTime = broConfig.get('userAgent.expires');
+    const history = JSON.stringify({
+      ua: 'test-agent-identification',
+      device: { type: 'tablet', brand: 'Test', model: 'Test Model' },
+      os: { name: 'Test OS' },
+    });
+
+    try {
+      await rclient.delAsync(key);
+      await httpFlow.saveUserAgentHistory(key, history, expireTime);
+
+      const sensor = new DeviceIdentificationSensor();
+      sensor.now = Date.now() / 1000;
+      sensor.expire = expireTime;
+      const detected = await sensor.userAgentDetect({ o: { mac } });
+
+      expect(detected).to.deep.include({
+        type: 'tablet',
+        brand: 'Test',
+        model: 'Test Model',
+        os: 'Test OS',
+      });
+    } finally {
+      await rclient.delAsync(key);
+    }
+  });
+
+  it('uses scores removable by the cleanup expiration cutoff', async function () {
+    this.timeout(30000);
+
+    const key = `host:user_agent2:test-cleanup:${process.pid}:${Date.now()}`;
+    const expireTime = broConfig.get('userAgent.expires');
+
+    try {
+      await rclient.delAsync(key);
+      await httpFlow.saveUserAgentHistory(key, 'test-agent-cleanup', expireTime);
+
+      const scores = await rclient.zrangeAsync(key, 0, -1, 'WITHSCORES');
+      const score = Number(scores[1]);
+      expect(score).to.be.closeTo(Date.now() / 1000, 5);
+
+      const removed = await rclient.zremrangebyscoreAsync(key, '-inf', score + expireTime);
+      expect(removed).to.equal(1);
+      expect(await rclient.zcardAsync(key)).to.equal(0);
     } finally {
       await rclient.delAsync(key);
     }
