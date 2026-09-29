@@ -155,19 +155,24 @@ async function buildTopology(target) {
     if (!switchStatus || !_.isObject(switchStatus) ) {
       topologyError = 'Failed to fetch network topology';
     }
-    for (const hop of (Array.isArray(hops) ? hops : [])) {
+    const hopList = Array.isArray(hops) ? hops : [];
+    for (let index = 0; index < hopList.length; index++) {
+      const hop = hopList[index];
       const hmac = hop.mac;
-      if (!hmac) continue;
       switch (hop.type) {
         case 'box':
-          if (sysManager.isMyMac(hmac)) {
-            hop.name = await firewalla.getBoxName();
+          // the first hop is always the box itself; getWiredStationTree sometimes fails to
+          // populate its mac, so fall back to index instead of requiring a mac match
+          if (index === 0 || sysManager.isMyMac(hmac)) {
+            // getBoxName() is null until the box is paired, don't clobber the tree-derived name
+            const boxName = await firewalla.getBoxName();
+            if (boxName) hop.name = boxName;
             hop.model = platform.getName();
             // hop.interfaceSpec = getModelInterfaceSpec('box', hop.model);
           }
           break;
         case 'ap':
-          if (apStatus && apStatus[hmac]) {
+          if (hmac && apStatus && apStatus[hmac]) {
             const assetInfo = apStatus[hmac];
             if (assetInfo.model) {
               hop.model = assetInfo.model;
@@ -181,7 +186,7 @@ async function buildTopology(target) {
           }
           break;
         case 'switch':
-          if (switchStatus && switchStatus[hmac]) {
+          if (hmac && switchStatus && switchStatus[hmac]) {
             const assetInfo = switchStatus[hmac];
             if (assetInfo.model) {
               hop.model = assetInfo.model;
@@ -200,6 +205,7 @@ async function buildTopology(target) {
             hop.type = 'vpn';
             break; // synthetic hop, hmac is not a real MAC
           }
+          if (!hmac) break; // everything below needs a real MAC
           if (vpnRealMac && hmac === vpnRealMac) {
             hop.type = 'vpn';
           } else if (monitorable.detect && monitorable.detect.type) {
@@ -268,8 +274,9 @@ router.get('/', async (req, res) => {
     // probe latency from the root hop (the box running /v1/me) to each hop, on every request
     if (Array.isArray(hops)) {
       await Promise.all(hops.map(async (hop, index) => {
-        // root hop is the box itself, latency to itself is 0
-        if (index === 0 && hop.type === 'box' && sysManager.isMyMac(hop.mac)) {
+        // root hop is the box itself, latency to itself is 0. don't check isMyMac here:
+        // getWiredStationTree sometimes fails to populate the root mac, same as in buildTopology
+        if (index === 0 && hop.type === 'box') {
           hop.latency = 0;
           return;
         }

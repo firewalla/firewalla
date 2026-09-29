@@ -77,6 +77,10 @@ const APP_MAP_SIZE = 1000;
 const SIG_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const DNS_CACHE_SIZE = 100;
+// max age (seconds) of a bpid block marker, checked against its own write time (bpidts) rather
+// than the conn hash's TTL, which slides forward on every read and would otherwise let a stale
+// marker suppress a flow indefinitely
+const BLOCK_MARKER_MAX_AGE = 600;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
@@ -777,6 +781,25 @@ class BroDetect {
     return false;
   }
 
+  // decide whether a uni-directional UDP flow was blocked, from the conn entry ACLAuditLogPlugin/APCMsgSensor write on block
+  _isBlockedUDPFlow(connEntry, outIntfId, localFlow) {
+    // explicit block marker from the audit/AP path, works for local and internet flows alike.
+    // Age it off its own write time (bpidts), not the hash's TTL: getConnEntries refreshes the
+    // whole hash's TTL on every read, so without an independent write timestamp a marker that's
+    // merely being read (because the flow is still uni-directional) would never expire even after
+    // the rule that caused it is long gone.
+    if (connEntry && _.has(connEntry, Constants.REDIS_HKEY_CONN_BPID)) {
+      const bpidTs = Number(connEntry[Constants.REDIS_HKEY_CONN_BPID_TS])
+      if (!bpidTs || Date.now() / 1000 - bpidTs <= BLOCK_MARKER_MAX_AGE) return true
+      // marker is stale - fall through to the same logic as if no marker were present
+    }
+    // local flows never get a conn entry from the A=C accept log, so absence means nothing here.
+    // Treating it as blocked drops legitimate uni-directional local UDP (see 40bcfbd33)
+    if (localFlow) return false
+    // legacy heuristic for internet-bound flows: an allowed flow gets oIntf from the A=C log
+    return !outIntfId
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -1431,12 +1454,11 @@ class BroDetect {
         tmpspec.rl = extractIP(realLocal);
 
       // might be blocked UDP packets, checking conntrack
-      // blocked connections don't leave a trace in conntrack
-      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0) && !localFlow) {
-        if (!outIntfId) {
-          log.debug('Dropping blocked UDP', JSON.stringify(tmpspec))
-          return
-        }
+      // ACLAuditLogPlugin/APCMsgSensor write bpid on the conn entry when a UDP packet is dropped
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)
+        && this._isBlockedUDPFlow(connEntry, outIntfId, localFlow)) {
+        log.verbose('Dropping blocked UDP', JSON.stringify(tmpspec))
+        return
       }
 
       const sigs = this.getConnSignatures(uid);

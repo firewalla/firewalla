@@ -28,7 +28,7 @@ const sysManager = require('../../net2/SysManager')
 
 const rp = require('request-promise')
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const fs = require('fs')
 const readFileAsync = fs.promises.readFile
@@ -122,22 +122,22 @@ class IPV6In4 {
     let intf = fConfig.monitoringInterface || "eth0"
 
     try {
-      await exec("sudo ip tunnel del he-ipv6") // drop any existing tunnel
+      await execFile("sudo", ["ip", "tunnel", "del", "he-ipv6"]) // drop any existing tunnel
     } catch (err) {
       // do nothing
     }
 
     if (this.config.v6Client && this.config.v6Local && this.config.v4Server) {
       try {
-        await exec(`sudo ip addr del ${this.config.v6Local} dev ${intf}`)
+        await execFile("sudo", ["ip", "addr", "del", this.config.v6Local, "dev", intf])
       } catch (err) {
         // do nothing
       }
-      await exec(`sudo ip tunnel add he-ipv6 mode sit remote ${this.config.v4Server} local ${myip} ttl 255`)
-      await exec(`sudo ip link set he-ipv6 up`)
-      await exec(`sudo ip addr add ${this.config.v6Client} dev he-ipv6`)
-      await exec(`sudo ip addr add ${this.config.v6Local} dev ${intf}`)
-      await exec(`sudo ip route add ::/0 dev he-ipv6`)
+      await execFile("sudo", ["ip", "tunnel", "add", "he-ipv6", "mode", "sit", "remote", this.config.v4Server, "local", myip, "ttl", "255"])
+      await execFile("sudo", ["ip", "link", "set", "he-ipv6", "up"])
+      await execFile("sudo", ["ip", "addr", "add", this.config.v6Client, "dev", "he-ipv6"])
+      await execFile("sudo", ["ip", "addr", "add", this.config.v6Local, "dev", intf])
+      await execFile("sudo", ["ip", "route", "add", "::/0", "dev", "he-ipv6"])
     } else {
       return Promise.reject(new Error("Invalid v6Local/v4Server/v6Client"))
     }
@@ -148,13 +148,13 @@ class IPV6In4 {
     let intf = fConfig.monitoringInterface || "eth0"
 
     try {
-      await exec(`sudo ip addr del ${this.config.v6Local} dev ${intf}`)
+      await execFile("sudo", ["ip", "addr", "del", this.config.v6Local, "dev", intf])
     } catch (err) {
       // do nothing
     }
 
     try {
-      await exec("sudo ip tunnel del he-ipv6") // drop any existing tunnel
+      await execFile("sudo", ["ip", "tunnel", "del", "he-ipv6"]) // drop any existing tunnel
     } catch (err) {
       // do nothing
     }
@@ -168,7 +168,7 @@ class IPV6In4 {
       return Promise.reject(new Error("IPv6 Prefix is required"))
     }
 
-    await exec(`${__dirname}/radvd_install.sh`)
+    await execFile(`${__dirname}/radvd_install.sh`, [])
 
     let data = await readFileAsync(radvdTemplate, { encoding: 'utf8' })
     // replace the placeholders with real values
@@ -180,14 +180,14 @@ class IPV6In4 {
     await writeFileAsync(radvdTempFile, data, { encoding: 'utf8' })
 
     // node can't write to the destination file directly as it requires 'sudo'
-    await exec(`sudo cp ${radvdTempFile} ${radvdDestination}`)
+    await execFile("sudo", ["cp", radvdTempFile, radvdDestination])
   }
 
   async start() {
     log.info("Starting ip6in4...")
     await this.loadConfig()
     await this.setupRADVD()
-    await exec("sudo systemctl restart radvd")
+    await execFile("sudo", ["systemctl", "restart", "radvd"])
     await this.enableTunnel()
   }
 

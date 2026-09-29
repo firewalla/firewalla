@@ -21,6 +21,8 @@ let expect = chai.expect;
 const log = require('../net2/logger.js')(__filename)
 const Host = require('../net2/Host.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const fc = require('../net2/config.js');
+const Monitorable = require('../net2/Monitorable.js');
 
 describe('test _get24HoursTopDomains', function(){
   const testMac = 'AA:BB:CC:DD:EE:FF';
@@ -313,5 +315,111 @@ describe('test _get24HoursTopDomains', function(){
 
     // Cleanup
     await host.destroy();
+  });
+});
+
+describe('Host.hostsFileV6Key', function() {
+
+  it('should ignore anything that is not an address array', () => {
+    expect(Host.hostsFileV6Key(undefined)).to.equal('');
+    expect(Host.hostsFileV6Key(null)).to.equal('');
+    expect(Host.hostsFileV6Key({})).to.equal('');
+    expect(Host.hostsFileV6Key('{not json')).to.equal('');
+  });
+
+  it('should accept the JSON string form stored in redis', () => {
+    expect(Host.hostsFileV6Key('["2001:db8::1"]')).to.equal('2001:db8::1');
+  });
+
+  it('should drop link local and invalid addresses', () => {
+    // only these two affect the rendered hosts file
+    expect(Host.hostsFileV6Key(['fe80::1', '2001:db8::1', 'notanip', '2001:db8::2']))
+      .to.equal('2001:db8::1,2001:db8::2');
+    expect(Host.hostsFileV6Key(['fe80::1', 'fe80::2'])).to.equal('');
+  });
+
+  it('should not depend on the order of the addresses', () => {
+    expect(Host.hostsFileV6Key(['2001:db8::2', '2001:db8::1']))
+      .to.equal(Host.hostsFileV6Key(['2001:db8::1', '2001:db8::2']));
+  });
+});
+
+describe('Host.updateHostsFileIfChanged', function() {
+  const testMac = 'AA:BB:CC:DD:EE:01';
+  let host, calls, fail;
+
+  before(() => {
+    this.origIsFeatureOn = fc.isFeatureOn;
+    fc.isFeatureOn = (name) => name === 'local_domain' ? true : this.origIsFeatureOn(name);
+  });
+
+  after(() => {
+    fc.isFeatureOn = this.origIsFeatureOn;
+    delete Monitorable.instances[testMac];
+  });
+
+  beforeEach(() => {
+    fc.isFeatureOn = (name) => name === 'local_domain' ? true : this.origIsFeatureOn(name);
+    delete Monitorable.instances[testMac];
+    host = new Host({ mac: testMac, ipv4Addr: '192.168.1.2', localDomain: 'dev' });
+    calls = 0;
+    fail = false;
+    host.updateHostsFile = async () => {
+      calls++;
+      if (fail) throw new Error('write failed');
+    };
+  });
+
+  it('should refresh on the first run and then stay quiet', async() => {
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(1);
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(1);
+  });
+
+  it('should refresh when the ipv4 address changes', async() => {
+    await host.updateHostsFileIfChanged();
+    host.o.ipv4Addr = '192.168.1.3';
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(2);
+  });
+
+  it('should refresh on a routable ipv6 change but not on a link local one', async() => {
+    await host.updateHostsFileIfChanged();
+    host.ipv6Addr = ['2001:db8::1'];
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(2);
+
+    host.ipv6Addr = ['2001:db8::1', 'fe80::1'];
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(2);
+  });
+
+  it('should refresh when the local domain changes', async() => {
+    await host.updateHostsFileIfChanged();
+    host.o.localDomain = 'renamed';
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(2);
+
+    host.o.userLocalDomain = 'custom';
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(3);
+  });
+
+  it('should retry after a failed write', async() => {
+    fail = true;
+    await host.updateHostsFileIfChanged().catch(() => {});
+    expect(calls).to.equal(1);
+
+    // nothing changed, but the previous attempt did not go through
+    fail = false;
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(2);
+  });
+
+  it('should do nothing while local_domain is off', async() => {
+    fc.isFeatureOn = () => false;
+    await host.updateHostsFileIfChanged();
+    expect(calls).to.equal(0);
   });
 });

@@ -19,7 +19,7 @@ const features = require('./features.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const spawn = require('child_process').spawn;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const readline = require('readline');
 
@@ -82,7 +82,7 @@ class Conntrack {
           const subnets = mIntf.ip4_subnets || [];
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+              const lines = await execFile("sudo", ["conntrack", "-L", "-s", subnet, "--reply-dst", wanIP, "-f", "ipv4", "-p", protocol], {maxBuffer: 4 * 1024 * 1024})
                 .then(result => result.stdout.trim().split('\n').filter(Boolean));
               if (lines.length)
                 log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
@@ -94,7 +94,7 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+          const lines = await execFile("sudo", ["conntrack", "-L", "-d", wanIP, "-f", "ipv4", "-p", protocol], {maxBuffer: 4 * 1024 * 1024})
             .then(result => result.stdout.trim().split('\n').filter(Boolean));
           if (lines.length)
             log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
@@ -121,7 +121,7 @@ class Conntrack {
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
               // use both vpn IP and connmark to match VPN interface in case multiple VPN clients have same IPs
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+              const lines = await execFile("sudo", ["conntrack", "-L", "-s", subnet, "--reply-dst", localIP, "-f", "ipv4", "-p", protocol, "-m", `0x${rtIdHex}/0xffff`], {maxBuffer: 4 * 1024 * 1024})
                 .then(result => result.stdout.trim().split('\n').filter(Boolean));
               if (lines.length)
                 log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
@@ -133,7 +133,7 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+          const lines = await execFile("sudo", ["conntrack", "-L", "-d", localIP, "-f", "ipv4", "-p", protocol, "-m", `0x${rtIdHex}/0xffff`], {maxBuffer: 4 * 1024 * 1024})
             .then(result => result.stdout.trim().split('\n').filter(Boolean));
           if (lines.length)
             log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);

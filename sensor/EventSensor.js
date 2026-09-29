@@ -17,7 +17,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const extensionManager = require('./ExtensionManager.js')
 const sysManager = require('../net2/SysManager.js');
 
@@ -32,7 +32,11 @@ const COLLECTOR_DIR = f.getFirewallaHome()+"/scripts/event_collectors";
 const FEATURE_EVENT = "event_collect";
 const era = require('../event/EventRequestApi.js');
 const ea = require('../event/EventApi.js');
+const eventClassifier = require('../event/EventClassifier.js');
 const um = require('../net2/UpgradeManager.js');
+const CronJob = require('cron').CronJob;
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 class EventSensor extends Sensor {
 
@@ -47,6 +51,12 @@ class EventSensor extends Sensor {
             log.warn(`${FEATURE_EVENT} NOT supported on this platform`);
             return;
         }
+
+        // cache-only: FireMain does the one cloud fetch per day, FireApi just needs a classifier
+        // for the firewalla_upgrade event controllers/netbot.js adds directly
+        await eventClassifier.loadConfig(false).catch((err) => {
+            log.error(`Failed to load event classifier config`, err.message);
+        });
 
         extensionManager.onGet("events", async (msg, data) => {
             try {
@@ -99,6 +109,17 @@ class EventSensor extends Sensor {
          */
         const erh = require('../event/EventRequestHandler');
         log.info("Run EventSensor")
+        await eventClassifier.loadConfig(true).catch((err) => {
+            log.error(`Failed to load event classifier config`, err.message);
+        });
+        await this.scheduleUpdateClassifierConfigCronJob();
+        sclient.on("message", async (channel, message) => {
+            if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+                log.info("System timezone is reloaded, will reschedule update classifier config cron job ...");
+                await this.scheduleUpdateClassifierConfigCronJob();
+            }
+        });
+        sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
         if ( fc.isFeatureOn(FEATURE_EVENT) ) {
             this.startCollectEvents();
         } else {
@@ -112,6 +133,30 @@ class EventSensor extends Sensor {
                 this.stopCollectEvents();
             }
         })
+    }
+
+    async scheduleUpdateClassifierConfigCronJob() {
+        if (this.reloadClassifierJob)
+            this.reloadClassifierJob.stop();
+        if (this.reloadClassifierTimeout)
+            clearTimeout(this.reloadClassifierTimeout);
+        const tz = sysManager.getTimezone();
+        this.reloadClassifierJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
+            const delayMins = Math.random() * 30;
+            this.reloadClassifierTimeout = setTimeout(async () => {
+                await eventClassifier.loadConfig(true).catch((err) => {
+                    log.error(`Failed to load event classifier cloud config`, err.message);
+                });
+            }, delayMins * 60 * 1000);
+        }, () => { }, true, tz);
+    }
+
+    // SensorLoader pushes a new config on "config:updated", refresh the classifier right away
+    // instead of waiting for the nightly cron or a restart
+    async onConfigChange(oldConfig) {
+        await eventClassifier.loadConfig(false).catch((err) => {
+            log.error(`Failed to reload event classifier config on config change`, err.message);
+        });
     }
 
     getConfiguredInterval(name) {
@@ -247,7 +292,7 @@ class EventSensor extends Sensor {
         try{
             log.info(`Collect event with ${collector}`);
             // get collector output
-            const result = await exec(`${COLLECTOR_DIR}/${collector}`);
+            const result = await execFile(`${COLLECTOR_DIR}/${collector}`, []);
 
             // try to parse as JSON if possible
             let result_obj = null
@@ -317,7 +362,7 @@ class EventSensor extends Sensor {
         for (const gw of sysManager.myGateways() ) {
             try {
                 log.debug(`ping ${gw}`);
-                const result = await exec(`ping -n -c ${PACKET_COUNT} -W 3 ${gw}`);
+                const result = await execFile("ping", ["-n", "-c", String(PACKET_COUNT), "-W", "3", gw]);
                 for (const line of result.stdout.split("\n")) {
                     const found = line.match(/ ([0-9]+)% packet loss/);
                     if (found) {
@@ -338,7 +383,7 @@ class EventSensor extends Sensor {
         const stateType = "dns";
         for (const dns of sysManager.myDnses() ) {
             try {
-                await exec(`dig @${dns} google.com +short`);
+                await execFile("dig", [`@${dns}`, "google.com", "+short"]);
                 era.addStateEvent(stateType,dns,0);
             } catch (err) {
                 log.error(`failed to dig ${dns}: ${err}`);

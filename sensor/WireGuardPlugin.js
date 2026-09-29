@@ -29,7 +29,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 const sysManager = require('../net2/SysManager.js');
 
@@ -105,7 +105,7 @@ class WireGuardPlugin extends Sensor {
   }
 
   async generatePrivateKey() {
-    const privateKey = await exec("wg genkey").then(result => result.stdout.trim()).catch((err) => {
+    const privateKey = await execFile("wg", ["genkey"]).then(result => result.stdout.trim()).catch((err) => {
       log.error("Failed to generate private key", err.message);
       return null;
     });
