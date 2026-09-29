@@ -152,10 +152,11 @@ exports.gateway_ip6_sync = function(nic_name = null) {
 
   for (const route of routes) {
     const tokens = route.trim().split(/\s+/);
+    const isMultipathNexthop = tokens[0] === 'nexthop' && isDefaultRoute;
 
     if (tokens[0] === 'default') {
       isDefaultRoute = true;
-    } else if (tokens[0] === 'nexthop' && isDefaultRoute) {
+    } else if (isMultipathNexthop) {
       // Continue parsing a multipath default route.
     } else {
       isDefaultRoute = false;
@@ -166,7 +167,10 @@ exports.gateway_ip6_sync = function(nic_name = null) {
     if (viaIndex >= 0 && tokens[viaIndex + 1]) {
       if (interface_name) {
         const devIndex = tokens.indexOf('dev');
-        if (devIndex < 0 || tokens[devIndex + 1] !== interface_name) {
+        // `ip route show ... dev <interface>` omits `dev` from ordinary
+        // routes, but multipath nexthops still identify their own devices.
+        if ((devIndex >= 0 && tokens[devIndex + 1] !== interface_name) ||
+          (isMultipathNexthop && devIndex < 0)) {
           continue;
         }
       }
