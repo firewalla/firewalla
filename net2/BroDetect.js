@@ -1384,6 +1384,7 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
+        if (reverseLocal) tmpspec.reverse = true
         if (dstIntfInfo) tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
         if (obj.switch) {
           tmpspec.switch = true
