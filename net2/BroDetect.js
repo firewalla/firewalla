@@ -1407,12 +1407,15 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
+        if (reverseLocal) tmpspec.reverse = true
         if (dstIntfInfo) tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
         if (obj.switch) {
           tmpspec.switch = true
-          // Reverse pass: swap ob/rb so this entry represents mac2's own perspective
+          // Reverse pass: write the entry from mac2's side (sh == lh), as fd 'lo' has no direction
           // (mac2.ob = what mac2 sent = resp_bytes; mac2.rb = what mac2 received = orig_bytes).
           if (reverseLocal) {
+            tmpspec.sh = resp
+            tmpspec.dh = orig
             tmpspec.ob = Number(obj.resp_bytes)
             tmpspec.rb = Number(obj.orig_bytes)
           }
