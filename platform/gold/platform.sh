@@ -66,7 +66,7 @@ function get_dynamic_assets_list {
 }
 
 function get_node_bin_path {
-  echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
+  node_bin_or_default /home/pi/.nvm/versions/node/v12.14.0/bin/node
 }
 
 function map_target_branch {
