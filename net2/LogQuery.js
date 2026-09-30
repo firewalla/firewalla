@@ -456,7 +456,8 @@ class LogQuery {
 
   // a local flow is stored under both devices, drop the destination side's copy when both are queried
   localCopyExclude(macs) {
-    return [{dstMac: macs, fd: "out"}]
+    // fd "out" still covers ordinary copies written before the reverse marker, and audit copies
+    return [{dstMac: macs, fd: "out"}, {dstMac: macs, reverse: true}]
   }
 
   async enrichWithIntel(logs, enrichIP = false) {
