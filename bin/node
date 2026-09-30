@@ -10,4 +10,4 @@ if [[ $NODE == $NODE_VERSIONS_DIR/* ]] && (( $(awk '/MemTotal/{print $2}' /proc/
   NODE_OPTS=--optimize-for-size
 fi
 
-$NODE $NODE_OPTS "$@"
+"$NODE" $NODE_OPTS "$@"

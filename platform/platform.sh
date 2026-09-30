@@ -74,7 +74,7 @@ NODE_UPGRADE_VERSION=v24.21.0   # must match NODE_UPGRADE_VERSION in firerouter 
 function node_bin_or_default {
   local bin=$NODE_VERSIONS_DIR/$NODE_UPGRADE_VERSION/bin/node
   local latch=${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/.node_legacy
-  local l=$(head -n1 $latch 2>/dev/null)   # local masks the failure, so set -e callers don't exit
+  local l=$(head -n1 "$latch" 2>/dev/null)   # local masks the failure, so set -e callers don't exit
   if [[ -z $NODE_UPGRADE_OFF && -x $bin ]] && ! [[ -e $latch && ( -z $l || $l == $NODE_UPGRADE_VERSION ) ]]; then
     echo $bin
   else
