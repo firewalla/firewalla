@@ -40,7 +40,15 @@ const allServerKey = "ext.dnscrypt.allServers";
 const customizedServerkey = "ext.dnscrypt.customizedServers"
 const settingsKey = "ext.dnscrypt.settings";
 
+// Points at the key holding the numeric mark, rather than holding it
+// directly, so dnscrypt-proxy can re-read the mark while it runs. Mirrors
+// the indirection unbound uses via "unbound:markkey".
+const DNSCRYPT_FWMARK_KEY = "dnscrypt:markkey";
+
 const bone = require("../../lib/Bone");
+const Constants = require('../../net2/Constants.js');
+const VPNClient = require('../vpnclient/VPNClient');
+const VirtWanGroup = require('../../net2/VirtWanGroup.js');
 
 class DNSCrypt {
   constructor() {
@@ -61,12 +69,40 @@ class DNSCrypt {
     return `127.0.0.1#${this.config.localPort || 8854}`;
   }
 
+  // Points DNSCRYPT_FWMARK_KEY at the key under which the selected VPN client
+  // (or Virtual WAN Group) publishes the fwmark of its policy routing rule, so
+  // dnscrypt-proxy can mark its own outgoing sockets to match, the same way any
+  // other traffic gets steered into that client's routing table.
+  //
+  // This redis key is the whole interface: dnscrypt-proxy reads it by a name
+  // fixed in the binary and resolves the mark itself on every dial (throttled),
+  // exactly as unbound does with "unbound:markkey". Nothing about the VPN
+  // client reaches dnscrypt.toml, so selecting a client, switching between
+  // clients or turning one off never rewrites the config and never restarts
+  // the proxy; a client that has published no mark yet simply leaves the
+  // queries on the default route until it does.
+  async setOutgoingFWMarkKey(vpnClientConfig) {
+    const profileId = vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId;
+    if (typeof profileId !== 'string' || !profileId) {
+      await rclient.unlinkAsync(DNSCRYPT_FWMARK_KEY);
+      return;
+    }
+    const markKey = profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)
+      ? VirtWanGroup.getRouteMarkKey(profileId.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length))
+      : VPNClient.getRouteMarkKey(profileId);
+    log.info("Set DoH markkey to", markKey);
+    await rclient.setAsync(DNSCRYPT_FWMARK_KEY, markKey);
+  }
+
   async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
     let content = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
     content = content.replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
+
+    const settings = await this.getSettings();
+    await this.setOutgoingFWMarkKey(settings.vpnClient);
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
     const allServerNames = allServers.map((x) => x.name).filter(Boolean);
@@ -240,7 +276,7 @@ class DNSCrypt {
 
   async resetSettings() {
     await this.stop()
-    await rclient.unlinkAsync(serverKey, allServerKey, customizedServerkey, settingsKey)
+    await rclient.unlinkAsync(serverKey, allServerKey, customizedServerkey, settingsKey, DNSCRYPT_FWMARK_KEY)
     await fileRemove(runtimePath)
   }
 }

@@ -775,8 +775,7 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    const settings = await dc.getSettings();
-    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
+    json.dohConfig = Object.assign(await dc.getSettings(), {selectedServers, allServers, customizedServers});
   }
 
   async unboundConfigDataForInit(json) {
