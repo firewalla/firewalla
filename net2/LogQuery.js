@@ -454,6 +454,10 @@ class LogQuery {
     return feeds
   }
 
+  // a local flow is stored under both devices, drop the destination side's copy when both are queried
+  localCopyExclude(macs) {
+    return [{dstMac: macs, fd: "out"}]
+  }
 
   async enrichWithIntel(logs, enrichIP = false) {
     // once the flow_inline_intel migration matures, every stored record was written with
