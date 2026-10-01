@@ -145,7 +145,9 @@ class BroControl {
       // the zssids drop-ins do not match the features; starting brofish now
       // could run zeek and zssids against the same spool
       log.warn('Flow engine configuration is not applied, not starting brofish');
-      return;
+      // false: refused because of the hold, so the caller can try again once
+      // an apply in progress is over (the retry below returns this too)
+      return false;
     }
     if (this.restarting) {
       // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation

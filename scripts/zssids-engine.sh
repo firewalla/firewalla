@@ -25,6 +25,7 @@ if [[ $TEST_MODE != true ]]; then
     && [[ -z ${SYSTEMD_DIR+x} || $SYSTEMD_DIR == /etc/systemd/system ]] \
     && [[ -z ${ZSSIDS_RUN_DIR+x} || $ZSSIDS_RUN_DIR == /home/pi/.firewalla/run/assets ]] \
     && [[ -z ${ZSSIDS_ENGINE_LOCK+x} || $ZSSIDS_ENGINE_LOCK == /dev/shm/zssids-engine.lock.d ]] \
+    && [[ -z ${SURICATA_BIN+x} || $SURICATA_BIN == /usr/bin/suricata ]] \
     || { echo "FIREWALLA:ZSSIDS-ENGINE refusing noncanonical production paths" >&2; exit 1; }
 fi
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
@@ -84,6 +85,8 @@ resolve() {
   SURICATA_ENGINE=$(get_flow_engine_suricata)
   if ! zssids_available && { _fw_feature_on pcap_zeek_fleet || _fw_feature_on pcap_suricata_fleet; }; then
     log "zssids binary $ZSSIDS_BIN not present, keeping zeek/suricata until the asset arrives"
+  elif _fw_feature_on pcap_suricata_fleet && ! suricata_role_supported; then
+    log "this platform has no IDS role (no $SURICATA_BIN, no suricata asset), so zssids does not take it"
   fi
 }
 
