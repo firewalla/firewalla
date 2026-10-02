@@ -13,7 +13,8 @@ fi
 # "nvm use" fails with "command not found". platform.sh pins the node build for this platform and
 # npm sits in the same directory, so put that on PATH instead of switching versions with nvm.
 source "$FIREWALLA_HOME/platform/platform.sh" || exit 1
-NODE_BIN_DIR=$(dirname "$(get_node_bin_path)")
+# NODE_UPGRADE_OFF: the upgraded Node under ~/.node_versions ships without npm, use the platform default
+NODE_BIN_DIR=$(dirname "$(NODE_UPGRADE_OFF=1 get_node_bin_path)")
 if [[ ! -x "$NODE_BIN_DIR/npm" ]]; then
   echo "npm not found in $NODE_BIN_DIR" >&2
   exit 1
