@@ -1604,7 +1604,7 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === this["p.wan.total"])) {
+      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === Number(this["p.wan.total"]))) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {
