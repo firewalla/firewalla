@@ -302,6 +302,16 @@ class Conntrack {
     return `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
   }
 
+  // src of a client's dns entries: its MAC, or its identity GUID when it has none (VPN),
+  // the same id flows and audit records carry
+  getDNSClientKey(mac, ip) {
+    if (mac)
+      return mac.toUpperCase();
+    const IdentityManager = require('./IdentityManager.js');
+    const identity = IdentityManager.getIdentityByIP(ip);
+    return identity ? IdentityManager.getGUID(identity) : ip;
+  }
+
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
   // refresh into connExpirePending so _drainConnTTL still issues it within one period.
   tryRefreshConnTTL(key, expr) {
