@@ -1474,7 +1474,9 @@ class BroDetect {
       const ipPairKey = `${orig}:${resp}`
       if (!this.flowstash.conn.ignore[ipPairKey] || !this.flowstash.conn.ignore[ipPairKey].has(uid)) {
         afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
-        if (!afobj || !afobj.host) {
+        // only use information in app map for outbound flow, af describes remote site
+        const afApplicable = flowdir === "in" || localFlow
+        if ((!afobj || !afobj.host) && afApplicable) {
           // use recent DNS lookup records from this IP as a fallback to parse application level info
           const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
           afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
@@ -1483,8 +1485,7 @@ class BroDetect {
             await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600);
         }
 
-        // only use information in app map for outbound flow, af describes remote site
-        if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+        if (afobj && afobj.host && afApplicable) {
           if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto"]);
           afhost = afobj.host
