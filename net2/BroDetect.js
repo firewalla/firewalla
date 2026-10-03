@@ -627,10 +627,11 @@ class BroDetect {
         // always sets conntrack so we keep the latest domain ip mapping
         const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && net.isIP(answer));
         const query = formulateHostname(obj['query']);
+        // l2 addr is added to dns.log in dns-mac-logging.zeek
+        const clientKey = conntrack.getDNSClientKey(obj["orig_l2_addr"], obj["id.orig_h"]);
         for (const answer of answers) {
-          // l2 addr is added to dns.log in dns-mac-logging.zeek
           await conntrack.setConnEntries(
-            obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns",
+            clientKey, "", answer, "", "dns",
             {proto: "dns", ip: answer, host: query.toLowerCase()}, 600
           );
         }

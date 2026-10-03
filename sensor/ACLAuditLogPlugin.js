@@ -332,7 +332,7 @@ class ACLAuditLogPlugin extends Sensor {
           await delay(t * 1000);
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
           if (!host) {
-            host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
+            host = await conntrack.getConnEntry(conntrack.getDNSClientKey(srcMac, src), "", dst, "", "dns", "host", 600);
             if (host) {
               await conntrack.setConnEntries(src, sport, dst, dport, record.pr, {proto: "dns", ip: dst, host}, 600);
               await dnsTool.addReverseDns(host, [dst]);
