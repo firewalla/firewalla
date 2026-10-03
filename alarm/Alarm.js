@@ -937,8 +937,8 @@ class BroNoticeAlarm extends Alarm {
     const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
     const username = this.getUserName();
     result.push(username);
-    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
-      result.push(this["p.file.type"]);
+    if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"] || "");
     return result;
   }
 }
