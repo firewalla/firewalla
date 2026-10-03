@@ -10,6 +10,8 @@ var dnsTxt = require('dns-txt')
 
 var TLD = '.local'
 var WILDCARD = '_services._dns-sd._udp' + TLD
+// keeps a query well under one ethernet frame, some devices drop fragmented multicast
+var MAX_QUESTIONS_PER_QUERY = 20
 
 module.exports = Browser
 
@@ -68,13 +70,14 @@ Browser.prototype.start = function () {
   // List of names for the browser to listen for. In a normal search this will
   // be the primary name stored on the browser. In case of a wildcard search
   // the names will be determined at runtime as responses come in.
-  var nameMap = {}
+  var nameMap = this._nameMap = {}
   if (!this._wildcard) nameMap[this._name] = true
 
   this._onresponse = function (packet, rinfo) {
     if (self._wildcard) {
       packet.answers.forEach(function (answer) {
-        if (answer.type !== 'PTR' || answer.name !== self._name || answer.name in nameMap) return
+        // a type is queried once here, some devices repeat the type list in every response
+        if (answer.type !== 'PTR' || answer.name !== self._name || answer.data in nameMap) return
         nameMap[answer.data] = true
         self._mdns.query(answer.data, 'PTR')
       })
@@ -109,7 +112,12 @@ Browser.prototype.stop = function () {
 }
 
 Browser.prototype.update = function () {
-  this._mdns.query(this._name, 'PTR')
+  // a wildcard answer only lists types, so known types are re-queried for their instances
+  var names = [this._name]
+  if (this._wildcard && this._nameMap) names = names.concat(Object.keys(this._nameMap))
+  for (var i = 0; i < names.length; i += MAX_QUESTIONS_PER_QUERY) {
+    this._mdns.query(names.slice(i, i + MAX_QUESTIONS_PER_QUERY).map(function (name) { return { name: name, type: 'PTR' } }))
+  }
 }
 
 function equalTxt(a, b) {
