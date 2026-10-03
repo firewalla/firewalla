@@ -455,7 +455,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
       case "L": {
         // local connection
-        record.fd = ctdir === 'O' ? 'in' : 'out';
+        record.fd = 'in';
         intf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
