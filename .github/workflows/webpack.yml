@@ -49,6 +49,11 @@ jobs:
           restore-keys: |
             npm-${{ runner.os }}-node16-
 
+      - name: Check DNS TTL source and test syntax
+        run: |
+          node --check net2/DNSTool.js
+          node --check test/test_dns_tool.js
+
       - run: npm install -g eslint@8.57.1
       - run: eslint --quiet ./ # todo, only eslint for diff files
       # yarn ships with the ubuntu runner image; installing it again cost between
@@ -61,6 +66,8 @@ jobs:
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_api.js
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_mon.js
       - run: bash .webpack/prep-env.sh
+      - name: Test bounded DNS TTL refresh queue
+        run: npm test -- test/test_dns_tool.js
       - run: npm run coverage | tee coverage/summary.txt
       - name: Archive code coverage results
         uses: actions/upload-artifact@v4
