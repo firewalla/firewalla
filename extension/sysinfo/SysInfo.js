@@ -802,24 +802,28 @@ async function getWlanInfo() {
       log.debug('[getWlanInfo] skipping', intf, 'no output')
       continue
     }
-    const segments = res.stdout.split('=')
     // unconnected interface might be
     // Link Quality:0  Signal level:0  Noise level:0
-    if (segments.length == 1) {
-      log.debug('[getWlanInfo] not connected', intf, segments)
+    if (!res.stdout.includes('=')) {
+      log.debug('[getWlanInfo] not connected', intf, res.stdout)
       localWlanInfo[intf] = {};
       continue
     }
-    // Link Quality=80/100  Signal level=53/100  Noise level=0/100
-    for (const i in segments) {
-      segments[i] = segments[i].split('/')
+    // Realtek out-of-tree drivers: Link Quality=80/100  Signal level=53/100  Noise level=0/100
+    // cfg80211/mac80211 drivers:   Link Quality=62/70  Signal level=-48 dBm  (noise may be absent)
+    // parse by field name, the number of fields varies between drivers
+    const fields = {
+      quality: /Link Quality=\s*(-?\d+)/,
+      signal: /Signal level=\s*(-?\d+)/,
+      noise: /Noise level=\s*(-?\d+)/,
     }
-    log.debug('[getWlanInfo]', segments)
+    log.debug('[getWlanInfo]', res.stdout)
     if (!localWlanInfo[intf]) localWlanInfo[intf] = {}
     const wlan = localWlanInfo[intf]
-    wlan.quality = segments[1][0]
-    wlan.signal = segments[2][0]
-    wlan.noise = segments[3][0]
+    for (const key in fields) {
+      const m = res.stdout.match(fields[key])
+      if (m) wlan[key] = m[1]
+    }
   } catch(err) {
     log.error('Failed to parse wlan info for', intf, err)
   }
