@@ -1047,7 +1047,7 @@ check_hosts() {
         elif [ $FLOWINCOUNT -gt 5000 ] || [ $FLOWOUTCOUNT -gt 100 ]; then
             FC="\e[33m" #yellow
         fi
-        if [[ ${NAME,,} == "circle"* || ${MAC_VENDOR,,} == "circle"* ]]; then
+        if [[ ${MAC_VENDOR,,} == "circle"* ]]; then
             BGC="\e[41m"
         fi
 
