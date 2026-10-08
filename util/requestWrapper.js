@@ -15,7 +15,8 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 const https = require('https');
-const requestretry = require('requestretry');
+// vendored 4.1.2: 4.0.2 deep clones options incl. the pooled agent and its queued requests on every response
+const requestretry = require('../vendor_lib/requestretry');
 const zlib = require('zlib');
 const util = require('util');
 const LRU = require('lru-cache');
