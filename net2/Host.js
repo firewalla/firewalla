@@ -867,7 +867,7 @@ class Host extends Monitorable {
       // update hosts file in dnsmasq
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
+      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
         // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
         if (this._lastHostfileEntries !== null) {
           await fs.unlinkAsync(hostsFile).catch((err) => { });
