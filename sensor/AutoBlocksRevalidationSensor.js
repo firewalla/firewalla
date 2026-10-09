@@ -53,7 +53,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
         this.disable();
       }
 
-      fc.onFeature("featureName", (feature, status) => {
+      fc.onFeature(featureName, (feature, status) => {
         if(feature !== featureName) {
           return;
         }
@@ -69,6 +69,10 @@ class AutoBlocksRevalidationSensor extends Sensor {
   }
 
   async enable() {
+    if(this.timer) {
+      clearInterval(this.timer);
+    }
+
     this.timer = setInterval(() => {
       this.iterateAllAutoBlocks();
     }, this.config.jobInterval || 15 * 60 * 1000);
