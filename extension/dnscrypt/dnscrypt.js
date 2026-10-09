@@ -45,23 +45,33 @@ const settingsKey = "ext.dnscrypt.settings";
 // the indirection unbound uses via "unbound:markkey".
 const DNSCRYPT_FWMARK_KEY = "dnscrypt:markkey";
 
-// A stamp is "sdns://" plus base64url, and nothing else ever reaches
-// dnscrypt-proxy intact. Checking it here keeps one bad paste from taking the
-// whole config down with it: an unparseable stamp is FATAL for the entire file,
-// not just for that server.
-const DNSCRYPT_STAMP_PREFIX = "sdns://";
-const DNSCRYPT_STAMP_FORMAT = /^[A-Za-z0-9_-]+=*$/;
+// A stamp is an "sdns:" or "sdns://" prefix plus a base64url payload.
+// defaultServers.json ships both spellings - cloudflare and google use the bare
+// colon, quad9 the slashes - and dnscrypt-proxy takes either, so neither may be
+// turned away. It does reject base64 padding, which is dropped rather than
+// treated as a bad stamp: the payload itself is fine.
+const DNSCRYPT_STAMP_PREFIX = /^sdns:(\/\/)?/;
+const DNSCRYPT_STAMP_PAYLOAD = /^[A-Za-z0-9_-]+$/;
 
-function isValidStamp(stamp) {
-  if (!stamp.startsWith(DNSCRYPT_STAMP_PREFIX)) return false;
-  const encoded = stamp.substring(DNSCRYPT_STAMP_PREFIX.length).replace(/=+$/, "");
-  if (!DNSCRYPT_STAMP_FORMAT.test(encoded)) return false;
+// Returns the stamp in the spelling dnscrypt-proxy will take, or null when it
+// is not a stamp at all. This is only a cheap pre-filter; checkConfig() has the
+// final say, because whether a payload really decodes into a stamp is something
+// only dnscrypt-proxy knows.
+function normalizeStamp(stamp) {
+  const prefix = (DNSCRYPT_STAMP_PREFIX.exec(stamp) || [])[0];
+  if (!prefix) return null;
+  const payload = stamp.substring(prefix.length).replace(/=+$/, "");
+  if (!DNSCRYPT_STAMP_PAYLOAD.test(payload)) return null;
   // Buffer's base64 decoder skips what it cannot read, so round-trip it: only
-  // a string that re-encodes to itself decoded cleanly.
-  const roundTrip = Buffer.from(encoded, "base64").toString("base64")
+  // a payload that re-encodes to itself decoded cleanly.
+  const roundTrip = Buffer.from(payload, "base64").toString("base64")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return roundTrip === encoded;
+  if (roundTrip !== payload) return null;
+  return prefix + payload;
 }
+
+// dnscrypt.sh picks the binary by `uname -m`; this is the same choice.
+const DNSCRYPT_ARCH_BINARY = { x64: "x86_64", arm64: "aarch64", arm: "armv7l" };
 
 // Quotes a user-supplied value as a TOML basic string. Names and stamps used to
 // go into dnscrypt.toml as literal strings ('...'), which have no escape at all,
@@ -133,29 +143,15 @@ class DNSCrypt {
 
   async prepareConfig(config = {}, reCheckConfig = false) {
     this.config = config;
-    let content = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
-    content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
-    content = content.replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854);
-    content = content.replace("%DNSCRYPT_IPV6%", "false");
+    const template = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
 
     const settings = await this.getSettings();
     await this.setOutgoingFWMarkKey(settings.vpnClient);
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
-    // Only the servers that really make it into the toml may be named in
-    // server_names, otherwise dnscrypt-proxy is pointed at a [static] table
-    // that does not exist.
     const usableServers = this.filterUsableServers(allServers);
-    const allServerNames = usableServers.map((x) => x.name);
-
-    // all servers stamps will be added in the toml file
-    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(usableServers));
-    let serverList = await this.getServers();
-    serverList = serverList.filter((n) => allServerNames.includes(n));
-    if (serverList.length === 0) {
-      log.warn("None of selected servers found in available list, falling back to all servers");
-    }
-    content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
+    const selected = await this.getServers();
+    let content = this.renderConfig(template, config, usableServers, selected);
 
     if (reCheckConfig) {
       const fileExists = await existsAsync(runtimePath);
@@ -165,8 +161,70 @@ class DNSCrypt {
           return false;
       }
     }
+
+    // filterUsableServers() can only reject what is obviously not a stamp;
+    // whether a payload decodes into one is dnscrypt-proxy's business, and it
+    // answers by refusing the entire file. Ask it before the config goes live,
+    // and if it objects, find the entries it objects to and keep the rest
+    // running rather than losing every server to one bad paste.
+    if (!await this.checkConfig(content)) {
+      const accepted = [];
+      for (const s of usableServers) {
+        if (await this.checkConfig(this.renderConfig(template, config, [s], [s.name])))
+          accepted.push(s);
+        else
+          log.error("dnscrypt-proxy rejected DoH server, dropped:", s.name);
+      }
+      content = this.renderConfig(template, config, accepted, selected);
+      if (!await this.checkConfig(content))
+        log.error("dnscrypt config still rejected with every objectionable server dropped; writing it anyway");
+    }
+
     await fs.writeFileAsync(runtimePath, content);
     return true;
+  }
+
+  renderConfig(template, config, servers, selected) {
+    // Only the servers that really make it into the toml may be named in
+    // server_names, otherwise dnscrypt-proxy is pointed at a [static] table
+    // that does not exist.
+    const available = servers.map((x) => x.name);
+    const serverList = selected.filter((n) => available.includes(n));
+    if (serverList.length === 0) {
+      log.warn("None of selected servers found in available list, falling back to all servers");
+    }
+    return template
+      .replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1")
+      .replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854)
+      .replace("%DNSCRYPT_IPV6%", "false")
+      // all servers stamps will be added in the toml file
+      .replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(servers))
+      .replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
+  }
+
+  getBinaryPath() {
+    const arch = DNSCRYPT_ARCH_BINARY[process.arch] || process.arch;
+    return `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.${arch}`;
+  }
+
+  // Asks dnscrypt-proxy whether it would accept this config, without touching
+  // the one it is running on. -check parses only; it binds no port.
+  async checkConfig(content) {
+    const candidatePath = `${runtimePath}.check`;
+    try {
+      await fs.writeFileAsync(candidatePath, content);
+      await execFile(this.getBinaryPath(), ["-config", candidatePath, "-check"]);
+      return true;
+    } catch (err) {
+      // The reason is a [FATAL] line on stdout; stderr only carries notices,
+      // so logging stderr alone leaves support with nothing to go on.
+      const output = `${err.stdout || ""}${err.stderr || ""}`.trim().split("\n");
+      log.warn("dnscrypt config rejected:",
+        output.filter((l) => l.includes("[FATAL]")).pop() || output.pop() || err.message);
+      return false;
+    } finally {
+      await fileRemove(candidatePath).catch(() => {});
+    }
   }
 
   // Drops every server dnscrypt-proxy could choke on, so that one bad entry
@@ -178,26 +236,29 @@ class DNSCrypt {
   // built-in one loses rather than shadowing it.
   filterUsableServers(servers) {
     const seen = new Set();
-    return servers.filter((s) => {
+    const usable = [];
+    for (const s of servers) {
       if (!s || typeof s.name !== 'string' || typeof s.stamp !== 'string' || !s.name || !s.stamp) {
         log.warn("Ignored DoH server without a usable name and stamp:", s);
-        return false;
+        continue;
       }
       if (!isTomlSafe(s.name)) {
         log.warn("Ignored DoH server whose name cannot be written as TOML:", JSON.stringify(s.name));
-        return false;
+        continue;
       }
-      if (!isValidStamp(s.stamp)) {
+      const stamp = normalizeStamp(s.stamp);
+      if (!stamp) {
         log.warn("Ignored DoH server with a malformed stamp:", s.name);
-        return false;
+        continue;
       }
       if (seen.has(s.name)) {
         log.warn("Ignored DoH server with a duplicate name:", s.name);
-        return false;
+        continue;
       }
       seen.add(s.name);
-      return true;
-    });
+      usable.push({ name: s.name, stamp });
+    }
+    return usable;
   }
 
   // Expects servers already passed through filterUsableServers.
