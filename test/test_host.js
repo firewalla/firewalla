@@ -285,18 +285,18 @@ describe('test _get24HoursTopDomains', function(){
     expect(stats.topDomains.last24Hours).to.be.an('array');
     expect(stats.topDomains.last24HoursMidnight).to.be.an('array');
     
-    // Verify topDomains arrays contain objects with domain and count
+    // Verify topDomains arrays contain hashed domains and count
     for (const item of stats.topDomains.last24Hours) {
-      expect(item).to.have.property('domain');
+      expect(item._domain).to.be.a('string');
+      expect(item._domainFull).to.be.a('string');
       expect(item).to.have.property('count');
-      expect(item.domain).to.be.a('string');
       expect(item.count).to.be.a('number').that.is.at.least(0);
     }
     
     for (const item of stats.topDomains.last24HoursMidnight) {
-      expect(item).to.have.property('domain');
+      expect(item._domain).to.be.a('string');
+      expect(item._domainFull).to.be.a('string');
       expect(item).to.have.property('count');
-      expect(item.domain).to.be.a('string');
       expect(item.count).to.be.a('number').that.is.at.least(0);
     }
     
