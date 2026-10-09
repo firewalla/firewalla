@@ -197,7 +197,7 @@ class Conntrack {
           if (kv[1] === "127.0.0.1" || kv[1] === "::1")
               return;
           if (kv[1].includes(":")) {
-            if (kv[1].startsWith("ff:")) // ff00::/8 is IPv6 multicast address range
+            if (kv[1].toLowerCase().startsWith("ff")) // ff00::/8 is IPv6 multicast address range
               return;
             kv[1] = new Address6(kv[1]).correctForm()
           } else {
