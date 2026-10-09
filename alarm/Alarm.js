@@ -937,8 +937,8 @@ class BroNoticeAlarm extends Alarm {
     const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
     const username = this.getUserName();
     result.push(username);
-    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
-      result.push(this["p.file.type"]);
+    if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"] || "");
     return result;
   }
 }
@@ -1155,7 +1155,7 @@ class OverDataPlanUsageAlarm extends Alarm {
     if (alarm.type !== alarm2.type) {
       return false;
     }
-    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level'] || alarm['p.wan.uuid'] != alarm2['p.wan.uuid']) {
+    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level'] || alarm['p.wan.uuid'] != alarm2['p.wan.uuid'] || alarm['p.planUsage'] != alarm2['p.planUsage']) {
       return false;
     }
     return true;
@@ -1604,7 +1604,7 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === this["p.wan.total"])) {
+      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === Number(this["p.wan.total"]))) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {

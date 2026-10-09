@@ -78,6 +78,10 @@ const blockControl = require('../control/BlockControl.js');
 
 const envCreatedMap = {};
 
+// retry delay after a failed device identify, doubled per consecutive failure
+const IDENTIFY_RETRY_BASE = 5 * 60;
+const IDENTIFY_RETRY_MAX = 24 * 3600;
+
 class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
     if (!Monitorable.instances[obj.mac]) {
@@ -867,7 +871,7 @@ class Host extends Monitorable {
       // update hosts file in dnsmasq
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
+      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
         // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
         if (this._lastHostfileEntries !== null) {
           await fs.unlinkAsync(hostsFile).catch((err) => { });
@@ -1080,6 +1084,35 @@ class Host extends Monitorable {
       log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
+    // every host update lands here, so without this a slow or failing cloud gets a new request,
+    // and FireMain holds another pending payload, per update until one finally succeeds
+    if (!force) {
+      if (this._identifyInFlight || this._identifyRetryTs > Date.now() / 1000) {
+        log.silly("HOST:IDENTIFY in flight or backing off", this.o.mac, this._identifyRetryTs);
+        return;
+      }
+      this._identifyInFlight = true;
+    }
+    try {
+      const data = await this._requestIdentify(classifyDetails);
+      if (!force) {
+        if (data) {
+          this._identifyFailures = 0;
+        } else {
+          this._identifyFailures = (this._identifyFailures || 0) + 1;
+          const delay = Math.min(IDENTIFY_RETRY_BASE * 2 ** (this._identifyFailures - 1), IDENTIFY_RETRY_MAX);
+          // jitter spreads hosts, and boxes, apart once the cloud recovers
+          this._identifyRetryTs = Date.now() / 1000 + delay * (0.5 + Math.random() / 2);
+        }
+      }
+      return data;
+    } finally {
+      if (!force)
+        this._identifyInFlight = false;
+    }
+  }
+
+  async _requestIdentify(classifyDetails) {
     log.verbose("HOST:IDENTIFY",this.o.mac);
     // need to have if condition, not sending too much info if the device is ...
     // this may be used initially _identifyExpiration

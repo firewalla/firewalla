@@ -775,8 +775,7 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    const settings = await dc.getSettings();
-    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
+    json.dohConfig = Object.assign(await dc.getSettings(), {selectedServers, allServers, customizedServers});
   }
 
   async unboundConfigDataForInit(json) {
@@ -1213,11 +1212,6 @@ module.exports = class HostManager extends Monitorable {
     json.boxMetrics = result;
   }
 
-  async getSysInfo(json) {
-    const result = await sysManager.getSysInfoAsync();
-    json.sysInfo = result;
-  }
-
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -1244,7 +1238,6 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json),
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),

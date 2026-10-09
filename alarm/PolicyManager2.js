@@ -397,6 +397,7 @@ class PolicyManager2 {
     this.ipsetCache = null;
     this.sortedActiveRulesCache = null;
     this.sortedRoutesCache = null;
+    this.activeBypassRulesCache = null;
   }
 
   tryPolicyEnforcement(policy, action, oldPolicy) {
@@ -3351,6 +3352,101 @@ class PolicyManager2 {
     return true;
   }
 
+  // Whether an active bypass rule cancels `rule` for this device. Two shapes of bypass rule exist:
+  // an exclusion ("apply to all devices except ..."), which has no appTimeUsage and always applies,
+  // and an app-time-usage bypass, which only applies while quota is left. A bypass rule only covers
+  // the devices in its own scope; one without a scope covers every device.
+  async _isBypassedFor(rule, localMac, bypassRules) {
+    if (_.isEmpty(bypassRules) || !rule)
+      return false;
+    for (const bypassRule of bypassRules) {
+      if (_.isEmpty(bypassRule.affectedPids) || !bypassRule.affectedPids.includes(String(rule.pid)))
+        continue;
+      // a scheduled bypass rule only holds inside its time window, same check the affected rules
+      // themselves go through above
+      if (bypassRule.cronTime && !scheduler.shouldPolicyBeRunning(bypassRule))
+        continue;
+      const au = bypassRule.appTimeUsage;
+      if (_.isObject(au)) {
+        const effectiveQuota = (Number(au.quota) || 0)
+          + ((au.extraQuota != null && au.extraQuotaUntilTs != null && (Date.now() / 1000) < au.extraQuotaUntilTs) ? (Number(au.extraQuota) || 0) : 0);
+        if (effectiveQuota <= (Number(bypassRule.appTimeUsed) || 0))
+          continue; // quota is used up, the affected rule is back in effect
+      }
+      if (await this._matchBypassScope(bypassRule, localMac))
+        return true;
+    }
+    return false;
+  }
+
+  // bypassIptablesRules() installs an independent exception per excluded object, so a device is
+  // covered as soon as it matches *any* of them. _matchLocal() instead ands its fields together, so
+  // it is called once per object here. A bypass rule that names no object at all covers every device.
+  async _matchBypassScope(bypassRule, localMac) {
+    const { intfs, tags } = this.parseTags(bypassRule.tag);
+    const objects = [];
+    if (!_.isEmpty(bypassRule.scope))
+      objects.push({ scope: bypassRule.scope });
+    if (!_.isEmpty(bypassRule.guids))
+      objects.push({ guids: bypassRule.guids });
+    if (!_.isEmpty(intfs))
+      objects.push({ intfs });
+    if (_.isEmpty(objects) && _.isEmpty(tags))
+      return true;
+    for (const object of objects) {
+      if (await this._matchLocal(object, localMac))
+        return true;
+    }
+    return !_.isEmpty(tags) && await this._matchBypassTags(tags, localMac);
+  }
+
+  // A tag a bypass rule names can be reached in more ways than a direct device assignment, and
+  // bypassIptablesRules() exempts two sets per tag, which do not propagate the same way:
+  //   - the tag's device set: Tag.tags() adds a child tag's device mac/ip sets into its parent's
+  //     device set, so a device in a group that is assigned to a user is inside that user tag's set
+  //     as well. Device assignments are therefore followed transitively.
+  //   - the tag's network set: Tag.tags() does *not* add a child tag's network set into the parent,
+  //     so a network only ever reaches the tags it is assigned to directly. Following the network's
+  //     parents here would claim a bypass the firewall never installed.
+  // Monitorable.getTags() reports direct assignments only, hence the two different collectors.
+  // _matchLocal() ignores both chains for ordinary rules, that is pre-existing and left alone.
+  async _matchBypassTags(tags, localMac) {
+    const device = await this.getDeviceByIdentity(localMac);
+    if (!device)
+      return false;
+    const uids = new Set();
+    await this._collectTransitiveTagUids(device, uids);
+    const nicUUID = typeof device.getNicUUID === "function" && device.getNicUUID();
+    if (nicUUID)
+      await this._collectDirectTagUids(NetworkProfileManager.getNetworkProfile(nicUUID), uids);
+    return tags.some(tag => uids.has(String(tag)));
+  }
+
+  async _collectTransitiveTagUids(monitorable, uids) {
+    if (!monitorable || typeof monitorable.getTransitiveTags !== "function")
+      return;
+    const transitiveTags = await monitorable.getTransitiveTags().catch((err) => {
+      log.error(`Failed to get transitive tags: ${err}`);
+      return {};
+    });
+    for (const type of Object.keys(transitiveTags))
+      for (const uid of Object.keys(transitiveTags[type]))
+        uids.add(String(uid));
+  }
+
+  async _collectDirectTagUids(monitorable, uids) {
+    if (!monitorable || typeof monitorable.getTags !== "function")
+      return;
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const tags = await monitorable.getTags(type).catch((err) => {
+        log.error(`Failed to get ${type} tags: ${err}`);
+        return [];
+      });
+      for (const uid of tags || [])
+        uids.add(String(uid));
+    }
+  }
+
   async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort) {
     const security = rule.isSecurityBlockPolicy();
 
@@ -3643,7 +3739,7 @@ class PolicyManager2 {
     return sortedRules;
   }
 
-  async getBestMatchRule(rules, localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
+  async getBestMatchRule(rules, localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound", bypassRules = []) {
     let remoteIpsToCheck = [];
     switch (remoteType) {
       case "ip":
@@ -3728,6 +3824,10 @@ class PolicyManager2 {
       if (!await this._matchLocal(rule, localMac)) {
         continue;
       }
+      // a bypass rule takes the rule out of effect for the devices that bypass rule covers
+      if (await this._isBypassedFor(rule, localMac, bypassRules)) {
+        continue;
+      }
 
       if (rule.action === "match_group" || rule.type === "match_group") {
         // check rules in the rule group against remote target
@@ -3736,6 +3836,8 @@ class PolicyManager2 {
           continue;
         const subRules = rules.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
         for (const subRule of subRules) {
+          if (await this._isBypassedFor(subRule, localMac, bypassRules))
+            continue;
           if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort)) {
             return subRule;
           }
@@ -4047,25 +4149,16 @@ class PolicyManager2 {
 
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      let activeBypassRules = await this.loadActiveBypassPoliciesAsync({includingDisabled:false}) || [];
-      const isBypassed = (rule) => activeBypassRules.some(bypassRule => {
-        if (bypassRule.affectedPids) {
-          // need to check if still have quota left.
-          const au = bypassRule.appTimeUsage;
-          const effectiveQuota = (Number(au.quota) || 0) + ((au.extraQuota != null && au.extraQuotaUntilTs != null && (Date.now() / 1000) < au.extraQuotaUntilTs) ? (Number(au.extraQuota) || 0) : 0);
-          const appTimeUsed = (Number(bypassRule.appTimeUsed) || 0);
-          if (effectiveQuota > appTimeUsed) {
-            return bypassRule.affectedPids.includes(rule.pid);
-          }
-        }
-        return false;
-      });
       activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
-      activeRules = activeRules.filter(rule => !isBypassed(rule));
       this.sortedActiveRulesCache = this.filterAndSortRule(activeRules);
     }
+    // bypass rules are applied per device in getBestMatchRule(), a bypass rule only cancels the
+    // affected rule for the devices it covers
+    if (!this.activeBypassRulesCache) {
+      this.activeBypassRulesCache = await this.loadActiveBypassPoliciesAsync({includingDisabled: false}) || [];
+    }
 
-    return await this.getBestMatchRule(this.sortedActiveRulesCache, localMac, localPort, remoteType, remoteVal, remotePort, protocol, direction);
+    return await this.getBestMatchRule(this.sortedActiveRulesCache, localMac, localPort, remoteType, remoteVal, remotePort, protocol, direction, this.activeBypassRulesCache);
   }
 
   async batchPolicy(actions) {

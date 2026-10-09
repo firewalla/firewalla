@@ -145,11 +145,12 @@ module.exports = class {
       await this.reset();
       return;
     }
-    // fallback to check with cloud when msp is inactivated
+    // fallback to check with cloud when msp is inactivated, or when the box token expired while the
+    // box was offline after being removed (checkLicense then only ever returns 401)
     const cloudResult = await this.checkBoxWithCloud();
     log.info("Check box msp relationship with cloud result", cloudResult);
     if (!cloudResult) return;
-    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
+    if (mspResult.check_license_failed === true && (cloudResult.status === 'inactive' || cloudResult.is_member === false)) {
       await this.reset();
     }
   }

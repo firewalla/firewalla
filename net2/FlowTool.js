@@ -101,7 +101,7 @@ class FlowTool extends LogQuery {
       if (macs[0] == 'system')
         feedsArray.push(this.expendFeeds({macs, local: true}))
       else
-        feedsArray.push(this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
+        feedsArray.push(this.expendFeeds({macs, local: true, exclude: this.localCopyExclude(macs)}))
     }
 
     return [].concat(... feedsArray)
@@ -260,6 +260,8 @@ class FlowTool extends LogQuery {
     if (options.local) {
       f.dstMac = flow.dmac
       f.local = true
+      if (flow.reverse)
+        f.reverse = true
       if (flow.drl)
         f.drl = flow.drl;
       if (flow.dstTags)

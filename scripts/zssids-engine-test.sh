@@ -32,6 +32,10 @@ export ZSSIDS_ENGINE_TEST_MODE=true
 export FW_EFFECTIVE_FEATURES=$T/features.json
 # a stand-in for the asset: it answers --capabilities like a current zssids
 printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "zssids test";; esac\n' > "$ZSSIDS_BIN"; chmod 755 "$ZSSIDS_BIN"
+# the IDS role exists only where suricata can run (platform.sh
+# suricata_role_supported); the sandbox stands in a binary for one that can
+export SURICATA_BIN=$T/suricata
+printf '#!/bin/sh\nexit 0\n' > "$SURICATA_BIN"; chmod 755 "$SURICATA_BIN"
 mkdir -p "$SYSTEMD_DIR" "$ZSSIDS_RUN_DIR" "$T/bin"
 # the sandbox decides the features through FW_EFFECTIVE_FEATURES, so redis must
 # not answer: a stub on PATH keeps the box's own values out of the way
@@ -483,6 +487,142 @@ p2=$!
 wait $p1; r1=$?; wait $p2; r2=$?
 check "both concurrent applies ended cleanly" '[[ $r1 -eq 0 && $r2 -eq 0 ]]'
 check "the drop-ins are consistent afterwards" 'grep -q "^ExecStart=$RUNNER " "$B" && [[ -f $S ]]'
+
+echo "== a platform without the IDS role keeps suricata stock"
+setf 1 1
+mkdir -p "$(dirname "$S")"; echo "stale" > "$S"
+# no suricata binary, and a kernel no platform takes the suricata asset on
+# (gold does on 6.5.0-25-generic): only uname -r is answered, the rest passes
+mkdir -p "$T/noids"
+printf '#!/bin/sh\n[ "$1" = -r ] && { echo 0.0.0-zssids-test; exit 0; }\nexec %s "$@"\n' "$(command -v uname)" > "$T/noids/uname"
+chmod 755 "$T/noids/uname"
+NOIDS=(env "PATH=$T/noids:$T/bin:$PATH" SURICATA_BIN=$T/no-suricata)
+"${NOIDS[@]}" "$ENGINE" apply >/dev/null 2>&1; rc=$?
+check "apply succeeds" '[[ $rc -eq 0 ]]'
+check "the ids drop-in is removed, so zssids-ids-run cannot restart in a loop" '[[ ! -e $S ]]'
+check "the flow role still goes to zssids, on its own" 'grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
+check "status says why" '"${NOIDS[@]}" "$ENGINE" status 2>&1 | grep -q "no IDS role"'
+check "the gold override mirrors GoldPlatform.isSuricataFromAssetsSupported" 'grep -q "6.5.0-25-generic" "$FIREWALLA_HOME/platform/gold/platform.sh" && grep -q "6.5.0-25-generic" "$FIREWALLA_HOME/platform/gold/GoldPlatform.js"'
+"${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+
+echo "== a restart during an apply is retried once it is over, not dropped"
+check "both pcap plugins defer while an apply runs" 'grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapZeekPlugin.js" && grep -q "if (this.deferWhileApplying())" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+check "the wait runs in the background, never inside restart()" '! grep -q "await FlowEngine.waitForApply" "$FIREWALLA_HOME/sensor/PcapPlugin.js" "$FIREWALLA_HOME/net2/BroControl.js" "$FIREWALLA_HOME/net2/SuricataControl.js" && grep -q "retryRestart(() => FlowEngine.waitForApply()" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "the retry is skipped for a role switched off meanwhile" 'grep -q "this.enabled !== false && Config.isFeatureOn(this.getFeatureName())" "$FIREWALLA_HOME/sensor/PcapPlugin.js" && grep -q "if (!this.roleOn())" "$FIREWALLA_HOME/sensor/PcapPlugin.js"'
+check "a queued restart for a role switched off does nothing" 'all=1; for p in PcapZeekPlugin PcapSuricataPlugin; do awk "/async restart\\(\\) \\{/{r=1; next} r&&/if \\(!this.roleOn\\(\\)\\)/{ok=1} r&&/^  }/{exit} END{exit !ok}" "$FIREWALLA_HOME/sensor/$p.js" || all=0; done; [[ $all -eq 1 ]]'
+check "an inner deferral or abort stops suricata before its rule watchers too" 'grep -q "if (await this._restart() === false)" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js" && awk "/async _restart\\(\\) \\{/{r=1} r&&/roleOn|deferWhileApplying/{getline; if (\$0 ~ /return false;/) n++; if (n == 2) exit} END{exit !(n == 2)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+check "suricata defers before its rule watchers are set up" 'awk "/async restart\\(\\) \\{/{r=1} r&&/deferWhileApplying/&&!d{d=NR} r&&/watchRulesDir/&&!w{w=NR} END{exit !(d && w && d<w)}" "$FIREWALLA_HOME/sensor/PcapSuricataPlugin.js"'
+if command -v node >/dev/null 2>&1; then
+  echo "== behaviour: a restart refused by an apply that began during preparation is retried"
+  cat > "$T/defer.js" <<'NODE'
+// Runs the real PcapZeekPlugin.restart / PcapSuricataPlugin._restart with their
+// dependencies stubbed: the controller refuses because an apply began while
+// the plugin was preparing, and the plugin must retry once the apply is over.
+const Module = require('module');
+const home = process.env.FIREWALLA_HOME;
+const builtin = new Set(Module.builtinModules);
+const orig = Module._load;
+const FE = { held: false, running: false, waits: 0, release: null,
+  applyHeld() { return this.held; }, applyRunning() { return this.running; },
+  waitForApply() { this.waits++; return new Promise((r) => { this.release = () => { FE.held = FE.running = false; r(true); }; }); } };
+function control(name) {
+  return { name, crons: 0, restarts: 0, refuseWith: null,
+    async restart() { this.restarts++; if (this.refuseWith) { this.refuseWith(); return false; } },
+    async addCronJobs() { this.crons++; }, async removeCronJobs() {}, async stop() {},
+    async writeClusterConfig() {}, async writeNetworksConfig() {}, async cleanupRuntimeConfig() {},
+    async writeSuricataYAML() {}, async prepareAssets() {}, async getRuleFiles() { return ['x.rules']; },
+    async tryUpdateSuricataBinary() {}, watchRulesDir() {} };
+}
+const bro = control('bro'), suri = control('suri');
+let featureOn = true;
+const inert = () => new Proxy(function () {}, { get: (t, k) => k === 'then' ? undefined : inert(), apply: () => inert(), construct: () => inert() });
+Module._load = function (req, parent) {
+  if (req === 'fs' && parent && /Pcap(Suricata|Zeek)Plugin\.js$/.test(parent.filename))
+    return Object.assign({}, require('fs'), { writeFileAsync: async () => {} });
+  if (builtin.has(req)) return orig.apply(this, arguments);
+  if (/Pcap(Zeek|Suricata)?Plugin\.js$/.test(req)) return orig.apply(this, arguments);
+  if (req.endsWith('FlowEngine.js')) return FE;
+  if (req.endsWith('Firewalla.js')) return { getRuntimeInfoFolder: () => '/nonexistent', getFirewallaHome: () => home, getUserConfigFolder: () => '/nonexistent' };
+  if (req.endsWith('BroControl.js')) return bro;
+  if (req.endsWith('SuricataControl.js')) return suri;
+  if (req.endsWith('Sensor.js')) return { Sensor: class { constructor(c) { this.config = c; } } };
+  if (req.endsWith('config.js')) return { isFeatureOn: () => featureOn, onFeature() {}, getConfig: async () => ({}) };
+  if (req.endsWith('logger.js')) return () => ({ info() {}, warn() {}, error() {}, debug() {} });
+  if (req.endsWith('scheduler.js')) return orig.apply(this, arguments);
+  if (req === 'lodash') return { isEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b), isArray: Array.isArray, isEmpty: (x) => x == null || (typeof x === 'object' ? Object.keys(x).length === 0 : String(x).length === 0) };
+  if (req === 'bluebird') return Object.assign(function () {}, { promisify: () => async () => {}, promisifyAll() {} });
+  return inert();
+};
+const Zeek = require(`${home}/sensor/PcapZeekPlugin.js`);
+const Suri = require(`${home}/sensor/PcapSuricataPlugin.js`);
+const tick = () => new Promise((r) => setTimeout(r, 20));
+let failed = 0;
+const ok = (c, m) => { console.log(`  ${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) failed++; };
+function plugin(Cls) {
+  const p = new Cls({}); p.enabled = true; p.jobs = 0; p.restartJob = { exec: async () => { p.jobs++; } };
+  p.calculateZeekOptions = async () => ({}); p.calculateLocalNetworks = () => ({});
+  p.generateSuricataYAML = async () => ({}); p.calculateListenInterfaces = async () => ({});
+  return p;
+}
+(async () => {
+  for (const [Cls, ctl, run] of [[Zeek, bro, (p) => p.restart()], [Suri, suri, (p) => p._restart()]]) {
+    const n = Cls.name;
+    // the apply begins while the plugin prepares: the controller refuses
+    FE.held = FE.running = false; FE.waits = 0; ctl.crons = 0;
+    ctl.refuseWith = () => { FE.held = FE.running = true; };
+    const p = plugin(Cls);
+    await run(p);
+    ok(ctl.crons === 0 && FE.waits === 1, `${n}: refused by an apply begun during preparation, a retry is scheduled, no watchdog yet`);
+    ctl.refuseWith = null; FE.release(); await tick();
+    ok(p.jobs === 1, `${n}: restarted once the apply is over`);
+    // the apply finishes between the refusal and the plugin's continuation
+    FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = FE.running = false; };
+    const q = plugin(Cls);
+    await run(q); await tick();
+    ok(q.jobs === 1 && ctl.crons === 0, `${n}: an apply over by the time the refusal is seen: restarted now`);
+    // a failed apply (marker, no live lock): refused as before, no retry
+    FE.waits = 0; ctl.crons = 0; ctl.refuseWith = () => { FE.held = true; FE.running = false; };
+    await run(plugin(Cls));
+    ok(FE.waits === 0 && ctl.crons === 1 && !p.retryAfterApply, `${n}: a failed apply is not retried, as before`);
+    // the feature went off while the listener is not hooked yet: a queued
+    // restart must not start the role
+    FE.held = FE.running = false; ctl.refuseWith = null; ctl.restarts = 0; featureOn = false;
+    await run(plugin(Cls));
+    ok(ctl.restarts === 0, `${n}: a queued restart after the feature went off does not start the role`);
+    featureOn = true;
+    // the real scheduler: the first restart runs through the job, the refusal
+    // comes after the apply ended, so a retry now is queued into that same
+    // job; the feature goes off during the job's delay and the queued restart
+    // must not start the role
+    {
+      const { UpdateJob } = require(`${home}/util/scheduler.js`);
+      FE.held = FE.running = false; ctl.restarts = 0;
+      ctl.refuseWith = () => { FE.held = FE.running = false; ctl.refuseWith = null; };
+      const s = plugin(Cls);
+      s.restartJob = new UpdateJob(n === 'PcapSuricataPlugin' ? s._restart.bind(s) : s.restart.bind(s), 100);
+      const first = s.restartJob.exec();
+      setTimeout(() => { featureOn = false; }, 150);
+      await first; await tick();
+      ok(ctl.restarts === 1, `${n}: with the real scheduler, a retry queued behind the first restart is dropped once the feature is off`);
+      featureOn = true;
+    }
+    // no apply at all: an ordinary restart
+    FE.held = FE.running = false; ctl.refuseWith = null; ctl.crons = 0;
+    await run(plugin(Cls));
+    ok(ctl.crons === 1 && FE.waits === 0, `${n}: an ordinary restart is unchanged`);
+  }
+  process.exit(failed ? 1 : 0);
+})();
+NODE
+  out=$(cd "$FIREWALLA_HOME" && FIREWALLA_HOME="$FIREWALLA_HOME" node "$T/defer.js" 2>&1); rc=$?
+  echo "$out" | sed 's/^/  /'
+  check "the plugins retry a restart refused by an apply begun during preparation" '[[ $rc -eq 0 ]] && ! grep -q FAIL <<< "$out"'
+else
+  echo "== (node not installed: skipping the plugin restart behaviour checks)"
+fi
+
+lock=$(sed -n 's/^LOCK=${ZSSIDS_ENGINE_LOCK:-\(.*\)}$/\1/p' "$ENGINE")
+check "node looks for the lock the script takes" '[[ -n $lock ]] && grep -qF "$lock" "$FIREWALLA_HOME/net2/FlowEngine.js"'
 
 echo "$pass passed, $failn failed"
 [[ $failn -eq 0 ]]

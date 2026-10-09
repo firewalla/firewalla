@@ -99,9 +99,13 @@ const { extractIP } = require('../net2/FlowUtil.js')
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
 const sysManager = require('../net2/SysManager.js');
+const net = require('net');
 
 const featureName = 'msp_sync_alarm';
 const featureSkipDeviceInfoEnrich = 'alarm_skip_device_info_enrich';
+
+// box's own interface MACs rarely change, cache OUI lookups to avoid reading OUI file on every alarm
+const selfMacVendorCache = new Map();
 
 // TODO: Support suppress alarm for a while
 
@@ -2188,6 +2192,17 @@ module.exports = class {
     return alarm
   }
 
+  async getSelfMacVendor(mac) {
+    const cached = selfMacVendorCache.get(mac);
+    // retry miss after a while, OUI file may not be ready yet
+    if (cached && (cached.vendor || Date.now() - cached.ts < 3600 * 1000))
+      return cached.vendor;
+    const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+    const vendor = await WlanVendorInfo.lookupMacVendor(mac);
+    selfMacVendorCache.set(mac, { vendor, ts: Date.now() });
+    return vendor;
+  }
+
   async enrichDeviceInfo(alarm) {
     const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN', 'ALARM_VPN_CLIENT_CONNECTION'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
@@ -2209,7 +2224,17 @@ module.exports = class {
     }
 
     if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
-      // device is the router itself, do nothing
+      // device is the router itself, fill in from interface info directly,
+      // host:* records of the box itself may be missing or polluted by other devices
+      const mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      alarm["p.device.name"] = "Firewalla";
+      if (mac) {
+        Object.assign(alarm, {
+          "p.device.id": mac,
+          "p.device.mac": mac,
+          "p.device.macVendor": await this.getSelfMacVendor(mac) || "Unknown",
+        });
+      }
       return alarm;
     }
 
