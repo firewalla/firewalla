@@ -153,35 +153,52 @@ class DNSCrypt {
     const selected = await this.getServers();
     let content = this.renderConfig(template, config, usableServers, selected);
 
-    if (reCheckConfig) {
-      const fileExists = await existsAsync(runtimePath);
-      if (fileExists) {
-        const oldContent = await fs.readFileAsync(runtimePath, { encoding: 'utf8' });
-        if (oldContent == content)
-          return false;
-      }
-    }
+    if (reCheckConfig && await this.isRuntimeConfig(content))
+      return false;
 
     // filterUsableServers() can only reject what is obviously not a stamp;
     // whether a payload decodes into one is dnscrypt-proxy's business, and it
     // answers by refusing the entire file. Ask it before the config goes live,
     // and if it objects, find the entries it objects to and keep the rest
     // running rather than losing every server to one bad paste.
-    if (!await this.checkConfig(content)) {
+    let verdict = await this.checkConfig(content);
+    if (verdict === false) {
       const accepted = [];
       for (const s of usableServers) {
-        if (await this.checkConfig(this.renderConfig(template, config, [s], [s.name])))
-          accepted.push(s);
-        else
+        // Only a verdict of false is grounds for dropping a server. If the
+        // validator stops being runnable halfway through, keep the rest.
+        if (await this.checkConfig(this.renderConfig(template, config, [s], [s.name])) === false)
           log.error("dnscrypt-proxy rejected DoH server, dropped:", s.name);
+        else
+          accepted.push(s);
       }
       content = this.renderConfig(template, config, accepted, selected);
-      if (!await this.checkConfig(content))
-        log.error("dnscrypt config still rejected with every objectionable server dropped; writing it anyway");
+      verdict = await this.checkConfig(content);
     }
+
+    if (verdict === false) {
+      // There is nothing left to drop. Whatever is running now is better than
+      // a config dnscrypt-proxy has just said it will not load.
+      if (await existsAsync(runtimePath)) {
+        log.error("dnscrypt rejected the config with every objectionable server dropped; keeping the running one");
+        return false;
+      }
+      log.error("dnscrypt rejected the config and there is none to keep; writing it anyway");
+    }
+
+    // Dropping entries can land on exactly what is already running, and
+    // rewriting that would restart a healthy proxy on every refresh.
+    if (reCheckConfig && await this.isRuntimeConfig(content))
+      return false;
 
     await fs.writeFileAsync(runtimePath, content);
     return true;
+  }
+
+  async isRuntimeConfig(content) {
+    if (!await existsAsync(runtimePath))
+      return false;
+    return await fs.readFileAsync(runtimePath, { encoding: 'utf8' }) === content;
   }
 
   renderConfig(template, config, servers, selected) {
@@ -209,6 +226,9 @@ class DNSCrypt {
 
   // Asks dnscrypt-proxy whether it would accept this config, without touching
   // the one it is running on. -check parses only; it binds no port.
+  // true when it accepts, false when it rejects, and null when it could not be
+  // asked at all: a missing or unrunnable binary says nothing about the config,
+  // and reading that as a rejection would throw away every working server.
   async checkConfig(content) {
     const candidatePath = `${runtimePath}.check`;
     try {
@@ -216,6 +236,12 @@ class DNSCrypt {
       await execFile(this.getBinaryPath(), ["-config", candidatePath, "-check"]);
       return true;
     } catch (err) {
+      // An exit status is a verdict on the config. Anything else - ENOENT,
+      // EACCES, a signal - means the question was never put.
+      if (typeof err.code !== 'number') {
+        log.error("Cannot run dnscrypt-proxy -check, skipping validation:", err.message);
+        return null;
+      }
       // The reason is a [FATAL] line on stdout; stderr only carries notices,
       // so logging stderr alone leaves support with nothing to go on.
       const output = `${err.stdout || ""}${err.stderr || ""}`.trim().split("\n");

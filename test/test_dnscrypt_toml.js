@@ -34,6 +34,12 @@ const logger = () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: 
 let execFileImpl = async () => {};
 const seen = [];
 
+// A rejection is a non-zero exit status; a validator that never ran reports a
+// spawn error instead, and the two must not be confused.
+const rejects = (reason) => Object.assign(new Error('Command failed'), { code: 255, stdout: `[FATAL] ${reason}` });
+const cannotRun = () => Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+const TOML_PATH = () => path.join(RUNTIME, 'dnscrypt.toml');
+
 function makeRedis(values) {
   return {
     getAsync: async (k) => (k in values ? values[k] : null),
@@ -75,6 +81,7 @@ describe('dnscrypt toml generation', function () {
   beforeEach(function () {
     seen.length = 0;
     execFileImpl = async () => {};
+    try { fs.unlinkSync(TOML_PATH()); } catch (err) { /* no config from a previous test */ }
     dc = loadDnscrypt();
   });
 
@@ -168,13 +175,49 @@ describe('dnscrypt toml generation', function () {
         { name: 'good', stamp: STAMP },
       ], ['quad9', 'rotten', 'good']);
       execFileImpl = async (cfg) => {
-        if (cfg.includes('[static."rotten"]')) throw Object.assign(new Error('exit 1'), { stderr: 'Stamp is too short' });
+        if (cfg.includes('[static."rotten"]')) throw rejects('Stamp is too short');
       };
       expect(await dc.prepareConfig()).to.be.true;
       const toml = fs.readFileSync(path.join(RUNTIME, 'dnscrypt.toml'), 'utf8');
       expect(staticKeys(toml)).to.not.include('[static."rotten"]');
       expect(staticKeys(toml)).to.include('[static."good"]');
       expect(serverNames(toml)).to.deep.equal(['quad9', 'good']);
+    });
+
+    it('keeps every server when the validator cannot be run at all', async function () {
+      // A missing or unrunnable binary says nothing about the config. Reading
+      // that as a rejection would drop every healthy server and restart into
+      // an empty config.
+      dc = withServers([{ name: 'mine', stamp: STAMP }], ['quad9', 'mine']);
+      execFileImpl = async () => { throw cannotRun(); };
+      expect(await dc.prepareConfig()).to.be.true;
+      const toml = fs.readFileSync(TOML_PATH(), 'utf8');
+      expect(serverNames(toml)).to.deep.equal(['quad9', 'mine']);
+      expect(staticKeys(toml)).to.include('[static."mine"]');
+    });
+
+    it('keeps the running config when the validated one is still rejected', async function () {
+      dc = withServers([{ name: 'mine', stamp: STAMP }], ['mine']);
+      await dc.prepareConfig();
+      const before = fs.readFileSync(TOML_PATH(), 'utf8');
+
+      execFileImpl = async () => { throw rejects('rejected for the sake of argument'); };
+      expect(await dc.prepareConfig()).to.be.false;
+      expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(before);
+    });
+
+    it('reports no change when dropping a rejected entry reproduces the running config', async function () {
+      // The rejected entry stays in redis, so every refresh re-renders it. What
+      // finally gets written is identical, and must not restart the proxy.
+      dc = withServers([{ name: 'rotten', stamp: 'sdns://Ag' }], ['quad9', 'rotten']);
+      execFileImpl = async (cfg) => {
+        if (cfg.includes('[static."rotten"]')) throw rejects('Stamp is too short');
+      };
+      expect(await dc.prepareConfig({}, true)).to.be.true;
+      const written = fs.readFileSync(TOML_PATH(), 'utf8');
+
+      expect(await dc.prepareConfig({}, true)).to.be.false;
+      expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(written);
     });
 
     it('does not ask dnscrypt-proxy again when the config has not changed', async function () {
