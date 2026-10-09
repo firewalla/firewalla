@@ -1048,6 +1048,23 @@ class Host extends Monitorable {
   //'17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}
 
 
+  hashTopDomains(topDomains) {
+    // stricter than neighbors: cleartext only in system debug, not on beta/alpha
+    const debug = sysManager.isSystemDebugOn();
+    const hashList = (list) => list.reduce((acc, {domain, count}) => {
+      const hashes = flowUtil.hashDomain(domain);
+      if (!hashes) return acc;
+      const entry = {_domain: hashes[0], _domainFull: hashes[1], count};
+      if (debug) entry.domain = domain;
+      acc.push(entry);
+      return acc;
+    }, []);
+    return {
+      last24Hours: hashList(topDomains.last24Hours),
+      last24HoursMidnight: hashList(topDomains.last24HoursMidnight)
+    };
+  }
+
   hashNeighbors(neighbors, local = false) {
     let _neighbors = JSON.parse(JSON.stringify(neighbors));
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
@@ -1613,7 +1630,7 @@ class Host extends Monitorable {
     const topDomains = await this._get24HoursTopDomains();
     return {
       "activityMinutes": activity,
-      "topDomains": topDomains
+      "topDomains": this.hashTopDomains(topDomains)
     };
   }
 
