@@ -45,6 +45,43 @@ const settingsKey = "ext.dnscrypt.settings";
 // the indirection unbound uses via "unbound:markkey".
 const DNSCRYPT_FWMARK_KEY = "dnscrypt:markkey";
 
+// A stamp is "sdns://" plus base64url, and nothing else ever reaches
+// dnscrypt-proxy intact. Checking it here keeps one bad paste from taking the
+// whole config down with it: an unparseable stamp is FATAL for the entire file,
+// not just for that server.
+const DNSCRYPT_STAMP_PREFIX = "sdns://";
+const DNSCRYPT_STAMP_FORMAT = /^[A-Za-z0-9_-]+=*$/;
+
+function isValidStamp(stamp) {
+  if (!stamp.startsWith(DNSCRYPT_STAMP_PREFIX)) return false;
+  const encoded = stamp.substring(DNSCRYPT_STAMP_PREFIX.length).replace(/=+$/, "");
+  if (!DNSCRYPT_STAMP_FORMAT.test(encoded)) return false;
+  // Buffer's base64 decoder skips what it cannot read, so round-trip it: only
+  // a string that re-encodes to itself decoded cleanly.
+  const roundTrip = Buffer.from(encoded, "base64").toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return roundTrip === encoded;
+}
+
+// Quotes a user-supplied value as a TOML basic string. Names and stamps used to
+// go into dnscrypt.toml as literal strings ('...'), which have no escape at all,
+// so a name holding an apostrophe closed its [static.'<name>'] key early and
+// dnscrypt-proxy exited FATAL on the whole file. See firecommit #10025.
+function toTomlBasicString(str) {
+  return JSON.stringify(str);
+}
+
+// The two things JSON escaping produces that a TOML basic string will not take:
+// U+007F, which JSON.stringify passes through raw, and an unpaired surrogate,
+// which it writes as \uD800 - not a valid TOML scalar. Both are rejected rather
+// than stripped, because server_names is JSON.stringify'd from the very same
+// name and the two spellings have to stay identical. Array.from walks by code
+// point, so a properly paired surrogate arrives here as one two-char string.
+function isTomlSafe(str) {
+  return !Array.from(str).some((c) =>
+    c === '\u007f' || (c.length === 1 && c >= '\ud800' && c <= '\udfff'));
+}
+
 const bone = require("../../lib/Bone");
 const Constants = require('../../net2/Constants.js');
 const VPNClient = require('../vpnclient/VPNClient');
@@ -105,10 +142,14 @@ class DNSCrypt {
     await this.setOutgoingFWMarkKey(settings.vpnClient);
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
-    const allServerNames = allServers.map((x) => x.name).filter(Boolean);
+    // Only the servers that really make it into the toml may be named in
+    // server_names, otherwise dnscrypt-proxy is pointed at a [static] table
+    // that does not exist.
+    const usableServers = this.filterUsableServers(allServers);
+    const allServerNames = usableServers.map((x) => x.name);
 
     // all servers stamps will be added in the toml file
-    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
+    content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(usableServers));
     let serverList = await this.getServers();
     serverList = serverList.filter((n) => allServerNames.includes(n));
     if (serverList.length === 0) {
@@ -128,16 +169,47 @@ class DNSCrypt {
     return true;
   }
 
+  // Drops every server dnscrypt-proxy could choke on, so that one bad entry
+  // costs that entry only. Before this, a name with an apostrophe, a name
+  // repeating another server's, or a malformed stamp was a parse error on the
+  // whole file: the proxy exited FATAL and systemd restarted it in a loop, DoH
+  // stopped for every device in scope, and no client showed an error.
+  // Cloud servers are concatenated first, so a custom server named like a
+  // built-in one loses rather than shadowing it.
+  filterUsableServers(servers) {
+    const seen = new Set();
+    return servers.filter((s) => {
+      if (!s || typeof s.name !== 'string' || typeof s.stamp !== 'string' || !s.name || !s.stamp) {
+        log.warn("Ignored DoH server without a usable name and stamp:", s);
+        return false;
+      }
+      if (!isTomlSafe(s.name)) {
+        log.warn("Ignored DoH server whose name cannot be written as TOML:", JSON.stringify(s.name));
+        return false;
+      }
+      if (!isValidStamp(s.stamp)) {
+        log.warn("Ignored DoH server with a malformed stamp:", s.name);
+        return false;
+      }
+      if (seen.has(s.name)) {
+        log.warn("Ignored DoH server with a duplicate name:", s.name);
+        return false;
+      }
+      seen.add(s.name);
+      return true;
+    });
+  }
+
+  // Expects servers already passed through filterUsableServers.
   allServersToToml(servers) {
     /*
     servers: [
       {name: string, stamp: string}
     ]
     */
-    return servers.map((s) => {
-      if (!s || !s.name || !s.stamp) return null;
-      return `[static.'${s.name}']\n  stamp = '${s.stamp}'\n`;
-    }).filter(Boolean).join("\n");
+    return servers.map((s) =>
+      `[static.${toTomlBasicString(s.name)}]\n  stamp = ${toTomlBasicString(s.stamp)}\n`
+    ).join("\n");
   }
 
   async start() {
