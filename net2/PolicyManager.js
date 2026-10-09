@@ -378,7 +378,7 @@ class PolicyManager {
       await target.spoof(true);
       target.oper['monitor'] = true;
       if (ip === "0.0.0.0" && target.constructor.name === "HostManager") {
-        target.qos(false);
+        await target.qos(false);
         target.oper['qos'] = false;
       }
       await target.ipAllocation({});

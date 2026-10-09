@@ -84,6 +84,10 @@ const i18n = require('../util/i18n.js');
 const dns = require('dns');
 const Constants = require('./Constants.js');
 const CIDRTrie = require('../util/CIDRTrie.js');
+
+// window used to collapse the burst of reload triggers that one firerouter reload produces,
+// see scheduleNetworkInfoReload(). Measured gap between the two triggers is well under 1s.
+const NETWORK_INFO_RELOAD_WINDOW = 1500;
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,
@@ -152,10 +156,7 @@ class SysManager {
             break;
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
-            this.update(() => {
-              this.ipIntfCache.reset();
-              sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
-            });
+            this.scheduleNetworkInfoReload();
             break;
         }
       });
@@ -166,10 +167,7 @@ class SysManager {
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
-        this.update(() => {
-          this.ipIntfCache.reset();
-          sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
-        });
+        this.scheduleNetworkInfoReload();
       });
 
       this.reloadTimezone();
@@ -414,6 +412,29 @@ class SysManager {
       log.error("Failed to set timezone:", err);
       return err;
     }
+  }
+
+  // A single firerouter reload triggers a network info reload twice: once from the local
+  // MSG_FW_FR_RELOADED emitted at the end of FireRouter.init(), and once from the
+  // MSG_SYS_NETWORK_INFO_UPDATED that main publishes from generateNetworkInfo() in the middle of
+  // that same init. Both mean "re-read network info", so running them separately just makes every
+  // MSG_SYS_NETWORK_INFO_RELOADED listener do its work twice per reload.
+  //
+  // Collapse them into one update + one event. The window starts at the first trigger and is not
+  // extended by later ones, so a burst of network changes can't starve the reload and the delay
+  // stays bounded. Trailing edge is deliberate: the run has to land after the last trigger, since
+  // for the non-main processes it's the published one that tells them main has finished writing
+  // sys:network:info.
+  scheduleNetworkInfoReload() {
+    if (this.networkInfoReloadTask)
+      return;
+    this.networkInfoReloadTask = setTimeout(() => {
+      this.networkInfoReloadTask = null;
+      this.update(() => {
+        this.ipIntfCache.reset();
+        sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
+      });
+    }, NETWORK_INFO_RELOAD_WINDOW);
   }
 
   update(callback) {

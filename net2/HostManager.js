@@ -2387,36 +2387,44 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      const wanConfs = _.isObject(policy) && policy.wanConfs || {};
-      const wanType = sysManager.getWanType();
-      const primaryWanIntf = sysManager.getPrimaryWanInterface();
-      const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-      if (platform.isFireRouterManaged()) {
-        for (const wanIntf of sysManager.getWanInterfaces()) {
-          const uuid = wanIntf.uuid;
-          if (_.has(wanConfs, uuid))
-            await this.qos(wanConfs[uuid], uuid);
-          else {
-            // use global config as a fallback for primary WAN or all wans in load balance mode
-            if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
-              await this.qos(policy, uuid)
+      // FW_QOS_GLOBAL_FALLBACK is rebuilt as flush-then-append with awaits in between, so two
+      // concurrent runs interleave into flush/flush/append/append and duplicate every rule. The
+      // callers are not serialized with each other (one firerouter reload emits
+      // MSG_SYS_NETWORK_INFO_RELOADED twice, and PolicyManager applies policies in parallel), so
+      // this has to be guarded here rather than at any single call site. Only the global branch
+      // takes the lock, the per-wan branch above is re-entered below while it's still held.
+      await lock.acquire("LOCK_QOS_GLOBAL", async () => {
+        await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        const wanConfs = _.isObject(policy) && policy.wanConfs || {};
+        const wanType = sysManager.getWanType();
+        const primaryWanIntf = sysManager.getPrimaryWanInterface();
+        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
+        if (platform.isFireRouterManaged()) {
+          for (const wanIntf of sysManager.getWanInterfaces()) {
+            const uuid = wanIntf.uuid;
+            if (_.has(wanConfs, uuid))
+              await this.qos(wanConfs[uuid], uuid);
+            else {
+              // use global config as a fallback for primary WAN or all wans in load balance mode
+              if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
+                await this.qos(policy, uuid)
+            }
           }
         }
-      }
-      
-      if (!state) {
-        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      } else {
-        const appConfs = await this.getAppConfs();
-        this.app(appConfs).catch((err) => {
-          log.error(`Failed to set app qos bandwidth`, err.message);
-        });
-      }
-      await this.setupDefaultQosAutoRules();
-      await this.setupDscpOverride();
-      await platform.switchQoS(state, qdisc);
+
+        if (!state) {
+          await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        } else {
+          const appConfs = await this.getAppConfs();
+          this.app(appConfs).catch((err) => {
+            log.error(`Failed to set app qos bandwidth`, err.message);
+          });
+        }
+        await this.setupDefaultQosAutoRules();
+        await this.setupDscpOverride();
+        await platform.switchQoS(state, qdisc);
+      });
     } 
   }
 
@@ -2509,56 +2517,61 @@ module.exports = class HostManager extends Monitorable {
     if (!policy) {
       return;
     }
-    //following part should be executed when app conf changes or WAN changes
-    //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
+    // serialize with concurrent callers: app() is reached from the policy apply path, from the
+    // MSG_SYS_NETWORK_INFO_RELOADED handler and from qos() itself, and overlapping runs race on
+    // setQoSBandwidth, leaving whichever happens to finish last in effect.
+    await lock.acquire("LOCK_QOS_APP", async () => {
+      //following part should be executed when app conf changes or WAN changes
+      //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
 
-    // get current qos mode
-    const qosConfs = await this.getQosConfs();
-    if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
-      log.info("Set app Qos to max speed since qos is not in adaptive mode");
-      await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      return;
-    }
-
-    // for load balance mode, set the speed rate limit to sum of all WANs
-    // for failover mode, set the speed to primary WAN only
-    // const appConfs = await this.getAppConfs();
-    const wanType = sysManager.getWanType();
-    const bandwidth = policy && policy.bandwidth || {};
-    let uploadSpeed = parseInt(bandwidth.upload) || 0;
-    let downloadSpeed = parseInt(bandwidth.download) || 0;
-    if (bandwidth.wanConfs) {
-      let totalUpload = 0;
-      let totalDownload = 0;
-      const activeWanIntf = sysManager.getDefaultWanInterface();
-      const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
-      for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
-        if (wanType === Constants.WAN_TYPE_FAILOVER) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_LB) {
-          const intf = sysManager.getInterfaceViaUUID(wanId);
-          if (!intf || intf.type !== "wan" || !intf.ready)
-            continue;
-          totalUpload += parseInt(wanConf.upload) || 0;
-          totalDownload += parseInt(wanConf.download) || 0;
-        }
+      // get current qos mode
+      const qosConfs = await this.getQosConfs();
+      if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
+        log.info("Set app Qos to max speed since qos is not in adaptive mode");
+        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        return;
       }
-      uploadSpeed = totalUpload;
-      downloadSpeed = totalDownload;
-    }
-    log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
 
-    await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+      // for load balance mode, set the speed rate limit to sum of all WANs
+      // for failover mode, set the speed to primary WAN only
+      // const appConfs = await this.getAppConfs();
+      const wanType = sysManager.getWanType();
+      const bandwidth = policy && policy.bandwidth || {};
+      let uploadSpeed = parseInt(bandwidth.upload) || 0;
+      let downloadSpeed = parseInt(bandwidth.download) || 0;
+      if (bandwidth.wanConfs) {
+        let totalUpload = 0;
+        let totalDownload = 0;
+        const activeWanIntf = sysManager.getDefaultWanInterface();
+        const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
+        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+          if (wanType === Constants.WAN_TYPE_FAILOVER) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_SINGLE) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_LB) {
+            const intf = sysManager.getInterfaceViaUUID(wanId);
+            if (!intf || intf.type !== "wan" || !intf.ready)
+              continue;
+            totalUpload += parseInt(wanConf.upload) || 0;
+            totalDownload += parseInt(wanConf.download) || 0;
+          }
+        }
+        uploadSpeed = totalUpload;
+        downloadSpeed = totalDownload;
+      }
+      log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
+
+      await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+    });
   }
 
   async aclTimer(policy = {}) {
