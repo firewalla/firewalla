@@ -168,8 +168,6 @@ async function scheduleSingleDetectRequset(options) {
     return;
   }
 
-  cachedSingleDetect[mac] = 1;
-
   if(_status.running) {
     if(options.ttl > 0) {
       options.ttl--;
@@ -181,6 +179,7 @@ async function scheduleSingleDetectRequset(options) {
       log.forceInfo("Schedule TTL timeout for single detect request on mac:", mac);
     }
   } else {
+    cachedSingleDetect[mac] = 1;
     log.info("Got a single request to check mac address:", mac);
     setStatus(_status, {running: true, runBy: 'scheduler'});
     await flowMonitor.run(type, 60, {mac}).catch((err) => {
