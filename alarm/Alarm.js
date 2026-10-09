@@ -233,7 +233,7 @@ class Alarm {
     //   //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
     //   this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
 
-    return this.localizedMessage() + this.timestamp ? " %@" : "";
+    return this.localizedMessage() + (this.timestamp ? " %@" : "");
   }
 
   toString() {
