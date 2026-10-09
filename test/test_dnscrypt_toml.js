@@ -220,6 +220,30 @@ describe('dnscrypt toml generation', function () {
       expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(written);
     });
 
+    it('writes a name holding $ replacement tokens literally', async function () {
+      // $&, $` and $' are replacement tokens to String.replace, so a name
+      // carrying one used to paste the matched placeholder into the config -
+      // past every TOML escape, with nothing left to catch it.
+      const names = ["Bob's $& DNS", "Bob's $' DNS", 'Bob $` DNS', 'Bob $$ DNS', 'Bob $1 DNS'];
+      dc = withServers(names.map((name) => ({ name, stamp: STAMP })), names);
+      expect(await dc.prepareConfig()).to.be.true;
+      const toml = fs.readFileSync(TOML_PATH(), 'utf8');
+      expect(serverNames(toml)).to.deep.equal(names);
+      for (const name of names)
+        expect(staticKeys(toml)).to.include(`[static.${JSON.stringify(name)}]`);
+    });
+
+    it('writes an unselected name holding $ tokens literally too', async function () {
+      // Every custom server reaches the toml whether it is selected or not,
+      // which is what made firecommit#10025 reachable without selecting it.
+      const name = "Bob's $& DNS";
+      dc = withServers([{ name, stamp: STAMP }], ['quad9']);
+      await dc.prepareConfig();
+      const toml = fs.readFileSync(TOML_PATH(), 'utf8');
+      expect(serverNames(toml)).to.deep.equal(['quad9']);
+      expect(staticKeys(toml)).to.include(`[static.${JSON.stringify(name)}]`);
+    });
+
     it('does not ask dnscrypt-proxy again when the config has not changed', async function () {
       dc = withServers([{ name: 'mine', stamp: STAMP }], ['mine']);
       await dc.prepareConfig();

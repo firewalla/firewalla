@@ -210,13 +210,17 @@ class DNSCrypt {
     if (serverList.length === 0) {
       log.warn("None of selected servers found in available list, falling back to all servers");
     }
+    // Every replacement is a callback: as a replacement string, a server name
+    // carrying $&, $` or $' would have those expanded by String.replace, and a
+    // name like "Bob's $& DNS" would paste the placeholder it just matched into
+    // the config - after all the TOML escaping, where nothing is left to catch it.
     return template
-      .replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1")
-      .replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854)
-      .replace("%DNSCRYPT_IPV6%", "false")
+      .replace("%DNSCRYPT_FALLBACK_DNS%", () => config.fallbackDNS || "1.1.1.1")
+      .replace(/%DNSCRYPT_LOCAL_PORT%/g, () => config.localPort || 8854)
+      .replace("%DNSCRYPT_IPV6%", () => "false")
       // all servers stamps will be added in the toml file
-      .replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(servers))
-      .replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
+      .replace("%DNSCRYPT_ALL_SERVER_LIST%", () => this.allServersToToml(servers))
+      .replace("%DNSCRYPT_SERVER_LIST%", () => JSON.stringify(serverList));
   }
 
   getBinaryPath() {
