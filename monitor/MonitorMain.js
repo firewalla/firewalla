@@ -246,6 +246,7 @@ function scheduleRunDLP() {
       setStatus(_status, {running: false, runBy: ''});
       gc();
     }).catch(err => {
+      setStatus(_status, {running: false, runBy: ''});
       log.error('DLP failed', err, status[type])
     })
   }, tick * 1000);
