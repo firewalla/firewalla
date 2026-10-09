@@ -99,9 +99,11 @@ class OCVPNClient extends VPNClient {
         entries.push(`${key}`); // a parameter without value
       }
     }
-    await fs.writeFileAsync(this._getConfigPath(), entries.join('\n'), {encoding: "utf8"});
-    const password = config.password;
     const server = config.server;
+    if (!server)
+      throw new Error("'server' should be specified in 'config'");
+    await fs.writeFileAsync(this._getConfigPath(), entries.join('\n'), {encoding: "utf8"});
+    const password = config.password || "";
     await fs.writeFileAsync(this._getPasswordPath(), password, {encoding: "utf8"});
     await fs.writeFileAsync(this._getServerPath(), server, {encoding: "utf8"});
     if (_.isEmpty(config.mfaSeed))
