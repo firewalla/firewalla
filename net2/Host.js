@@ -32,7 +32,6 @@ const f = require('./Firewalla.js');
 const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-const urlHash = require('../util/UrlHash.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -997,10 +996,10 @@ class Host extends Monitorable {
       let neighbor = _neighbors[i];
       if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
       if (neighbor.name) {
-        const hashes = urlHash.canonicalizeAndHashExpressions(neighbor.name)
-        neighbor._name = hashes.length ? hashes[0][2] : null
-        if (hashes.length)
-          neighbor._nameFull = hashes[hashes.length-1][2]
+        const hashes = flowUtil.hashDomain(neighbor.name)
+        neighbor._name = hashes ? hashes[0] : null
+        if (hashes)
+          neighbor._nameFull = hashes[1]
       }
       if (neighbor.dmac)
         neighbor._dmac = flowUtil.hashMac(neighbor.dmac);
