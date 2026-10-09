@@ -139,6 +139,25 @@ function tls_module_matches_ko {
   "$TLS_MODULE_ID_SCRIPT" same "$1" "$2"
 }
 
+function installSchCakeModule {
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
+  if [[ -f $ko_path ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
+      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+  fi
+
+  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
+  tc_dst_path=$(which tc || echo "/sbin/tc")
+  if [[ -f $tc_path ]]; then
+    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
+      sudo cp $tc_path $tc_dst_path
+    fi
+  fi
+  return
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -352,25 +371,6 @@ function installTLSModule() {
       --arg v "$version" --arg sv "$srcversion" --arg ki "$ko_id" \
       '.udpModuleVersion = {"version": $v, "srcversion": $sv, "koId": $ki} | .shouldDisableUdpTls = false' 2>/dev/null | jq -c )
     [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
-  fi
-  return
-}
-
-function installSchCakeModule {
-  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
-  if [[ -f $ko_path ]]; then
-    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
-      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
-      sudo depmod -a
-    fi
-  fi
-
-  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
-  tc_dst_path=$(which tc || echo "/sbin/tc")
-  if [[ -f $tc_path ]]; then
-    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
-      sudo cp $tc_path $tc_dst_path
-    fi
   fi
   return
 }
