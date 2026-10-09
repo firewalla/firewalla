@@ -36,4 +36,7 @@ mkdir -p ${HOME}/ovpns
 mkdir -p ${HOME}/logs
 mkdir -p ./coverage
 echo "{}" > ${HOME}/.firewalla/license
+# Without this the install uses the apt index baked into the runner image,
+# which pins package versions the archive has already superseded and removed.
+sudo apt-get update
 sudo apt-get install -y redis ipset
