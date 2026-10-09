@@ -533,6 +533,7 @@ module.exports = class {
             result.setCategoryMatcher(this.categoryMap.get(category));
           }
         }
+        break;
       } else {
         log.info("Wait for category data to load");
         await scheduler.delay(1000);
