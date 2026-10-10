@@ -6,11 +6,21 @@ logger 'FIREWALLA.SURICATA Start'
 
 source /home/pi/.firewalla/run/suricata/listen_interfaces.rc
 
-# a binary delivered as an asset (SuricataControl.tryUpdateSuricataBinary)
-# replaces the image's only if it runs; a missing or broken asset leaves the
-# image's in use
-suricata_bin=/usr/bin/suricata
+# a binary delivered as an asset (the tarball is fetched by
+# SuricataControl.tryUpdateSuricataBinary) replaces the image's. It is unpacked
+# here, at launch, so this is the one place that installs, validates and falls
+# back: a binary that does not extract or run cleanly is dropped and the
+# image's own binary is used, named directly rather than through
+# /usr/bin/suricata, which can point at the asset itself.
 asset_bin=/home/pi/.firewalla/run/assets/suricata
+asset_tar=$asset_bin.tar.gz
+suricata_bin=/usr/local/suricata/bin/suricata
+[[ -x $suricata_bin ]] || suricata_bin=/usr/bin/suricata
+if [[ -f $asset_tar && ( ! -x $asset_bin || $asset_tar -nt $asset_bin ) ]]; then
+  # -m stamps the binary with the extraction time, so it reads newer than the
+  # tarball until the next download
+  tar xzmf $asset_tar -C ${asset_bin%/*} || { logger "FIREWALLA.SURICATA failed to extract $asset_tar"; rm -f $asset_bin; }
+fi
 if [[ -x $asset_bin ]]; then
   if $asset_bin -V &>/dev/null; then
     suricata_bin=$asset_bin
