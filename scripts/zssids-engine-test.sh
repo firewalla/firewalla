@@ -48,12 +48,12 @@ ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; failn=$((failn+1)); }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
-# feature values for the sandbox: pcap_zeek_fleet, pcap_suricata_fleet, and the
+# feature values for the sandbox: pcap_zeek_zssids, pcap_suricata_zssids, and the
 # roles themselves (default on, as the checked-in config has them)
 setf() {
   cat > "$FW_EFFECTIVE_FEATURES" <<JSON
-{"pcap_zeek_fleet": $([[ $1 == 1 ]] && echo true || echo false),
- "pcap_suricata_fleet": $([[ $2 == 1 ]] && echo true || echo false),
+{"pcap_zeek_zssids": $([[ $1 == 1 ]] && echo true || echo false),
+ "pcap_suricata_zssids": $([[ $2 == 1 ]] && echo true || echo false),
  "pcap_zeek": $([[ ${3:-1} == 1 ]] && echo true || echo false),
  "pcap_suricata": $([[ ${4:-1} == 1 ]] && echo true || echo false)}
 JSON
@@ -64,12 +64,12 @@ saved_zf=""; saved_zs=""; brofish_was=""; suricata_was=""
 restore() { :; }
 relive() { :; }
 if $LIVE_CHECKS; then
-  saved_zf=$(redis-cli hget sys:features pcap_zeek_fleet 2>/dev/null)
-  saved_zs=$(redis-cli hget sys:features pcap_suricata_fleet 2>/dev/null)
+  saved_zf=$(redis-cli hget sys:features pcap_zeek_zssids 2>/dev/null)
+  saved_zs=$(redis-cli hget sys:features pcap_suricata_zssids 2>/dev/null)
   brofish_was=$(systemctl is-active brofish 2>/dev/null)
   suricata_was=$(systemctl is-active suricata 2>/dev/null)
   restore() {
-    for k in pcap_zeek_fleet:"$saved_zf" pcap_suricata_fleet:"$saved_zs"; do
+    for k in pcap_zeek_zssids:"$saved_zf" pcap_suricata_zssids:"$saved_zs"; do
       n=${k%%:*}; v=${k#*:}
       if [[ -n $v ]]; then redis-cli hset sys:features "$n" "$v" >/dev/null; else redis-cli hdel sys:features "$n" >/dev/null; fi
     done
@@ -241,20 +241,20 @@ check "zssids-ping skips a role the box switched off" 'grep -q "pcap_zeek_enable
 
 echo "== an explicit false in a config file wins over a later default"
 cfgdir=$T/hidden/config; mkdir -p "$cfgdir"
-printf '{"userFeatures":{"pcap_zeek_fleet":false}}' > "$cfgdir/config.json"
+printf '{"userFeatures":{"pcap_zeek_zssids":false}}' > "$cfgdir/config.json"
 roles=$(PATH=$T/bin:$PATH FIREWALLA_HIDDEN=$T/hidden FW_EFFECTIVE_FEATURES=/nonexistent bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; ZSSIDS_BIN=$ZSSIDS_BIN; echo \$(get_flow_engine_zeek)")
 check "user config false is honoured (not swallowed by // empty)" '[[ $roles == zeek ]]'
 setf 1 1
 
 echo "== the effective-features file written by node is read first"
-printf '{"pcap_zeek_fleet":false,"pcap_suricata_fleet":false}' > "$T/eff.json"
+printf '{"pcap_zeek_zssids":false,"pcap_suricata_zssids":false}' > "$T/eff.json"
 roles=$(PATH=$T/bin:$PATH FW_EFFECTIVE_FEATURES=$T/eff.json bash -c "source \"$FIREWALLA_HOME/platform/platform.sh\"; ZSSIDS_BIN=$ZSSIDS_BIN; echo \$(get_flow_engine_zeek)/\$(get_flow_engine_suricata)")
 check "effective-features file overrides the config files" '[[ $roles == zeek/suricata ]]'
 setf 1 1
 
 echo "== a release hidden feature wins during early boot"
 mkdir -p "$T/hidden-release/config"
-printf '{"hiddenFeatures":["pcap_zeek_fleet"],"userFeatures":{"pcap_zeek_fleet":true}}' > "$T/hidden-release/config/config.json"
+printf '{"hiddenFeatures":["pcap_zeek_zssids"],"userFeatures":{"pcap_zeek_zssids":true}}' > "$T/hidden-release/config/config.json"
 cat > "$T/bin/redis-cli" <<'RC'
 #!/bin/sh
 echo 1
@@ -290,10 +290,10 @@ check "FireMain startup restarts when the applied state changed" 'grep -q "flow 
 
 echo "== behaviour: readers never see a partial effective-features file"
 eff=$T/eff-concurrent.json
-printf '{"pcap_zeek_fleet":true,"pcap_suricata_fleet":true}' > "$eff"
+printf '{"pcap_zeek_zssids":true,"pcap_suricata_zssids":true}' > "$eff"
 ( for i in $(seq 1 40); do
-    printf '{"pcap_zeek_fleet":true,"pcap_suricata_fleet":true}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
-    printf '{"pcap_zeek_fleet":false,"pcap_suricata_fleet":false}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
+    printf '{"pcap_zeek_zssids":true,"pcap_suricata_zssids":true}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
+    printf '{"pcap_zeek_zssids":false,"pcap_suricata_zssids":false}' > "$eff.tmp"; mv -f "$eff.tmp" "$eff"
   done ) &
 writer=$!
 bad=0
@@ -371,11 +371,11 @@ check "the published effective state is read before redis" 'awk "/FW_EFFECTIVE_F
 check "main-start invalidates the previous FireMain snapshot before apply" 'awk "/rm -f .*FW_EFFECTIVE_FEATURES/{r=NR} /zssids-engine.sh apply/{a=NR} END{exit !(r && a && r<a)}" "$FIREWALLA_HOME/scripts/main-start"'
 
 echo "== behaviour: a hidden feature beats a stale redis override"
-printf '{"pcap_zeek_fleet":false,"pcap_suricata_fleet":false,"pcap_zeek":true,"pcap_suricata":true}' > "$T/hidden.json"
+printf '{"pcap_zeek_zssids":false,"pcap_suricata_zssids":false,"pcap_zeek":true,"pcap_suricata":true}' > "$T/hidden.json"
 cat > "$T/bin/redis-cli" <<'RC'
 #!/bin/sh
 # pretend the runtime override still says the feature is on
-case "$*" in *pcap_zeek_fleet*) echo 1 ;; esac
+case "$*" in *pcap_zeek_zssids*) echo 1 ;; esac
 exit 0
 RC
 chmod 755 "$T/bin/redis-cli"

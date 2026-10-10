@@ -103,8 +103,8 @@ function get_zeek_log_dir {
 }
 
 # Flow engines: which program handles each pcap role, decided by two features
-#   pcap_zeek_fleet      zssids runs as brofish.service instead of zeek
-#   pcap_suricata_fleet   zssids evaluates the suricata rule set instead of suricata
+#   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
+#   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
 # Same sources as net2/config.js: the runtime value in redis sys:features (set
 # by the app / enableDynamicFeature), else the platform's files/config.json
 # userFeatures, else net2/config.json, else off. See scripts/zssids-engine.sh.
@@ -172,7 +172,7 @@ function zssids_available {
 }
 
 function get_flow_engine_zeek {
-  if _fw_feature_on pcap_zeek_fleet && zssids_available; then echo zssids; else echo zeek; fi
+  if _fw_feature_on pcap_zeek_zssids && zssids_available; then echo zssids; else echo zeek; fi
 }
 
 # The IDS role exists only where PcapSuricataPlugin.isSupported() holds: a
@@ -192,7 +192,7 @@ function suricata_role_supported {
 }
 
 function get_flow_engine_suricata {
-  if _fw_feature_on pcap_suricata_fleet && zssids_available && suricata_role_supported; then echo zssids; else echo suricata; fi
+  if _fw_feature_on pcap_suricata_zssids && zssids_available && suricata_role_supported; then echo zssids; else echo suricata; fi
 }
 
 # the roles themselves can be switched off by the box: pcap_zeek governs flow
