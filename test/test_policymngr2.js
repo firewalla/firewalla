@@ -368,3 +368,232 @@ describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
     expect(enforceCalls[1]).to.deep.equal([`tag:${uid}`, 'otherTag']);
   });
 });
+
+// _isBypassedFor() decides, per device, whether an active bypass rule cancels a rule. Two shapes
+// reach it: an exclusion ("all devices except ..."), which carries no appTimeUsage, and an
+// app-time-usage bypass, which only holds while quota is left. Reading appTimeUsage unguarded used
+// to throw for the first shape, which took down the whole acl:check API.
+describe('Test _isBypassedFor', function() {
+  this.timeout(10000);
+
+  const pm2 = new PolicyManager2();
+  const MAC = 'AA:BB:CC:DD:EE:FF';
+  const OTHER_MAC = '11:22:33:44:55:66';
+  const rule = { pid: '100' };
+
+  const exclusion = (extra = {}) => Object.assign({ pid: '200', affectedPids: ['100'] }, extra);
+
+  it('returns false when there is no bypass rule', async () => {
+    expect(await pm2._isBypassedFor(rule, MAC, [])).to.equal(false);
+    expect(await pm2._isBypassedFor(rule, MAC, undefined)).to.equal(false);
+  });
+
+  it('ignores a bypass rule that does not reference the rule', async () => {
+    const other = exclusion({ affectedPids: ['999'], scope: [MAC] });
+    expect(await pm2._isBypassedFor(rule, MAC, [other])).to.equal(false);
+  });
+
+  it('applies an exclusion that has no appTimeUsage', async () => {
+    const b = exclusion({ scope: [MAC] });
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+  });
+
+  it('does not apply an exclusion scoped to another device', async () => {
+    const b = exclusion({ scope: [OTHER_MAC] });
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(false);
+  });
+
+  it('applies a bypass rule that has no scope of its own to every device', async () => {
+    const b = exclusion();
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+    expect(await pm2._isBypassedFor(rule, OTHER_MAC, [b])).to.equal(true);
+  });
+
+  it('applies an app time usage bypass while quota is left', async () => {
+    const b = exclusion({ scope: [MAC], appTimeUsage: { quota: 100 }, appTimeUsed: 30 });
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+  });
+
+  it('stops applying an app time usage bypass once quota is used up', async () => {
+    const b = exclusion({ scope: [MAC], appTimeUsage: { quota: 100 }, appTimeUsed: 500 });
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(false);
+  });
+
+  it('counts extra quota only while it is still valid', async () => {
+    const now = Date.now() / 1000;
+    const live = exclusion({ scope: [MAC], appTimeUsage: { quota: 100, extraQuota: 500, extraQuotaUntilTs: now + 3600 }, appTimeUsed: 300 });
+    const expired = exclusion({ scope: [MAC], appTimeUsage: { quota: 100, extraQuota: 500, extraQuotaUntilTs: now - 1 }, appTimeUsed: 300 });
+    expect(await pm2._isBypassedFor(rule, MAC, [live])).to.equal(true);
+    expect(await pm2._isBypassedFor(rule, MAC, [expired])).to.equal(false);
+  });
+
+  it('matches affectedPids that are stored as strings against a numeric pid', async () => {
+    const b = exclusion({ scope: [MAC] });
+    expect(await pm2._isBypassedFor({ pid: 100 }, MAC, [b])).to.equal(true);
+  });
+
+  // bypassIptablesRules() exempts each excluded object on its own, so the fields are an OR, not an
+  // AND. Policy's constructor alone can produce a rule carrying two of them: a scope holding a MAC
+  // and a VPN guid is split into scope + guids.
+  it('covers both endpoints of a bypass rule that holds a MAC and a VPN guid', async () => {
+    const GUID = 'vpn_profile:someClient';
+    const b = exclusion({ scope: [MAC], guids: [GUID] });
+    expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+    expect(await pm2._isBypassedFor(rule, GUID, [b])).to.equal(true);
+    expect(await pm2._isBypassedFor(rule, OTHER_MAC, [b])).to.equal(false);
+  });
+
+  it('covers a device that is only in the second group of a bypass rule', async () => {
+    const orig = pm2.getDeviceByIdentity;
+    pm2.getDeviceByIdentity = async () => ({ getTransitiveTags: async () => ({ group: { '6': 1 } }) });
+    try {
+      const b = exclusion({ tag: ['tag:5', 'tag:6'] });
+      expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+    } finally {
+      pm2.getDeviceByIdentity = orig;
+    }
+  });
+
+  // the firewall nests a group's device sets into the user tag it is assigned to, so a userTag
+  // exclusion reaches the devices of that group
+  it('covers a device that reaches the excluded user tag through its group', async () => {
+    const orig = pm2.getDeviceByIdentity;
+    pm2.getDeviceByIdentity = async () => ({
+      getTags: async () => ['6'],                                   // direct: group 6 only
+      getTransitiveTags: async () => ({ group: { '6': 1 }, user: { '7': 1 } }),
+    });
+    try {
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['userTag:7'] })])).to.equal(true);
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['userTag:8'] })])).to.equal(false);
+    } finally {
+      pm2.getDeviceByIdentity = orig;
+    }
+  });
+
+  // bypassIptablesRules() exempts the tag's network set too, so a device with no tags of its own
+  // sitting on a tagged network is covered
+  it('covers a device whose network carries the excluded tag', async () => {
+    const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+    const origDevice = pm2.getDeviceByIdentity;
+    const origProfile = NetworkProfileManager.getNetworkProfile;
+    pm2.getDeviceByIdentity = async () => ({
+      getTransitiveTags: async () => ({}),            // the device itself has no tags
+      getNicUUID: () => 'uuid-lan',
+    });
+    NetworkProfileManager.getNetworkProfile = uuid => uuid === 'uuid-lan'
+      ? { getTags: async type => type === 'group' ? ['9'] : [] }
+      : null;
+    try {
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['tag:9'] })])).to.equal(true);
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['tag:10'] })])).to.equal(false);
+    } finally {
+      pm2.getDeviceByIdentity = origDevice;
+      NetworkProfileManager.getNetworkProfile = origProfile;
+    }
+  });
+
+  // Tag.tags() nests a child tag's device sets into its parent but not its network set, so a
+  // network in a group that belongs to a user is NOT inside that user tag's network set. Claiming
+  // the bypass here would hide a rule the firewall still enforces.
+  it('does not follow the parents of the network own tags', async () => {
+    const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+    const origDevice = pm2.getDeviceByIdentity;
+    const origProfile = NetworkProfileManager.getNetworkProfile;
+    pm2.getDeviceByIdentity = async () => ({
+      getTransitiveTags: async () => ({}),            // untagged device
+      getNicUUID: () => 'uuid-lan',
+    });
+    NetworkProfileManager.getNetworkProfile = () => ({
+      // network is in group 6, and group 6 belongs to user 7
+      getTags: async type => type === 'group' ? ['6'] : [],
+      getTransitiveTags: async () => ({ group: { '6': 1 }, user: { '7': 1 } }),
+    });
+    try {
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['tag:6'] })])).to.equal(true);
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['userTag:7'] })])).to.equal(false);
+    } finally {
+      pm2.getDeviceByIdentity = origDevice;
+      NetworkProfileManager.getNetworkProfile = origProfile;
+    }
+  });
+
+  it('still matches on device tags when the network has none', async () => {
+    const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+    const origDevice = pm2.getDeviceByIdentity;
+    const origProfile = NetworkProfileManager.getNetworkProfile;
+    pm2.getDeviceByIdentity = async () => ({
+      getTransitiveTags: async () => ({ group: { '9': 1 } }),
+      getNicUUID: () => 'uuid-lan',
+    });
+    NetworkProfileManager.getNetworkProfile = () => null;   // network not resolvable
+    try {
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['tag:9'] })])).to.equal(true);
+    } finally {
+      pm2.getDeviceByIdentity = origDevice;
+      NetworkProfileManager.getNetworkProfile = origProfile;
+    }
+  });
+
+  it('does not bypass when the device cannot be resolved', async () => {
+    const orig = pm2.getDeviceByIdentity;
+    pm2.getDeviceByIdentity = async () => null;
+    try {
+      expect(await pm2._isBypassedFor(rule, MAC, [exclusion({ tag: ['tag:5'] })])).to.equal(false);
+    } finally {
+      pm2.getDeviceByIdentity = orig;
+    }
+  });
+
+  it('ignores a scheduled bypass rule outside its time window', async () => {
+    const scheduler = require('../extension/scheduler/scheduler.js');
+    const orig = scheduler.shouldPolicyBeRunning;
+    try {
+      const b = exclusion({ scope: [MAC], cronTime: '0 9 * * *', duration: 3600 });
+      scheduler.shouldPolicyBeRunning = () => 0;
+      expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(false);
+      scheduler.shouldPolicyBeRunning = () => 1800;
+      expect(await pm2._isBypassedFor(rule, MAC, [b])).to.equal(true);
+    } finally {
+      scheduler.shouldPolicyBeRunning = orig;
+    }
+  });
+});
+
+// A disturb policy whose app has disableQuic derives a second, block-action policy that reuses the
+// same pid and lands in the filter table's FW_<pid>_BYPASS chain. Whether that happens is read from
+// the cloud disturb config, which loads asynchronously.
+describe('Test disturb policy bypass plumbing', function() {
+  this.timeout(10000);
+
+  const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
+
+  describe('checkIfNeedDisableQuic', () => {
+    let origConf, origLoaded;
+
+    beforeEach(() => {
+      origConf = PolicyDisturbManager._appConfValue;
+      origLoaded = PolicyDisturbManager.configLoaded;
+    });
+
+    afterEach(() => {
+      PolicyDisturbManager._appConfValue = origConf;
+      PolicyDisturbManager.configLoaded = origLoaded;
+    });
+
+    it('waits for the cloud config instead of deciding on an empty one', async () => {
+      PolicyDisturbManager._appConfValue = {};
+      PolicyDisturbManager.configLoaded = new Promise(resolve => setTimeout(() => {
+        PolicyDisturbManager._appConfValue = { youtube: { disableQuic: true } };
+        resolve();
+      }, 50));
+      expect(await PolicyDisturbManager.checkIfNeedDisableQuic({ pid: 1, target: 'TLX-dt-youtube' })).to.equal(true);
+    });
+
+    it('stays false for an app that does not disable quic', async () => {
+      PolicyDisturbManager._appConfValue = { youtube: { disableQuic: true }, netflix: {} };
+      PolicyDisturbManager.configLoaded = Promise.resolve();
+      expect(await PolicyDisturbManager.checkIfNeedDisableQuic({ pid: 1, target: 'TLX-dt-netflix' })).to.equal(false);
+    });
+  });
+
+});
