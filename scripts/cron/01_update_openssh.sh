@@ -8,6 +8,8 @@ if [[ $(lsb_release -rs| cut -d'.' -f1) != 22 ]]; then
   exit 0
 fi
 
+source $FIREWALLA_HOME/scripts/apt_utils.sh
+
 openssh_ts_file=/dev/shm/openssh_apt_update_ts
 if [[ -e $openssh_ts_file ]] && (( $(cat $openssh_ts_file) > $(date +%s) - 86400 * 7 )); then
   logger "$TAG:SKIP:WITHIN_7_DAYS"
@@ -31,5 +33,4 @@ else
   logger "$TAG:SKIP:NO_SECURITY_UPGRADE_AVAILABLE"
 fi
 
-sudo apt clean
-sudo rm -rf /log/apt/lib/lists/*
+apt_cleanup
