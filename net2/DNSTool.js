@@ -32,6 +32,9 @@ const LRU = require('lru-cache');
 // (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
 
+// number of rdns keys read per pipeline when expanding a domain pattern via subdomains:<suffix>
+const SUBDOMAIN_BATCH_SIZE = 1000;
+
 const firewalla = require('../net2/Firewalla.js');
 
 let instance = null;
@@ -235,18 +238,21 @@ class DNSTool {
   async getIPsByDomainPattern(dnsPattern) {
     const domains = await this.getSubDomains(dnsPattern);
 
-    let keys = domains.map(d => `rdns:domain:${d}`);
+    const keys = domains.map(d => `rdns:domain:${d}`);
 
-    let list = []
-    if (keys) {
-      for (let i = 0; i < keys.length; i++) {
-        const key = keys[i];
-        let l = await rclient.zrangeAsync(key, "0", "-1")
-        list.push.apply(list, l)
+    // subdomains set may hold hundreds of thousands of names, read rdns in pipelined batches
+    // and dedup with a Set, avoid one round trip per key and O(n^2) dedup
+    const ips = new Set();
+    for (let i = 0; i < keys.length; i += SUBDOMAIN_BATCH_SIZE) {
+      const results = await rclient.pipelineAndLog(keys.slice(i, i + SUBDOMAIN_BATCH_SIZE).map(key => ['zrange', key, 0, -1]));
+      for (const l of results) {
+        if (!Array.isArray(l)) continue;
+        for (const ip of l)
+          ips.add(ip);
       }
     }
 
-    return list.filter(ip => !firewalla.isReservedBlockingIP(ip)).filter((v, i, a) => a.indexOf(v) === i);
+    return Array.from(ips).filter(ip => !firewalla.isReservedBlockingIP(ip));
   }
 
   async removeDns(ip, domain) {

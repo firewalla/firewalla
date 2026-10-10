@@ -226,13 +226,14 @@ class DomainBlock {
       if (!options.ondemand) await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
       // load other addresses from rdns, critical to apply instant blocking
       const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-      list.push.apply(list, addresses)  // concat arrays
+      list = list.concat(addresses)
     }
 
     if (!options.exactMatch || domain.startsWith("*.")) {
       const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
       const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
-      list.push.apply(list, patternAddresses)
+      // do not use push.apply, pattern may expand to more elements than the max number of function arguments
+      list = list.concat(patternAddresses)
     }
 
     if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set

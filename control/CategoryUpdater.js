@@ -50,6 +50,8 @@ const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
 const { isCategoryDomainValid, isHashDomain } = require('../util/util.js');
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
+// number of rdns zsets merged per ZUNIONSTORE when expanding a domain pattern
+const DOMAIN_MAPPING_UNION_BATCH_SIZE = 1000;
 const AsyncLock = require('../vendor_lib/async-lock');
 const customizedCategoryLock = new AsyncLock();
 
@@ -1325,6 +1327,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return `srdns:pattern:${d}`
   }
 
+  // union rdns zsets of a domain pattern into dest in chunks
+  // a pattern may expand to hundreds of thousands of keys, which exceeds the max number of function
+  // arguments (push.apply) and blocks redis for long in a single ZUNIONSTORE
+  // AGGREGATE MAX keeps the latest timestamp of each IP and is associative, so chunked result equals one-shot result
+  async unionDomainMappings(dest, mappings) {
+    for (let i = 0; i < mappings.length; i += DOMAIN_MAPPING_UNION_BATCH_SIZE) {
+      const chunk = mappings.slice(i, i + DOMAIN_MAPPING_UNION_BATCH_SIZE);
+      const sources = i === 0 ? chunk : [dest].concat(chunk);
+      await rclient.zunionstoreAsync([dest, sources.length].concat(sources, ["AGGREGATE", "MAX"]));
+    }
+  }
+
   // use ipset.addRule() to queue rdns entries for batch processing
   async updateIPSetByDomain(category, domain, options = {}) {
     if (!this.inited) return
@@ -1450,11 +1464,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (mappings.length > 0) {
       const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings, "AGGREGATE", "MAX");
-
-      await rclient.zunionstoreAsync(array)
+      await this.unionDomainMappings(smappings, mappings)
 
       const exists = await rclient.typeAsync(smappings);
       if (exists === "none") {
@@ -1488,11 +1498,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (mappings.length > 0) {
       const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings)
-
-      await rclient.zunionstoreAsync(array)
+      await this.unionDomainMappings(smappings, mappings)
 
       const exists = await rclient.typeAsync(smappings);
       if (exists === "none") {
@@ -1530,11 +1536,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (mappings.length > 0) {
       const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings)
-
-      await rclient.zunionstoreAsync(array)
+      await this.unionDomainMappings(smappings, mappings)
 
       const exists = await rclient.typeAsync(smappings);
       if (exists === "none") {
@@ -1798,36 +1800,42 @@ class CategoryUpdater extends CategoryUpdaterBase {
           domainSuffix = domainSuffix.substring(2);
         }
 
-        // in domainOnly mode non-static domains are not translated into IPs at all,
-        // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
-        const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
-        if (!domainOnly) {
-          const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-          if (!existing) { // a new domain
-            log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
-            await domainBlock.resolveDomain(domainSuffix)
-          }
-        }
         const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
         const port = v.port || null;
-        // regenerate ipmapping set in redis
-        await domainBlock.syncDomainIPMapping(domainSuffix,
-          {
-            blockSet: blockSet,
-            exactMatch: (domain.startsWith("*.") ? false : true),
-            overwrite: true,
-            ondemand: true, // do not try to resolve domain in syncDomainIPMapping
-            port: port
+        // one failing domain must not abort the whole recycle, otherwise temp ipsets are never swapped
+        // and domain updaters are never registered, leaving the category ipsets empty
+        try {
+          // in domainOnly mode non-static domains are not translated into IPs at all,
+          // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
+          const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
+          if (!domainOnly) {
+            const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+            if (!existing) { // a new domain
+              log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
+              await domainBlock.resolveDomain(domainSuffix)
+            }
           }
-        );
-        const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
-        if (!v.port) {
-          if (domainOnly) {
-            options.domainOnly = true;
+          // regenerate ipmapping set in redis
+          await domainBlock.syncDomainIPMapping(domainSuffix,
+            {
+              blockSet: blockSet,
+              exactMatch: (domain.startsWith("*.") ? false : true),
+              overwrite: true,
+              ondemand: true, // do not try to resolve domain in syncDomainIPMapping
+              port: port
+            }
+          );
+          const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
+          if (!v.port) {
+            if (domainOnly) {
+              options.domainOnly = true;
+            }
+            await this.updateIPSetByDomain(category, domain, options);
+          } else {
+            await this.updateIPSetByDomainPort(category, v, options);
           }
-          await this.updateIPSetByDomain(category, domain, options);
-        } else {
-          await this.updateIPSetByDomainPort(category, v, options);
+        } catch (err) {
+          log.error(`Failed to update ipset of domain ${domain} in category ${category}`, err);
         }
 
         // ipsets were fully rebuilt via swap; clear ipCache so DomainUpdater re-adds any
