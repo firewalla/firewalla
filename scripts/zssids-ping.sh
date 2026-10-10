@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Watchdog for zssids, the brofish-ping.sh counterpart used when the
-# pcap_zeek_fleet and/or pcap_suricata_fleet feature is on.
+# pcap_zeek_zssids and/or pcap_suricata_zssids feature is on.
 #
 # brofish-ping.sh decides whether workers are alive by running `zeekctl top`,
 # which cannot see zssids. This asks zssids itself: `zssids --status` checks the

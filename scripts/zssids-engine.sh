@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Apply the pcap_zeek_fleet / pcap_suricata_fleet features: make
+# Apply the pcap_zeek_zssids / pcap_suricata_zssids features: make
 # brofish.service and suricata.service run zssids, zeek/suricata, or a mix
 # (platform.sh get_flow_engine_zeek / get_flow_engine_suricata, which read the
 # features the way net2/config.js does: sys:features, then the platform's
@@ -83,9 +83,9 @@ log() { logger "FIREWALLA:ZSSIDS-ENGINE $1"; echo "$1"; }
 resolve() {
   ZEEK_ENGINE=$(get_flow_engine_zeek)
   SURICATA_ENGINE=$(get_flow_engine_suricata)
-  if ! zssids_available && { _fw_feature_on pcap_zeek_fleet || _fw_feature_on pcap_suricata_fleet; }; then
+  if ! zssids_available && { _fw_feature_on pcap_zeek_zssids || _fw_feature_on pcap_suricata_zssids; }; then
     log "zssids binary $ZSSIDS_BIN not present, keeping zeek/suricata until the asset arrives"
-  elif _fw_feature_on pcap_suricata_fleet && ! suricata_role_supported; then
+  elif _fw_feature_on pcap_suricata_zssids && ! suricata_role_supported; then
     log "this platform has no IDS role (no $SURICATA_BIN, no suricata asset), so zssids does not take it"
   fi
 }
@@ -529,7 +529,7 @@ restart_zssids_services() {
 
 status() {
   resolve
-  echo "pcap_zeek_fleet -> zeek role: $(get_flow_engine_zeek); pcap_suricata_fleet -> suricata role: $(get_flow_engine_suricata) (effective: $ZEEK_ENGINE / $SURICATA_ENGINE)"
+  echo "pcap_zeek_zssids -> zeek role: $(get_flow_engine_zeek); pcap_suricata_zssids -> suricata role: $(get_flow_engine_suricata) (effective: $ZEEK_ENGINE / $SURICATA_ENGINE)"
   echo "zssids binary: $([[ -x $ZSSIDS_BIN ]] && "$ZSSIDS_BIN" --help 2>&1 | head -1 || echo "missing at $ZSSIDS_BIN")"
   for u in brofish suricata; do
     printf '%-9s %-8s %s\n' "$u" "$(systemctl is-active $u 2>/dev/null)" \
