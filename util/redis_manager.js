@@ -201,10 +201,14 @@ class RedisManager {
         const snapshot = this.mclientHincrbyBuffer;
         this.mclientHincrbyBuffer = new Map();
         for (const {key, hkey, incr, expr} of snapshot.values()) {
-          await this.mclient.hincrbyAsync(key, hkey, incr);
-          if (expireAtChanged(key, expr)) {
-            await this.mclient.expireatAsync(key, expr);
-            rememberExpireAt(key, expr);
+          try {
+            await this.mclient.hincrbyAsync(key, hkey, incr);
+            if (expireAtChanged(key, expr)) {
+              await this.mclient.expireatAsync(key, expr);
+              rememberExpireAt(key, expr);
+            }
+          } catch (err) {
+            log.error('Error flushing metrics counter', key, hkey, err);
           }
         }
       }, 60000);
