@@ -49,6 +49,15 @@ const SUBDOMAIN_MAX_COUNT = 100000;
 const SUBDOMAIN_WRITE_INTERVAL = 600 * 1000;
 // at most one warning per suffix per this interval when a suffix is trimmed
 const SUBDOMAIN_TRIM_WARN_INTERVAL = 3600 * 1000;
+// member marking a subdomains2:<suffix> index as fully built from rdns. addSubDomains may create the key
+// with a few names before any rebuild, so a nonempty key alone does not mean the index is complete.
+// "#" is not valid in domain names. its score is +inf, so it is never pruned by age nor trimmed by rank
+const SUBDOMAIN_BUILT_MARKER = "#built";
+// rebuilt index is written to a temp key first, then merged into the published key in one command
+// the prefix must not start with SUBDOMAIN_KEY_PREFIX, so temp keys are never taken as a suffix index
+const SUBDOMAIN_REBUILD_TMP_PREFIX = "subdomains2_rebuild:";
+// sequence for rebuild temp keys
+let subDomainRebuildSeq = 0;
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -75,6 +84,8 @@ class DNSTool {
       this.subDomainWriteTs = new LRU({max: 20000, maxAge: SUBDOMAIN_WRITE_INTERVAL});
       // last trim warning time per suffix
       this.subDomainTrimWarnTs = new LRU({max: 1000, maxAge: SUBDOMAIN_TRIM_WARN_INTERVAL});
+      // in-flight index rebuild per suffix, concurrent readers in this process share one rebuild
+      this.subDomainRebuilds = new Map();
     }
     return instance;
   }
@@ -234,15 +245,62 @@ class DNSTool {
   async getSubDomains(domainSuffix) {
     const key = this.getSubDomainKey(domainSuffix);
     await rclient.zremrangebyscoreAsync(key, "-inf", Date.now() / 1000 - SUBDOMAIN_RETENTION);
-    let domains = await rclient.zrangeAsync(key, 0, -1) || [];
-    if (_.isEmpty(domains)) {
-      const pattern = `rdns:domain:*.${domainSuffix}`;
-      const keys = await rclient.scanResults(pattern);
-      domains = keys.map(k => k.substring("rdns:domain:".length));
-      domains.push(domainSuffix); // add suffix itself
-      await this._saveSubDomains(domainSuffix, domains);
+    const built = await rclient.zscoreAsync(key, SUBDOMAIN_BUILT_MARKER);
+    // only the marker left means all names aged out, rebuild to pick up rdns names recorded meanwhile,
+    // e.g. while no category had this pattern registered, so nothing was written to the index
+    if (built === null || await rclient.zcardAsync(key) <= 1)
+      return this._rebuildSubDomains(domainSuffix);
+    return this._readSubDomains(key);
+  }
+
+  async _readSubDomains(key) {
+    const members = await rclient.zrangeAsync(key, 0, -1) || [];
+    return members.filter(m => m !== SUBDOMAIN_BUILT_MARKER);
+  }
+
+  // concurrent callers in this process share one rebuild of the same suffix
+  _rebuildSubDomains(domainSuffix) {
+    let rebuild = this.subDomainRebuilds.get(domainSuffix);
+    if (!rebuild) {
+      rebuild = this._doRebuildSubDomains(domainSuffix).finally(() => {
+        this.subDomainRebuilds.delete(domainSuffix);
+      });
+      this.subDomainRebuilds.set(domainSuffix, rebuild);
     }
-    return domains;
+    return rebuild;
+  }
+
+  // rebuild the index from rdns into a temp key, then merge it into the published key with one ZUNIONSTORE,
+  // so a reader never takes a partially written index as complete, and names added concurrently by
+  // addSubDomains are kept (AGGREGATE MAX keeps their newer timestamps)
+  async _doRebuildSubDomains(domainSuffix) {
+    const key = this.getSubDomainKey(domainSuffix);
+    const tmpKey = `${SUBDOMAIN_REBUILD_TMP_PREFIX}${domainSuffix}:${process.pid}:${++subDomainRebuildSeq}`;
+    const keys = await rclient.scanResults(`rdns:domain:*.${domainSuffix}`);
+    const domains = keys.map(k => k.substring("rdns:domain:".length));
+    domains.push(domainSuffix); // add suffix itself
+    try {
+      await this._zaddSubDomains(tmpKey, domains);
+      // the marker is published together with the names in the same ZUNIONSTORE
+      await rclient.zaddAsync(tmpKey, "+inf", SUBDOMAIN_BUILT_MARKER);
+      await rclient.expireAsync(tmpKey, 600); // in case unlink below is not reached
+      // ZUNIONSTORE drops the TTL of the destination, set it in the same transaction so the key is never
+      // left without TTL, the +inf marker is never pruned and such a key would stay forever
+      const merge = rclient.multi([
+        ["zunionstore", key, 2, key, tmpKey, "AGGREGATE", "MAX"],
+        ["expire", key, SUBDOMAIN_KEY_TTL]
+      ]);
+      const results = await util.promisify(merge.exec_transaction).bind(merge)();
+      const err = (results || []).find(r => r instanceof Error);
+      if (err)
+        throw err;
+    } finally {
+      await rclient.unlinkAsync(tmpKey).catch((err) => {
+        log.error(`Failed to remove ${tmpKey}`, err.message);
+      });
+    }
+    await this._trimSubDomains(domainSuffix);
+    return this._readSubDomains(key);
   }
 
   async addSubDomains(domainSuffix, domains) {
@@ -258,6 +316,12 @@ class DNSTool {
 
   async _saveSubDomains(domainSuffix, domains) {
     const key = this.getSubDomainKey(domainSuffix);
+    await this._zaddSubDomains(key, domains);
+    await rclient.expireAsync(key, SUBDOMAIN_KEY_TTL);
+    await this._trimSubDomains(domainSuffix);
+  }
+
+  async _zaddSubDomains(key, domains) {
     const now = Date.now() / 1000;
     for (let i = 0; i < domains.length; i += SUBDOMAIN_BATCH_SIZE) {
       const args = [key];
@@ -265,8 +329,10 @@ class DNSTool {
         args.push(now, d);
       await rclient.zaddAsync(args);
     }
-    await rclient.expireAsync(key, SUBDOMAIN_KEY_TTL);
+  }
 
+  async _trimSubDomains(domainSuffix) {
+    const key = this.getSubDomainKey(domainSuffix);
     const count = await rclient.zcardAsync(key);
     if (count > SUBDOMAIN_MAX_COUNT) {
       // drop the least recently seen names
