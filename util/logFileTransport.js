@@ -52,6 +52,9 @@ function createFileTransport({ name, filename, dirname, maxsize, maxFiles, level
         (options.meta && Object.keys(options.meta).length ? '\n\t' + JSON.stringify(options.meta) : '');
     }
   })
+  // winston emits 'error' once its retries are spent, and an unheard 'error' kills the process;
+  // fail open instead: the line is dropped and the recovery tick reopens the file
+  transport.on('error', () => {});
   recoverWhenFailed(transport);
   return transport;
 }
