@@ -217,8 +217,8 @@ module.exports = {
   FEATURE_PCAP_ZEEK: "pcap_zeek",
   FEATURE_PCAP_SURICATA: "pcap_suricata",
   // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
-  FEATURE_PCAP_ZEEK_FLEET: "pcap_zeek_fleet",
-  FEATURE_PCAP_SURICATA_FLEET: "pcap_suricata_fleet",
+  FEATURE_PCAP_ZEEK_ZSSIDS: "pcap_zeek_zssids",
+  FEATURE_PCAP_SURICATA_ZSSIDS: "pcap_suricata_zssids",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",

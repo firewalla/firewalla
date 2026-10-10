@@ -14,7 +14,7 @@
   "userFeatures": {
     "pcap_suricata": true,
     "local_flow": true,
-    "pcap_zeek_fleet": true,
-    "pcap_suricata_fleet": true
+    "pcap_zeek_zssids": true,
+    "pcap_suricata_zssids": true
   }
 }
