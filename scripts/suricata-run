@@ -6,11 +6,34 @@ logger 'FIREWALLA.SURICATA Start'
 
 source /home/pi/.firewalla/run/suricata/listen_interfaces.rc
 
-# a binary delivered as an asset (SuricataControl.tryUpdateSuricataBinary)
-# replaces the image's only if it runs; a missing or broken asset leaves the
-# image's in use
-suricata_bin=/usr/bin/suricata
+# a binary delivered as an asset (the tarball is fetched by
+# SuricataControl.tryUpdateSuricataBinary) replaces the image's. It is unpacked
+# here, at launch, so this is the one place that installs, validates and falls
+# back. The stamp holds the checksum of the tarball whose binary is installed:
+# comparing content rather than timestamps, because a channel switch can
+# deliver a changed tarball with an older date. A candidate that does not
+# extract to a runnable binary is discarded without touching the installed
+# one, which matters on gold, where the image binary cannot run at all. The
+# image binary is named directly rather than through /usr/bin/suricata, which
+# can point at the asset itself.
 asset_bin=/home/pi/.firewalla/run/assets/suricata
+asset_tar=$asset_bin.tar.gz
+asset_stamp=$asset_bin.installed
+suricata_bin=/usr/local/suricata/bin/suricata
+[[ -x $suricata_bin ]] || suricata_bin=/usr/bin/suricata
+if [[ -f $asset_tar ]]; then
+  tar_hash=$(sha256sum $asset_tar | awk '{print $1}')
+  if [[ ! -x $asset_bin || $tar_hash != $(cat $asset_stamp 2>/dev/null) ]]; then
+    tmp_dir=$asset_bin.new
+    rm -rf $tmp_dir && mkdir -p $tmp_dir
+    if tar xzf $asset_tar -C $tmp_dir && $tmp_dir/suricata -V &>/dev/null; then
+      mv -f $tmp_dir/suricata $asset_bin && echo $tar_hash > $asset_stamp
+    else
+      logger "FIREWALLA.SURICATA $asset_tar does not extract to a runnable suricata, not installing it"
+    fi
+    rm -rf $tmp_dir
+  fi
+fi
 if [[ -x $asset_bin ]]; then
   if $asset_bin -V &>/dev/null; then
     suricata_bin=$asset_bin
