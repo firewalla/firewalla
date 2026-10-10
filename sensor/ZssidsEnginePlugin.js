@@ -14,7 +14,7 @@
  */
 'use strict';
 
-// Applies the pcap_zeek_fleet / pcap_suricata_fleet features: when either
+// Applies the pcap_zeek_zssids / pcap_suricata_zssids features: when either
 // flips, scripts/zssids-engine.sh rewrites the systemd drop-ins beside
 // brofish.service and suricata.service (zssids in, zeek/suricata out, or the
 // reverse) and the pcap plugins are asked to restart their services, which
@@ -37,7 +37,7 @@ const fs = require('fs');
 // the engine selectors, plus the pcap roles themselves: switching the flow
 // role off moves the IDS from the shared brofish zssids to a zssids of its own
 // under the suricata unit, which is another apply
-const ENGINE_FEATURES = [Constants.FEATURE_PCAP_ZEEK_FLEET, Constants.FEATURE_PCAP_SURICATA_FLEET];
+const ENGINE_FEATURES = [Constants.FEATURE_PCAP_ZEEK_ZSSIDS, Constants.FEATURE_PCAP_SURICATA_ZSSIDS];
 const FEATURES = [...ENGINE_FEATURES, Constants.FEATURE_PCAP_ZEEK, Constants.FEATURE_PCAP_SURICATA];
 // net2/config.js merges cloud, MSP and version configuration, which
 // platform.sh cannot; the effective values are written here for it to read
