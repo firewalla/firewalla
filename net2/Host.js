@@ -33,7 +33,6 @@ const f = require('./Firewalla.js');
 const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-const urlHash = require('../util/UrlHash.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -964,6 +963,23 @@ class Host extends Monitorable {
   //'17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}
 
 
+  hashTopDomains(topDomains) {
+    // stricter than neighbors: cleartext only in system debug, not on beta/alpha
+    const debug = sysManager.isSystemDebugOn();
+    const hashList = (list) => list.reduce((acc, {domain, count}) => {
+      const hashes = flowUtil.hashDomain(domain);
+      if (!hashes) return acc;
+      const entry = {_domain: hashes[0], _domainFull: hashes[1], count};
+      if (debug) entry.domain = domain;
+      acc.push(entry);
+      return acc;
+    }, []);
+    return {
+      last24Hours: hashList(topDomains.last24Hours),
+      last24HoursMidnight: hashList(topDomains.last24HoursMidnight)
+    };
+  }
+
   hashNeighbors(neighbors, local = false) {
     let _neighbors = JSON.parse(JSON.stringify(neighbors));
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
@@ -971,10 +987,10 @@ class Host extends Monitorable {
       let neighbor = _neighbors[i];
       if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
       if (neighbor.name) {
-        const hashes = urlHash.canonicalizeAndHashExpressions(neighbor.name)
-        neighbor._name = hashes.length ? hashes[0][2] : null
-        if (hashes.length)
-          neighbor._nameFull = hashes[hashes.length-1][2]
+        const hashes = flowUtil.hashDomain(neighbor.name)
+        neighbor._name = hashes ? hashes[0] : null
+        if (hashes)
+          neighbor._nameFull = hashes[1]
       }
       if (neighbor.dmac)
         neighbor._dmac = flowUtil.hashMac(neighbor.dmac);
@@ -1481,7 +1497,7 @@ class Host extends Monitorable {
     const topDomains = await this._get24HoursTopDomains();
     return {
       "activityMinutes": activity,
-      "topDomains": topDomains
+      "topDomains": this.hashTopDomains(topDomains)
     };
   }
 
