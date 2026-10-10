@@ -915,19 +915,18 @@ class Host extends Monitorable {
           const fqdn = `${alias}.${suffix}`;
           if (new Address4(ipv4Addr).isValid())
             entries.push(`${ipv4Addr} ${fqdn}`);
-          let ipv6Found = false;
+          // No entry at all for a family the device has no address in. :: would be an address
+          // RFC 4291 says must never be assigned to a node, and a client that picks it connects
+          // to itself. The NODATA answer this leaves behind comes from the dnsmasq build that
+          // treats a name defined in a hosts file as authoritative for every family
+          // (dnsmasq_internal#137); an older build forwards the query upstream instead.
           if (_.isArray(ipv6Addr)) {
             for (const addr of ipv6Addr) {
               const addr6 = new Address6(addr);
-              if (addr6.isValid() && !addr6.isLinkLocal()) {
-                ipv6Found = true;
+              if (addr6.isValid() && !addr6.isLinkLocal())
                 entries.push(`${addr} ${fqdn}`);
-              }
             }
           }
-          // add empty ipv6 address if no routable ipv6 address is available
-          if (!ipv6Found)
-            entries.push(`:: ${fqdn}`);
         }
       }
       if (entries.length !== 0) {
