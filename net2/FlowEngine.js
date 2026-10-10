@@ -29,8 +29,8 @@
 // the applied answer.
 //
 // The features:
-//   pcap_zeek_fleet      zssids runs as brofish.service instead of zeek
-//   pcap_suricata_fleet   zssids evaluates the suricata rule set instead of suricata
+//   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
+//   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
 // Defaults come from the platform's files/config.json (userFeatures), the
 // runtime state from sys:features like every other feature. The shell side
 // (platform.sh get_flow_engine_zeek / get_flow_engine_suricata) reads the same
@@ -59,11 +59,11 @@ function zssidsAvailable() {
 }
 
 function zeekEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) && zssidsAvailable() ? 'zssids' : 'zeek';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'zeek';
 }
 
 function suricataEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && zssidsAvailable() ? 'zssids' : 'suricata';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'suricata';
 }
 
 const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/zssids.conf';
