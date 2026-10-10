@@ -1095,9 +1095,17 @@ module.exports = class {
     }
 
     const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
+    const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+    const networkPolicy = _.get(alarm['p.intf.id'] && NetworkProfileManager.getNetworkProfile(alarm['p.intf.id']), 'policy', {})
+    const HostManager = require('../net2/HostManager.js');
+    const systemPolicy = new HostManager().policy || {}
 
     // don't do policy match for emergency access and customized alarm
+    // emergency access on the device, its network or the whole box bypasses rule enforcement, so a rule must not mute the alarm;
+    // each test mirrors the acl() of that level: Host/Identity/NetworkProfile enforce only on true, HostManager bypasses on == false
     if ((!devicePolicy.hasOwnProperty('acl') || devicePolicy.acl === true)
+      && (!networkPolicy.hasOwnProperty('acl') || networkPolicy.acl === true)
+      && systemPolicy.acl != false
       && alarm.type !== "ALARM_CUSTOMIZED"
     ) {
       const policyMatch = await pm2.match(alarm)
