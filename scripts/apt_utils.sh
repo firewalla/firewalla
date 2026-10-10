@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# shared by the apt cron scripts, sourced
+# shared by apt-get.sh and the apt cron scripts, sourced
+
+# keeps the lists on /log compressed; apt reads them either way
+APT_UPDATE_OPTS="-o Acquire::GzipIndexes=true"
 
 apt_cleanup() {
   sudo apt clean

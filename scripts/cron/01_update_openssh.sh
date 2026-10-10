@@ -18,7 +18,7 @@ apt_defer openssh 82800
 trap 'exit 143' TERM INT
 trap apt_cleanup EXIT
 
-sudo timeout 90 apt update \
+sudo timeout 90 apt $APT_UPDATE_OPTS update \
   || { logger "$TAG:ERROR:APT_UPDATE_FAILED code $?"; exit 1; }
 pkgName="openssh-server"
 
