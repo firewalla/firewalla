@@ -10,6 +10,7 @@ fi
 
 source $FIREWALLA_HOME/scripts/apt_utils.sh
 
+apt_lock || { logger "$TAG:SKIP:ALREADY_RUNNING"; exit 0; }
 apt_due openssh 82800 || { logger "$TAG:SKIP:WITHIN_1_DAY"; exit 0; }
 # written before apt runs, so a failed, killed or no-upgrade run also waits;
 # 23h so the nightly run's jitter doesn't skip every other night
