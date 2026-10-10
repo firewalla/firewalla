@@ -18,8 +18,23 @@
 const winston = require('winston');
 const moment = require('moment');
 
+const RECOVER_INTERVAL = 60 * 1000;
+
+// winston 2.x drops every line once _failures reaches maxRetries and never retries on its own
+function recoverWhenFailed(transport) {
+  setInterval(() => {
+    if (transport._failures >= transport.maxRetries) {
+      // reset and reopen rather than rebuild, so the rotation counter (_created) is kept;
+      // once('flush') listeners of errored streams never fire, drop them so they don't pile up
+      transport.removeAllListeners('flush');
+      transport._failures = 0;
+      transport._createStream();
+    }
+  }, RECOVER_INTERVAL).unref();
+}
+
 function createFileTransport({ name, filename, dirname, maxsize, maxFiles, level, withLevel }) {
-  return new (winston.transports.File)({
+  const transport = new (winston.transports.File)({
     level,
     name,
     filename,
@@ -37,6 +52,8 @@ function createFileTransport({ name, filename, dirname, maxsize, maxFiles, level
         (options.meta && Object.keys(options.meta).length ? '\n\t' + JSON.stringify(options.meta) : '');
     }
   })
+  recoverWhenFailed(transport);
+  return transport;
 }
 
 module.exports = {
