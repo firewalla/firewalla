@@ -749,6 +749,11 @@ class Platform {
     return false;
   }
 
+  // asset path of the suricata tarball, used where isSuricataFromAssetsSupported() holds
+  getSuricataAssetPath() {
+    return null;
+  }
+
   hasIntegratedFWAPC() {
     return false;
   }

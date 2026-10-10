@@ -62,6 +62,12 @@ function get_suricata_service {
   echo "${CURRENT_DIR}/files/suricata.service"
 }
 
+# GoldProPlatform.isSuricataFromAssetsSupported: the suricata asset is built
+# against the Ubuntu 22.04 image
+function suricata_from_assets_supported {
+  [[ $(lsb_release -cs 2>/dev/null) == jammy ]]
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }

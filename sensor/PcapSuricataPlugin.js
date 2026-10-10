@@ -129,7 +129,6 @@ class PcapSuricataPlugin extends PcapPlugin {
         "defrag": true,
         "use-mmap": true,
         "tpacket-v3": true,
-        "block-size": 8192,
         "ring-size": 128,
         "bpf-filter": "not port 5353"
       });
