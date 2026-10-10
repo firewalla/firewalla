@@ -4,15 +4,12 @@
 TAG="FIREWALLA:PATCH_TZDATA"
 source $FIREWALLA_HOME/scripts/apt_utils.sh
 
-tzdata_ts_file=/dev/shm/tzdata_apt_update_ts
-now=$(date +%s)
-if [[ ! -e $tzdata_ts_file ]] || (( $(cat $tzdata_ts_file) < $now - 86400 * 30 )); then
-  $FIREWALLA_HOME/scripts/apt-get.sh --no-reboot install tzdata \
-    || { logger "$TAG:ERROR:APT_GET_FAILED code $?"; exit 1; }
-  echo $now > $tzdata_ts_file
-  logger "$TAG:DONE"
+apt_due tzdata $(( 86400 * 30 )) || { logger "$TAG:SKIP:WITHIN_30_DAYS"; exit 0; }
+apt_defer tzdata $(( 86400 * 30 ))
+trap 'exit 143' TERM INT
+# a failed or killed run is retried after a day, not after 30
+trap 'rc=$?; (( rc )) && apt_defer tzdata 86400; apt_cleanup' EXIT
 
-  apt_cleanup
-else
-  logger "$TAG:SKIP:WITHIN_30_DAYS"
-fi
+$FIREWALLA_HOME/scripts/apt-get.sh --no-reboot install tzdata \
+  || { logger "$TAG:ERROR:APT_GET_FAILED code $?"; exit 1; }
+logger "$TAG:DONE"
