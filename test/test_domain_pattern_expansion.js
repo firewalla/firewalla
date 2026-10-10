@@ -20,9 +20,11 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const DNSTool = require('../net2/DNSTool.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 
-// a subdomains:<suffix> set larger than the max number of function arguments (~125k on node 12)
+// a subdomain list larger than the max number of function arguments (~125k on node 12)
 // used to crash category ipset recycle with "RangeError: Maximum call stack size exceeded"
+// it is seeded directly into subdomains2:<suffix>, bypassing the size limit of addSubDomains
 const SUFFIX = 'fwtest-pattern-expansion.com';
+const SUBDOMAIN_KEY = `subdomains2:${SUFFIX}`;
 const SUBDOMAIN_COUNT = 200000;
 const RDNS_COUNT = 20000;
 const IP_POOL = 3000;
@@ -47,13 +49,18 @@ describe('Test large domain pattern expansion', function() {
 
   before(async () => {
     await unlinkByPattern(`rdns:domain:*${SUFFIX}`);
-    await rclient.unlinkAsync(`subdomains:${SUFFIX}`, `srdns:pattern:${SUFFIX}`);
+    await rclient.unlinkAsync(SUBDOMAIN_KEY, `srdns:pattern:${SUFFIX}`);
 
     const names = [];
     for (let i = 0; i < SUBDOMAIN_COUNT; i++)
       names.push(`n${i}.${SUFFIX}`);
-    for (let i = 0; i < names.length; i += 1000)
-      await rclient.saddAsync(`subdomains:${SUFFIX}`, names.slice(i, i + 1000));
+    const now = Date.now() / 1000;
+    for (let i = 0; i < names.length; i += 1000) {
+      const args = [SUBDOMAIN_KEY];
+      for (const n of names.slice(i, i + 1000))
+        args.push(now, n);
+      await rclient.zaddAsync(args);
+    }
 
     const cmds = [];
     for (let i = 0; i < RDNS_COUNT; i++) {
@@ -71,7 +78,7 @@ describe('Test large domain pattern expansion', function() {
 
   after(async () => {
     await unlinkByPattern(`rdns:domain:*${SUFFIX}`);
-    await rclient.unlinkAsync(`subdomains:${SUFFIX}`, `srdns:pattern:${SUFFIX}`);
+    await rclient.unlinkAsync(SUBDOMAIN_KEY, `srdns:pattern:${SUFFIX}`);
   });
 
   it('getIPsByDomainPattern should return deduplicated IPs without throwing', async () => {
@@ -101,5 +108,77 @@ describe('Test large domain pattern expansion', function() {
     const dest = `srdns:pattern:${SUFFIX}`;
     await categoryUpdater.unionDomainMappings(dest, [`rdns:domain:none1.${SUFFIX}`, `rdns:domain:none2.${SUFFIX}`]);
     expect(await rclient.typeAsync(dest)).to.equal('none');
+  });
+});
+
+describe('Test subdomains2 zset lifecycle', function() {
+  this.timeout(60000);
+
+  const dnsTool = new DNSTool();
+  const SUFFIX2 = 'fwtest-subdomains2.com';
+  const KEY2 = `subdomains2:${SUFFIX2}`;
+
+  beforeEach(async () => {
+    await unlinkByPattern(`rdns:domain:*${SUFFIX2}`);
+    await rclient.unlinkAsync(KEY2);
+  });
+
+  after(async () => {
+    await unlinkByPattern(`rdns:domain:*${SUFFIX2}`);
+    await rclient.unlinkAsync(KEY2);
+  });
+
+  it('getSubDomains should drop names not seen in 24 hours', async () => {
+    const now = Date.now() / 1000;
+    await rclient.zaddAsync(KEY2, now - 2 * 86400, `old.${SUFFIX2}`, now, `fresh.${SUFFIX2}`);
+    const domains = await dnsTool.getSubDomains(SUFFIX2);
+    expect(domains).to.deep.equal([`fresh.${SUFFIX2}`]);
+    expect(await rclient.zscoreAsync(KEY2, `old.${SUFFIX2}`)).to.equal(null);
+  });
+
+  it('getSubDomains should not refresh TTL', async () => {
+    await rclient.zaddAsync(KEY2, Date.now() / 1000, `a.${SUFFIX2}`);
+    await rclient.expireAsync(KEY2, 100);
+    await dnsTool.getSubDomains(SUFFIX2);
+    expect(await rclient.ttlAsync(KEY2)).to.be.within(1, 100);
+  });
+
+  it('getSubDomains should rebuild from rdns when empty', async () => {
+    await rclient.zaddAsync(`rdns:domain:a.${SUFFIX2}`, Date.now() / 1000, '198.18.0.1');
+    await rclient.zaddAsync(`rdns:domain:b.${SUFFIX2}`, Date.now() / 1000, '198.18.0.2');
+    const domains = await dnsTool.getSubDomains(SUFFIX2);
+    expect(domains.slice().sort()).to.deep.equal([`a.${SUFFIX2}`, `b.${SUFFIX2}`, SUFFIX2].sort());
+    expect(await rclient.zcardAsync(KEY2)).to.equal(3);
+    expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);
+  });
+
+  it('addSubDomains should set TTL and skip the same name within write interval', async () => {
+    const name = `dedup-${Date.now()}.${SUFFIX2}`;
+    await dnsTool.addSubDomains(SUFFIX2, [name]);
+    expect(Number(await rclient.zscoreAsync(KEY2, name))).to.be.above(0);
+    expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);
+
+    await rclient.zaddAsync(KEY2, 1, name);
+    await dnsTool.addSubDomains(SUFFIX2, [name]);
+    expect(await rclient.zscoreAsync(KEY2, name)).to.equal('1');
+  });
+
+  it('addSubDomains should trim the least recently seen names beyond the limit', async () => {
+    const limit = 100000;
+    const old = Date.now() / 1000 - 100;
+    for (let i = 0; i < limit; i += 1000) {
+      const args = [KEY2];
+      for (let j = i; j < i + 1000; j++)
+        args.push(old, `seed${j}.${SUFFIX2}`);
+      await rclient.zaddAsync(args);
+    }
+    const added = [];
+    for (let i = 0; i < 5; i++)
+      added.push(`new${i}-${Date.now()}.${SUFFIX2}`);
+    await dnsTool.addSubDomains(SUFFIX2, added);
+
+    expect(await rclient.zcardAsync(KEY2)).to.equal(limit);
+    for (const name of added)
+      expect(await rclient.zscoreAsync(KEY2, name)).to.not.equal(null);
   });
 });

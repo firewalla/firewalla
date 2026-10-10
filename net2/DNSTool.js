@@ -32,8 +32,23 @@ const LRU = require('lru-cache');
 // (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
 
-// number of rdns keys read per pipeline when expanding a domain pattern via subdomains:<suffix>
+// number of rdns keys read per pipeline when expanding a domain pattern via subdomains2:<suffix>
 const SUBDOMAIN_BATCH_SIZE = 1000;
+
+// subdomains2:<suffix> is a zset of subdomain names seen under a suffix, score is the last seen timestamp.
+// it replaces the legacy subdomains:<suffix> set, which only grew and could reach hundreds of thousands of names.
+// a different prefix keeps old and new code from touching each other's key when switching versions
+const SUBDOMAIN_KEY_PREFIX = "subdomains2:";
+// names not seen for this long are dropped on read, aligned with the lifetime of rdns:domain:<name>
+const SUBDOMAIN_RETENTION = 86400;
+// TTL is only refreshed on write, a suffix nobody writes any more expires by itself
+const SUBDOMAIN_KEY_TTL = 86400 * 2;
+// keep at most this many names per suffix, the oldest ones are trimmed beyond it
+const SUBDOMAIN_MAX_COUNT = 100000;
+// the same name under the same suffix is written at most once per this interval
+const SUBDOMAIN_WRITE_INTERVAL = 600 * 1000;
+// at most one warning per suffix per this interval when a suffix is trimmed
+const SUBDOMAIN_TRIM_WARN_INTERVAL = 3600 * 1000;
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -56,6 +71,10 @@ class DNSTool {
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
       setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
+      // recently written <suffix>|<name> pairs, to skip redundant subdomains2:<suffix> writes
+      this.subDomainWriteTs = new LRU({max: 20000, maxAge: SUBDOMAIN_WRITE_INTERVAL});
+      // last trim warning time per suffix
+      this.subDomainTrimWarnTs = new LRU({max: 1000, maxAge: SUBDOMAIN_TRIM_WARN_INTERVAL});
     }
     return instance;
   }
@@ -207,25 +226,55 @@ class DNSTool {
       await rclient.expireAsync(key, expire)
   }
 
+  getSubDomainKey(domainSuffix) {
+    return `${SUBDOMAIN_KEY_PREFIX}${domainSuffix}`;
+  }
+
+  // read does not refresh TTL, otherwise frequent category recycles would keep the key alive forever
   async getSubDomains(domainSuffix) {
-    const key = `subdomains:${domainSuffix}`;
-    let domains = await rclient.smembersAsync(key) || [];
+    const key = this.getSubDomainKey(domainSuffix);
+    await rclient.zremrangebyscoreAsync(key, "-inf", Date.now() / 1000 - SUBDOMAIN_RETENTION);
+    let domains = await rclient.zrangeAsync(key, 0, -1) || [];
     if (_.isEmpty(domains)) {
       const pattern = `rdns:domain:*.${domainSuffix}`;
       const keys = await rclient.scanResults(pattern);
       domains = keys.map(k => k.substring("rdns:domain:".length));
       domains.push(domainSuffix); // add suffix itself
-      await rclient.saddAsync(key, domains);
+      await this._saveSubDomains(domainSuffix, domains);
     }
-    await rclient.expireAsync(key, 86400 * 7);
     return domains;
   }
 
   async addSubDomains(domainSuffix, domains) {
-    const key = `subdomains:${domainSuffix}`;
-    if (!_.isEmpty(domains)) {
-      await rclient.saddAsync(key, domains);
-      await rclient.expireAsync(key, 86400 * 7);
+    if (_.isEmpty(domains))
+      return;
+    const toWrite = domains.filter(d => !this.subDomainWriteTs.get(`${domainSuffix}|${d}`));
+    if (_.isEmpty(toWrite))
+      return;
+    await this._saveSubDomains(domainSuffix, toWrite);
+    for (const d of toWrite)
+      this.subDomainWriteTs.set(`${domainSuffix}|${d}`, 1);
+  }
+
+  async _saveSubDomains(domainSuffix, domains) {
+    const key = this.getSubDomainKey(domainSuffix);
+    const now = Date.now() / 1000;
+    for (let i = 0; i < domains.length; i += SUBDOMAIN_BATCH_SIZE) {
+      const args = [key];
+      for (const d of domains.slice(i, i + SUBDOMAIN_BATCH_SIZE))
+        args.push(now, d);
+      await rclient.zaddAsync(args);
+    }
+    await rclient.expireAsync(key, SUBDOMAIN_KEY_TTL);
+
+    const count = await rclient.zcardAsync(key);
+    if (count > SUBDOMAIN_MAX_COUNT) {
+      // drop the least recently seen names
+      await rclient.zremrangebyrankAsync(key, 0, count - SUBDOMAIN_MAX_COUNT - 1);
+      if (!this.subDomainTrimWarnTs.get(domainSuffix)) {
+        this.subDomainTrimWarnTs.set(domainSuffix, 1);
+        log.warn(`Too many subdomains under ${domainSuffix}: ${count}, trimmed to ${SUBDOMAIN_MAX_COUNT}`);
+      }
     }
   }
 
