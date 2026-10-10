@@ -177,6 +177,10 @@ const simple = async (req, res, next) => {
           body.message.suppressLog = true; // suppressLog after first call
         } catch(err) {
           log.error("Got error when handling request, err:", err);
+          if (!res.is_closed) {
+            res.write(`id: -1\nevent: ${item}\ndata:\n\n`);
+          }
+          res.end();
           break;
         }
       }
