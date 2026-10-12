@@ -22,8 +22,14 @@ const RECOVER_INTERVAL = 60 * 1000;
 
 // winston 2.x drops every line once _failures reaches maxRetries and never retries on its own
 function recoverWhenFailed(transport) {
+  let wasOpening = false;
   setInterval(() => {
-    if (transport._failures >= transport.maxRetries) {
+    const latched = transport._failures >= transport.maxRetries;
+    // a non-ENOENT stat error leaves opening set and every line buffered; one tick covers a normal reopen
+    const stuck = transport.opening && wasOpening;
+    wasOpening = transport.opening;
+    if (stuck) transport._buffer.length = 0;
+    if (latched || stuck) {
       // reset and reopen rather than rebuild, so the rotation counter (_created) is kept;
       // once('flush') listeners of errored streams never fire, drop them so they don't pile up
       transport.removeAllListeners('flush');
