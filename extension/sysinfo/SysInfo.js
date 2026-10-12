@@ -686,12 +686,6 @@ async function getPerfStats() {
   }
 }
 
-function getHeapDump(file, callback) {
-  callback(null);
-  // let heapdump = require('heapdump');
-  // heapdump.writeSnapshot(file, callback);
-}
-
 // returns the non-zero error counters of a NIC from `ethtool -S`, keyed as <nic>_<counter>,
 // null if ethtool fails, e.g. the driver does not support statistics.
 // counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
@@ -1168,7 +1162,6 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump,
   getAutoUpgrade,
   getDiskWriteStats,
   getEthErrorStats,
