@@ -2031,8 +2031,9 @@ class BroDetect {
         lh = lh || "0.0.0.0";
         dh = dh || "0.0.0.0";
 
-        // make sure lh points to local device
-        if (lh && !sysManager.isLocalIP(lh)) {
+        // make sure lh points to local device, a known device whose address is outside the box's
+        // subnets counts as local so the alarm is filed under it
+        if (lh && !sysManager.isLocalIP(lh) && !await hostTool.getMacEntryByIPRecord(lh)) {
           let tmp = lh;
           lh = dh;
           dh = tmp;

@@ -368,6 +368,16 @@ class HostTool {
     return this.getMACEntry(mac)
   }
 
+  // resolves only through host:ip4/host:ip6 records, with no ARP or neighbor probe, so an address
+  // outside the box's subnets (e.g. one left over from an old prefix) maps to the device it was seen on
+  async getMacEntryByIPRecord(ip) {
+    const fam = net.isIP(ip)
+    if (!fam) return null
+    const entry = fam == 4 ? await this.getIPv4Entry(ip) : await this.getIPv6Entry(ip)
+    if (!entry || !entry.mac) return null
+    return this.getMACEntry(entry.mac)
+  }
+
   async getAllMACs() {
     const keys = await rclient.scanResults("host:mac:*");
     return keys.map(key => key.substring(9)).filter(Boolean);

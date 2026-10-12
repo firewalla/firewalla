@@ -79,15 +79,19 @@ class BroNotice {
     } else {
       alarm["p.local_is_client"] = "0";
     }
+    // zeek's src is always the scanner, but BroDetect files the alarm under the target
+    // when src is not a local device, so the scanner is p.dest.ip in that case
+    const scanner = alarm["p.local_is_client"] == "1" ? alarm["p.device.ip"] : alarm["p.dest.ip"];
+    const target = alarm["p.local_is_client"] == "1" ? alarm["p.dest.ip"] : alarm["p.device.ip"];
     let srcName = null;
     let dstName = null;
-    if (sysManager.isLocalIP(alarm["p.device.ip"])) {
-      srcName = await hostTool.getName(alarm["p.device.ip"]);
+    if (sysManager.isLocalIP(scanner)) {
+      srcName = await hostTool.getName(scanner);
     }
-    if (sysManager.isLocalIP(alarm["p.dest.ip"])) {
-      dstName = await hostTool.getName(alarm["p.dest.ip"]);
+    if (sysManager.isLocalIP(target)) {
+      dstName = await hostTool.getName(target);
     }
-    alarm['p.message'] = `${srcName ? srcName : alarm["p.device.ip"]} was scanning ports of ${dstName ? dstName + `(${alarm["p.dest.ip"]})`: alarm["p.dest.ip"]}.`;
+    alarm['p.message'] = `${srcName ? srcName : scanner} was scanning ports of ${dstName ? dstName + `(${target})`: target}.`;
   }
 
   async processHeartbleed(alarm, broObj) {
@@ -156,7 +160,7 @@ class BroNotice {
     }
 
     // ignore notice triggered by Firewalla itself
-    if (sysManager.isMyIP(broObj.src)) {
+    if (sysManager.isMyIP(broObj.src) || sysManager.isMyIP6(broObj.src)) {
       log.info("Ignoring bro notice", broObj)
       return null;
     }
