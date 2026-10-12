@@ -3750,7 +3750,7 @@ class PolicyManager2 {
         if (remoteVal)
           remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
         if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
-          remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(remoteVal)));
+          remoteIpsToCheck = remoteIpsToCheck.concat(await dnsTool.getIPsByDomainPattern(remoteVal));
         break;
       default:
     }
@@ -4087,7 +4087,7 @@ class PolicyManager2 {
         if (remoteVal)
           remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
         if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
-          remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(remoteVal)));
+          remoteIpsToCheck = remoteIpsToCheck.concat(await dnsTool.getIPsByDomainPattern(remoteVal));
         break;
       default:
     }
