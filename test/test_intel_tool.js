@@ -218,3 +218,35 @@ describe.skip('IntelTool', () => {
   })
 
 });
+
+describe('IntelTool.checkIntelFromCloud response', () => {
+  const bone = require('../lib/Bone.js');
+  let intelAsync;
+
+  before(() => {
+    intelAsync = bone.intelAsync;
+  });
+
+  after(() => {
+    bone.intelAsync = intelAsync;
+  });
+
+  it('should reject when bone returns no response', async () => {
+    bone.intelAsync = async () => undefined; // what bone returns without a valid token
+
+    let error;
+    try {
+      await intelTool.checkIntelFromCloud('203.0.113.10', 'video.example.com');
+    } catch (err) {
+      error = err;
+    }
+    expect(error).to.be.an('error');
+  });
+
+  it('should resolve an empty array as no intel', async () => {
+    bone.intelAsync = async () => [];
+
+    const result = await intelTool.checkIntelFromCloud('203.0.113.10', 'video.example.com');
+    expect(result).to.eql([]);
+  });
+});

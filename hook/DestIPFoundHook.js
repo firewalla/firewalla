@@ -279,7 +279,9 @@ class DestIPFoundHook extends Hook {
 
     } catch (err) {
       log.error("Failed to load intel, err:", err);
-      return [];
+      // [] means the cloud has no intel; a failed lookup must reach processIP as an error,
+      // so the result is marked cloudFailed and not cached
+      throw err;
     }
   }
 
@@ -414,7 +416,8 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      if (!skipWriteLocalCache && ip) {
+      // a failed lookup is not cached: the next flow retries the cloud, and an earlier record stays
+      if (!skipWriteLocalCache && ip && !aggrIntelInfo.cloudFailed) {
         // remove intel in case some keys in old intel doesn't exist in new one
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
