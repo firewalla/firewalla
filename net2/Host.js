@@ -1140,7 +1140,6 @@ class Host extends Monitorable {
       ou: this.o.mac.slice(0,13),
       uuid: flowUtil.hashMac(this.o.mac),
       _ipv4: flowUtil.hashIp(this.o.ipv4),
-      ipv4: this.o.ipv4,
       firstFoundTimestamp: this.o.firstFoundTimestamp,
       lastActiveTimestamp: this.o.lastActiveTimestamp,
       bonjourName: this.o.bonjourName,
@@ -1174,10 +1173,6 @@ class Host extends Monitorable {
       // old data clean sensor should have cleaned most of obsolated entries
       const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)
       if (results.length) obj.agents = results.map(str => JSON.parse(str).ua)
-
-      if (this.ipv6Addr) {
-        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
-      }
 
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor
