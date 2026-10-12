@@ -27,6 +27,13 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const delay = require('../util/util.js').delay;
 const LRU = require('lru-cache');
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const tm = require('../alarm/TrustManager.js');
+const bone = require('../lib/Bone.js');
+const IntelLoader = require('../intel/IntelLoader.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const HostManager = require('../net2/HostManager.js');
 
 const am2 = new AlarmManager2();
 
@@ -402,5 +409,105 @@ describe('Test alarm cache', function(){
     expect(await am2._fallbackAlarmCache(['test_type'])).to.be.false;
     let result = am2._queryCachedAlarmIds(10, Date.now()/1000, false, 'active', {types: ["test_type"]});
     expect(result).to.be.eql([]);
+  });
+});
+
+// a rule matching the alarm would normally mute it; every check before and after pm2.match is
+// stubbed so the outcome depends only on whether the policy match ran
+describe('Alarm policy match under emergency access', function () {
+  this.timeout(10000);
+
+  const INTF = '00000000-0000-0000-0000-0000000000aa';
+  const OTHER_INTF = '00000000-0000-0000-0000-0000000000bb';
+  const pm2 = new PolicyManager2();
+  const exceptionManager = new ExceptionManager();
+  const hostManager = new HostManager();
+
+  const originals = [];
+  let networkPolicy;
+  let systemPolicy;
+  let policyMatchCalls;
+
+  function stub(obj, name, fn) {
+    originals.push([obj, name, obj[name]]);
+    obj[name] = fn;
+  }
+
+  function newAlarm(intf) {
+    const alarm = new Alarm.PornAlarm(Date.now() / 1000, 'test-device', 'example.com', {
+      'p.device.name': 'test-device',
+      'p.device.id': 'test-device',
+      'p.device.mac': '00:00:5E:00:53:01',
+      'p.device.ip': '192.0.2.10',
+      'p.dest.name': 'example.com',
+      'p.dest.ip': '198.51.100.7',
+      'p.dest.port': 443,
+      'p.intf.id': intf,
+    });
+    alarm.getDevice = async () => ({ policy: {} });
+    return alarm;
+  }
+
+  async function check(alarm) {
+    try {
+      await am2.checkAndSaveAsync(alarm);
+    } catch (err) {
+      return err.code;
+    }
+    return null;
+  }
+
+  before(async () => {
+    await hostManager.loadPolicyAsync();
+    systemPolicy = hostManager.policy;
+
+    stub(IntelLoader, 'enrichAlarm', async (alarm) => alarm);
+    stub(am2, 'dedup', async () => false);
+    stub(am2, 'hasRelatedAppTimeUsage', async () => true);
+    stub(exceptionManager, 'match', async () => []);
+    stub(exceptionManager, 'isFirewallaCloud', () => false);
+    stub(pm2, 'match', async () => { policyMatchCalls++; return true; });
+    stub(tm, 'matchAlarm', async () => false);
+    stub(bone, 'arbitration', async () => {
+      const err = new Error('reached cloud arbitration');
+      err.code = 'REACHED_ARBITRATION';
+      throw err;
+    });
+    stub(NetworkProfileManager, 'getNetworkProfile', (uuid) => uuid === INTF ? { policy: networkPolicy } : null);
+  });
+
+  after(() => {
+    for (const [obj, name, fn] of originals.reverse())
+      obj[name] = fn;
+    hostManager.policy = systemPolicy;
+  });
+
+  beforeEach(() => {
+    policyMatchCalls = 0;
+    networkPolicy = { acl: true };
+    hostManager.policy = Object.assign({}, systemPolicy, { acl: true });
+  });
+
+  it('should drop the alarm as covered by a rule when emergency access is off', async () => {
+    expect(await check(newAlarm(INTF))).to.equal('ERR_BLOCKED_BY_POLICY_ALREADY');
+    expect(policyMatchCalls).to.equal(1);
+  });
+
+  it('should skip the rule match when emergency access is on for the alarm\'s network', async () => {
+    networkPolicy = { acl: false };
+    expect(await check(newAlarm(INTF))).to.equal('REACHED_ARBITRATION');
+    expect(policyMatchCalls).to.equal(0);
+  });
+
+  it('should still match rules for an alarm on another network', async () => {
+    networkPolicy = { acl: false };
+    expect(await check(newAlarm(OTHER_INTF))).to.equal('ERR_BLOCKED_BY_POLICY_ALREADY');
+    expect(policyMatchCalls).to.equal(1);
+  });
+
+  it('should skip the rule match when emergency access is on for the whole box', async () => {
+    hostManager.policy.acl = false;
+    expect(await check(newAlarm(INTF))).to.equal('REACHED_ARBITRATION');
+    expect(policyMatchCalls).to.equal(0);
   });
 });
