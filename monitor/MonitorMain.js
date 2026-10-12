@@ -252,11 +252,6 @@ function scheduleRunDLP() {
 }
 
 function run() {
-  // listen on request to dump heap for this process, used for memory optmiziation
-  // let HeapSensor = require('../sensor/HeapSensor');
-  // heapSensor = new HeapSensor();
-  // heapSensor.run();
-
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
