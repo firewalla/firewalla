@@ -95,7 +95,7 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    if (sysManager.isLocalIP(broObj["src"])) {
+    if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "1";
     } else {
       // initiated from outside
@@ -119,7 +119,7 @@ class BroNotice {
   // on HTTP src/dst compiles with HTTP connection
   // sub: match description link
   async processTeamCymru(alarm, broObj) {
-    if (sysManager.isLocalIP(broObj.src)) {
+    if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "1";
     } else {
       // initiated from outside

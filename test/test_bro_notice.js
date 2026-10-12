@@ -24,6 +24,8 @@ const LAN_DEVICE = '192.168.1.10';
 const REMOTE = '203.0.113.5';
 // IPv6 address outside every subnet of the box, which isLocalIP reports as remote
 const V6_OUTSIDE = '2001:db8:2::10';
+// device with a host record at an address outside every subnet of the box
+const KNOWN_OUTSIDE = '10.99.0.20';
 
 const localIPs = new Set([BOX_IP, BOX_LL, LAN_DEVICE]);
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
@@ -59,11 +61,11 @@ function restoreMocks() {
 }
 
 // the alarm net2/BroDetect.js processNoticeData hands over: zeek's src becomes the alarm device
-// unless isLocalIP(src) is false, in which case src and dst are swapped
+// unless src is neither local nor a known device, in which case src and dst are swapped
 function noticeToAlarm(notice) {
   let lh = notice.src;
   let dh = notice.dst;
-  if (!localIPs.has(lh)) {
+  if (!localIPs.has(lh) && lh !== KNOWN_OUTSIDE) {
     [lh, dh] = [dh, lh];
   }
   return {
@@ -121,6 +123,38 @@ describe('BroNotice port scan', function () {
     for (const box of [BOX_IP, BOX_V6]) {
       const notice = portScan(box, REMOTE);
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    }
+  });
+});
+
+describe('BroNotice inbound auto-block', function () {
+  before(setupMocks);
+  after(restoreMocks);
+
+  const notices = [
+    { note: 'Heartbleed::SSL_Heartbeat_Attack', msg: 'An TLS heartbleed attack was detected!' },
+    { note: 'TeamCymruMalwareHashRegistry::Match', msg: 'Malware Hash Registry Detection rate: 50%' },
+  ];
+
+  it('treats a known device outside the local subnets as the client and blocks nothing', async () => {
+    for (const n of notices) {
+      const notice = { ts: 1700000000.1, note: n.note, msg: n.msg, src: KNOWN_OUTSIDE, dst: REMOTE };
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+      expect(alarm['p.device.ip']).to.equal(KNOWN_OUTSIDE);
+      expect(alarm['p.local_is_client']).to.equal('1');
+      expect(alarm['p.action.block']).to.equal(undefined);
+    }
+  });
+
+  it('blocks a remote src, which the alarm carries as p.dest.ip', async () => {
+    for (const n of notices) {
+      const notice = { ts: 1700000000.1, note: n.note, msg: n.msg, src: REMOTE, dst: LAN_DEVICE };
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+      expect(alarm['p.dest.ip']).to.equal(REMOTE);
+      expect(alarm['p.local_is_client']).to.equal('0');
+      expect(alarm['p.action.block']).to.equal(true);
     }
   });
 });
