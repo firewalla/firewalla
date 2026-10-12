@@ -7,6 +7,9 @@ APT_UPDATE_OPTS="-o Acquire::GzipIndexes=true"
 
 apt_cleanup() {
   sudo apt clean
+  # another apt (the app's apt-get, system-updates) still holds the lists lock: removing its
+  # files, lock included, would let a second apt run next to it
+  sudo fuser -s /var/lib/apt/lists/lock 2>/dev/null && return 0
   sudo rm -rf /log/apt/lib/lists/*
 }
 
