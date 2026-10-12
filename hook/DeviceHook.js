@@ -322,7 +322,7 @@ class DeviceHook extends Hook {
           if (!enrichedHost.sambaName && host.ipv4Addr) {
             let sambaName = await samba.getSambaName(host.ipv4Addr);
             if (sambaName)
-              enrichedHost.sambaNname = sambaName;
+              enrichedHost.sambaName = sambaName;
             enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
           }
 
