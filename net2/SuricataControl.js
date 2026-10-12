@@ -113,9 +113,11 @@ class SuricataControl {
       }
 
       // Create suricata binary lst file for assets
-      const suricataBinaryPath = `${f.getRuntimeInfoFolder()}/assets/suricata`;
       const suricataBinaryTarPath = `${f.getRuntimeInfoFolder()}/assets/suricata.tar.gz`;
-      const assetsConf = `${suricataBinaryTarPath} ${platform.getSuricataAssetPath()} 644 ":" "tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets; sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata; if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
+      // suricata-run unpacks and validates the tarball when it launches suricata, so the
+      // hook only restarts a running instance onto the new binary; an inactive one picks
+      // it up whenever the feature next starts it
+      const assetsConf = `${suricataBinaryTarPath} ${platform.getSuricataAssetPath()} 644 ":" "if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
       const assetsConfPath = `${f.getExtraAssetsDir()}/assets_suricata.lst`;
       
       await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"});
@@ -123,8 +125,6 @@ class SuricataControl {
       
       // Update assets using the update_assets.sh script
       await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`);
-      await execFile("tar", ["xzf", suricataBinaryTarPath, "-C", `${f.getRuntimeInfoFolder()}/assets`]);
-      await execFile("sudo", ["ln", "-sfT", suricataBinaryPath, "/usr/bin/suricata"]);
       log.info("Updated suricata binary assets");
     } catch(err) {
       log.error("Failed to update suricata binary", err);
