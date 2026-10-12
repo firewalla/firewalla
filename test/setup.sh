@@ -99,5 +99,6 @@ ln -sf "$TEST_MODULES" node_modules
 # it, so install in the tree's own directory from a copy of package.json; that also keeps
 # package-lock.json out of the checkout
 TEST_PREFIX=$(dirname "$TEST_MODULES")
+rm -f "$INSTALLED"
 cp package.json "$TEST_PREFIX/" && (cd "$TEST_PREFIX" && npm install) && touch "$INSTALLED" || exit 1
 report_path
