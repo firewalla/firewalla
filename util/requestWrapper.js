@@ -15,6 +15,7 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 const https = require('https');
+const net = require('net');
 // vendored 4.1.2: 4.0.2 deep clones options incl. the pooled agent and its queued requests on every response
 const requestretry = require('../vendor_lib/requestretry');
 const zlib = require('zlib');
@@ -105,6 +106,9 @@ async function rrWithErrHandling(options, usePool = false, compress = false, thr
       log.error(uid, 'Failed to compress payload:', err.message);
     }
   }
+
+  if (options.localAddress && !options.family)
+    options.family = net.isIPv6(options.localAddress) ? 6 : 4;
 
   let response
   try {
