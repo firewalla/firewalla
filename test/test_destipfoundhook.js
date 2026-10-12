@@ -66,3 +66,46 @@ describe.skip('DestIPFoundHook', () => {
   });
 
 });
+
+describe('DestIPFoundHook.processIP cloud lookup result', () => {
+  const IntelTool = require('../net2/IntelTool');
+  const intelTool = new IntelTool(); // singleton, the same instance the hook uses
+  const stubbed = ['getIntel', 'getDomainIntelAll', 'getCustomIntel', 'checkIntelFromCloud', 'removeIntel', 'addIntel'];
+  const flow = { ip: '203.0.113.10', host: 'video.example.com', fd: 'in' };
+  let written;
+
+  before(() => {
+    intelTool.getIntel = async () => null;
+    intelTool.getDomainIntelAll = async () => [];
+    intelTool.getCustomIntel = async () => null;
+    intelTool.removeIntel = async (ip) => { written.push(['remove', ip]) };
+    intelTool.addIntel = async (ip) => { written.push(['add', ip]) };
+  });
+
+  after(() => {
+    for (const name of stubbed) delete intelTool[name];
+  });
+
+  beforeEach(() => {
+    written = [];
+  });
+
+  it('should not cache intel when the cloud lookup fails', async () => {
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.true;
+    expect(intel.host).to.equal(flow.host);
+    expect(written).to.be.empty;
+  });
+
+  it('should cache intel when the cloud answers with no intel', async () => {
+    intelTool.checkIntelFromCloud = async () => [];
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.undefined;
+    expect(written).to.eql([['remove', flow.ip], ['add', flow.ip]]);
+  });
+});

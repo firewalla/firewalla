@@ -144,7 +144,13 @@ class AutoBlocksRevalidationSensor extends Sensor {
       log.debug(`Revalidating ${ip ? `ip ${ip}` : `domain ${domain}`} ...`);
       const intel = await destIPFoundHook.processIP(JSON.stringify({ip, host: domain})); // processIP will check intel cache, FastIntelPlugin, and finally cloud
 
-      if (!intel || !this.shouldAutoBlock(autoBlockRule, intel)) {
+      // no verdict when the lookup failed; keep the rule until a later round gets one
+      if (!intel || intel.cloudFailed) {
+        log.warn(`Skip revalidating ${ip ? `ip ${ip}` : `domain ${domain}`}, intel lookup failed`);
+        continue;
+      }
+
+      if (!this.shouldAutoBlock(autoBlockRule, intel)) {
         log.info(`Revert auto block on ${ip ? `ip ${ip}` : `domain ${domain}`} since it's not dangerous any more`);
 
         await intelTool.setUnblockExpire(ip || domain, this.unblockExpireTime);
