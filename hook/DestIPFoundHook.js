@@ -370,10 +370,6 @@ class DestIPFoundHook extends Hook {
             log.debug('got cloud intel:', intelSources)
             await this.updateDomainCache(intelSources);
           }
-          // custom intel has higher priority as appeneded later in the array
-          const cDomainIntel = await intelTool.getDomainIntelAll(domain, true);
-          cDomainIntel.length && log.debug('append custom domain intel:', cDomainIntel)
-          while (cDomainIntel.length) intelSources.push(cDomainIntel.pop())
         } catch (err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)
@@ -383,6 +379,11 @@ class DestIPFoundHook extends Hook {
             return null;
           }
         }
+        // custom intel has higher priority as appeneded later in the array
+        // it is local, so it applies even when the cloud lookup failed
+        const cDomainIntel = await intelTool.getDomainIntelAll(domain, true);
+        cDomainIntel.length && log.debug('append custom domain intel:', cDomainIntel)
+        while (cDomainIntel.length) intelSources.push(cDomainIntel.pop())
       }
 
       const cIpIntel = await intelTool.getCustomIntel('ip', ip)

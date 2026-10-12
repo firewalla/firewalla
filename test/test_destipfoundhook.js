@@ -76,7 +76,6 @@ describe('DestIPFoundHook.processIP cloud lookup result', () => {
 
   before(() => {
     intelTool.getIntel = async () => null;
-    intelTool.getDomainIntelAll = async () => [];
     intelTool.getCustomIntel = async () => null;
     intelTool.removeIntel = async (ip) => { written.push(['remove', ip]) };
     intelTool.addIntel = async (ip) => { written.push(['add', ip]) };
@@ -88,6 +87,7 @@ describe('DestIPFoundHook.processIP cloud lookup result', () => {
 
   beforeEach(() => {
     written = [];
+    intelTool.getDomainIntelAll = async () => [];
   });
 
   it('should not cache intel when the cloud lookup fails', async () => {
@@ -97,6 +97,28 @@ describe('DestIPFoundHook.processIP cloud lookup result', () => {
 
     expect(intel.cloudFailed).to.be.true;
     expect(intel.host).to.equal(flow.host);
+    expect(written).to.be.empty;
+  });
+
+  it('should apply custom domain intel when the cloud lookup fails', async () => {
+    intelTool.getDomainIntelAll = async (domain, custom) =>
+      custom ? [{ originIP: flow.host, category: 'games', app: 'example_app' }] : [];
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.true;
+    expect(intel.category).to.equal('games');
+    expect(intel.app).to.equal('example_app');
+    expect(written).to.be.empty;
+  });
+
+  it('should return no intel when the cloud lookup fails with noUpdateOnError', async () => {
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow), { noUpdateOnError: true });
+
+    expect(intel).to.be.null;
     expect(written).to.be.empty;
   });
 
