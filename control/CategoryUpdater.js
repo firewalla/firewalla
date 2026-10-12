@@ -1334,11 +1334,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
   // arguments (push.apply) and blocks redis for long in a single ZUNIONSTORE
   // AGGREGATE MAX keeps the latest timestamp of each IP and is associative, so chunked result equals one-shot result
   // dest must be private to the caller, the union takes multiple commands and is not atomic
+  // ZUNIONSTORE drops the TTL of dest, so each chunk sets it again in the same MULTI/EXEC, dest never exists
+  // without TTL even if the process dies between chunks
   async unionDomainMappings(dest, mappings) {
     for (let i = 0; i < mappings.length; i += DOMAIN_MAPPING_UNION_BATCH_SIZE) {
       const chunk = mappings.slice(i, i + DOMAIN_MAPPING_UNION_BATCH_SIZE);
       const sources = i === 0 ? chunk : [dest].concat(chunk);
-      await rclient.zunionstoreAsync([dest, sources.length].concat(sources, ["AGGREGATE", "MAX"]));
+      const results = await rclient.multi()
+        .zunionstore([dest, sources.length].concat(sources, ["AGGREGATE", "MAX"]))
+        .expire(dest, 600)
+        .execAsync();
+      // execAsync only logs errors of queued commands, a failed chunk must not pass as a complete union
+      const err = (results || []).find(r => r instanceof Error);
+      if (err)
+        throw err;
     }
   }
 
@@ -1349,7 +1358,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const dest = `${this.getSummedDomainMapping(domain)}:${process.pid}:${++summedMappingSeq}`;
     try {
       await this.unionDomainMappings(dest, mappings);
-      await rclient.expireAsync(dest, 600); // in case unlink below is not reached
       return await rclient.zrangeAsync(dest, 0, -1) || [];
     } finally {
       await rclient.unlinkAsync(dest).catch((err) => {
