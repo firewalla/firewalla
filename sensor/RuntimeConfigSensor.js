@@ -46,9 +46,14 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   runCronScripts() {
-    // do not await/block on this
-    execFile("sudo", [`${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`])
-      .catch(err => log.error("Failed to run cron scripts:", err.message));
+    // random delay so boxes restarting together don't hit the apt mirrors at once
+    const delay = Math.floor(Math.random() * 600 * 1000);
+    log.info(`Run cron scripts in ${Math.round(delay / 1000)}s`);
+    setTimeout(() => {
+      // do not await/block on this
+      execFile("sudo", [`${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`])
+        .catch(err => log.error("Failed to run cron scripts:", err.message));
+    }, delay);
   }
 
   async schedule() {
