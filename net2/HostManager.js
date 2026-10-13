@@ -109,6 +109,9 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 const EVENT_SUMMARY_RETENTION_DAYS = 7;
 const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
+// block stats inlined in every init response, per entry
+const BLOCK_STATS_INIT_MAX_IDENTITIES = 50;
+const BLOCK_STATS_INIT_MAX_DESTS = 5;
 
 // the n records with the highest cnt, without reordering the input
 function topByCnt(records, n) {
@@ -124,6 +127,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
+const TAG_RULE_PREFIXES = Object.values(Constants.TAG_TYPE_MAP).map(t => t.ruleTagPrefix);
 const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
@@ -1790,18 +1794,42 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  // drops records for devices that no longer exist, adds a `${field}Cnt` distinct-value count for
-  // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
-  // record set, and caps the returned records to the top 5 by cnt
-  summarizeBlockStatsEntry(entry) {
-    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device) || IdentityManager.getIdentityByGUID(r.device));
-    const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
-    const fieldCounts = {};
-    for (const field of fields) {
-      fieldCounts[`${field}Cnt`] = new Set(records.map(r => r[field]).filter(v => v != null)).size;
+  // the readable name of a block stats identity or device, null when it no longer exists
+  _getBlockStatsName(id) {
+    const tagPrefix = TAG_RULE_PREFIXES.find(p => id.startsWith(p));
+    if (tagPrefix) {
+      const tag = TagManager.getTagByUid(id.substring(tagPrefix.length));
+      return tag ? tag.getReadableName() : null;
     }
-    const topRecords = topByCnt(records, 5);
-    return Object.assign({}, entry, { records: topRecords }, fieldCounts);
+    const monitorable = this.getHostFastByMAC(id) || IdentityManager.getIdentityByGUID(id);
+    return monitorable ? monitorable.getReadableName() : null;
+  }
+
+  // drops records of identities and devices that no longer exist and resolves their names. For
+  // init, which inlines every entry, devices are left out and identities and dests are capped
+  resolveBlockStatsEntry(entry, forInit) {
+    const records = [];
+    for (const r of entry.records || []) {
+      const name = this._getBlockStatsName(r.identity);
+      if (name === null) continue;
+      const devices = [];
+      for (const d of r.devices) {
+        const deviceName = this._getBlockStatsName(d.mac);
+        if (deviceName !== null) devices.push({ mac: d.mac, name: deviceName });
+      }
+      const record = Object.assign({}, r, { name, devices, deviceCnt: devices.length });
+      if (forInit) {
+        delete record.devices;
+        record.dests = topByCnt(r.dests, BLOCK_STATS_INIT_MAX_DESTS);
+      }
+      records.push(record);
+    }
+    const topRecords = forInit ? topByCnt(records, BLOCK_STATS_INIT_MAX_IDENTITIES) : records;
+    return Object.assign({}, entry, {
+      records: topRecords.map(r => _.omit(r, 'name')),
+      identities: topRecords.map(r => ({ id: r.identity, name: r.name })),
+      identityCnt: records.length
+    });
   }
 
   // reads raw persisted block stats bucket payloads for index entries with score in
@@ -1812,13 +1840,13 @@ module.exports = class HostManager extends Monitorable {
     let bucketTimestamps;
     try {
       // ZREVRANGEBYSCORE takes max before min
-      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, maxScore, minScore);
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_INDEX, maxScore, minScore);
     } catch (err) {
       log.error(`Failed to load block stats index: ${err.message}`);
       return [];
     }
     if (_.isEmpty(bucketTimestamps)) return [];
-    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
+    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_AGGR_PREFIX}${ts}`);
     const buckets = [];
     try {
       const values = await rclient.mgetAsync(keys);
@@ -1840,23 +1868,26 @@ module.exports = class HostManager extends Monitorable {
     const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
-    json.recentBlockStats = buckets.map(payload => {
-      if (Array.isArray(payload.blockStats))
-        payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
-      return payload;
-    });
+    json.recentBlockStats = this._resolveBlockStatsBuckets(buckets, true);
   }
 
-  // raw (unsummarized - no device filtering, no top-N truncation, no derived counts) block
-  // stats buckets whose ts falls in [begin, end), newest first
+  // block stats buckets whose ts falls in [begin, end), newest first, with every identity and
+  // device that still exists
   async getBlockStatsInRange(begin, end) {
-    return this._getBlockStatsBuckets(begin, `(${end}`);
+    const buckets = await this._getBlockStatsBuckets(begin, `(${end}`);
+    return this._resolveBlockStatsBuckets(buckets, false);
+  }
+
+  _resolveBlockStatsBuckets(buckets, forInit) {
+    return buckets.map(payload => Object.assign(payload, {
+      blockStats: payload.blockStats.map(entry => this.resolveBlockStatsEntry(entry, forInit))
+    }));
   }
 
   // strips the sensor's internal bookkeeping fields (record group key, first/last event ts) and
   // caps the record count to the busiest ones - MAX_RECORDS_PER_KEY x buckets x settings would
-  // otherwise be inlined in every init response, the same concern summarizeBlockStatsEntry
-  // addresses by truncating to top-5 by cnt
+  // otherwise be inlined in every init response, the same concern resolveBlockStatsEntry
+  // addresses by truncating identities and dests
   summarizeEventSummaryBucket(payload) {
     const records = topByCnt(payload.records || [], EVENT_SUMMARY_MAX_RECORDS)
       .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
