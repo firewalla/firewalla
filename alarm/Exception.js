@@ -49,7 +49,7 @@ function isJsonString(str) {
 
 module.exports = class {
   constructor(raw) {
-    const numberKeys = ["timestamp", "expireTs", "idleTs"]
+    const numberKeys = ["timestamp", "duration", "expireTs", "idleTs"]
     for (const key in raw) {
       if (isJsonString(raw[key])) {
         // parse will always be successful if passed check
