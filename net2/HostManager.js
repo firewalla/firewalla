@@ -110,6 +110,11 @@ const EVENT_SUMMARY_RETENTION_DAYS = 7;
 const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
+// the n records with the highest cnt, without reordering the input
+function topByCnt(records, n) {
+  return records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, n);
+}
+
 let instance = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
@@ -1788,7 +1793,7 @@ module.exports = class HostManager extends Monitorable {
     for (const field of fields) {
       fieldCounts[`${field}Cnt`] = new Set(records.map(r => r[field]).filter(v => v != null)).size;
     }
-    const topRecords = records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, 5);
+    const topRecords = topByCnt(records, 5);
     return Object.assign({}, entry, { records: topRecords }, fieldCounts);
   }
 
@@ -1846,9 +1851,7 @@ module.exports = class HostManager extends Monitorable {
   // otherwise be inlined in every init response, the same concern summarizeBlockStatsEntry
   // addresses by truncating to top-5 by cnt
   summarizeEventSummaryBucket(payload) {
-    const records = (payload.records || []).slice()
-      .sort((a, b) => b.cnt - a.cnt)
-      .slice(0, EVENT_SUMMARY_MAX_RECORDS)
+    const records = topByCnt(payload.records || [], EVENT_SUMMARY_MAX_RECORDS)
       .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
     return { ts: payload.ts, du: payload.du, key: payload.key, records };
   }
