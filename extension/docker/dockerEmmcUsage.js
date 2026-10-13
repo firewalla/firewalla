@@ -88,15 +88,30 @@ async function resolveRealDevice(path, depth = 0) {
   }
 }
 
+function getUpperDir(inspectObj) {
+  const driverName = inspectObj.GraphDriver && inspectObj.GraphDriver.Name;
+  if (driverName !== 'overlay2' && driverName !== 'overlay') return null;
+  return (inspectObj.GraphDriver.Data && inspectObj.GraphDriver.Data.UpperDir) || null;
+}
+
+// a container with zero host-visible mounts writes 100% of its data into its own
+// writable layer, so that layer landing on eMMC matters even though there's no mount to report.
+async function isOwnStorageOnEmmc(inspectObj, emmcDevice, dockerRootDir) {
+  const layerPath = getUpperDir(inspectObj) || dockerRootDir;
+  const device = await resolveRealDevice(layerPath);
+  return matchesEmmcDevice(device, emmcDevice);
+}
+
 async function getEmmcUsage() {
   if (!platform.isDockerSupported()) return [];
 
   const active = await execFile('sudo', ['systemctl', '-q', 'is-active', 'docker']).then(() => true).catch(() => false);
   if (!active) return [];
 
-  const rootDevice = await resolveRealDevice('/');
-  if (!rootDevice || !/mmcblk/.test(rootDevice)) return []; // root storage isn't eMMC (e.g. SSD-based models), nothing to warn about
-  const emmcDevice = rootDevice;
+  const dockerRoot = await execFile('sudo', ['docker', 'info', '--format', '{{.DockerRootDir}}'])
+    .then(r => r.stdout.trim()).catch(() => null);
+  const emmcDevice = dockerRoot && await resolveRealDevice(dockerRoot);
+  if (!emmcDevice || !/mmcblk/.test(emmcDevice)) return []; // docker storage isn't eMMC (e.g. SSD-based models), nothing to warn about
 
   const containers = await docker.listContainers();
   if (!Array.isArray(containers) || containers.length === 0) return [];
@@ -122,7 +137,9 @@ async function getEmmcUsage() {
       }
     }
 
-    if (emmcMounts.length > 0) {
+    const ownLayerOnEmmc = await isOwnStorageOnEmmc(inspectObj, emmcDevice, dockerRoot);
+
+    if (emmcMounts.length > 0 || ownLayerOnEmmc) {
       result.push({
         name: (inspectObj.Name || '').replace(/^\//, ''),
         image: inspectObj.Config && inspectObj.Config.Image,
@@ -138,5 +155,6 @@ module.exports = {
   isVerifiedFirewallaProfile,
   getKnownFirewallaProfileIds,
   matchesEmmcDevice,
+  getUpperDir,
   getEmmcUsage,
 };

@@ -29,6 +29,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
+// event types whose notification is on until the app explicitly turns it off, same as alarms
+const DEFAULT_ON_EVENT_TYPES = ["phone_paired", "weak_password_scan_start", "weak_password_scan_complete"];
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -42,6 +44,9 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
+const networkTool = require('../net2/NetworkTool.js')();
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
@@ -71,7 +76,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const { exec: execAsync, execFile } = require('child-process-promise');
+const { exec: execAsync, execFile, spawn } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -151,6 +156,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
@@ -304,7 +310,11 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
-  // by default, all event-based notifications are disabled (alarms by default enabled)
+  /*
+   * By default, event-based notifications are disabled and have to be turned on per event type,
+   * except the types in DEFAULT_ON_EVENT_TYPES, which are on unless the app explicitly turns them
+   * off. The global switch always wins, an unset one is still taken as off.
+   */
   _checkEventNotifyPolicy(policy, event_type) {
     if (!policy || !policy["notify"]) {
       log.info("host notification policy not set, skip notification");
@@ -316,7 +326,16 @@ class netBot extends ControllerBot {
       return false;
     }
 
-    if (!policy["notify"][event_type]) {
+    const state = policy["notify"][event_type];
+    if (state === undefined || state === null) {
+      if (!DEFAULT_ON_EVENT_TYPES.includes(event_type)) {
+        log.info("host event notification not set for event type", event_type);
+        return false;
+      }
+      return true;
+    }
+
+    if (!state) {
       log.info("host event notification disable for event type", event_type);
       return false;
     }
@@ -353,7 +372,7 @@ class netBot extends ControllerBot {
     }
 
     let notifEvent = await this.getNotifEvent(event_type, event_value, event.labels);
-    if (notifEvent.msg == "") {
+    if (!notifEvent || !notifEvent.msg) {
       log.info(`event ${event_type} not supported for notification`);
       return;
     }
@@ -362,31 +381,72 @@ class netBot extends ControllerBot {
       message: notifEvent.msg,
       titleKey: 'NOTIF_EVENT_TITLE',
       bodyKey: 'NOTIF_EVENT_BODY',
-      titleLocalKey: `NEW_EVENT_TITLE_${event_type}`,
-      bodyLocalKey: `NEW_EVENT_BODY_${event_type}`,
-      bodyLocalArgs: [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
-      bodyLocalMsg: notifEvent.msg,
+      // an event type may keep its own notification key namespace, fall back to the generic one
+      titleLocalKey: notifEvent.titleLocalKey || `NEW_EVENT_TITLE_${event_type}`,
+      bodyLocalKey: notifEvent.bodyLocalKey || `NEW_EVENT_BODY_${event_type}`,
+      bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
+        : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
+      // no bodyLocalMsg, body_loc_msg is not supported by Android notification
       payload: notifEvent.args,
+      category: notifEvent.category,
     }
   }
 
+  // time of the day in the timezone of the box, e.g. 03:00 AM, defaults to now
+  _localizedTimeOfDay(ts = Date.now() / 1000) {
+    const timezone = sysManager.getTimezone();
+    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
+  }
+
+  // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
   async getNotifEvent(event_type, event_value, event_labels) {
-    let payload = {msg: '', args: {}};
+    let payload = {msg: '', args: {}, localArgs: []};
+    if (!event_labels) return payload;
     switch (event_type) {
-      case "phone_paired":
+      case "phone_paired": {
         const eid = event_labels.eid;
-        const deviceName = event_labels.deviceName;
-        if (eid == "") return;
-        payload.msg = `A new phone ${deviceName ? "("+deviceName+") " : ""}is paired with your Firewalla box.`;
+        // dName comes from the appInfo of the paired app, deviceName is the label of legacy events
+        const dName = event_labels.dName || event_labels.deviceName || "";
+        const name = event_labels.name || ""; // account of the paired app
+        const ts = event_labels.ts || 0;
+        if (!eid) break;
+        payload.msg = `A new phone ${dName ? "("+dName+") " : ""}is paired with your Firewalla box.`;
         payload.args.eid = eid;
-        payload.args.deviceName = deviceName || "";
-        // find latest event ts
-        let results = await ea.getLatestEventsByType(event_type);
-        results = results.filter(i => i.labels && i.labels.eid == eid);
-        if (results.length > 0) {
-          payload.args.ts = results[0].ts
-        }
+        payload.args.dName = dName;
+        payload.args.deviceName = dName; // legacy key, kept for apps that do not read dName yet
+        payload.args.name = name;
+        payload.args.ts = ts;
+        payload.localArgs = [eid, dName, ts, name];
+        payload.category = Constants.NOTIF_CATEGORY_PHONE_PAIRED;
         break;
+      }
+      case "weak_password_scan_start": {
+        const numOfHosts = event_labels.numOfHosts || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = `System vulnerability scan started at ${time} on ${numOfHosts} device(s).`;
+        payload.args.deviceCount = numOfHosts;
+        payload.args.time = time;
+        payload.localArgs = [numOfHosts, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.bodyLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
+        break;
+      }
+      case "weak_password_scan_complete": {
+        const count = event_labels.numOfWeakPasswords || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = count === 0
+          ? `System vulnerability scan completed at ${time}. No vulnerabilities were found.`
+          : `Firewalla found ${count} vulnerabilities on your devices at ${time}.`;
+        payload.args.weakPasswordCount = count;
+        payload.args.time = time;
+        payload.localArgs = [count, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_COMPLETE';
+        // NOTE: the triple-S typo below is the key already shipped in the app, do NOT "fix" it
+        payload.bodyLocalKey = `WEAK_PASSSWORD_SCAN_COMPLETE_${count === 0 ? "NOT_" : count > 1 ? "MULTI_" : "SINGLE_"}FOUND`;
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
+        break;
+      }
       default:
     }
     return payload
@@ -731,6 +791,9 @@ class netBot extends ControllerBot {
             "action_value": 1,
             "labels": { "version": fc.getSimpleVersion() }
           }
+          // NOTE: this writes event:log directly and thus bypasses EventRequestHandler.sendEvent,
+          // so it does NOT fan out Message.MSG_EVENT_GENERATED. That is fine here - netbot runs in
+          // FireApi, where the consumers of that message don't exist.
           await ea.addEvent(eventRequest, eventRequest.ts);
         } catch (err) {
           log.error("failed to add action event on firewalla_upgrade:", err);
@@ -853,8 +916,22 @@ class netBot extends ControllerBot {
         exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
-        });
+        // command cannot leave scripts/, execFile keeps it away from a shell.
+        let script, args;
+        if (msg.args) {
+          script = String(msg.command || '').trim();
+          args = _.isArray(msg.args) ? msg.args.map(String) : null;
+        } else {
+          args = String(msg.command || '').trim().split(/\s+/);
+          script = args.shift();
+        }
+        if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
+          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+        } else {
+          log.error("FIREWALLA CLOUD SCRIPT", script, args);
+          execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
+            .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+        }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
         // RAW commands will never / ever be ran on production
@@ -1222,23 +1299,18 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
-             // notify phone_pair events
-            sem.sendEventToFireApi({
-              type: `Event:NewEvent`,
-              message: "A new event is generated",
-              event: {
-                  "event_type": "action",
-                  "action_type": "phone_paired",
-                  "action_value": 1,
-                  "labels": {"eid": appInfo.eid, "deviceName": appInfo.deviceName}
-              },
-            });
           }
         }
       } catch (err) {
         log.info("error when record paired device history info", err)
       }
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
+
+      // fire the phone_paired event of a freshly paired app, this is the first time its device name
+      // is known. Nothing happens if there is no pending record, i.e. the app is not newly paired
+      await pairedAppEventTool.claimPending(appInfo.eid, appInfo.deviceName).catch((err) => {
+        log.error("Failed to fire phone_paired event of", appInfo.eid, err.message)
+      })
 
       const keyName2 = "sys:ept:member:lastvisit"
       await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(Date.now() / 1000))
@@ -1395,6 +1467,18 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
+      case "blockStats": {
+        //  value.begin/value.end: time range in seconds used to query block stats time slots,
+        //  begin included, end excluded, end defaults to now if not given
+        const value = msg.data.value || {};
+        const { begin } = value;
+        const end = value.end == null ? Math.floor(Date.now() / 1000) : value.end;
+        if (begin == null || isNaN(begin) || isNaN(end)) {
+          throw new Error('Invalid begin/end');
+        }
+        const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
+        return { blockStats };
+      }
       case "neighbors":
       case "neighborsLocal": {
         if (!msg.target) {
@@ -1520,6 +1604,10 @@ class netBot extends ControllerBot {
         const rc = require("../diagnostic/rulecheck.js");
         return rc.checkIpOrDomain(ipOrDomain);
       }
+      case "portCheck": {
+        const pc = require("../diagnostic/portcheck.js");
+        return pc.checkPort(value.port);
+      }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
@@ -1532,9 +1620,11 @@ class netBot extends ControllerBot {
       case "pendingAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
         const pendingAlarms = await am2.loadPendingAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: pendingAlarms,
@@ -1544,10 +1634,12 @@ class netBot extends ControllerBot {
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
 
         const archivedAlarms = await am2.loadArchivedAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: archivedAlarms,
@@ -3025,6 +3117,17 @@ class netBot extends ControllerBot {
       case "resetBootingComplete":
         await f.resetBootingComplete()
         return
+      case "resetPort": {
+        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
+          throw { code: 400, msg: "'ports' should be a non-empty array" };
+        const ports = _.uniq(value.ports);
+        const legal = platform.getEthernetNicNames();
+        const illegal = ports.filter(p => !legal.includes(p));
+        if (!_.isEmpty(illegal))
+          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        log.info("Resetting link on ethernet ports", ports);
+        return await networkTool.resetEthernetPorts(ports);
+      }
       case "joinBeta":
         await this.switchBranch("beta")
         return
@@ -3952,19 +4055,27 @@ class netBot extends ControllerBot {
         return result
       }
       case "apt-get": {
-        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-        if (value.noUpdate) cmd = cmd + ' -nu';
-        if (value.noReboot) cmd = cmd + ' -nr';
-        if (value.forceReboot) cmd = cmd + ' -fr';
+        if (!value.action || !_.isString(value.action)) throw new Error('Missing parameter "action"')
 
-        if (!value.action) throw new Error('Missing parameter "action"')
+        const VALID_ACTIONS = ['install', 'remove', 'purge', 'autoremove', 'upgrade', 'dist-upgrade', 'full-upgrade'];
+        // apt-get.sh passes the action string to apt-get unquoted, so only an action plus package
+        // names is accepted here. option-looking tokens stay out on purpose: apt options such as
+        // -o DPkg::Pre-Invoke run arbitrary commands
+        const VALID_PKG_NAME = /^[a-zA-Z0-9][a-zA-Z0-9.+:~-]*$/;
+        const tokens = value.action.trim().split(/\s+/);
+        if (!VALID_ACTIONS.includes(tokens[0])) throw new Error(`Unsupported apt-get action: ${tokens[0]}`)
+        for (const token of tokens.slice(1))
+          if (!VALID_PKG_NAME.test(token)) throw new Error(`Invalid package name: ${token}`)
 
-        cmd = `${cmd} ${value.action}`;
+        // -pre/-pst are no longer accepted, they took a command to run as root
+        const args = [];
+        if (value.noUpdate) args.push('-nu');
+        if (value.noReboot) args.push('-nr');
+        if (value.forceReboot) args.push('-fr');
+        args.push(...tokens);
 
-        log.info('Running apt-get', cmd)
-        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        log.info('Running apt-get', args)
+        await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args)
         return
       }
       case "ble:control":

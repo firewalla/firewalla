@@ -120,11 +120,21 @@ module.exports = class {
     return exceptions.some(e => e.getCategory() === category);
   }
 
-  // user target list categories are only kept alive by rules/exceptions referencing them;
-  // once the last exception referencing one is removed, stop polling its hashset if no rule
-  // is using it either, instead of leaving it active until the next reboot
-  async _maybeDeactivateCategory(category) {
+  // User target list categories are only kept alive by the rules/exceptions referencing them.
+  // Both checks below read FireMain-only in-memory state (activeCategoryPolicyMap, activeCategories),
+  // so other processes must hand the decision over instead of silently no-op'ing here.
+  // Rule delete and exception delete both funnel through this, so whichever lands last cleans up.
+  async maybeDeactivateCategory(category) {
     if (!category || !categoryUpdater.isUserTargetList(category)) return;
+    if (!firewalla.isMain()) {
+      sem.emitEvent({
+        type: "Category:MaybeDeactivate",
+        toProcess: "FireMain",
+        message: "Check whether category can be deactivated: " + category,
+        category: category
+      });
+      return;
+    }
     if (categoryUpdater.hasActivePolicies(category)) return;
     if (await this.hasException(category)) return;
     await categoryUpdater.deactivateCategory(category);
@@ -379,7 +389,7 @@ module.exports = class {
     Bone.submitIntelFeedback('unignore', exception);
 
     if (exception && exception['p.category.id']) {
-      await this._maybeDeactivateCategory(exception['p.category.id']);
+      await this.maybeDeactivateCategory(exception['p.category.id']);
     }
   }
 
@@ -396,7 +406,7 @@ module.exports = class {
       await rclient.sremAsync(exceptionQueue, idList);
 
       for (const category of categories) {
-        await this._maybeDeactivateCategory(category);
+        await this.maybeDeactivateCategory(category);
       }
     }
   }

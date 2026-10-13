@@ -322,12 +322,19 @@ class Conntrack {
     const pending = this.connExpirePending;
     this.connExpirePending = new Map();
     const now = Date.now();
-    const multi = rclient.multi();
-    for (const [key, expr] of pending) {
-      multi.expire(key, expr);
+    for (const key of pending.keys()) {
       this.connExpireTs.set(key, now);
     }
-    await multi.execAsync().catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    if (pending.size === 1) {
+      const [key, expr] = pending.entries().next().value;
+      await rclient.expireAsync(key, expr).catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    } else {
+      const multi = rclient.multi();
+      for (const [key, expr] of pending) {
+        multi.expire(key, expr);
+      }
+      await multi.execAsync().catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    }
   }
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
@@ -338,11 +345,12 @@ class Conntrack {
     entries[subKey] = value;
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
-    const multi = rclient.multi().hset(key, subKey, value);
-    if (this.tryRefreshConnTTL(key, expr))
-      multi.expire(key, expr);
-    const results = await multi.execAsync()
-    return results && results[0]
+    if (this.tryRefreshConnTTL(key, expr)) {
+      const results = await rclient.multi().hset(key, subKey, value).expire(key, expr).execAsync()
+      return results && results[0]
+    } else {
+      return rclient.hsetAsync(key, subKey, value)
+    }
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
@@ -353,11 +361,13 @@ class Conntrack {
     Object.assign(entries, obj);
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
-    if (!_.isEmpty(obj)) {
-      const multi = rclient.multi().hmset(key, obj);
-      if (this.tryRefreshConnTTL(key, expr))
-        multi.expire(key, expr);
-      await multi.execAsync()
+    if (_.isEmpty(obj)) {
+      return;
+    }
+    if (this.tryRefreshConnTTL(key, expr)) {
+      await rclient.multi().hmset(key, obj).expire(key, expr).execAsync()
+    } else {
+      await rclient.hmsetAsync(key, obj)
     }
   }
 

@@ -73,10 +73,9 @@ git clone -q $T/origin $T/box 2>/dev/null
 cd $T/box
 git config user.email t@t; git config user.name t; git config commit.gpgsign false
 
-# box-side keyring: import public key only (test keyring, remote is non-official file://)
-UV_TEST_GNUPGHOME=$T/box-test-gnupg
-mkdir -p -m700 $UV_TEST_GNUPGHOME
-GNUPGHOME=$GNUPGHOME_SIGN gpg --armor --export $FPR 2>/dev/null | GNUPGHOME=$UV_TEST_GNUPGHOME gpg --batch --quiet --import 2>/dev/null
+# box-side keyring: plain binary keyring file for gpgv (remote is non-official file://)
+UV_TEST_KEYRING=$T/test-keyring.gpg
+GNUPGHOME=$GNUPGHOME_SIGN gpg --export $FPR 2>/dev/null > $UV_TEST_KEYRING
 UV_FLOOR_FILE=$T/floor
 UV_LOGGER=true
 
@@ -106,9 +105,9 @@ git fetch -q origin rel
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "commit with wrong-key signature rejected" 1 $?
 
 # --- e2e: no test key on non-official remote -> skip (accept) ---
-UV_TEST_GNUPGHOME=$T/nonexistent
+UV_TEST_KEYRING=$T/nonexistent
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "non-official remote without test key skips" 0 $?
-UV_TEST_GNUPGHOME=$T/box-test-gnupg
+UV_TEST_KEYRING=$T/test-keyring.gpg
 
 # --- e2e: gate rejects unverified ---
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "gate rejects unverified commit" 1 $?
@@ -132,15 +131,31 @@ uv_update_version_floor >/dev/null
 [[ $(cat $UV_FLOOR_FILE 2>/dev/null) == 1.984.000 ]]; check "malformed asset ignored" 0 $?
 
 # --- e2e: release key import gated on official remote ---
-UV_RELEASE_GNUPGHOME=$T/release-gnupg
-UV_RELEASE_PUBKEY=$T/release_pub.key
-GNUPGHOME=$GNUPGHOME_SIGN gpg --armor --export $FPR 2>/dev/null > $UV_RELEASE_PUBKEY
+UV_RELEASE_KEYRING=$T/keys/release.gpg
+UV_RELEASE_PUBKEY=$T/release_pub.gpg
+GNUPGHOME=$GNUPGHOME_SIGN gpg --export $FPR 2>/dev/null > $UV_RELEASE_PUBKEY
 uv_ensure_release_key >/dev/null 2>&1
-[[ ! -d $UV_RELEASE_GNUPGHOME ]]; check "non-official remote: release keyring not created" 0 $?
+[[ ! -e $UV_RELEASE_KEYRING ]]; check "non-official remote: release keyring not created" 0 $?
 SAVED_URL=$(git remote get-url origin)
 git remote set-url origin https://github.com/firewalla/firewalla.git
 uv_ensure_release_key >/dev/null 2>&1
-[[ -s $UV_RELEASE_GNUPGHOME/pubring.kbx || -s $UV_RELEASE_GNUPGHOME/pubring.gpg ]]; check "official remote: release key imported" 0 $?
+[[ -s $UV_RELEASE_KEYRING ]] && cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "official remote: release keyring installed from repo (bootstrap)" 0 $?
+
+# assets-delivered keyring must take precedence over the in-repo bootstrap copy
+UV_RELEASE_KEYRING_ASSET=$T/asset_release.gpg
+GNUPGHOME=$GNUPGHOME_EVIL gpg --export $EFPR 2>/dev/null > $UV_RELEASE_KEYRING_ASSET   # distinct key
+uv_ensure_release_key >/dev/null 2>&1
+cmp -s $UV_RELEASE_KEYRING_ASSET $UV_RELEASE_KEYRING; check "asset keyring overrides in-repo bootstrap key" 0 $?
+
+# stale in-repo key must NOT clobber an already-rotated keyring when the asset
+# is temporarily missing (e.g. S3 unreachable)
+UV_RELEASE_KEYRING_ASSET=$T/nonexistent
+uv_ensure_release_key >/dev/null 2>&1
+cmp -s $T/asset_release.gpg $UV_RELEASE_KEYRING; check "asset missing: existing keyring kept, not downgraded to repo key" 0 $?
+
+# with no keyring at all, the in-repo key still bootstraps
+rm -f $UV_RELEASE_KEYRING; uv_ensure_release_key >/dev/null 2>&1
+cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "no asset, no keyring: falls back to in-repo bootstrap key" 0 $?
 git remote set-url origin "$SAVED_URL"
 
 # --- e2e: strict node modules pin sync ---

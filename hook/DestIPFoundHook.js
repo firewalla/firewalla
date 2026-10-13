@@ -186,7 +186,7 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if (intel.ip) try {
+    if (intel.ip && f.isMain()) try {
       await countryUpdater.updateIP(intel.ip, intel.country)
     } catch(err) {
       log.error('Error updating country IP', intel, err)

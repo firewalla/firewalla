@@ -444,6 +444,10 @@ class PurplePlatform extends Platform {
     return this.variant;
   }
 
+  async getWpaCliBinPath() {
+    return `${f.getFireRouterHome()}/platform/purple/bin/wpa_cli`;
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0'
   }

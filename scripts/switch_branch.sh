@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# note this buys nothing inside switch_branch: calling it as "switch_branch … || exit 1" below puts it
+# on the left of ||, which disables errexit for its whole body, nested subshells included
 set -e
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
@@ -52,17 +54,25 @@ switch_branch() {
 
     remote_branch=$(map_target_branch $branch)
     # walla repo
+    # the fetch refspec is given on the command line instead of being written
+    # to remote.origin.fetch first, so a rejected switch leaves the repo still
+    # tracking its current branch; the config is rewritten only once the
+    # checkout below has succeeded. exit inside a subshell ends only the
+    # subshell, so the result has to be turned into the function's own.
     ( cd $FIREWALLA_HOME
     uv_ensure_release_key
     uv_update_version_floor
-    git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
-    $MGIT fetch origin $remote_branch
+    # a failed fetch must abort: refs/remotes/origin/$remote_branch may still hold
+    # a revision from an earlier switch, and verifying and checking that out would
+    # silently land on a stale revision while reporting success
+    $MGIT fetch origin "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch" || exit 1
     if ! uv_gate "origin/$remote_branch" "$tgt_branch"; then
         err "target branch $remote_branch failed release verification, abort"
         exit 1
     fi
-    git checkout -f -B $tgt_branch origin/$remote_branch
-    )
+    git checkout -f -B $tgt_branch origin/$remote_branch || exit 1
+    git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+    ) || return 1
 
     # node modules repo; the pin file comes from the target branch tree
     # checked out (and verified) above
@@ -130,4 +140,4 @@ else
 fi
 
 sync
-logger "REBOOT: SWITCH branch from $cur_branch to $branch"
+logger "Firewalla:switch_branch: from $cur_branch to $branch"

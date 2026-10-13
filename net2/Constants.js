@@ -50,6 +50,7 @@ module.exports = {
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
   REDIS_KEY_EPT_MEMBER_EMAILS: "sys:ept:memberEmails",
+  REDIS_KEY_EPT_PAIRED_PENDING: "sys:ept:pairedPending",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
@@ -81,6 +82,26 @@ module.exports = {
   REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG: "block_stats_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_STATS_CONFIG: "block_stats_config",
+  REDIS_KEY_BLOCK_STATS_PREFIX: "blockStats::",
+  // zset tracking which blockStats::<ts> bucket keys actually exist (score = member = ts), so
+  // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
+  REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
+  // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
+  // full key string), so readers don't have to reconstruct bucket boundaries from the current config
+  REDIS_KEY_EVENT_SUMMARY_INDEX: "eventSummary:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_CLASSIFIER_CLOUD_CONFIG: "event_classifier_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_CLASSIFIER_CONFIG: "event_classifier_config",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
@@ -119,6 +140,7 @@ module.exports = {
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
+  NOTIF_CATEGORY_PHONE_PAIRED: "com.firewalla.category.phone_paired",
 
   STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
@@ -210,4 +232,8 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
+
+  // a plain file name: no path separators, so a value matching this cannot leave the directory it
+  // is resolved against. use it wherever an untrusted value becomes a path component
+  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
 };

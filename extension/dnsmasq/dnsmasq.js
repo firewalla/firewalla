@@ -618,10 +618,14 @@ module.exports = class DNSMASQ {
         case "resolve":
           directive = (options.matchType === "re" ? "re-match" : "server");
           break;
-        case "address":
+        case "address": {
           // re-match does not support literal address
-          directive = "address";
+          // Enabled unless the rule explicitly opts out: address-ip-only
+          // answers query types other than A/AAAA with NODATA rather than
+          // forwarding them upstream, which would leak an internal domain.
+          directive = options.ipOnly !== false ? "address-ip-only" : "address";
           break;
+        }
       }
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
@@ -2742,7 +2746,10 @@ module.exports = class DNSMASQ {
               }
             } else {
               for (const currentTxt of waitSearch) {
-                if (content.indexOf("address=/" + currentTxt + "/") > -1) {
+                // matches every literal-address directive, not just plain
+                // address=: address-high=, address-uhigh= and address-ip-only=
+                // do not contain "address=/" as a substring
+                if (new RegExp(`^\\s*address[a-z-]*=/${_.escapeRegExp(currentTxt)}/`, "m").test(content)) {
                   match = true;
                   break;
                 }

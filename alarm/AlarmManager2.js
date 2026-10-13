@@ -26,7 +26,8 @@ const bone = require("../lib/Bone.js");
 
 const util = require('util');
 
-const moment = require('moment');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const fc = require('../net2/config.js')
 
@@ -51,6 +52,13 @@ let instance = null;
 const alarmPendingKey = "alarm_pending";
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
+// alarms of the last 30 calendar days are kept on box, today included, same as MSP, i.e. the
+// window begins at midnight of (today - 29 days)
+const ALARM_WINDOW_DAYS = 30;
+// on the day the clock falls back, the window spans one DST offset more than 30 x 24h, alarm
+// keys have to outlive that, otherwise a counted alarm would have no data behind it. 2 hours is
+// the largest DST offset in the timezone database
+const ALARM_EXPIRE_SLACK = 2 * 60 * 60;
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
@@ -760,7 +768,7 @@ module.exports = class {
 
     await rclient.hmsetAsync(alarmKey, basic)
 
-    let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * 30;  // a month
+    let expiring = (fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * ALARM_WINDOW_DAYS) + ALARM_EXPIRE_SLACK;  // a month
     await rclient.expireatAsync(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
     // add extended info, extended info are optional
@@ -1471,8 +1479,11 @@ module.exports = class {
   async loadPendingAlarms(options) {
     const offset = options && options.offset || 0 // default starts from 0
     const limit = options && options.limit || 50 // default load 50 alarms
+    // default to the begin of the last 30 days in calendar date, same as MSP
+    const beginTs = options && !_.isNil(options.beginTs) && !isNaN(options.beginTs)
+      ? Number(options.beginTs) : this.getAlarmWindowBeginTs()
     let alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey,
-        "+inf", "-inf", "limit", offset, limit);
+        "+inf", beginTs, "limit", offset, limit);
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
     return alarms.filter((a) => a != null)
   }
@@ -1482,11 +1493,14 @@ module.exports = class {
 
     const offset = options.offset || 0 // default starts from 0
     const limit = options.limit || 50 // default load 50 alarms
+    // default to the begin of the last 30 days in calendar date, same as MSP
+    const beginTs = !_.isNil(options.beginTs) && !isNaN(options.beginTs)
+      ? Number(options.beginTs) : this.getAlarmWindowBeginTs()
 
     let alarmIDs = await rclient.
       zrevrangebyscoreAsync(alarmArchiveKey,
         "+inf",
-        "-inf",
+        beginTs,
         "limit",
         offset,
         limit);
@@ -1549,17 +1563,30 @@ module.exports = class {
     });
   }
 
-  async numberOfArchivedAlarms() {
-    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+  // begin timestamp of the last <days> days in calendar date, today included, in box's timezone,
+  // i.e. midnight of (today - 29 days) for a 30 days window. same as MSP, which queries alarms
+  // of the last 30 days within [today - 29 days 00:00, now]
+  // nowTs is the moment the window is evaluated at, defaults to now, pass it in to get a
+  // deterministic result
+  getAlarmWindowBeginTs(days = ALARM_WINDOW_DAYS, nowTs = Date.now() / 1000) {
+    const tz = sysManager.getTimezone();
+    const now = tz && moment.tz.zone(tz) ? moment.unix(nowTs).tz(tz) : moment.unix(nowTs);
+    // subtract before startOf, in timezones where midnight does not exist on a DST start day,
+    // startOf('day') gives the first valid moment of the day instead
+    return now.subtract(days - 1, 'days').startOf('day').unix();
+  }
+
+  async numberOfArchivedAlarms(beginTs = this.getAlarmWindowBeginTs()) {
+    const count = await rclient.zcountAsync(alarmArchiveKey, beginTs, "+inf");
     return count;
   }
 
-  async getActiveAlarmCount() {
-    return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
+  async getActiveAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
+    return rclient.zcountAsync(alarmActiveKey, beginTs, '+inf');
   }
 
-  async getPendingAlarmCount() {
-    return await rclient.zcountAsync(alarmPendingKey, '-inf', '+inf');
+  async getPendingAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
+    return await rclient.zcountAsync(alarmPendingKey, beginTs, '+inf');
   }
 
   async loadAlarmIDs() {
@@ -1576,6 +1603,9 @@ module.exports = class {
   // options:
   //  count: number of alarms returned, default 50
   //  ts: timestamp used to query alarms, default to now
+  //  ts2: the other end of the query window, i.e. the begin timestamp of the query, or the end
+  //       timestamp if asc is true. default to the begin of the last 30 days in calendar date
+  //       (+inf if asc is true)
   //  asc: return results in ascending order, default to false
   loadActiveAlarms(options, callback) {
     if (_.isFunction(options)) {
@@ -1603,14 +1633,14 @@ module.exports = class {
     }
   }
 
-  _queryCachedAlarmIds(count, ts, asc, type, filters) {
+  _queryCachedAlarmIds(count, ts, asc, type, filters, ts2) {
     let ids = [];
     if (filters && filters.types && _.isArray(filters.types)) {
       for (const atype of filters.types) {
         if (!this.indexCache.has(atype)) continue;
         const entries = Object.values(this.indexCache.get(atype));
         if (entries.length == 0) continue;
-        let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts; return i.ts < ts});
+        let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts && i.ts <= ts2; return i.ts < ts && i.ts >= ts2});
         if (asc) tmp = tmp.reverse();
         ids = ids.concat(tmp.map( (i) => {return {aid: i.aid, ts: i.ts}}));
       }
@@ -1620,24 +1650,29 @@ module.exports = class {
   }
 
   async loadActiveAlarmsAsync(options = {}) {
-    let count, ts, asc, type, filters, withDetails;
+    let count, ts, ts2, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
       options = { count: options };
     }
 
-    ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
+    ({ count = 50, ts = Date.now() / 1000, ts2, asc = false, type = 'active', filters, withDetails = false } = options);
+
+    // ts2 is the other end of the query window, default to the begin of the last 30 days in
+    // calendar date, so that alarms returned are consistent with alarm counts in init data
+    ts2 = !_.isNil(ts2) && !isNaN(ts2) ? Number(ts2) : (asc ? Infinity : this.getAlarmWindowBeginTs());
+    const scoreBound = _.isFinite(ts2) ? ts2 : (asc ? '+inf' : '-inf');
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
       log.debug("query from cache, cached keys", this.indexCache.keys());
-      ids = this._queryCachedAlarmIds(count, ts, asc, type, filters);
+      ids = this._queryCachedAlarmIds(count, ts, asc, type, filters, ts2);
     } else {
       log.debug(`query from redis, cache fallback ${this.indexCache.keys()} disabled ${this.indexCache._disabled}` );
       let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
       let query = asc ?
-        rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-        rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+        rclient.zrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count) :
+        rclient.zrevrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count);
       ids = await query;
     }
 
