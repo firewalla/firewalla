@@ -1525,28 +1525,28 @@ class VPNClient {
     return result;
   }
 
-  // Tests internet access through this client under the routing mark of a virtual wan group, the ping is
-  // bound to this client's interface and the DNS query goes to its own DNS servers.
+  // Tests internet access through this client, the ping runs under the routing mark of a virtual wan group
+  // bound to this client's interface and the DNS query runs under this client's own mark.
   // Returns true or false, or null if the test could not run, which says nothing about the internet.
-  async testInternetVia({ wanName, mark, targets, count, rate, dnsDomain }) {
+  async testInternetVia({ mark, targets, count, rate, dnsDomain }) {
     const { results } = await this._runPingTests(targets, count, { mark, bindIntf: this.getInterfaceName() });
     if (!results.some(r => r.successCount >= count * rate))
       return results.every(r => r.error) ? null : false;
     // a DNS test that could not be made is skipped and the ping decides
-    return !dnsDomain || await this._testDNSVia(wanName, dnsDomain) !== false;
+    return !dnsDomain || await this._testDNSVia(dnsDomain) !== false;
   }
 
   // true if a DNS server of this client answers, false if none does, null if no query could be made
-  async _testDNSVia(wanName, domain) {
+  async _testDNSVia(domain) {
     // every token below ends up in a root shell command line of test_wan.sh, it joins and runs them with bash -c
     const dnsServers = ((await this._getDNSServers()) || []).filter(server => net.isIPv4(server)).slice(0, 2);
     const src = [].concat(await this.getVpnIP4s() || []).map(ip => ip.split('/')[0]).filter(ip => net.isIPv4(ip)).slice(0, 1);
     if (!isFQDN(domain) || dnsServers.length === 0)
       return null;
-    // the query takes the mark of wanName but is not bound to this client: if members of a group share a DNS
-    // server address, the lowest metric member answers it
+    // the client's own table, not the group's: members often share a DNS server address and the group table
+    // sends it through the lowest metric member
     const answers = await Promise.all(dnsServers.map(server =>
-      this._execUnderWanMark(wanName, ["dig", `@${server}`, domain, "A", "+time=3", "+tries=2", "+noall", "+comments", "+answer", ...(src.length > 0 ? ["-b", src[0]] : [])])
+      this._execUnderWanMark(this.getInterfaceName(), ["dig", `@${server}`, domain, "A", "+time=3", "+tries=2", "+noall", "+comments", "+answer", ...(src.length > 0 ? ["-b", src[0]] : [])])
         .then(output => /status: NOERROR/.test(output.stdout) && /\sIN\s+A\s/.test(output.stdout))
         // 9 is dig's no reply, other codes (test_wan.sh failed, dig is missing) mean the query could not be made
         .catch(err => err.code === 9 ? false : null)

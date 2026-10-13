@@ -717,7 +717,7 @@ class VirtWanGroup {
     ].find(t => !_.isEmpty(t));
     const count = Number.isInteger(settings.pingTestCount) && settings.pingTestCount > 0 ? settings.pingTestCount : INTERNET_CHECK_COUNT;
     const dnsDomain = settings.routeDNS ? (_.get(this.internetCheck, "dnsTestDomain") || defaults.dnsTestDomain) : null;
-    const verdict = await c.testInternetVia({ wanName: this._getRTName().slice(4), mark: rtId, targets, count, rate: INTERNET_CHECK_RATE, dnsDomain });
+    const verdict = await c.testInternetVia({ mark: rtId, targets, count, rate: INTERNET_CHECK_RATE, dnsDomain });
     if (this._destroyed)
       return;
     if (verdict === null) {
