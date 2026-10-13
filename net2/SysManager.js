@@ -404,6 +404,7 @@ class SysManager {
       pclient.publish("System:TimezoneChange", timezone);
 
       await execFile('sudo', ['timedatectl', 'set-timezone', timezone]);
+      await exec(`echo ${timezone} | sudo tee /etc/timezone`);
       await execFile('sudo', ['systemctl', 'restart', 'cron.service']);
       await execFile('sudo', ['systemctl', 'restart', 'rsyslog']);
 
