@@ -17,6 +17,12 @@
 var childProcess = require('child_process');
 
 function sysmemory(args, cb) {
+	// allow sysmemory(cb): util.promisify(sysmemory)() passes only its callback,
+	// which execFile would otherwise take as its own callback and skip the parsing below
+	if (typeof args === 'function') {
+		cb = args;
+		args = [];
+	}
 	childProcess.execFile('free', args, function (err, stdout) {
 		if (err) {
 			cb(err);
