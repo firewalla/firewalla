@@ -71,6 +71,10 @@
   "vpnInterface": {
     "subnet": "10.8.0.0/24"
   },
+  "vwgInternetCheck": {
+    "pingTestTargets": ["1.1.1.1", "8.8.8.8", "9.9.9.9"],
+    "dnsTestDomain": "github.com"
+  },
   "dhcp": {
     "leaseTime": "24h"
   },

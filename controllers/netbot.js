@@ -18,6 +18,7 @@
 
 const net = require('net')
 const _ = require('lodash');
+const validator = require('validator');
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -3339,6 +3340,17 @@ class netBot extends ControllerBot {
       case "createOrUpdateVirtWanGroup": {
         if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
           throw {code: 400, msg: "'name', 'wans' and 'type' should be specified"}
+        }
+        const internetCheck = value.internetCheck;
+        if (internetCheck != null) {
+          // targets and domain end up in a root shell command line
+          if (!_.isPlainObject(internetCheck)
+            || internetCheck.enabled != null && !_.isBoolean(internetCheck.enabled)
+            || internetCheck.pingTestTargets != null && !(_.isArray(internetCheck.pingTestTargets) && internetCheck.pingTestTargets.length <= 3 && internetCheck.pingTestTargets.every(t => _.isString(t) && validator.isIP(t, 4)))
+            || internetCheck.dnsTestDomain != null && !(_.isString(internetCheck.dnsTestDomain) && validator.isFQDN(internetCheck.dnsTestDomain))) {
+            throw {code: 400, msg: "'internetCheck' should be {enabled: boolean, pingTestTargets: up to 3 IPv4 addresses, dnsTestDomain: FQDN}"}
+          }
+          value.internetCheck = _.pick(internetCheck, ["enabled", "pingTestTargets", "dnsTestDomain"]);
         }
         await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
         return

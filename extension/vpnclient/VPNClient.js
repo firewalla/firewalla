@@ -16,6 +16,7 @@
 'use strict';
 
 const net = require('net')
+const { isFQDN } = require('validator');
 const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
@@ -1510,15 +1511,47 @@ class VPNClient {
       }
     }
     args.push('-W', '1', '-i', '1', target);
-    await execFile('sudo', args).then((output) => {
+    // ping exits non-zero when nothing was received but still prints statistics, so no statistics line
+    // means the test could not run (no sudo or ping, interface missing) and is marked as error
+    const parse = (stdout) => {
       // parse "N received" or "N packets received" from ping statistics line
-      const match = output.stdout.match(/(\d+)\s+(?:packets\s+)?received/);
+      const match = stdout && stdout.match(/(\d+)\s+(?:packets\s+)?received/);
       result.successCount = match ? Number(match[1]) : 0;
-    }).catch((err) => {
-      result.successCount = 0;
-    });
+      if (!match)
+        result.error = true;
+    };
+    await execFile('sudo', args).then((output) => parse(output.stdout)).catch((err) => parse(err.stdout));
     log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  // Tests internet access through this client under the routing mark of a virtual wan group, the ping is
+  // bound to this client's interface and the DNS query goes to its own DNS servers.
+  // Returns true or false, or null if the test could not run, which says nothing about the internet.
+  async testInternetVia({ wanName, mark, targets, count, rate, dnsDomain }) {
+    const { results } = await this._runPingTests(targets, count, { mark, bindIntf: this.getInterfaceName() });
+    if (!results.some(r => r.successCount >= count * rate))
+      return results.every(r => r.error) ? null : false;
+    // a DNS test that could not be made is skipped and the ping decides
+    return !dnsDomain || await this._testDNSVia(wanName, dnsDomain) !== false;
+  }
+
+  // true if a DNS server of this client answers, false if none does, null if no query could be made
+  async _testDNSVia(wanName, domain) {
+    // every token below ends up in a root shell command line of test_wan.sh, it joins and runs them with bash -c
+    const dnsServers = ((await this._getDNSServers()) || []).filter(server => net.isIPv4(server)).slice(0, 2);
+    const src = [].concat(await this.getVpnIP4s() || []).map(ip => ip.split('/')[0]).filter(ip => net.isIPv4(ip)).slice(0, 1);
+    if (!isFQDN(domain) || dnsServers.length === 0)
+      return null;
+    // the query takes the mark of wanName but is not bound to this client: if members of a group share a DNS
+    // server address, the lowest metric member answers it
+    const answers = await Promise.all(dnsServers.map(server =>
+      this._execUnderWanMark(wanName, ["dig", `@${server}`, domain, "A", "+time=3", "+tries=2", "+noall", "+comments", "+answer", ...(src.length > 0 ? ["-b", src[0]] : [])])
+        .then(output => /status: NOERROR/.test(output.stdout) && /\sIN\s+A\s/.test(output.stdout))
+        // 9 is dig's no reply, other codes (test_wan.sh failed, dig is missing) mean the query could not be made
+        .catch(err => err.code === 9 ? false : null)
+    ));
+    return answers.includes(true) ? true : (answers.includes(false) ? false : null);
   }
 
   // run a command with the routing mark of a WAN, wanName is as accepted by scripts/test_wan.sh
