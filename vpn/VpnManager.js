@@ -39,6 +39,7 @@ const fsp = fs.promises
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const execAsync = util.promisify(cp.exec);
+const execFileAsync = util.promisify(cp.execFile);
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
@@ -53,6 +54,8 @@ const Message = require('../net2/Message.js');
 const crypto = require('crypto');
 
 const moment = require('moment');
+
+const { isValidCommonName } = require('../util/util.js');
 
 const INSTANCE_NAME = "server";
 
@@ -99,16 +102,14 @@ class VpnManager {
   }
 
   install(instance, callback) {
-    let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
+    let install1_cmd = util.format('cd %s/vpn; sudo ./install1.sh %s', fHome, instance);
     exec(install1_cmd, (err, out, code) => {
       if (err) {
         log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " + instance, err);
       }
       if (err == null) {
-        // !! Pay attention to the parameter "-E" which is used to preserve the
-        // enviornment variables when running sudo commands
         const installLockFile = "/dev/shm/vpn_install2_lock_file";
-        let install2_cmd = `cd ${fHome}/vpn; flock -n ${installLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./install2.sh ${instance}'; sync`;
+        let install2_cmd = `cd ${fHome}/vpn; flock -n ${installLockFile} -c 'sudo ENCRYPT=${platform.getDHKeySize()} ./install2.sh ${instance}'; sync`;
         log.info("VPNManager:INSTALL:cmd", install2_cmd);
         exec(install2_cmd, (err, out, code) => {
           if (err) {
@@ -410,7 +411,7 @@ class VpnManager {
       this.needRestart = true;
     this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
-    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
+    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'sudo ENCRYPT=${platform.getDHKeySize()} ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
     log.info("VPNManager:CONFIGURE:cmd", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
@@ -490,7 +491,12 @@ class VpnManager {
                     clientDesc.cn = values[j];
                     break;
                   case "Real Address":
-                    clientDesc.addr = values[j];
+                    let realAddr = values[j];
+                    // Starting from OpenVPn 2.6, the real address is prepended with <protocol><af>-<role>, e.g., tcp6-server:100.100.100.100:41914
+                    if (realAddr.startsWith("tcp") || realAddr.startsWith("udp")) {
+                      realAddr = realAddr.substring(realAddr.indexOf(":") + 1);
+                    }
+                    clientDesc.addr = realAddr;
                     break;
                   case "Bytes Received":
                     clientDesc.rxBytes = !isNaN(values[j]) && Number(values[j]) || 0;
@@ -538,7 +544,12 @@ class VpnManager {
                     clientDesc.cn = values[j];
                     break;
                   case "Real Address":
-                    clientDesc.addr = values[j];
+                    let realAddr = values[j];
+                    // Starting from OpenVPn 2.6, the real address is prepended with <protocol><af>-<role>, e.g., tcp6-server:100.100.100.100:41914
+                    if (realAddr.startsWith("tcp") || realAddr.startsWith("udp")) {
+                      realAddr = realAddr.substring(realAddr.indexOf(":") + 1);
+                    }
+                    clientDesc.addr = realAddr;
                     break;
                   case "Last Ref":
                     clientDesc.lastActive = Math.floor(new Date(values[j]).getTime() / 1000);
@@ -825,18 +836,18 @@ class VpnManager {
       }
     }
     // save settings to files
-    await execAsync(`mkdir -p ${VpnManager.getSettingsDirectoryPath(commonName)}`);
-    const configRCFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.rc`;
-    const configJSONFile = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.json`;
-    const configCCDFileTmp = `${VpnManager.getSettingsDirectoryPath(commonName)}/${commonName}.ccd`;
+    const settingsDir = VpnManager.getSettingsDirectoryPath(commonName);
+    await fsp.mkdir(settingsDir, { recursive: true });
+    const configRCFile = `${settingsDir}/${commonName}.rc`;
+    const configJSONFile = `${settingsDir}/${commonName}.json`;
+    const configCCDFileTmp = `${settingsDir}/${commonName}.ccd`;
     const configCCDFile = `/etc/openvpn/client_conf/${commonName}`;
     await writeFileAsync(configRCFile, configRC.join('\n'), 'utf8');
     await writeFileAsync(configJSONFile, JSON.stringify(settings), 'utf8');
     await writeFileAsync(configCCDFileTmp, configCCD.join('\n'), 'utf8');
-    await execAsync(`sudo cp ${configCCDFileTmp} ${configCCDFile}`);
-    const cmd = `sudo chmod 644 /etc/openvpn/client_conf/${commonName}`;
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to change permisson: ${cmd}`, err);
+    await execFileAsync('sudo', ['cp', configCCDFileTmp, configCCDFile]);
+    await execFileAsync('sudo', ['chmod', '644', configCCDFile]).catch((err) => {
+      log.error(`Failed to change permission: ${configCCDFile}`, err);
     });
   }
 
@@ -878,13 +889,18 @@ class VpnManager {
   }
 
   static async revokeOvpnFile(commonName) {
-    if (!commonName || commonName.trim().length == 0)
+    if (!isValidCommonName(commonName)) {
+      log.error(`Invalid commonName for revokeOvpnFile: ${commonName}`);
       return;
+    }
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
+    });
+    await execAsync(`echo "kill ${commonName}" | nc -w 5 -q 2 localhost 5194`).catch((err) => {
+      log.warn(`Failed to kill VPN client ${commonName} after revocation`, err.message);
     });
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,
@@ -894,9 +910,23 @@ class VpnManager {
   }
 
   static async getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled) {
+    if (!isValidCommonName(commonName)) {
+      log.error(`Invalid commonName for getOvpnFile: ${commonName}`);
+      return null;
+    }
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
     protocol = protocol || platform.getVPNServerDefaultProtocol();
+    const portNum = parseInt(externalPort);
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      log.error(`Invalid externalPort for getOvpnFile: ${externalPort}`);
+      return null;
+    }
+    externalPort = portNum;
+    if (!['udp', 'tcp'].includes(protocol)) {
+      log.error(`Invalid protocol for getOvpnFile: ${protocol}`);
+      return null;
+    }
 
     let ip = sysManager.myDDNS();
     if (ip == null || !ddnsEnabled) {
@@ -921,11 +951,12 @@ class VpnManager {
 
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-    let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
-      fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
-    await execAsync(cmd).catch(err => {
+    await execFileAsync('flock', ['-n', vpnLockFile, 'sudo', './ovpngen.sh', commonName, String(password), ip, String(externalPort), protocol], {
+      cwd: `${fHome}/vpn`
+    }).catch(err => {
       log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
-    })
+    });
+    await execFileAsync('sync', []).catch(() => {});
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,
       cn: commonName
@@ -937,19 +968,12 @@ class VpnManager {
   }
 
   static async getVpnConfigureTimestamp(commonName) {
-    if (!commonName || commonName.trim().length == 0)
+    if (!isValidCommonName(commonName))
       return null;
 
-
     try {
-
-      const cmd = `sudo cat ${platform.openvpnFolder()}/easy-rsa/keys/index.txt | grep ${commonName}`;
-      const result = await execAsync(cmd);
-      if (result.stderr !== "") {
-        log.error("Failed to read file.", result.stderr);
-        return null;
-      }
-
+      const indexFile = `${platform.openvpnFolder()}/easy-rsa/keys/index.txt`;
+      const result = await execFileAsync('sudo', ['cat', indexFile]);
       const lines = result.stdout.toString("utf8").split('\n');
       for (var i = 0; i < lines.length; i++) {
         const contents = lines[i].split(/\t/);

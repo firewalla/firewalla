@@ -72,4 +72,40 @@ describe('Test process iptables log', function(){
     await this.plugin._processIptablesLog(line);
   });
 
+  it('should count an adblock-labeled hit as adblock when no rule covers the domain (issue #9261)', async () => {
+    const origGetInterfaceViaIP = sysManager.getInterfaceViaIP;
+    sysManager.getInterfaceViaIP = () => ({ uuid: 'test-intf-uuid-0001', ip_address: '0.0.0.0' });
+    let adblockHitRecord = null;
+    this.plugin.ruleStatsPlugin = { getMatchedPids: async () => [] };
+    this.plugin.adblockPlugin = { recordAdblockHit: (r) => { adblockHitRecord = r; } };
+
+    const record = { ac: 'block', reason: 'adblock', dn: 'adblock-only.example.com', sh: '192.168.196.105', mac: 'AA:BB:CC:DD:EE:01' };
+    try {
+      await this.plugin._processDnsRecord(record);
+    } finally {
+      sysManager.getInterfaceViaIP = origGetInterfaceViaIP;
+    }
+
+    expect(adblockHitRecord).to.not.be.null;
+    expect(record.pid).to.be.undefined;
+  });
+
+  it('should count an adblock-labeled hit as the covering rule instead, not adblock (issue #9261)', async () => {
+    const origGetInterfaceViaIP = sysManager.getInterfaceViaIP;
+    sysManager.getInterfaceViaIP = () => ({ uuid: 'test-intf-uuid-0002', ip_address: '0.0.0.0' });
+    let adblockHitRecord = null;
+    this.plugin.ruleStatsPlugin = { getMatchedPids: async () => [42] };
+    this.plugin.adblockPlugin = { recordAdblockHit: (r) => { adblockHitRecord = r; } };
+
+    const record = { ac: 'block', reason: 'adblock', dn: 'adblock-and-rule.example.com', sh: '192.168.196.105', mac: 'AA:BB:CC:DD:EE:02' };
+    try {
+      await this.plugin._processDnsRecord(record);
+    } finally {
+      sysManager.getInterfaceViaIP = origGetInterfaceViaIP;
+    }
+
+    expect(adblockHitRecord).to.be.null;
+    expect(record.pid).to.equal(42);
+  });
+
 });
