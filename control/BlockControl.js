@@ -186,7 +186,7 @@ class BlockControl {
     try {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
-      await execFile(setupScriptPath, ["--dry-run"], { timeout: 60000 });
+      await execFile("sudo", [setupScriptPath, "--dry-run"], { timeout: 60000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       if (attempt + 1 < maxAttempts)
