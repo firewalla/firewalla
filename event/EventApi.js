@@ -17,12 +17,27 @@
 const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const eventClassifier = require('./EventClassifier.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+// vendored default of 1000 pending is too low for a burst on one classifier key
+const lock = new AsyncLock({ maxPending: 10000 });
 
 const KEY_EVENT_LOG = "event:log";
 const KEY_EVENT_STATE_CACHE = "event:state:cache";
 const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
+// hash of the latest event of each classified type, field = EventClassifier.classify(event)
+const KEY_EVENT_LAST_CACHE = "event:last:cache";
 
 const STATE_CACHE_MAX_KEYS_RETURN = 100;
+// cap on distinct types tracked in KEY_EVENT_LAST_CACHE, to bound its size. Entries also expire
+// via cleanLatestStateEventsByTime(), but that is scheduled inside EventSensor.startCollectEvents()
+// and therefore gated on the event_collect feature, while events are written regardless - so this
+// cap, not the expiry, is the real backstop
+const MAX_LAST_CACHE_KEYS = 5000;
+// cap on how many entries listLastEventsBefore() returns, to bound the init payload. The hash can
+// hold up to MAX_LAST_CACHE_KEYS entries and each value is a whole event, so returning it all would
+// add megabytes to init. Entries are returned newest-first, so the cap drops the stalest types
+const LAST_CACHE_MAX_KEYS_RETURN = 200;
 
 /*
  * EventApi provides API to event data access in Redis
@@ -160,11 +175,55 @@ class EventApi {
       return results;
     }
 
+    /*
+     * Stamps event_obj.last_ts from KEY_EVENT_LAST_CACHE and refreshes that cache.
+     *
+     * last_ts is the ts of the most recent previously recorded event that classified to the same
+     * type, or null when there is none - and also null when the only candidate is NEWER than this
+     * event, i.e. this event arrived out of order. Emission order is NOT ts order - ap_ and
+     * switch_ state events go through a bee-queue while the rest are processed inline - and a
+     * last_ts in the future would show up as a previous occurrence that has not happened yet.
+     *
+     * Mutates the (already copied) redis_obj in place. Callers must not let this reject.
+     */
+    async stampLastTs(redis_obj) {
+      const hashKey = eventClassifier.classify(redis_obj);
+      if (!hashKey) return; // no setting matches, this event carries no last_ts at all
+      await lock.acquire(hashKey, async () => {
+        const prev = await rclient.hgetAsync(KEY_EVENT_LAST_CACHE, hashKey).then(r => r && JSON.parse(r));
+        const prevTs = prev ? Number(prev.ts) : NaN;
+        const newTs = Number(redis_obj.ts);
+        // an explicit null rather than a dropped field, so "first event of this type" stays
+        // distinguishable from "field not supported", and so every event of a type serializes
+        // its keys in the same order
+        redis_obj.last_ts = (Number.isFinite(prevTs) && Number.isFinite(newTs) && prevTs <= newTs) ? prevTs : null;
+        // a late-arriving older event must not roll the cache backwards
+        if (Number.isFinite(prevTs) && !(newTs >= prevTs)) return;
+        // only pay for the HLEN on a miss - the steady state stays one HGET plus one HSET
+        if (!prev && await rclient.hlenAsync(KEY_EVENT_LAST_CACHE) >= MAX_LAST_CACHE_KEYS) {
+          log.warn(`${KEY_EVENT_LAST_CACHE} reached cap(${MAX_LAST_CACHE_KEYS}), not tracking ${hashKey}`);
+          return;
+        }
+        await rclient.hsetAsync(KEY_EVENT_LAST_CACHE, hashKey, JSON.stringify(redis_obj));
+      });
+    }
+
+    /*
+     * NOTE: this is called WITHOUT await from EventRequestHandler.sendEvent(), so its try/catch
+     * cannot catch anything asynchronous - this function must never reject. Everything, including
+     * the object construction and JSON.stringify, is inside the try for that reason.
+     */
     async addEvent(event_obj, ts=Math.round(Date.now())) {
-      // inject ts in "event_json" to make event unique in case of duplicate actions
-      let redis_obj = ("ts" in event_obj) ? event_obj : Object.assign({},event_obj,{"ts":ts});
-      let redis_json = JSON.stringify(redis_obj);
+      let redis_json = null;
       try {
+        // inject ts in "event_json" to make event unique in case of duplicate actions. Always a
+        // fresh object - last_ts is assigned below and must not leak back into the caller's object
+        const redis_obj = ("ts" in event_obj) ? Object.assign({},event_obj) : Object.assign({},event_obj,{"ts":ts});
+        // failing to classify must only cost this event its last_ts, never its place in event:log
+        await this.stampLastTs(redis_obj).catch( (err) => {
+          log.error(`failed to stamp last_ts on event ${JSON.stringify(redis_obj)}:`, err.message);
+        });
+        redis_json = JSON.stringify(redis_obj);
         log.debug(`adding event ${redis_json} at ${ts}`);
         log.debug(`KEY_EVENT_LOG=${KEY_EVENT_LOG}`);
         log.debug(`ts=${ts}`);
@@ -173,6 +232,37 @@ class EventApi {
       } catch (err) {
         log.error(`failed to add event ${redis_json} at ${ts}: ${err}`);
       }
+    }
+
+    /*
+     * The latest event of every classified type whose ts is OLDER than maxTs, newest first.
+     *
+     * Companion to listEvents() over the recent window: a type whose latest event falls inside that
+     * window is already in those results, so this returns only the types the window cannot show -
+     * the ones that last happened before it. Each entry is the whole event, last_ts included, so a
+     * caller can walk one step further back without another lookup.
+     */
+    async listLastEventsBefore(maxTs, limit_count = LAST_CACHE_MAX_KEYS_RETURN) {
+      try {
+        const result = await rclient.hgetallAsync(KEY_EVENT_LAST_CACHE);
+        if (!result) return [];
+        const events = [];
+        for (const field of Object.keys(result)) {
+          try {
+            const event = JSON.parse(result[field]);
+            // a malformed or ts-less entry would sort unpredictably and tell the caller nothing
+            if (event && Number.isFinite(Number(event.ts)) && Number(event.ts) < maxTs)
+              events.push(event);
+          } catch (err) {
+            log.error(`failed to parse event at ${field} in ${KEY_EVENT_LAST_CACHE}:`, err.message);
+          }
+        }
+        events.sort((a, b) => b.ts - a.ts);
+        return limit_count > 0 ? events.slice(0, limit_count) : events;
+      } catch (err) {
+        log.error(`failed to list last events before ${maxTs}:`, err.message);
+      }
+      return [];
     }
 
     async getEventsCount(begin="-inf", end="inf") {
@@ -242,6 +332,8 @@ class EventApi {
         await this.cleanCachedEventsByTime(KEY_EVENT_STATE_CACHE,expireTime);
         log.info(`deleting latest error events before ${expireTime}`);
         await this.cleanCachedEventsByTime(KEY_EVENT_STATE_CACHE_ERROR,expireTime);
+        log.info(`deleting latest events per type before ${expireTime}`);
+        await this.cleanCachedEventsByTime(KEY_EVENT_LAST_CACHE,expireTime);
       } catch (err) {
         log.error(`failed to delete latest events before ${expireTime}: ${err}`);
       }

@@ -80,12 +80,12 @@ function map_target_branch {
 }
 
 function fw_blink {
-  sudo pkill -9 ethtool
+  sudo pkill -9 -x ethtool
   sudo timeout 3600s ethtool -p $1 &
 }
 
 function fw_unblink {
-  sudo pkill -9 ethtool
+  sudo pkill -9 -x ethtool
 }
 
 function hook_server_route_up {

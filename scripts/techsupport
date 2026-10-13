@@ -35,6 +35,9 @@ dumpEssentialLogs() {
   if sudo test -d /sys/fs/pstore/; then
     sudo ls -t1 /sys/fs/pstore/ |head -100 | xargs -i sudo cp -p /sys/fs/pstore/{} .
   fi
+  if sudo test -d /log/system/pstore/; then
+    sudo ls -t1 /log/system/pstore/ |head -100 | xargs -i sudo cp -r /log/system/pstore/{} .
+  fi
   sudo cp -p /etc/firewalla_release .
 }
 
