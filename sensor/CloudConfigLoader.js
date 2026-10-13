@@ -141,8 +141,14 @@ class CloudConfigLoader {
     const tz = SysManager.getTimezone();
     this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
       const delayMins = Math.random() * 30;
-      this.reloadTimeout = setTimeout(() => this.reloadNow(), delayMins * 60 * 1000);
+      this.reloadTimeout = setTimeout(() => this._dailyReload(), delayMins * 60 * 1000);
     }, () => { }, true, tz);
+  }
+
+  // re-applies the cache first, so local config edits take effect even when the fetch fails
+  async _dailyReload() {
+    await this._applyCached().catch(err => log.error(`Failed to apply cached ${this.label} config`, err.message));
+    return this.reloadNow();
   }
 }
 
