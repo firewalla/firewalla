@@ -17,13 +17,11 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
-const CronJob = require('cron').CronJob;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
-const bone = require('../lib/Bone.js');
+const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
@@ -40,20 +38,17 @@ class BlockStatsSensor extends Sensor {
     this.dirty = new Set(); // `${bucketTs}:${settingKey}` touched since last flush
     this.blockStatsConfs = { blockStatsSettings: [], slotSecs: DEFAULT_SLOT_SECS };
     this.slotSecs = DEFAULT_SLOT_SECS;
+    this.cloudConfigLoader = new CloudConfigLoader({
+      cacheKey: Constants.REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG,
+      hashsetName: Constants.KEY_BLOCK_STATS_CONFIG,
+      label: 'block stats',
+      apply: cloudConfig => this.applyConfig(cloudConfig)
+    });
     sem.on(Message.MSG_BLOCK_FLOW_STATS_UPDATE, event => this._onBlockFlow(event));
   }
 
   async run() {
-    await this.loadConfig(true);
-    await this.scheduleUpdateConfigCronJob();
-
-    sclient.on("message", async (channel, message) => {
-      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        log.info("System timezone is reloaded, will reschedule update config cron job ...");
-        await this.scheduleUpdateConfigCronJob();
-      }
-    });
-    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+    await this.cloudConfigLoader.start();
 
     await this._reloadRecentBucketsFromRedis().catch(err => {
       log.error('Failed to reload recent block stats buckets from redis', err.message);
@@ -65,32 +60,13 @@ class BlockStatsSensor extends Sensor {
     }, FLUSH_INTERVAL);
   }
 
-  async scheduleUpdateConfigCronJob() {
-    if (this.reloadJob)
-      this.reloadJob.stop();
-    if (this.reloadTimeout)
-      clearTimeout(this.reloadTimeout);
-    const tz = SysManager.getTimezone();
-    this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
-      const delayMins = Math.random() * 30;
-      this.reloadTimeout = setTimeout(async () => {
-        await this.loadConfig(true).catch((err) => {
-          log.error(`Failed to load block stats cloud config`, err.message);
-        });
-      }, delayMins * 60 * 1000);
-    }, () => { }, true, tz);
-  }
-
-  async loadConfig(forceReload = false) {
-    await this.loadCloudConfig(forceReload).catch((err) => {
-      log.error(`Failed to load block stats config from cloud`, err.message);
-    });
+  applyConfig(cloudConfig) {
     // blockStatsSettings is an array of objects, _.merge on arrays merges by index rather than
     // concatenating/keying by "key", so the cloud config (when present) fully replaces the local
     // default array rather than being deep-merged with it
-    const cloudSettings = this.cloudConfig && this.cloudConfig.blockStatsSettings;
+    const cloudSettings = cloudConfig && cloudConfig.blockStatsSettings;
     const localSettings = this.config && this.config.blockStatsSettings;
-    const cloudSlotSecs = this.cloudConfig && this.cloudConfig.slotSecs;
+    const cloudSlotSecs = cloudConfig && cloudConfig.slotSecs;
     const localSlotSecs = this.config && this.config.slotSecs;
     this.blockStatsConfs = {
       blockStatsSettings: (!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || [],
@@ -111,18 +87,6 @@ class BlockStatsSensor extends Sensor {
   // start of the slot containing tsSec, pivoted on local midnight. See util/TimeSlot.js
   _slotStart(tsSec) {
     return localSlotStart(tsSec, this.slotSecs, SysManager.getTimezone());
-  }
-
-  async loadCloudConfig(reload = false) {
-    let cfg = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
-    this.cloudConfig = cfg;
-    if (_.isEmpty(cfg) || reload) {
-      cfg = await bone.hashsetAsync(Constants.KEY_BLOCK_STATS_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
-      if (!_.isEmpty(cfg) && _.isObject(cfg)) {
-        await rclient.setAsync(Constants.REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG, JSON.stringify(cfg));
-        this.cloudConfig = cfg;
-      }
-    }
   }
 
   // JSON-encode the field-value tuple so the Map key is both human-readable and
