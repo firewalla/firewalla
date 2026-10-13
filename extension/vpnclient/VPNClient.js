@@ -407,6 +407,10 @@ class VPNClient {
     }
   }
 
+  _inStartGracePeriod() {
+    return !!this._lastStartTime && Date.now() - this._lastStartTime < 70000;
+  }
+
   async _checkConnectivity(force = false) {
     if (!this._started) {
       await this._setCachedState(false);
@@ -414,7 +418,7 @@ class VPNClient {
     }
     if (this._restarting)
       return;
-    if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
+    if (this._inStartGracePeriod() && !force)
       return;
     let result = await this._isLinkUp();
     if (result === false) {
@@ -1465,15 +1469,21 @@ class VPNClient {
       return true;
     }
     const count = this.settings && this.settings.pingTestCount || 8;
-    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
+    const { ratio } = await this._runPingTests(targets, count);
     // TODO: evaluate ping test results and return false if it is lower than the threshold
-
-    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
     log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
-  async _runPingTest(target, count = 8) {
+  async _runPingTests(targets, count, probe) {
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, count, probe)));
+    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
+    return { results, ratio };
+  }
+
+  // probe: optional { mark, bindIntf } to ping with another routing mark and bound to an interface,
+  // the default is this client's own mark and source address
+  async _runPingTest(target, count = 8, probe = {}) {
     const result = { target, totalCount: count };
     // Validate target: must be a real IPv4 or IPv6 address
     const isV4 = new Address4(target).isValid();
@@ -1488,12 +1498,16 @@ class VPNClient {
       count = 8;
     }
     const ping = isV4 ? "ping" : "ping6";
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    const rtId = probe.mark || await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
     const args = [ping, '-n', '-q', '-m', String(rtId), '-c', String(count)];
-    if (_.isArray(ips) && ips.length > 0) {
-      const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
-      args.push('-I', srcIp.addressMinusSuffix);
+    if (probe.bindIntf)
+      args.push('-I', probe.bindIntf);
+    else {
+      const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+      if (_.isArray(ips) && ips.length > 0) {
+        const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
+        args.push('-I', srcIp.addressMinusSuffix);
+      }
     }
     args.push('-W', '1', '-i', '1', target);
     await execFile('sudo', args).then((output) => {
@@ -1505,6 +1519,11 @@ class VPNClient {
     });
     log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  // run a command with the routing mark of a WAN, wanName is as accepted by scripts/test_wan.sh
+  async _execUnderWanMark(wanName, args) {
+    return await execFile("sudo", [`${f.getFirewallaHome()}/scripts/test_wan.sh`, wanName, ...args]);
   }
 
   async _setRouteMarkInRedis() {
