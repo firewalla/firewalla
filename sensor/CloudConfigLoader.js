@@ -23,8 +23,13 @@ const Message = require('../net2/Message.js');
 const bone = require('../lib/Bone.js');
 const SysManager = require('../net2/SysManager.js');
 
+const MAX_ATTEMPTS = 4; // per fetch cycle, then wait for the nightly cron
+const RETRY_BASE_MS = 2 * 60 * 1000;
+const RETRY_MAX_MS = 30 * 60 * 1000;
+
 // A sensor setting fetched from a cloud hashset, cached in redis under cacheKey, and pulled again
-// once a day. apply(cloudConfig) is called with the cached or fetched config, null when there's none
+// once a day. apply(cloudConfig) is called with the cached or fetched config, null when there's none.
+// A failed fetch backs off and gives up after MAX_ATTEMPTS, so a cloud outage isn't amplified by the fleet
 class CloudConfigLoader {
   constructor({ cacheKey, hashsetName, label, apply }) {
     this.cacheKey = cacheKey;
@@ -32,10 +37,16 @@ class CloudConfigLoader {
     this.label = label;
     this.apply = apply;
     this.cloudConfig = null;
+    this.failures = 0;
+    this.inFlight = null;
+    this.retryTimer = null;
+    this.coolingDown = false;
   }
 
+  // applies the cache right away, the fetch result is applied when it arrives
   async start() {
-    await this.reloadNow();
+    await this._applyCached();
+    this.reloadNow();
     this._scheduleCron();
 
     sclient.on("message", (channel, message) => {
@@ -47,16 +58,79 @@ class CloudConfigLoader {
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
   }
 
-  // fetch from the cloud and apply
-  async reloadNow() {
-    await this._load(true);
+  // starts a fetch cycle with a fresh budget. Joins the request in flight instead of sending
+  // another one, and replaces a pending retry, so cycles never stack
+  reloadNow() {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.failures = 0;
+    this.coolingDown = false;
+    if (!this.inFlight) this._attempt();
+    return this.inFlight;
+  }
+
+  // re-applies the cached config, fetching only when there's no cache and no fetch cycle is
+  // running or has just given up
+  async refresh() {
+    await this._applyCached();
+    if (_.isEmpty(this.cloudConfig) && !this.inFlight && !this.retryTimer && !this.coolingDown)
+      this.reloadNow();
+  }
+
+  async _applyCached() {
+    this.cloudConfig = await rclient.getAsync(this.cacheKey).then(r => r && JSON.parse(r)).catch(() => null);
     await this.apply(this.cloudConfig);
   }
 
-  // apply the cached config, fetching only when there's no cache
-  async refresh() {
-    await this._load(false);
-    await this.apply(this.cloudConfig);
+  _attempt() {
+    this.inFlight = this._fetchOnce()
+      .catch(err => log.error(`Failed to apply ${this.label} cloud config`, err.message))
+      .finally(() => { this.inFlight = null; });
+  }
+
+  async _fetchOnce() {
+    let body;
+    try {
+      body = await bone.hashsetAsync(this.hashsetName, { maxAttempts: 1 });
+    } catch (err) {
+      this._onFailure(err);
+      return;
+    }
+    this.failures = 0;
+    let cfg = null;
+    try {
+      cfg = body && JSON.parse(body);
+    } catch (err) {
+      log.warn(`Invalid ${this.label} cloud config, keeping the current one`, err.message);
+    }
+    if (!_.isEmpty(cfg) && _.isObject(cfg)) {
+      await rclient.setAsync(this.cacheKey, JSON.stringify(cfg));
+      this.cloudConfig = cfg;
+      await this.apply(cfg);
+    }
+  }
+
+  _onFailure(err) {
+    const status = err.statusCode;
+    // a 4xx other than 429 won't change by asking again
+    if (status >= 400 && status < 500 && status != 429) {
+      log.warn(`Failed to fetch ${this.label} cloud config (${status}), not retrying until the next daily fetch`);
+      this.coolingDown = true;
+      return;
+    }
+    this.failures++;
+    if (this.failures >= MAX_ATTEMPTS) {
+      log.warn(`Failed to fetch ${this.label} cloud config after ${this.failures} attempts, keeping the current config until the next daily fetch`, err.message);
+      this.coolingDown = true;
+      return;
+    }
+    const backoff = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (this.failures - 1));
+    const delay = Math.max(backoff * (0.5 + 0.5 * Math.random()), (err.retryAfter || 0) * 1000);
+    log.warn(`Failed to fetch ${this.label} cloud config (attempt ${this.failures}/${MAX_ATTEMPTS}), retrying in ${Math.round(delay / 1000)}s`, err.message);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this._attempt();
+    }, delay);
   }
 
   _scheduleCron() {
@@ -67,28 +141,8 @@ class CloudConfigLoader {
     const tz = SysManager.getTimezone();
     this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
       const delayMins = Math.random() * 30;
-      this.reloadTimeout = setTimeout(async () => {
-        await this.reloadNow().catch((err) => {
-          log.error(`Failed to load ${this.label} cloud config`, err.message);
-        });
-      }, delayMins * 60 * 1000);
+      this.reloadTimeout = setTimeout(() => this.reloadNow(), delayMins * 60 * 1000);
     }, () => { }, true, tz);
-  }
-
-  async _load(reload) {
-    try {
-      let cfg = await rclient.getAsync(this.cacheKey).then(r => r && JSON.parse(r)).catch(() => null);
-      this.cloudConfig = cfg;
-      if (_.isEmpty(cfg) || reload) {
-        cfg = await bone.hashsetAsync(this.hashsetName).then(r => r && JSON.parse(r)).catch(() => null);
-        if (!_.isEmpty(cfg) && _.isObject(cfg)) {
-          await rclient.setAsync(this.cacheKey, JSON.stringify(cfg));
-          this.cloudConfig = cfg;
-        }
-      }
-    } catch (err) {
-      log.error(`Failed to load ${this.label} config from cloud`, err.message);
-    }
   }
 }
 
