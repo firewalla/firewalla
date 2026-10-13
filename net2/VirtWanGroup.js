@@ -41,6 +41,7 @@ const envCreatedMap = {};
 
 const INTERNET_CHECK_INTERVAL = 30000;
 const INTERNET_CHECK_COUNT = 8;
+const INTERNET_CHECK_TIMEOUT = 25000;
 const INTERNET_CHECK_RATE = 0.5;
 const INTERNET_DOWN_THRESHOLD = 2;
 const INTERNET_UP_THRESHOLD = 5;
@@ -105,6 +106,8 @@ class VirtWanGroup {
     this.wans = o.wans;
     this.type = o.type;
     this.strictVPN = o.strictVPN || false;
+    if (!_.isEqual(this.internetCheck, o.internetCheck))
+      Object.keys(this.connState).forEach(profileId => this._resetInternetState(profileId));
     this.internetCheck = o.internetCheck;
     if (this.type === "primary_standby")
       this.failback = o.failback || false;
@@ -692,7 +695,17 @@ class VirtWanGroup {
     try {
       const off = this.type === "single" || _.get(this.internetCheck, "enabled") === false;
       const rtId = off ? null : await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
-      await Promise.all(Object.keys(this.connState).map(profileId => off || !rtId ? this._resetInternetState(profileId) : this._checkMemberInternet(profileId, rtId)));
+      // one member failing must not end the round while the others still run
+      await Promise.all(Object.keys(this.connState).map(async profileId => {
+        try {
+          if (off || !rtId)
+            this._resetInternetState(profileId);
+          else
+            await this._checkMemberInternet(profileId, rtId);
+        } catch (err) {
+          log.error(`Failed to check internet via ${profileId} in virtual wan group ${this.uuid}`, err.message);
+        }
+      }));
     } catch (err) {
       log.error(`Failed to check internet of virtual wan group ${this.uuid}`, err.message);
     } finally {
@@ -715,9 +728,9 @@ class VirtWanGroup {
       ipv4Targets(settings.pingTestTargets),
       ipv4Targets(defaults.pingTestTargets)
     ].find(t => !_.isEmpty(t));
-    const count = Number.isInteger(settings.pingTestCount) && settings.pingTestCount > 0 ? settings.pingTestCount : INTERNET_CHECK_COUNT;
+    const count = Number.isInteger(settings.pingTestCount) && settings.pingTestCount > 0 ? Math.min(settings.pingTestCount, INTERNET_CHECK_COUNT) : INTERNET_CHECK_COUNT;
     const dnsDomain = settings.routeDNS ? (_.get(this.internetCheck, "dnsTestDomain") || defaults.dnsTestDomain) : null;
-    const verdict = await c.testInternetVia({ mark: rtId, targets, count, rate: INTERNET_CHECK_RATE, dnsDomain });
+    const verdict = await c.testInternetVia({ mark: rtId, targets, count, rate: INTERNET_CHECK_RATE, dnsDomain, timeout: INTERNET_CHECK_TIMEOUT });
     if (this._destroyed)
       return;
     if (verdict === null) {
