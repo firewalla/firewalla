@@ -2828,7 +2828,7 @@ class netBot extends ControllerBot {
               });
               await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
               await pm2.deletePoliciesData(pAudit)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`])
 
               // always recreate inbound firewall and active protect
               if (await mode.isRouterModeOn()) {
@@ -2844,7 +2844,7 @@ class netBot extends ControllerBot {
               log.info('Reseting qos policies', pQos.length)
               await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
               await pm2.deletePoliciesData(pQos)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing qos policies', pQos.length)
@@ -2856,7 +2856,7 @@ class netBot extends ControllerBot {
               log.info('Reseting route policies', pRoute.length)
               await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
               await pm2.deletePoliciesData(pRoute)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_route.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing route policies', pRoute.length)

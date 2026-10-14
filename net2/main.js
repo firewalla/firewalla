@@ -261,7 +261,10 @@ async function run() {
     try {
       await policyManager.flush()
     } catch(err) {
-      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules", err);
+      // without the basic rules IPTABLES_READY is never emitted, so its listeners never run:
+      // new devices are dropped and policies are not enforced. systemd restarts FireMain instead
+      log.error("Failed to setup iptables basic rules, exiting so FireMain restarts", err);
+      setTimeout(() => process.exit(1), 1000 * 5); // give the logger time to write the error
       return;
     }
 
