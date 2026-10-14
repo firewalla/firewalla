@@ -102,6 +102,17 @@ class VirtWanGroup {
     return refreshNeeded;
   }
 
+  // a Direct client is never probed for loss of internet, so as a member it would never fail over for it
+  static async getDirectMembers(wans) {
+    const result = [];
+    for (const wan of wans) {
+      const c = VPNClient.getInstance(wan.profileId);
+      if (c && !(await c.loadSettings()).overrideDefaultRoute)
+        result.push(wan.profileId);
+    }
+    return result;
+  }
+
   static getRedisKeyName(uuid) {
     return `virt_wan_group:${uuid}`;
   }
@@ -655,6 +666,8 @@ class VirtWanGroup {
 
   // this function is invoked when the virtual wan group is created or initialized in a process's lifecycle
   async createEnv() {
+    for (const profileId of await VirtWanGroup.getDirectMembers(this.wans))
+      log.warn(`VPN client ${profileId} in virtual wan group ${this.uuid} does not override the default route, its loss of internet is not detected`);
     await VirtWanGroup.ensureCreateEnforcementEnv(this.uuid);
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     if (!rtId)

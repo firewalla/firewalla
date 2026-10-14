@@ -26,6 +26,8 @@ const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const OCDockerClient = require('../extension/vpnclient/docker/OCDockerClient.js');
 const GostDockerClient = require('../extension/vpnclient/docker/GostDockerClient.js');
 const HysteriaDockerClient = require('../extension/vpnclient/docker/HysteriaDockerClient.js');
+const VirtWanGroup = require('../net2/VirtWanGroup.js');
+const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 describe('Test vpnClient getAttributes', function(){
@@ -587,5 +589,36 @@ describe('Test vpnClient internet probes', function() {
       client._execWithClientMark = async() => { throw new Error('curl failed'); };
       expect(await client._checkInternetAvailability()).to.equal(false);
     });
+  });
+});
+
+describe('Test virtual wan group members', function() {
+  this.timeout(3000);
+
+  const clients = {};
+  let origGetInstance;
+  before(() => {
+    origGetInstance = VPNClient.getInstance;
+    VPNClient.getInstance = (profileId) => clients[profileId] || null;
+    for (const [profileId, overrideDefaultRoute] of [['direct', false], ['internet', true], ['internet2', true]])
+      clients[profileId] = { loadSettings: async() => ({ overrideDefaultRoute }) };
+  });
+  after(() => {
+    VPNClient.getInstance = origGetInstance;
+  });
+
+  it('should find the members that do not override the default route', async() => {
+    const wans = [{ profileId: 'internet', seq: 0 }, { profileId: 'direct', seq: 1 }, { profileId: 'unknown', seq: 2 }];
+    expect(await VirtWanGroup.getDirectMembers(wans)).to.eql(['direct']);
+    expect(await VirtWanGroup.getDirectMembers([wans[0], wans[2]])).to.eql([]);
+  });
+
+  it('should reject a group with such a member with 400, before anything is written', async() => {
+    let error;
+    await virtWanGroupManager.createOrUpdateVirtWanGroup({
+      name: 'test', type: 'primary_standby', wans: [{ profileId: 'internet2', seq: 0 }, { profileId: 'direct', seq: 1 }]
+    }).catch(err => error = err);
+    expect(error).to.include({ code: 400 });
+    expect(error.msg).to.contain('direct');
   });
 });
