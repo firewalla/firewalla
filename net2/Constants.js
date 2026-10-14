@@ -111,6 +111,7 @@ module.exports = {
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+  REDIS_KEY_EID_BLACKLIST: "sys:eid:blacklist",
 
   REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
 
