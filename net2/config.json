@@ -1033,6 +1033,7 @@
     },
     "BlockStatsSensor": {
       "slotSecs": 86400,
+      "ignoredDests": ["*.firewalla-test.com"],
       "blockStatsSettings": [
         {
           "key": "block::porn",

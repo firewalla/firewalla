@@ -45,6 +45,7 @@ class BlockStatsSensor extends Sensor {
     this.dirty = new Set(); // `${bucketTs}:${settingKey}` touched since last flush
     this.blockStatsConfs = { blockStatsSettings: [], slotSecs: DEFAULT_SLOT_SECS };
     this.slotSecs = DEFAULT_SLOT_SECS;
+    this.ignoredDests = { fqdns: new Set(), suffixes: [] };
     this.cloudConfigLoader = new CloudConfigLoader({
       cacheKey: Constants.REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG,
       hashsetName: Constants.KEY_BLOCK_STATS_AGGR_CONFIG,
@@ -75,10 +76,15 @@ class BlockStatsSensor extends Sensor {
     const localSettings = this.config && this.config.blockStatsSettings;
     const cloudSlotSecs = cloudConfig && cloudConfig.slotSecs;
     const localSlotSecs = this.config && this.config.slotSecs;
+    const cloudIgnoredDests = cloudConfig && cloudConfig.ignoredDests;
+    const localIgnoredDests = this.config && this.config.ignoredDests;
     this.blockStatsConfs = {
       blockStatsSettings: this._validateSettings((!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || []),
-      slotSecs: cloudSlotSecs || localSlotSecs || DEFAULT_SLOT_SECS
+      slotSecs: cloudSlotSecs || localSlotSecs || DEFAULT_SLOT_SECS,
+      // an empty cloud list clears the local default
+      ignoredDests: cloudIgnoredDests || localIgnoredDests || []
     };
+    this.ignoredDests = this._parseIgnoredDests(this.blockStatsConfs.ignoredDests);
     // note: changing slotSecs takes effect only for buckets created after the change - any
     // in-memory buckets keyed under the previous slotSecs keep accumulating under their old
     // boundaries until they're flushed/purged, an accepted transitional inaccuracy. The same
@@ -115,6 +121,26 @@ class BlockStatsSensor extends Sensor {
     });
   }
 
+  // entries are an fqdn, matched exactly, or "*.<domain>", matched on the ".<domain>" suffix
+  _parseIgnoredDests(ignoredDests) {
+    const parsed = { fqdns: new Set(), suffixes: [] };
+    if (!_.isArray(ignoredDests)) {
+      log.error('Ignoring block stats ignoredDests that is not an array', ignoredDests);
+      return parsed;
+    }
+    for (const entry of ignoredDests) {
+      if (!_.isString(entry) || !entry.length) continue;
+      if (entry.startsWith('*.')) parsed.suffixes.push(entry.substring(1));
+      else parsed.fqdns.add(entry);
+    }
+    return parsed;
+  }
+
+  _isIgnoredDest(dest) {
+    if (!_.isString(dest)) return false;
+    return this.ignoredDests.fqdns.has(dest) || this.ignoredDests.suffixes.some(s => dest.endsWith(s));
+  }
+
   // start of the slot containing tsSec, pivoted on local midnight. See util/TimeSlot.js
   _slotStart(tsSec) {
     return localSlotStart(tsSec, this.slotSecs, SysManager.getTimezone());
@@ -139,6 +165,7 @@ class BlockStatsSensor extends Sensor {
 
   _onBlockFlow(event) {
     const { _ts, ct = 1, device } = event;
+    if (this._isIgnoredDest(event.dest)) return;
     const bucketTs = this._slotStart(_ts);
     for (const setting of this.blockStatsConfs.blockStatsSettings) {
       if (!matchFilter(setting.filter, event)) continue;
