@@ -51,7 +51,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
-const { countUniqueDests } = require('../sensor/BlockStatsFilter.js');
+const { countUniqueDests, countUniqueDestFields } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -1800,9 +1800,11 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // drops records of identities and devices that no longer exist and resolves their names. For
-  // init, which inlines every entry, devices are left out and identities and dests are capped
+  // init, which inlines every entry, devices are left out and identities and dests are capped.
+  // The entry counts unique values of each dest field across records, e.g. deviceCnt, destCnt
   resolveBlockStatsEntry(entry, forInit) {
     const records = [];
+    const destLists = []; // before the init cap, for the entry level counts
     for (const r of entry.records || []) {
       const name = this._getBlockStatsName(r.identity);
       if (name === null) continue;
@@ -1816,6 +1818,7 @@ module.exports = class HostManager extends Monitorable {
       // a removed device's dests go with it. Dests have no device when it isn't in the setting's destKeys
       const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null)
         .sort((a, b) => b.cnt - a.cnt);
+      destLists.push(dests);
       const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
       if (forInit) {
         delete record.devices;
@@ -1827,7 +1830,8 @@ module.exports = class HostManager extends Monitorable {
     return Object.assign({}, entry, {
       records: topRecords.map(r => _.omit(r, 'name')),
       identities: topRecords.map(r => ({ id: r.identity, name: r.name })),
-      identityCnt: records.length
+      identityCnt: records.length,
+      ...countUniqueDestFields(_.flatten(destLists))
     });
   }
 
