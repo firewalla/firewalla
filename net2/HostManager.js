@@ -1868,7 +1868,7 @@ module.exports = class HostManager extends Monitorable {
     const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
-    json.recentBlockStats = this._resolveBlockStatsBuckets(buckets, true);
+    json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, true);
   }
 
   // block stats buckets whose ts falls in [begin, end), newest first, with every identity and
