@@ -26,4 +26,9 @@ function matchFilter(node, obj) {
   return false;
 }
 
-module.exports = { matchFilter };
+// with device in destKeys, the same dest hit from two devices counts once
+function countUniqueDests(dests) {
+  return new Set(dests.map(d => d.dest)).size;
+}
+
+module.exports = { matchFilter, countUniqueDests };

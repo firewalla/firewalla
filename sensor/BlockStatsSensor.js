@@ -23,7 +23,7 @@ const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
 const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
-const { matchFilter } = require('./BlockStatsFilter.js');
+const { matchFilter, countUniqueDests } = require('./BlockStatsFilter.js');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
 
 const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
@@ -178,14 +178,17 @@ class BlockStatsSensor extends Sensor {
   }
 
   _serializeBucket(bucket) {
-    return Array.from(bucket.identities.values()).map(r => ({
-      identity: r.identity,
-      cnt: r.cnt,
-      dests: Array.from(r.dests.values()),
-      devices: Array.from(r.devices).map(mac => ({ mac })),
-      deviceCnt: r.devices.size,
-      destCnt: r.dests.size
-    }));
+    return Array.from(bucket.identities.values()).map(r => {
+      const dests = Array.from(r.dests.values());
+      return {
+        identity: r.identity,
+        cnt: r.cnt,
+        dests,
+        devices: Array.from(r.devices).map(mac => ({ mac })),
+        deviceCnt: r.devices.size,
+        destCnt: countUniqueDests(dests)
+      };
+    });
   }
 
   async _flushAndPurge() {
