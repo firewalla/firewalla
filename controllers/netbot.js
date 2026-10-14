@@ -18,6 +18,7 @@
 
 const net = require('net')
 const _ = require('lodash');
+const validator = require('validator');
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -3491,6 +3492,9 @@ class netBot extends ControllerBot {
       case "saveOvpnProfile": {
         const profileId = value.profileId;
         const settings = value.settings || {};
+        // the domain is queried by the client's DNS test, which runs it in a root shell line
+        if (settings.dnsTestDomain && !(_.isString(settings.dnsTestDomain) && validator.isFQDN(settings.dnsTestDomain)))
+          throw { code: 400, msg: "'dnsTestDomain' should be a domain name" };
         const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
