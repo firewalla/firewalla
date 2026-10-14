@@ -1025,7 +1025,7 @@ class IntelAlarm extends Alarm {
   keysToCompareForDedup() {
     const keys = ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
     const url = this["p.dest.url"];
-    if (url) keys.push(url)
+    if (url) keys.push("p.dest.url")
 
     return keys
   }
