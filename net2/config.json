@@ -1106,7 +1106,7 @@
       ]
     },
     "BlockStatsSensor": {
-      "slotSecs": 10800,
+      "slotSecs": 86400,
       "blockStatsSettings": [
         {
           "key": "block::porn",
