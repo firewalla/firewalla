@@ -51,6 +51,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
+const { countUniqueDests } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -1812,15 +1813,19 @@ module.exports = class HostManager extends Monitorable {
     for (const r of entry.records || []) {
       const name = this._getBlockStatsName(r.identity);
       if (name === null) continue;
-      const devices = [];
-      for (const d of r.devices) {
-        const deviceName = this._getBlockStatsName(d.mac);
-        if (deviceName !== null) devices.push({ mac: d.mac, name: deviceName });
-      }
-      const record = Object.assign({}, r, { name, devices, deviceCnt: devices.length });
+      const deviceNames = new Map();
+      const getDeviceName = mac => {
+        if (!deviceNames.has(mac)) deviceNames.set(mac, this._getBlockStatsName(mac));
+        return deviceNames.get(mac);
+      };
+      const devices = r.devices.filter(d => getDeviceName(d.mac) !== null)
+        .map(d => ({ mac: d.mac, name: getDeviceName(d.mac) }));
+      // a removed device's dests go with it. Dests have no device when it isn't in the setting's destKeys
+      const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null);
+      const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
       if (forInit) {
         delete record.devices;
-        record.dests = topByCnt(r.dests, BLOCK_STATS_INIT_MAX_DESTS);
+        record.dests = topByCnt(dests, BLOCK_STATS_INIT_MAX_DESTS);
       }
       records.push(record);
     }
