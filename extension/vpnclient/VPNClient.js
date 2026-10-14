@@ -44,6 +44,7 @@ const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2;
+const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 
 const instances = {};
 
@@ -1442,6 +1443,20 @@ class VPNClient {
   // do more evaluation other than ping tests in this function and return boolean
   async _checkInternetAvailability() {
     return true;
+  }
+
+  // runs a command with this client's own mark, so it takes the tunnel the way routed traffic does
+  async _execWithClientMark(args, options = {}) {
+    return execFile('sudo', [`${f.getFirewallaHome()}/scripts/test_wan.sh`, this.getInterfaceName(), ...args], options);
+  }
+
+  async _checkInternetByCurl() {
+    for (const ip of INTERNET_TEST_IPS) {
+      const result = await this._execWithClientMark(['curl', '-m', '5', '-s', '-o', '/dev/null', `https://${ip}`]).then(() => true).catch((err) => false);
+      if (result)
+        return true;
+    }
+    return false;
   }
 
   async _isInternetAvailable() {
