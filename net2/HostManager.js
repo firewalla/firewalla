@@ -1821,11 +1821,12 @@ module.exports = class HostManager extends Monitorable {
       const devices = r.devices.filter(d => getDeviceName(d.mac) !== null)
         .map(d => ({ mac: d.mac, name: getDeviceName(d.mac) }));
       // a removed device's dests go with it. Dests have no device when it isn't in the setting's destKeys
-      const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null);
+      const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null)
+        .sort((a, b) => b.cnt - a.cnt);
       const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
       if (forInit) {
         delete record.devices;
-        record.dests = topByCnt(dests, BLOCK_STATS_INIT_MAX_DESTS);
+        record.dests = dests.slice(0, BLOCK_STATS_INIT_MAX_DESTS);
       }
       records.push(record);
     }
