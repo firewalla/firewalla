@@ -31,6 +31,8 @@ const routing = require('../routing/routing.js');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const { Address4, Address6 } = require('ip-address');
+const validator = require('validator');
+const { buildDigArgs } = require('../../util/DNSUpstreamHealthCheck.js');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const Ipset = require('../../net2/Ipset.js');
@@ -43,8 +45,13 @@ const platform = PlatformLoader.getPlatform()
 const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
-const INTERNET_ON_OFF_THRESHOLD = 2;
+const INTERNET_ON_OFF_THRESHOLD = 2; // consecutive failed checks to take the internet as down
+const INTERNET_OFF_ON_THRESHOLD = 5; // consecutive good checks to take it as up again
 const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
+const PING_TEST_MAX_COUNT = 8;
+const PING_TEST_TIMEOUT = 12000;
+const DNS_TEST_TIMEOUT = 10000;
+const DEFAULT_DNS_TEST_DOMAIN = "github.com";
 
 const instances = {};
 
@@ -58,8 +65,7 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
-        this.internetFailureCount = INTERNET_ON_OFF_THRESHOLD - 1;
-        this.internetSuccessCount = INTERNET_ON_OFF_THRESHOLD - 1;
+        this._resetInternetCounters();
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -418,28 +424,44 @@ class VPNClient {
     if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
       return;
     let result = await this._isLinkUp();
+    let internetLost = false;
     if (result === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
         const internetAvailability = await this._isInternetAvailable();
-        if (!internetAvailability) {
-          log.error(`Internet is unavailable via VPN client ${this.profileId}`);
-          this.internetFailureCount++;
-          this.internetSuccessCount = 0;
+        if (internetAvailability === null) {
+          // could not tell: neither counter moves. a probe that stays blind for as long as a recovery
+          // takes falls back to the link-only verdict, so it can never keep a client demoted
+          if (++this.internetUnknownCount >= INTERNET_OFF_ON_THRESHOLD) {
+            this.internetFailureCount = 0;
+            this.internetSuccessCount = INTERNET_OFF_ON_THRESHOLD;
+          }
         } else {
-          log.debug(`Internet is available via VPN client ${this.profileId}`);
-          this.internetFailureCount = 0;
-          this.internetSuccessCount++;
+          this.internetUnknownCount = 0;
+          if (!internetAvailability) {
+            this.internetFailureCount++;
+            this.internetSuccessCount = 0;
+            // only the check that turns the verdict to down is logged as an error
+            if (this.internetFailureCount === INTERNET_ON_OFF_THRESHOLD)
+              log.error(`Internet is unavailable via VPN client ${this.profileId}`);
+            else
+              log.verbose(`Internet is unavailable via VPN client ${this.profileId}`);
+          } else {
+            log.debug(`Internet is available via VPN client ${this.profileId}`);
+            this.internetFailureCount = 0;
+            this.internetSuccessCount++;
+          }
         }
         // update result if consecutive internet connectivity tests return same results
-        if (this.internetSuccessCount >= INTERNET_ON_OFF_THRESHOLD)
+        if (this.internetSuccessCount >= INTERNET_OFF_ON_THRESHOLD)
           result = true;
         else {
-          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD) {
             result = false;
-          else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+            internetLost = true;
+          } else // internet success/failure count is within switching threshold, pending another consecutive result to decide
             result = null;
         }
       }
@@ -467,9 +489,17 @@ class VPNClient {
       sem.emitEvent({
         type: "link_broken",
         profileId: this.profileId,
+        internet: internetLost,
         suppressEventLogging: true,
       });
     }
+  }
+
+  // a start needs 2 failed checks to be taken as down, and the first good check to be taken as up
+  _resetInternetCounters() {
+    this.internetFailureCount = 0;
+    this.internetSuccessCount = INTERNET_OFF_ON_THRESHOLD - 1;
+    this.internetUnknownCount = 0;
   }
 
   async getEffectiveRoutedSubnets() {
@@ -554,8 +584,8 @@ class VPNClient {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        const autoReconnectNeeded = await this._autoReconnectNeeded();
-        if (autoReconnectNeeded)
+        // a restart does not bring back the internet behind a tunnel that is up
+        if (!event.internet && await this._autoReconnectNeeded())
           this.scheduleRestart();
         this._currentState = false;
       }
@@ -639,6 +669,7 @@ class VPNClient {
       if (profileId === this.profileId) {
         this._started = true;
         this._lastStartTime = Date.now();
+        this._resetInternetCounters();
       }
     })
   }
@@ -1072,6 +1103,7 @@ class VPNClient {
     }
 
     this._lastStartTime = Date.now();
+    this._resetInternetCounters();
     await this._prepareRoutes();
     await this.flushRemoteEndpointRoutes().catch((err) => { });
     await this._start().catch((err) => {
@@ -1440,9 +1472,15 @@ class VPNClient {
     return null;
   }
 
-  // do more evaluation other than ping tests in this function and return boolean
+  // true, false, or null when it could not be told. clients with a check of their own override this
   async _checkInternetAvailability() {
-    return true;
+    const ping = await this._runPingTests();
+    if (ping === false)
+      return false;
+    // an inconclusive DNS test counts like a skipped one
+    if (await this._runDnsTest() === false)
+      return false;
+    return ping;
   }
 
   // runs a command with this client's own mark, so it takes the tunnel the way routed traffic does
@@ -1459,48 +1497,38 @@ class VPNClient {
     return false;
   }
 
+  // true or false for whether the tunnel reaches the internet, null when that could not be told
   async _isInternetAvailable() {
     if (!this._started)
-      return true;
-    const up = await this._isLinkUp();
-    if (!up)
-      return true;
-    const targets = this.settings && this.settings.pingTestTargets || [];
-    if (_.isEmpty(targets)) {
-      const dnsServers = await this._getDNSServers();
-      if (!_.isEmpty(dnsServers))
-        Array.prototype.push.apply(targets, dnsServers.slice(0, 3));
-      else {
-        if (this.settings.overrideDefaultRoute)
-          Array.prototype.push.apply(targets, ["1.1.1.1", "8.8.8.8", "9.9.9.9"]);
-      }
-    }
-    if (_.isEmpty(targets)) {
-      log.warn(`Cannot find any target for ping tests on VPN client ${this.profileId}`);
-      return true;
-    }
-    const count = this.settings && this.settings.pingTestCount || 8;
-    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
-    // TODO: evaluate ping test results and return false if it is lower than the threshold
-
-    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
-    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
-    return await this._checkInternetAvailability();
+      return null;
+    if (!await this._isLinkUp())
+      return null;
+    const result = await this._checkInternetAvailability();
+    log.verbose(`VPN client ${this.profileId} internet availability: ${result}`);
+    return result;
   }
 
-  async _runPingTest(target, count = 8) {
-    const result = { target, totalCount: count };
+  async _runPingTests() {
+    const configured = this.settings.pingTestTargets;
+    const targets = (_.isEmpty(configured) ? INTERNET_TEST_IPS : configured).slice(0, 3);
+    const count = this.settings.pingTestCount || PING_TEST_MAX_COUNT;
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
+    const verdict = VPNClient._pingVerdict(results);
+    log.verbose(`VPN client ${this.profileId} ping tests [${results.map(r => `${r.target} ${r.successCount}/${r.totalCount}`)}] verdict ${verdict}`);
+    return verdict;
+  }
+
+  async _runPingTest(target, count = PING_TEST_MAX_COUNT) {
+    // a round has to end inside the 30s check interval
+    count = Number.isInteger(count) && count > 0 ? Math.min(count, PING_TEST_MAX_COUNT) : PING_TEST_MAX_COUNT;
+    // successCount stays null when ping printed no statistics, then the target says nothing
+    const result = { target, totalCount: count, successCount: null };
     // Validate target: must be a real IPv4 or IPv6 address
     const isV4 = new Address4(target).isValid();
     const isV6 = !isV4 && new Address6(target).isValid();
     if (!isV4 && !isV6) {
       log.warn(`VPN ${this.profileId} ping test: invalid target address: ${target}`);
-      result.successCount = 0;
       return result;
-    }
-    // Validate count
-    if (!Number.isInteger(count) || count <= 0) {
-      count = 8;
     }
     const ping = isV4 ? "ping" : "ping6";
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
@@ -1511,15 +1539,62 @@ class VPNClient {
       args.push('-I', srcIp.addressMinusSuffix);
     }
     args.push('-W', '1', '-i', '1', target);
-    await execFile('sudo', args).then((output) => {
-      // parse "N received" or "N packets received" from ping statistics line
-      const match = output.stdout.match(/(\d+)\s+(?:packets\s+)?received/);
-      result.successCount = match ? Number(match[1]) : 0;
-    }).catch((err) => {
-      result.successCount = 0;
-    });
+    // ping exits 1 on total loss and still prints the statistics
+    const stdout = await execFile('sudo', args, { timeout: PING_TEST_TIMEOUT, killSignal: 'SIGKILL' }).then(output => output.stdout).catch(err => err.stdout);
+    result.successCount = VPNClient._parsePingReceived(stdout);
     log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  // parse "N received" or "N packets received" from ping statistics line, null if there is none
+  static _parsePingReceived(stdout) {
+    const match = (stdout || "").match(/(\d+)\s+(?:packets\s+)?received/);
+    return match ? Number(match[1]) : null;
+  }
+
+  // true if any target got at least half of its replies, false if every target was conclusive and none did
+  static _pingVerdict(results) {
+    return VPNClient._anyVerdict(results.map(r => r.successCount === null ? null : r.successCount * 2 >= r.totalCount));
+  }
+
+  // true if any probe passed, false if all of them failed, null if none passed and some could not tell
+  static _anyVerdict(verdicts) {
+    if (verdicts.includes(true))
+      return true;
+    return verdicts.includes(null) ? null : false;
+  }
+
+  // test_wan.sh marks the command through the platform's cgroup_sock_mark, the net_cls fallback of the others is not relied on
+  _isDnsTestSupported() {
+    return fs.existsSync(`${platform.getPlatformFilesPath()}/cgroup_sock_mark`);
+  }
+
+  async _runDnsTest() {
+    if (!this.settings.routeDNS || !this._isDnsTestSupported())
+      return true;
+    const servers = (await this._getDNSServers() || []).filter(server => net.isIPv4(server)).slice(0, 3);
+    if (_.isEmpty(servers))
+      return true;
+    const domain = this.settings.dnsTestDomain || DEFAULT_DNS_TEST_DOMAIN;
+    // the domain ends up in a root shell line of test_wan.sh, and settings can also be saved without the API check
+    if (!_.isString(domain) || !validator.isFQDN(domain)) {
+      log.warn(`VPN client ${this.profileId} DNS test: invalid domain ${domain}`);
+      return null;
+    }
+    const verdicts = await Promise.all(servers.map(server =>
+      this._execWithClientMark(['dig', ...buildDigArgs({ host: server, domain })], { timeout: DNS_TEST_TIMEOUT, killSignal: 'SIGKILL' })
+        .then(() => 0).catch(err => err.code).then(code => VPNClient._digVerdict(code))
+    ));
+    log.verbose(`VPN client ${this.profileId} DNS tests [${servers}] verdicts [${verdicts}]`);
+    return VPNClient._anyVerdict(verdicts);
+  }
+
+  // dig exits 0 on any reply (NXDOMAIN and SERVFAIL included) and 9 on none. any other code (dig missing,
+  // killed, test_wan.sh failing to set up) says nothing about the internet
+  static _digVerdict(code) {
+    if (code === 0)
+      return true;
+    return code === 9 ? false : null;
   }
 
   async _setRouteMarkInRedis() {
