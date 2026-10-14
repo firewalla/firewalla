@@ -566,8 +566,7 @@ class NetworkMonitorSensor extends Sensor {
       mcfg = cfg;
       log.warn(`NO applicable system policy on ${target} for ${monitorType}, use input config:`,mcfg);
     }
-    const opts = SAMPLE_DEFAULT_OPTS;
-    opts.manual = true;
+    const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS, { manual: true });
     if (intf)
       opts.intf = intf;
     if (typeof saveResult == typeof(true))
