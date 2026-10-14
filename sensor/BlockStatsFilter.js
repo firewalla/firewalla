@@ -31,4 +31,18 @@ function countUniqueDests(dests) {
   return new Set(dests.map(d => d.dest)).size;
 }
 
-module.exports = { matchFilter, countUniqueDests };
+// { <field>Cnt: number of unique values } for each dest field but cnt, e.g. deviceCnt, destCnt
+function countUniqueDestFields(dests) {
+  const values = {};
+  for (const d of dests) {
+    for (const [field, value] of Object.entries(d)) {
+      if (field === 'cnt' || value === null || value === undefined) continue;
+      (values[field] = values[field] || new Set()).add(value);
+    }
+  }
+  const counts = {};
+  for (const field of Object.keys(values)) counts[`${field}Cnt`] = values[field].size;
+  return counts;
+}
+
+module.exports = { matchFilter, countUniqueDests, countUniqueDestFields };
