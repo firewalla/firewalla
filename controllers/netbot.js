@@ -1475,7 +1475,7 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
-      case "blockStats": {
+      case "blockStatsAggr": {
         //  value.begin/value.end: time range in seconds used to query block stats time slots,
         //  begin included, end excluded, end defaults to now if not given
         const value = msg.data.value || {};
