@@ -17,13 +17,11 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
-const CronJob = require('cron').CronJob;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
-const bone = require('../lib/Bone.js');
+const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -55,77 +53,43 @@ const MAX_SEEN_STATES = 100; // cap on distinct state values tracked per record
 class EventSummarySensor extends Sensor {
   constructor(config) {
     super(config);
-    // seed from the local default synchronously - run() only reaches loadConfig() after a cloud
+    // seed from the local default synchronously - run() only reaches applyConfig() after a cloud
     // round trip, and EventRequestHandler is already emitting by then, so leaving this empty would
     // silently drop every transition in that window
     this.eventSummaryConfs = {
       eventSummarySettings: this._validateSettings((config && config.eventSummarySettings) || [])
     };
     this.lock = new AsyncLock({ maxPending: 10000 }); // vendored default of 1000 is too low for a burst on one key
+    this.cloudConfigLoader = new CloudConfigLoader({
+      cacheKey: Constants.REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG,
+      hashsetName: Constants.KEY_EVENT_SUMMARY_CONFIG,
+      label: 'event summary',
+      apply: cloudConfig => this.applyConfig(cloudConfig)
+    });
     sem.on(Message.MSG_EVENT_GENERATED, event =>
       this._onEvent(event && event.event).catch(err => log.error('Failed to summarize event', err.message)));
   }
 
   async run() {
-    await this.loadConfig(true);
-    await this.scheduleUpdateConfigCronJob();
-
-    sclient.on("message", async (channel, message) => {
-      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        log.info("System timezone is reloaded, will reschedule update config cron job ...");
-        await this.scheduleUpdateConfigCronJob();
-      }
-    });
-    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
-  }
-
-  async scheduleUpdateConfigCronJob() {
-    if (this.reloadJob)
-      this.reloadJob.stop();
-    if (this.reloadTimeout)
-      clearTimeout(this.reloadTimeout);
-    const tz = SysManager.getTimezone();
-    this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
-      const delayMins = Math.random() * 30;
-      this.reloadTimeout = setTimeout(async () => {
-        await this.loadConfig(true).catch((err) => {
-          log.error(`Failed to load event summary cloud config`, err.message);
-        });
-      }, delayMins * 60 * 1000);
-    }, () => { }, true, tz);
+    await this.cloudConfigLoader.start();
   }
 
   // SensorLoader pushes a new config on "config:updated", refresh the effective settings right away
   // instead of waiting for the nightly cron or a restart
   async onConfigChange(oldConfig) {
-    await this.loadConfig(false).catch((err) => {
+    await this.cloudConfigLoader.refresh().catch((err) => {
       log.error(`Failed to reload event summary config on config change`, err.message);
     });
   }
 
-  async loadConfig(forceReload = false) {
-    await this.loadCloudConfig(forceReload).catch((err) => {
-      log.error(`Failed to load event summary config from cloud`, err.message);
-    });
+  applyConfig(cloudConfig) {
     // eventSummarySettings is an array of objects, _.merge on arrays merges by index rather than
     // concatenating/keying by "key", so the cloud config (when present) fully replaces the local
     // default array rather than being deep-merged with it
-    const cloudSettings = this.cloudConfig && this.cloudConfig.eventSummarySettings;
+    const cloudSettings = cloudConfig && cloudConfig.eventSummarySettings;
     const localSettings = this.config && this.config.eventSummarySettings;
     const settings = (!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || [];
     this.eventSummaryConfs = { eventSummarySettings: this._validateSettings(settings) };
-  }
-
-  async loadCloudConfig(reload = false) {
-    let cfg = await rclient.getAsync(Constants.REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
-    this.cloudConfig = cfg;
-    if (_.isEmpty(cfg) || reload) {
-      cfg = await bone.hashsetAsync(Constants.KEY_EVENT_SUMMARY_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
-      if (!_.isEmpty(cfg) && _.isObject(cfg)) {
-        await rclient.setAsync(Constants.REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG, JSON.stringify(cfg));
-        this.cloudConfig = cfg;
-      }
-    }
   }
 
   // drops unusable settings and normalizes "period", so a bad cloud push degrades to "this setting
