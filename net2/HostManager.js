@@ -111,8 +111,8 @@ const EVENT_SUMMARY_RETENTION_DAYS = 7;
 const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 // block stats inlined in every init response, per entry
-const BLOCK_STATS_INIT_MAX_IDENTITIES = 5;
-const BLOCK_STATS_INIT_MAX_DESTS = 5;
+const BLOCK_STATS_INIT_MAX_IDENTITIES = 10;
+const BLOCK_STATS_INIT_MAX_DESTS = 10;
 
 // the n records with the highest cnt, without reordering the input
 function topByCnt(records, n) {
