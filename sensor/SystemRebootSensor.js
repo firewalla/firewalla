@@ -51,9 +51,16 @@ class SystemRebootSensor extends Sensor {
   }
 
   async setLastHeartbeatTime(ts = Date.now()) {
-    return fs.writeFileAsync(HB_FILE, ts, {encoding: "utf8"}).then(() => exec(`sync`)).catch((err) => {
+    let fd;
+    try {
+      fd = await fs.openAsync(HB_FILE, 'w');
+      await fs.writeAsync(fd, String(ts));
+      await fs.fsyncAsync(fd);
+    } catch (err) {
       log.error(`Failed to save heartbeat into ${HB_FILE}`, err.message);
-    });
+    } finally {
+      if (fd !== undefined) await fs.closeAsync(fd).catch((err) => {});
+    }
   }
 
   async run() {
