@@ -30,7 +30,10 @@ function sysmemory(args, cb) {
 		}
 
         var memInfo = {};
-		stdout.trim().split('\n').slice(1).map(function (el) {
+		var lines = stdout.trim().split('\n');
+		// procps-ng 3.3.10+ prints "buff/cache available" where older free printed "buffers cached"
+		var hasAvailable = /\bavailable\b/.test(lines[0]);
+		lines.slice(1).map(function (el) {
 			var cl = el.split(/\s+(?=[\d\/])/).map(function(i, idx) { return idx ? parseInt(i, 10) : i; });
 			switch(cl[0]) {
 				case "Mem:":
@@ -39,9 +42,9 @@ function sysmemory(args, cb) {
 						used: cl[2],
 						free: cl[3],
 						shared: cl[4],
-						buffers: cl[5],
-						cached: cl[6],
-						usable: cl[3] + cl[5] + cl[6]
+						buffers: hasAvailable ? 0 : cl[5],
+						cached: hasAvailable ? cl[5] : cl[6],
+						usable: hasAvailable ? cl[6] : cl[3] + cl[5] + cl[6]
 					};
 				    break;
 				case "-/+ buffers/cache:":

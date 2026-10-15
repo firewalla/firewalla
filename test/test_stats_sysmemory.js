@@ -27,6 +27,7 @@ const FREE_OUTPUT = [
 ].join('\n');
 
 const calls = [];
+let output = FREE_OUTPUT;
 // Mirrors child_process.execFile: a function in the args position is taken as the callback.
 function execFile(file, args, cb) {
   if (typeof args === 'function') {
@@ -34,7 +35,7 @@ function execFile(file, args, cb) {
     args = [];
   }
   calls.push({ file, args });
-  setImmediate(() => cb(null, FREE_OUTPUT, ''));
+  setImmediate(() => cb(null, output, ''));
 }
 
 const stat = proxyquire('../util/Stats.js', { child_process: { execFile } });
@@ -42,6 +43,7 @@ const stat = proxyquire('../util/Stats.js', { child_process: { execFile } });
 describe('Stats.sysmemory', () => {
   beforeEach(() => {
     calls.length = 0;
+    output = FREE_OUTPUT;
   });
 
   it('parses free output when promisified and called without args', async () => {
@@ -59,5 +61,31 @@ describe('Stats.sysmemory', () => {
 
     expect(memory.mem.total).to.equal(3884096);
     expect(calls).to.eql([{ file: 'free', args: ['-b'] }]);
+  });
+
+  it('reads buff/cache and available from the current free layout', async () => {
+    const memory = await util.promisify(stat.sysmemory)();
+
+    expect(memory.mem.cached).to.equal(2068740);
+    expect(memory.mem.usable).to.equal(2594440);
+    expect(memory.mem.usable).to.be.at.most(memory.mem.total);
+    expect(memory.buffer.used).to.be.at.least(0);
+    expect(memory.buffer).to.eql({ used: 3884096 - 2594440, free: 2594440 });
+  });
+
+  it('keeps free + buffers + cached for the old free layout', async () => {
+    output = [
+      '             total       used       free     shared    buffers     cached',
+      'Mem:       3884096    3072092     812004      25640     102400    1966340',
+      '-/+ buffers/cache:    1003352    2880744',
+      'Swap:       524284          0     524284',
+      ''
+    ].join('\n');
+    const memory = await util.promisify(stat.sysmemory)();
+
+    expect(memory.mem.buffers).to.equal(102400);
+    expect(memory.mem.cached).to.equal(1966340);
+    expect(memory.mem.usable).to.equal(812004 + 102400 + 1966340);
+    expect(memory.buffer).to.eql({ used: 1003352, free: 2880744 });
   });
 });
