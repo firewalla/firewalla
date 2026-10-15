@@ -1,5 +1,5 @@
 {
-  "version": 1.983,
+  "version": 1.984,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -75,6 +75,7 @@
     "leaseTime": "24h"
   },
   "dns": {
+    "useDnsmasqReloadForRestart": true,
     "defaultDNSServer": "8.8.8.8",
     "fallbackDNSServers": [
       "8.8.8.8",
@@ -105,6 +106,11 @@
     "AdditionalPairPlugin": {},
     "DockerPlugin": {},
     "EncipherPlugin": {},
+    "PairedAppSensor": {
+      "pendingTimeout": 120,
+      "checkInterval": 60,
+      "staleThreshold": 3600
+    },
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
     "UnboundPlugin": {},
@@ -196,9 +202,20 @@
       "hashsetConfigInterval": 86400
     },
     "DNSCryptPlugin": {
-      "refreshInterval": 1440
+      "refreshInterval": 1440,
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 5,
+      "healthCheckTries": 1,
+      "healthCheckFailThreshold": 3,
+      "healthCheckRecoverThreshold": 1
     },
-    "UnboundPlugin": {},
+    "UnboundPlugin": {
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 2,
+      "healthCheckTries": 1,
+      "healthCheckFailThreshold": 3,
+      "healthCheckRecoverThreshold": 1
+    },
     "SlackSensor": {},
     "SysPatchSensor": {},
     "RuntimeConfigSensor": {},
@@ -470,19 +487,44 @@
           "safe.duckduckgo.com": [
             "duckduckgo.com"
           ]
+        },
+        "brave": {
+          "forcesafe.search.brave.com": [
+            "search.brave.com"
+          ]
+        },
+        "startpage": {
+          "safe.startpage.com": [
+            "startpage.com",
+            "eu.startpage.com"
+          ]
         }
       },
       "mappingConfig": {
-        "safe.duckduckgo.com": 5
+        "forcesafesearch.google.com": 5,
+        "strict.bing.com": 5,
+        "restrict.youtube.com": 5,
+        "restrictmoderate.youtube.com": 5,
+        "safe.duckduckgo.com": 5,
+        "forcesafe.search.brave.com": 5,
+        "safe.startpage.com": 5
       },
       "defaultConfig": {
         "youtube": "off",
         "google": "on",
         "bing": "on",
-        "duckduckgo": "on"
+        "duckduckgo": "on",
+        "brave": "on",
+        "startpage": "off"
       }
     },
-    "FamilyProtectPlugin": {},
+    "FamilyProtectPlugin": {
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 3,
+      "healthCheckTries": 2,
+      "healthCheckFailThreshold": 4,
+      "healthCheckRecoverThreshold": 1
+    },
     "NTPRedirectPlugin": {
       "featureName": "ntp_redirect",
       "policyName": "ntp_redirect"
@@ -725,7 +767,8 @@
       "migrationCodeNames": [
         "clairvoyant",
         "bipartite_graph",
-        "per_wan_data_usage"
+        "per_wan_data_usage",
+        "flow_inline_intel"
       ]
     },
     "FlowCompressionSensor": {
@@ -778,6 +821,39 @@
       "eventsLimit": 10000,
       "eventsExpire": 604800,
       "latestStateEventsExpire": 2592000,
+      "eventClassifierSettings": [
+        {
+          "key": "wan_monitor",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              {
+                "or": [
+                  { "field": "action_type", "value": "ping_RTT" },
+                  { "field": "action_type", "value": "dns_RTT" },
+                  { "field": "action_type", "value": "http_RTT" },
+                  { "field": "action_type", "value": "ping_lossrate" },
+                  { "field": "action_type", "value": "dns_lossrate" },
+                  { "field": "action_type", "value": "http_lossrate" }
+                ]
+              }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["wan_intf_uuid"]
+        },
+        {
+          "key": "weak_password_scan_complete",
+          "filter": {
+            "and": [
+              { "field": "event_type", "value": "action" },
+              { "field": "action_type", "value": "weak_password_scan_complete" }
+            ]
+          },
+          "eventKeys": ["action_type"],
+          "labelKeys": ["found"]
+        }
+      ],
       "intervals": {
         "cleanEventsByTime": 3600,
         "cleanEventsByCount": 300,
@@ -897,6 +973,108 @@
           "increaseLatency": 150
         }
       }
+    },
+    "EventSummarySensor": {
+      "eventSummarySettings": [
+        {
+          "period": 86400,
+          "key": "event::dap_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "dap_state"
+              }
+            ]
+          },
+          "labelKeys": [
+            "mac"
+          ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ethernet_state"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::nic_speed",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "nic_speed"
+              }
+            ]
+          },
+          "eventKeys": [ "state_key" ]
+        }
+      ]
+    },
+    "BlockStatsSensor": {
+      "slotSecs": 10800,
+      "blockStatsSettings": [
+        {
+          "key": "block::porn",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "porn" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::gamble",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "gamble" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::violence",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "violence" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::drugs",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "drugs" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::nrd",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "nrd" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::lookalike_domain",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "lookalike_domain" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::default_c",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "default_c" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::country",
+          "filter": { "field": "bType", "value": "country" },
+          "recordKeys": ["device", "dest", "bTarget", "fd"]
+        }
+      ]
     },
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},

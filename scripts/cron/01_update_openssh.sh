@@ -5,7 +5,6 @@ TAG="FIREWALLA:PATCH_OPENSSH"
 
 # only patches ubuntu 22
 if [[ $(lsb_release -rs| cut -d'.' -f1) != 22 ]]; then
-  logger "$TAG:SKIP:NOT_UBUNTU_22"
   exit 0
 fi
 
