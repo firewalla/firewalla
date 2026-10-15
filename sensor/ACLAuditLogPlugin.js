@@ -57,6 +57,7 @@ const iptc = require('../control/IptablesControl.js');
 const ipset = require('../net2/Ipset.js');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
+const TAG_FLOW_KEYS = Object.values(Constants.TAG_TYPE_MAP).map(t => t.flowKey)
 const MONITORED_NET_SET = ipset.CONSTANTS.IPSET_MONITORED_NET;
 
 const auditLogFile = "/alog/acl-audit.log";
@@ -986,7 +987,8 @@ class ACLAuditLogPlugin extends Sensor {
                 bTarget: record.bTarget,
                 fd: fd || 'in',
                 ct: ct || 1,
-                _ts
+                _ts,
+                ..._.pick(record, TAG_FLOW_KEYS)
               });
             }
           }
