@@ -620,7 +620,8 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"), false, null, true);
     this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"), false, null, true);
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"), false, null, true);
-    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"), false, null, true);
+    // audit:dns:* holds allowed DNS records (dnsmasq_log_allow_redis), keep them like audit:accept:*
+    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:") || key.startsWith("audit:dns:"), false, null, true);
     this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"), false, null, true);
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
     this._registerFilterFunction("x509", key => key.startsWith("flow:x509:"), false, this.cleanFlowX509.bind(this));
