@@ -29,6 +29,13 @@ const HysteriaDockerClient = require('../extension/vpnclient/docker/HysteriaDock
 const VirtWanGroup = require('../net2/VirtWanGroup.js');
 const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const { DEFAULT_TIMEOUT: DIG_TIMEOUT, DEFAULT_TRIES: DIG_TRIES } = require('../util/DNSUpstreamHealthCheck.js');
+const Ipset = require('../net2/Ipset.js');
+const fc = require('../net2/config.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 describe('Test vpnClient getAttributes', function(){
     this.timeout(30000);
@@ -337,6 +344,62 @@ describe('Test vpnClient link_broken listener', function() {
     expect(client._started).to.equal(true);
     expect([client.internetFailureCount, client.internetSuccessCount, client.internetUnknownCount]).to.eql([0, 4, 0]);
   });
+
+  // a loss of internet is a down like any other: only the restart is skipped
+  describe('side effects of a loss of internet', () => {
+    let calls, saved;
+    beforeEach(() => {
+      calls = [];
+      saved = { flush: Ipset.flush, ensure: VPNClient.ensureCreateEnforcementEnv, isFeatureOn: fc.isFeatureOn };
+      Ipset.flush = async(name) => calls.push(`flush ${name}`);
+      VPNClient.ensureCreateEnforcementEnv = async() => {};
+      fc.isFeatureOn = () => false; // no alarm, which needs a box
+    });
+    afterEach(() => {
+      Ipset.flush = saved.flush;
+      VPNClient.ensureCreateEnforcementEnv = saved.ensure;
+      fc.isFeatureOn = saved.isFeatureOn;
+    });
+
+    async function loseInternet(settings) {
+      const client = newStubClient(settings);
+      client._currentState = true;
+      client._autoReconnectNeeded = async() => true;
+      client.restarts = 0;
+      client.scheduleRestart = () => client.restarts++;
+      for (const name of ['_disableDNSRoute', '_disablePBRDNSRoute'])
+        client[name] = async(mode) => calls.push(`${name} ${mode}`);
+      client._resetRouteMarkInRedis = async() => calls.push('_resetRouteMarkInRedis');
+      listeners = captureListeners(events, () => client.hookLinkStateChange());
+      await listeners.added.link_broken[0]({ type: 'link_broken', profileId: client.profileId, internet: true });
+      return client;
+    }
+
+    it('should clear only the soft routes of a client with strictVPN', async() => {
+      const client = await loseInternet({ strictVPN: true });
+      expect(calls).to.eql([
+        `flush ${VPNClient.getRouteIpsetName(client.profileId, false)}`,
+        `flush ${VPNClient.getPBRRouteIpsetName(client.profileId, false)}`,
+        '_disableDNSRoute soft',
+        '_disablePBRDNSRoute soft'
+      ]);
+      expect(client.restarts).to.equal(0);
+    });
+
+    it('should clear the hard routes too for a client without strictVPN', async() => {
+      const client = await loseInternet({ strictVPN: false });
+      expect(calls).to.eql([
+        `flush ${VPNClient.getRouteIpsetName(client.profileId, false)}`,
+        `flush ${VPNClient.getPBRRouteIpsetName(client.profileId, false)}`,
+        '_disableDNSRoute soft',
+        '_disablePBRDNSRoute soft',
+        `flush ${VPNClient.getRouteIpsetName(client.profileId)}`,
+        '_disableDNSRoute hard',
+        '_resetRouteMarkInRedis'
+      ]);
+      expect(client.restarts).to.equal(0);
+    });
+  });
 });
 
 describe('Test vpnClient internet probes', function() {
@@ -398,6 +461,53 @@ describe('Test vpnClient internet probes', function() {
         const result = await client._runPingTest('not an address', count);
         expect(result, `count ${count}`).to.eql({ target: 'not an address', totalCount: expected, successCount: null });
       }
+    });
+
+    // ping exits 1 on total loss and still prints its statistics, which are only in the stdout of the failed exec
+    describe('_runPingTest through sudo', () => {
+      let dir, saved;
+      before(() => {
+        // a sudo that prints $FAKE_OUT and exits with $FAKE_EXIT, the way ping does
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fakesudo-'));
+        fs.writeFileSync(path.join(dir, 'sudo'), '#!/bin/sh\necho "$FAKE_OUT"\nexit $FAKE_EXIT\n', { mode: 0o755 });
+        saved = { PATH: process.env.PATH };
+        process.env.PATH = `${dir}:${saved.PATH}`;
+        vpnClientEnforcer.getRtId = async() => 1;
+      });
+      after(() => {
+        process.env.PATH = saved.PATH;
+        delete vpnClientEnforcer.getRtId; // the real one is a prototype method
+        delete process.env.FAKE_OUT;
+        delete process.env.FAKE_EXIT;
+        fs.unlinkSync(path.join(dir, 'sudo'));
+        fs.rmdirSync(dir);
+      });
+
+      async function ping(exit, out) {
+        process.env.FAKE_EXIT = String(exit);
+        process.env.FAKE_OUT = out;
+        const client = newStubClient();
+        client.getVpnIP4s = async() => [];
+        client.getInterfaceName = () => 'vpn_test';
+        return client._runPingTest('1.1.1.1', 8);
+      }
+
+      it('should count a ping that got its replies', async() => {
+        const result = await ping(0, '8 packets transmitted, 8 received, 0% packet loss, time 7010ms');
+        expect(result.successCount).to.equal(8);
+      });
+
+      it('should read the statistics of a ping that exits 1 on total loss', async() => {
+        const result = await ping(1, '8 packets transmitted, 0 received, 100% packet loss, time 7165ms');
+        expect(result.successCount).to.equal(0);
+        expect(VPNClient._pingVerdict([result])).to.equal(false);
+      });
+
+      it('should say nothing for a ping that failed without statistics', async() => {
+        const result = await ping(2, 'ping: connect: Network is unreachable');
+        expect(result.successCount).to.equal(null);
+        expect(VPNClient._pingVerdict([result])).to.equal(null);
+      });
     });
   });
 
@@ -469,6 +579,8 @@ describe('Test vpnClient internet probes', function() {
       ]);
       for (const call of calls)
         expect(call.options).to.eql({ timeout: 10000, killSignal: 'SIGKILL' });
+      // a dig without a reply has to end by itself, with exit 9, before it is killed
+      expect(calls[0].options.timeout).to.be.above(DIG_TIMEOUT * DIG_TRIES * 1000);
     });
 
     it('should use the configured domain', async() => {

@@ -32,7 +32,7 @@ const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const { Address4, Address6 } = require('ip-address');
 const validator = require('validator');
-const { buildDigArgs } = require('../../util/DNSUpstreamHealthCheck.js');
+const { buildDigArgs, DEFAULT_TIMEOUT: DIG_TIMEOUT, DEFAULT_TRIES: DIG_TRIES } = require('../../util/DNSUpstreamHealthCheck.js');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const Ipset = require('../../net2/Ipset.js');
@@ -50,7 +50,8 @@ const INTERNET_OFF_ON_THRESHOLD = 5; // consecutive good checks to take it as up
 const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 const PING_TEST_MAX_COUNT = 8;
 const PING_TEST_TIMEOUT = 12000;
-const DNS_TEST_TIMEOUT = 10000;
+// a dig that gets no reply ends by itself after DIG_TRIES x DIG_TIMEOUT seconds with exit 9, the kill only has to come after that
+const DNS_TEST_TIMEOUT = (DIG_TIMEOUT * DIG_TRIES + 4) * 1000;
 const DEFAULT_DNS_TEST_DOMAIN = "github.com";
 
 const instances = {};

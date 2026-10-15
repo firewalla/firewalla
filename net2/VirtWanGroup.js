@@ -666,8 +666,6 @@ class VirtWanGroup {
 
   // this function is invoked when the virtual wan group is created or initialized in a process's lifecycle
   async createEnv() {
-    for (const profileId of await VirtWanGroup.getDirectMembers(this.wans))
-      log.warn(`VPN client ${profileId} in virtual wan group ${this.uuid} does not override the default route, its loss of internet is not detected`);
     await VirtWanGroup.ensureCreateEnforcementEnv(this.uuid);
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     if (!rtId)
@@ -682,6 +680,13 @@ class VirtWanGroup {
     // create ip rule
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`);
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6);
+    // only informs, a member whose settings cannot be read must not leave the group without its environment
+    const directMembers = await VirtWanGroup.getDirectMembers(this.wans).catch((err) => {
+      log.warn(`Failed to check the members of virtual wan group ${this.uuid}`, err.message);
+      return [];
+    });
+    for (const profileId of directMembers)
+      log.warn(`VPN client ${profileId} in virtual wan group ${this.uuid} does not override the default route, its loss of internet is not detected`);
   }
 
   // this function is invoked when the virtual wan group is removed
