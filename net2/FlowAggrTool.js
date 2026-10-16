@@ -76,6 +76,11 @@ class FlowAggrTool {
       + ((begin && end) ? `:${begin}:${end}` : '');
   }
 
+  // dailysyssumflow:ipB:out:<local day start>
+  getDailySumFlowKey(target, dimension, fd, dayStart) {
+    return 'daily' + this.getSumFlowKey(target, dimension, null, null, fd) + ':' + dayStart;
+  }
+
   // aggrflow:<device_mac>:download:10m:<ts>
   async flowExists(mac, dimension, interval, ts) {
     let key = this.getFlowKey(mac, dimension, interval, ts);
@@ -510,5 +515,7 @@ class FlowAggrTool {
   }
 }
 
+// number of local days a daily sumflow is kept
+FlowAggrTool.DAILY_SUMFLOW_DAYS = 7;
 
 module.exports = FlowAggrTool;
