@@ -255,6 +255,21 @@ class FlowAggrTool {
     }
   }
 
+  // kept apart from addSumFlow: hours are listed by their start, so each one lands in the local
+  // day it begins in, and no '_' placeholder or last pointer is written
+  async addDailySumFlow(target, dimension, fd, dayStart, dayEnd, options) {
+    const dailyKey = this.getDailySumFlowKey(target, dimension, fd, dayStart);
+    const hourKeys = [];
+    for (let h = Math.ceil(dayStart / 3600) * 3600; h < dayEnd; h += 3600)
+      hourKeys.push(this.getSumFlowKey(target, dimension, h, h + 3600, fd));
+
+    await rclient.multi()
+      .zunionstore([dailyKey, hourKeys.length, ...hourKeys])
+      .zremrangebyrank(dailyKey, 0, -((options.max_flow || MAX_FLOW_PER_SUM) + 1))
+      .expire(dailyKey, options.expireTime)
+      .execAsync();
+  }
+
   async setLastSumFlow(target, dimension, fd, keyName) {
     const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     await rclient.setAsync(key, keyName);
