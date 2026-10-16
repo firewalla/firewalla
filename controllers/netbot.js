@@ -170,6 +170,11 @@ const LRU = require('lru-cache')
 
 const restartUPnPTask = {};
 
+// one sendlog per box: every controller instance shares the same temp files
+let sendLogRunning = false;
+const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
+const SENDLOG_TIMEOUT_SEC = 300;
+
 class netBot extends ControllerBot {
 
   _enqueueInitRequest(req) {
@@ -461,20 +466,41 @@ class netBot extends ControllerBot {
   }
 
   async _sendLog() {
-    let password = require('../extension/common/key.js').randomPassword(10)
-    let filename = this.primarygid + ".tar.gz.gpg";
-    const url = await util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
-    if (url == null || url.url == null) {
-      throw "Unable to get storage"
-    } else {
-      const path = URL.parse(url.url).pathname;
-      const homePath = f.getFirewallaHome();
-      let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-      await execAsync(cmdline).catch(err => {
-        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);
-      })
-      return { password: password, filename: path }
+    if (sendLogRunning)
+      throw { code: 409, msg: "sendlog already in progress" }
+    sendLogRunning = true
+    let url, path
+    try {
+      url = await asyncNative.timeout(
+        util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0),
+        SENDLOG_STORAGE_TIMEOUT_SEC
+      )
+      if (url == null || url.url == null)
+        throw "Unable to get storage"
+      path = URL.parse(url.url).pathname;
+    } catch (err) {
+      sendLogRunning = false
+      throw err
     }
+    const password = require('../extension/common/key.js').randomPassword(10)
+    const filename = this.primarygid + ".tar.gz.gpg";
+    const script = `${f.getFirewallaHome()}/scripts/encrypt-upload-s3.sh`;
+    // reply before the upload: building the bundle outlasts the API request timeout.
+    // timeout stops the job's process group; a nested timeout in techsupport may outlive it by 40s
+    const job = execFile('timeout', ['-k', '30', String(SENDLOG_TIMEOUT_SEC), script, filename, password, url.url])
+    job
+      .then(() => {
+        log.info("sendLog: uploaded", path)
+      })
+      .catch(err => {
+        // not err.message: it carries the command line with the password and presigned url
+        const stderrTail = String(err.stderr || '').split('\n').filter(l => l.trim()).slice(-5).join('\n')
+        log.error("sendLog: encrypt-upload failed, code", err.code, "signal", job.childProcess.signalCode, stderrTail)
+      })
+      .finally(() => {
+        sendLogRunning = false
+      })
+    return { password: password, filename: path }
   }
 
   async _portforward(target, msg) {
