@@ -112,8 +112,8 @@ const EVENT_SUMMARY_RETENTION_DAYS = 7;
 const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 // block stats inlined in every init response, per entry
-const BLOCK_STATS_INIT_MAX_IDENTITIES = 10;
-const BLOCK_STATS_INIT_MAX_DESTS = 10;
+const BLOCK_STATS_INIT_MAX_IDENTITIES = 5;
+const BLOCK_STATS_INIT_MAX_DESTS = 5;
 // daily inbound block records inlined in every init response, per day
 const DAILY_INBOUND_BLOCK_INIT_RECORDS = 10;
 
@@ -1735,7 +1735,7 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
-      this.recentBlockStatsForInit(json),
+      this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
       this.eventSummaryForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
@@ -1811,10 +1811,31 @@ module.exports = class HostManager extends Monitorable {
     return monitorable ? monitorable.getReadableName() : null;
   }
 
+  // the init filter for block stats from the init option blockStatsAggrFilter. A non-empty
+  // includedKeys keeps only those keys, otherwise excludedKeys drops its keys. keyCaps sets the
+  // caps per key, each falling back to the default when it isn't a positive integer
+  _getBlockStatsInitFilter(filter) {
+    if (!_.isPlainObject(filter)) filter = {};
+    const included = !_.isEmpty(filter.includedKeys) && Array.isArray(filter.includedKeys) ? new Set(filter.includedKeys) : null;
+    const excluded = Array.isArray(filter.excludedKeys) ? new Set(filter.excludedKeys) : new Set();
+    const keyCaps = _.isPlainObject(filter.keyCaps) ? filter.keyCaps : {};
+    const isValid = v => Number.isInteger(v) && v > 0;
+    return {
+      includes: key => included ? included.has(key) : !excluded.has(key),
+      capOf: key => {
+        const cap = _.has(keyCaps, key) && _.isPlainObject(keyCaps[key]) ? keyCaps[key] : {};
+        return {
+          identitiesCap: isValid(cap.identitiesCap) ? cap.identitiesCap : BLOCK_STATS_INIT_MAX_IDENTITIES,
+          destsCap: isValid(cap.destsCap) ? cap.destsCap : BLOCK_STATS_INIT_MAX_DESTS
+        };
+      }
+    };
+  }
+
   // drops records of identities and devices that no longer exist and resolves their names. For
-  // init, which inlines every entry, devices are left out and identities and dests are capped.
-  // The entry counts unique values of each dest field across records, e.g. deviceCnt, destCnt
-  resolveBlockStatsEntry(entry, forInit) {
+  // init (initCap set), which inlines every entry, devices are left out and identities and dests
+  // are capped. The entry counts unique values of each dest field across records, e.g. deviceCnt, destCnt
+  resolveBlockStatsEntry(entry, initCap) {
     const records = [];
     const destLists = []; // before the init cap, for the entry level counts
     for (const r of entry.records || []) {
@@ -1832,13 +1853,13 @@ module.exports = class HostManager extends Monitorable {
         .sort((a, b) => b.cnt - a.cnt);
       destLists.push(dests);
       const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
-      if (forInit) {
+      if (initCap) {
         delete record.devices;
-        record.dests = dests.slice(0, BLOCK_STATS_INIT_MAX_DESTS);
+        record.dests = dests.slice(0, initCap.destsCap);
       }
       records.push(record);
     }
-    const topRecords = forInit ? topByCnt(records, BLOCK_STATS_INIT_MAX_IDENTITIES) : records;
+    const topRecords = initCap ? topByCnt(records, initCap.identitiesCap) : records;
     return Object.assign({}, entry, {
       records: topRecords.map(r => _.omit(r, 'name')),
       identities: topRecords.map(r => ({ id: r.identity, name: r.name })),
@@ -1879,11 +1900,11 @@ module.exports = class HostManager extends Monitorable {
     return buckets;
   }
 
-  async recentBlockStatsForInit(json) {
+  async recentBlockStatsForInit(json, blockStatsAggrFilter) {
     const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
-    json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, true);
+    json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
   }
 
   // inbound blocks of today and the previous local days, newest first; the counts cover every
@@ -1922,12 +1943,15 @@ module.exports = class HostManager extends Monitorable {
   // device that still exists
   async getBlockStatsInRange(begin, end) {
     const buckets = await this._getBlockStatsBuckets(begin, `(${end}`);
-    return this._resolveBlockStatsBuckets(buckets, false);
+    return this._resolveBlockStatsBuckets(buckets, null);
   }
 
-  _resolveBlockStatsBuckets(buckets, forInit) {
+  // initFilter (from _getBlockStatsInitFilter) is set for init only
+  _resolveBlockStatsBuckets(buckets, initFilter) {
     return buckets.map(payload => Object.assign(payload, {
-      blockStats: payload.blockStats.map(entry => this.resolveBlockStatsEntry(entry, forInit))
+      blockStats: payload.blockStats
+        .filter(entry => !initFilter || initFilter.includes(entry.key))
+        .map(entry => this.resolveBlockStatsEntry(entry, initFilter && initFilter.capOf(entry.key)))
     }));
   }
 
