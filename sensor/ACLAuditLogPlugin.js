@@ -79,7 +79,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.featureName = Constants.FEATURE_AUDIT_LOG
     this.buffer = {}
-    this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
+    this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1, 'audit:dns:system': 1};
     this.incTs = 0;
   }
 
@@ -1033,7 +1033,7 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(Date.now() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       const auditKeys = Object.keys(this.touchedKeys);
-      this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
+      this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1, 'audit:dns:system': 1};
       log.verbose('Start merging', start, end, 'Key(mac) count: ', auditKeys.length)
       for (const key of auditKeys) {
         const records = await rclient.zrangebyscoreAsync(key, '('+start, end)
