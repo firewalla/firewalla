@@ -2432,7 +2432,7 @@ class PolicyManager2 {
 
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType,
-      guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
+      guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
     const qosRef = { pid, subKey: policy.qosSubKey };
 
     if (action === "app_block")
@@ -2610,7 +2610,8 @@ class PolicyManager2 {
           return;
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat"
+          || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
           if (isBlockOrdisturb && policy.dnsmasq_only) {
             connSet4 = Block.getConnSet(pid);
             connSet6 = Block.getConnSet6(pid);
