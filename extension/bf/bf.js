@@ -64,8 +64,18 @@ class bf {
       if (need_decompress) {
         output = await inflateAsync(output);
       }
-      
-      await fs.writeFileAsync(outputFilePath, output);
+
+      // write to a temp file and rename, never in place: dnsmasq maps these files
+      // read-only and shares one copy across its per-network instances, so truncating
+      // the file it is holding takes the pages out from under it (SIGBUS)
+      const tmpFilePath = `${outputFilePath}.tmp.${process.pid}`;
+      try {
+        await fs.writeFileAsync(tmpFilePath, output);
+        await fs.renameAsync(tmpFilePath, outputFilePath);
+      } catch (err) {
+        await fs.unlinkAsync(tmpFilePath).catch(() => undefined);
+        throw err;
+      }
     } catch(err) {
       log.error("Failed to update bf data, err:", err);
     }
