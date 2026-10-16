@@ -59,10 +59,10 @@ class InternetSpeedtestPlugin extends Sensor {
         if (wanIntf) {
           if (wanIntf.ip_address)
             bindIP = wanIntf.ip_address;
-          if (wanIntf.dns)
-            dnsServers=wanIntf.dns
           else
             throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot get speed test servers from it`, code: 400};
+          if (wanIntf.dns)
+            dnsServers = wanIntf.dns;
         }
       }
       const results = await this.listAvailableServers(bindIP, dnsServers, vendor);
