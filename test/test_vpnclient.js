@@ -121,7 +121,9 @@ describe('Test vpnClient connectivity state cache race', function() {
     client._lastStartTime = null;
 
     const cachedStates = [];
+    const cachedInternetStates = [];
     client._setCachedState = async(state) => cachedStates.push(state);
+    client._setCachedInternetState = async(state) => cachedInternetStates.push(state);
 
     let releaseLinkCheck;
     const linkCheckStarted = new Promise((resolve) => {
@@ -142,6 +144,73 @@ describe('Test vpnClient connectivity state cache race', function() {
     await checkPromise;
 
     expect(cachedStates).to.eql([false]);
+    expect(cachedInternetStates).to.eql([null]);
+  });
+});
+
+describe('Test vpnClient cached states', function() {
+  this.timeout(3000);
+
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  let store;
+  before(() => {
+    store = {};
+    rclient.getAsync = async(key) => key in store ? store[key] : null;
+    rclient.setAsync = async(key, value) => { store[key] = String(value); };
+    rclient.expireAsync = async() => {};
+    rclient.delAsync = async(...keys) => keys.forEach(key => delete store[key]);
+  });
+  after(() => {
+    for (const name of ['getAsync', 'setAsync', 'expireAsync', 'delAsync'])
+      delete rclient[name];
+  });
+
+  function newClient() {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = 'cached_states';
+    return client;
+  }
+
+  it('should keep the link and the internet of a client apart', async() => {
+    const client = newClient();
+    await client._setCachedState(true);
+    await client._setCachedInternetState(false);
+    expect(await client._getCachedState()).to.equal(true);
+    expect(await client._getCachedInternetState()).to.equal(false);
+    expect(store).to.eql({ 'VC:cached_states:connState': 'true', 'VC:cached_states:internetState': 'false' });
+  });
+
+  it('should have no internet state for a client that is not judged', async() => {
+    const client = newClient();
+    await client._setCachedInternetState(true);
+    await client._setCachedInternetState(null);
+    expect(await client._getCachedInternetState()).to.equal(null);
+    expect(await client._getCachedState()).to.equal(true);
+  });
+
+  it('should delete both states with the client', async() => {
+    const client = newClient();
+    await client._setCachedInternetState(true);
+    await client._deleteCachedState();
+    expect(store).to.eql({});
+  });
+
+  it('should report the internet in the attributes, next to the status of the link', async() => {
+    const client = newClient();
+    for (const name of ['loadSettings', 'getEffectiveRoutedSubnets', 'getStatistics', 'getMessage', 'loadJSONConfig',
+      '_getRemoteIP', '_getRemoteIP6', '_getLocalIP', '_getDNSServers'])
+      client[name] = async() => null;
+    vpnClientEnforcer.getRtId = async() => 100;
+    try {
+      await client._setCachedState(true);
+      await client._setCachedInternetState(false);
+      const attrs = await client.getAttributes();
+      expect([attrs.status, attrs.internet]).to.eql([true, false]);
+      await client._setCachedInternetState(null);
+      expect((await client.getAttributes()).internet).to.equal(null);
+    } finally {
+      delete vpnClientEnforcer.getRtId;
+    }
   });
 });
 
@@ -153,7 +222,10 @@ function newStubClient(settings) {
   client._started = true;
   client._restarting = false;
   client._lastStartTime = null;
-  client._setCachedState = async() => {};
+  client.cachedLinks = [];
+  client.cachedInternetStates = [];
+  client._setCachedState = async(state) => client.cachedLinks.push(state);
+  client._setCachedInternetState = async(state) => client.cachedInternetStates.push(state);
   client._isLinkUp = async() => true;
   client._resetInternetCounters();
   return client;
@@ -172,6 +244,13 @@ function captureListeners(events, fn) {
   };
 }
 
+// what a link_state_change says about the tunnel
+function label(e) {
+  if (!e.link)
+    return 'link-down';
+  return e.internet ? 'ready' : 'no-internet';
+}
+
 describe('Test vpnClient internet check hysteresis', function() {
   this.timeout(3000);
 
@@ -185,14 +264,14 @@ describe('Test vpnClient internet check hysteresis', function() {
     sem.emitEvent = origEmitEvent;
   });
 
-  // runs one check per verdict, returns the event types each of them emitted
+  // runs one check per verdict, returns what each of them emitted
   async function run(client, verdicts) {
     const rounds = [];
     for (const verdict of verdicts) {
       client._isInternetAvailable = async() => verdict;
       emitted.length = 0;
       await client._checkConnectivity();
-      rounds.push(emitted.map(e => e.internet === undefined ? e.type : `${e.type}:${e.internet}`).join());
+      rounds.push(emitted.map(label).join());
     }
     return rounds;
   }
@@ -212,12 +291,12 @@ describe('Test vpnClient internet check hysteresis', function() {
   });
 
   it('should promote on the first good sample after a reset', async() => {
-    expect(await run(newStubClient(), [true])).to.eql(['link_established']);
+    expect(await run(newStubClient(), [true])).to.eql(['ready']);
   });
 
   it('should need 2 consecutive failures after a reset', async() => {
     expect(await run(newStubClient(), [false])).to.eql(['']);
-    expect(await run(newStubClient(), [false, false])).to.eql(['', 'link_broken:true']);
+    expect(await run(newStubClient(), [false, false])).to.eql(['', 'no-internet']);
     // a failure spends the head start of the first good sample
     expect(await run(newStubClient(), [false, true, true, true, true])).to.eql(['', '', '', '', '']);
   });
@@ -225,7 +304,7 @@ describe('Test vpnClient internet check hysteresis', function() {
   it('should break on the 2nd failure and recover on the 5th success', async() => {
     const client = newStubClient();
     expect(await run(client, [true, false, false, true, true, true, true, true])).to.eql([
-      'link_established', '', 'link_broken:true', '', '', '', '', 'link_established'
+      'ready', '', 'no-internet', '', '', '', '', 'ready'
     ]);
   });
 
@@ -233,20 +312,20 @@ describe('Test vpnClient internet check hysteresis', function() {
     const client = newStubClient();
     await run(client, [true, false, false]);
     expect(await run(client, [true, true, true, true, false, true, true, true, true, true])).to.eql([
-      '', '', '', '', '', '', '', '', '', 'link_established'
+      '', '', '', '', '', '', '', '', '', 'ready'
     ]);
   });
 
   it('should not count a sample that could not tell', async() => {
     expect(await run(newStubClient(), [false, null])).to.eql(['', '']);
-    expect(await run(newStubClient(), [false, null, false])).to.eql(['', '', 'link_broken:true']);
+    expect(await run(newStubClient(), [false, null, false])).to.eql(['', '', 'no-internet']);
   });
 
   it('should fall back to the link-only verdict after 5 samples that could not tell', async() => {
     const client = newStubClient();
     await run(client, [true, false, false]);
     expect(await run(client, [null, null, null, null, null])).to.eql([
-      'link_broken:true', 'link_broken:true', 'link_broken:true', 'link_broken:true', 'link_established'
+      'no-internet', 'no-internet', 'no-internet', 'no-internet', 'ready'
     ]);
     expect(client.internetUnknownCount).to.equal(5);
   });
@@ -255,23 +334,44 @@ describe('Test vpnClient internet check hysteresis', function() {
     const client = newStubClient();
     await run(client, [true, false, false]);
     const rounds = await run(client, [null, null, null, null, false, null, null, null, null]);
-    expect(rounds.filter(r => r === 'link_established')).to.eql([]);
+    expect(rounds.filter(r => r === 'ready')).to.eql([]);
     expect(client.internetUnknownCount).to.equal(4);
   });
 
-  it('should report a broken link without the internet flag and without probing', async() => {
+  it('should report the link and the internet as two states, and keep the status to the link', async() => {
+    const client = newStubClient();
+    await run(client, [true, false, false]);
+    expect(emitted.map(e => [e.type, e.link, e.internet])).to.eql([['link_state_change', true, false]]);
+    // pending rounds write nothing. the status stays true while the internet is down
+    expect(client.cachedLinks).to.eql([true, true]);
+    expect(client.cachedInternetStates).to.eql([true, false]);
+  });
+
+  it('should report a broken link without internet either, and without probing', async() => {
     const client = newStubClient();
     client._isLinkUp = async() => false;
     client._isInternetAvailable = async() => { throw new Error('should not probe'); };
     await client._checkConnectivity();
-    expect(emitted.map(e => [e.type, e.internet])).to.eql([['link_broken', false]]);
+    expect(emitted.map(e => [e.type, e.link, e.internet])).to.eql([['link_state_change', false, false]]);
+    expect(client.cachedLinks).to.eql([false]);
+    expect(client.cachedInternetStates).to.eql([false]);
   });
 
   it('should not probe a client that does not override the default route', async() => {
     const client = newStubClient({ overrideDefaultRoute: false });
     client._isInternetAvailable = async() => { throw new Error('should not probe'); };
     await client._checkConnectivity();
-    expect(emitted.map(e => e.type)).to.eql(['link_established']);
+    expect(emitted.map(e => [e.link, e.internet])).to.eql([[true, true]]);
+  });
+
+  it('should ping less in the check after a start, which also tells the group to refresh', async() => {
+    const client = newStubClient();
+    const asked = [];
+    client._isInternetAvailable = async(quick) => { asked.push(quick); return true; };
+    await client._checkConnectivity(true);
+    await client._checkConnectivity();
+    expect(asked).to.eql([true, false]);
+    expect(emitted.map(e => e.routeUpdated)).to.eql([true, false]);
   });
 
   it('should discard a sample that finishes after the client is stopped', async() => {
@@ -280,53 +380,97 @@ describe('Test vpnClient internet check hysteresis', function() {
     await client._checkConnectivity();
     await client._checkConnectivity();
     expect(emitted).to.eql([]);
+    expect(client.cachedLinks).to.eql([false, false]);
+    expect(client.cachedInternetStates).to.eql([null, null]);
   });
 });
 
-describe('Test vpnClient link_broken listener', function() {
+// the client acts on the link only: the internet is for the virtual wan group
+describe('Test vpnClient link_state_change listener', function() {
   this.timeout(3000);
 
-  const events = ['link_broken', 'link_established', 'link_wan_switched'];
-  let listeners;
-  afterEach(() => listeners.remove());
+  const events = ['link_state_change', 'link_wan_switched'];
+  let hooks, calls, saved;
+  beforeEach(() => {
+    hooks = [];
+    calls = [];
+    saved = { flush: Ipset.flush, ensure: VPNClient.ensureCreateEnforcementEnv, isFeatureOn: fc.isFeatureOn };
+    Ipset.flush = async(name) => calls.push(`flush ${name}`);
+    VPNClient.ensureCreateEnforcementEnv = async() => {};
+    fc.isFeatureOn = () => false; // no alarm, which needs a box
+  });
+  afterEach(() => {
+    hooks.forEach(h => h.remove());
+    Ipset.flush = saved.flush;
+    VPNClient.ensureCreateEnforcementEnv = saved.ensure;
+    fc.isFeatureOn = saved.isFeatureOn;
+  });
 
-  function hook(client, autoReconnect) {
-    client._currentState = false; // skips the ipset flush and alarm, which need a box
+  // a client whose tunnel was up, with everything the listener touches stubbed. returns the listener
+  function hook(client, autoReconnect = true) {
+    client._currentState = true;
     client._autoReconnectNeeded = async() => autoReconnect;
     client.restarts = 0;
     client.scheduleRestart = () => client.restarts++;
-    listeners = captureListeners(events, () => client.hookLinkStateChange());
-    return listeners.added.link_broken[0];
+    client.refreshes = 0;
+    client._scheduleRefreshRoutes = () => client.refreshes++;
+    for (const name of ['_disableDNSRoute', '_disablePBRDNSRoute'])
+      client[name] = async(mode) => calls.push(`${name} ${mode}`);
+    client._resetRouteMarkInRedis = async() => calls.push('_resetRouteMarkInRedis');
+    const listeners = captureListeners(events, () => client.hookLinkStateChange());
+    hooks.push(listeners);
+    return listeners.added.link_state_change[0];
   }
 
-  it('should not restart the tunnel for a loss of internet', async() => {
+  const state = (client, link, internet) => ({ type: 'link_state_change', profileId: client.profileId, link, internet });
+
+  it('should do nothing for a loss of internet behind a tunnel that is up', async() => {
     const client = newStubClient();
-    const onBroken = hook(client, true);
-    await onBroken({ type: 'link_broken', profileId: client.profileId, internet: true });
+    const onChange = hook(client);
+    await onChange(state(client, true, false));
+    expect(calls).to.eql([]);
     expect(client.restarts).to.equal(0);
-    expect(client._currentState).to.equal(false);
+    expect(client.refreshes).to.equal(0);
+    expect(client._currentState).to.equal(true);
   });
 
   it('should restart the tunnel for a broken link', async() => {
     const client = newStubClient();
-    const onBroken = hook(client, true);
-    await onBroken({ type: 'link_broken', profileId: client.profileId, internet: false });
-    await onBroken({ type: 'link_broken', profileId: client.profileId });
+    const onChange = hook(client);
+    await onChange(state(client, false, false));
+    await onChange(state(client, false, false));
     expect(client.restarts).to.equal(2);
+    expect(client._currentState).to.equal(false);
   });
 
   it('should not restart a broken link when autoReconnect is off', async() => {
     const client = newStubClient();
-    const onBroken = hook(client, false);
-    await onBroken({ type: 'link_broken', profileId: client.profileId, internet: false });
+    const onChange = hook(client, false);
+    await onChange(state(client, false, false));
     expect(client.restarts).to.equal(0);
   });
 
   it('should ignore events of other clients', async() => {
     const client = newStubClient();
-    const onBroken = hook(client, true);
-    await onBroken({ type: 'link_broken', profileId: `${client.profileId}_other`, internet: false });
+    const onChange = hook(client);
+    await onChange(Object.assign(state(client, false, false), { profileId: `${client.profileId}_other` }));
+    expect(calls).to.eql([]);
     expect(client.restarts).to.equal(0);
+  });
+
+  it('should restore a tunnel that is back, whatever the internet behind it', async() => {
+    for (const internet of [true, false]) {
+      const client = newStubClient();
+      const onChange = hook(client);
+      await onChange(state(client, false, false));
+      expect(client.refreshes).to.equal(0);
+      await onChange(state(client, true, internet));
+      expect(client.refreshes).to.equal(1);
+      expect(client._currentState).to.equal(true);
+      // nothing to restore any more
+      await onChange(state(client, true, !internet));
+      expect(client.refreshes).to.equal(1);
+    }
   });
 
   it('should reset the counters when FireApi starts the client', async() => {
@@ -345,49 +489,26 @@ describe('Test vpnClient link_broken listener', function() {
     expect([client.internetFailureCount, client.internetSuccessCount, client.internetUnknownCount]).to.eql([0, 4, 0]);
   });
 
-  // a loss of internet is a down like any other: only the restart is skipped
-  describe('side effects of a loss of internet', () => {
-    let calls, saved;
-    beforeEach(() => {
-      calls = [];
-      saved = { flush: Ipset.flush, ensure: VPNClient.ensureCreateEnforcementEnv, isFeatureOn: fc.isFeatureOn };
-      Ipset.flush = async(name) => calls.push(`flush ${name}`);
-      VPNClient.ensureCreateEnforcementEnv = async() => {};
-      fc.isFeatureOn = () => false; // no alarm, which needs a box
-    });
-    afterEach(() => {
-      Ipset.flush = saved.flush;
-      VPNClient.ensureCreateEnforcementEnv = saved.ensure;
-      fc.isFeatureOn = saved.isFeatureOn;
-    });
-
-    async function loseInternet(settings) {
+  describe('side effects of a broken link', () => {
+    async function breakLink(settings) {
       const client = newStubClient(settings);
-      client._currentState = true;
-      client._autoReconnectNeeded = async() => true;
-      client.restarts = 0;
-      client.scheduleRestart = () => client.restarts++;
-      for (const name of ['_disableDNSRoute', '_disablePBRDNSRoute'])
-        client[name] = async(mode) => calls.push(`${name} ${mode}`);
-      client._resetRouteMarkInRedis = async() => calls.push('_resetRouteMarkInRedis');
-      listeners = captureListeners(events, () => client.hookLinkStateChange());
-      await listeners.added.link_broken[0]({ type: 'link_broken', profileId: client.profileId, internet: true });
+      await hook(client)(state(client, false, false));
       return client;
     }
 
     it('should clear only the soft routes of a client with strictVPN', async() => {
-      const client = await loseInternet({ strictVPN: true });
+      const client = await breakLink({ strictVPN: true });
       expect(calls).to.eql([
         `flush ${VPNClient.getRouteIpsetName(client.profileId, false)}`,
         `flush ${VPNClient.getPBRRouteIpsetName(client.profileId, false)}`,
         '_disableDNSRoute soft',
         '_disablePBRDNSRoute soft'
       ]);
-      expect(client.restarts).to.equal(0);
+      expect(client.restarts).to.equal(1);
     });
 
     it('should clear the hard routes too for a client without strictVPN', async() => {
-      const client = await loseInternet({ strictVPN: false });
+      const client = await breakLink({ strictVPN: false });
       expect(calls).to.eql([
         `flush ${VPNClient.getRouteIpsetName(client.profileId, false)}`,
         `flush ${VPNClient.getPBRRouteIpsetName(client.profileId, false)}`,
@@ -397,7 +518,7 @@ describe('Test vpnClient link_broken listener', function() {
         '_disableDNSRoute hard',
         '_resetRouteMarkInRedis'
       ]);
-      expect(client.restarts).to.equal(0);
+      expect(client.restarts).to.equal(1);
     });
   });
 });
@@ -534,6 +655,17 @@ describe('Test vpnClient internet probes', function() {
       await client._runPingTests();
       expect(calls).to.eql([['10.0.0.1', 3], ['10.0.0.2', 3], ['10.0.0.3', 3]]);
     });
+
+    it('should ping less when asked for the check after a start, but never more than configured', async() => {
+      const client = newStubClient();
+      const calls = pingStub(client);
+      await client._runPingTests(true);
+      expect(calls).to.eql([['1.1.1.1', 3], ['8.8.8.8', 3], ['9.9.9.9', 3]]);
+      const few = newStubClient({ pingTestCount: 2 });
+      const fewCalls = pingStub(few);
+      await few._runPingTests(true);
+      expect(fewCalls.map(c => c[1])).to.eql([2, 2, 2]);
+    });
   });
 
   describe('_runDnsTest', () => {
@@ -650,6 +782,16 @@ describe('Test vpnClient internet probes', function() {
       expect(await check(null, true)).to.eql([null, 'ping,dns']);
       expect(await check(null, null)).to.eql([null, 'ping,dns']);
     });
+
+    it('should hand the quick flag to the ping stage', async() => {
+      const client = newStubClient();
+      const asked = [];
+      client._runPingTests = async(quick) => { asked.push(quick); return true; };
+      client._runDnsTest = async() => true;
+      await client._checkInternetAvailability(true);
+      await client._checkInternetAvailability();
+      expect(asked).to.eql([true, false]);
+    });
   });
 
   describe('_isInternetAvailable', () => {
@@ -669,6 +811,15 @@ describe('Test vpnClient internet probes', function() {
         client._checkInternetAvailability = async() => verdict;
         expect(await client._isInternetAvailable()).to.equal(verdict);
       }
+    });
+
+    it('should hand the quick flag to the check', async() => {
+      const client = newStubClient();
+      const asked = [];
+      client._checkInternetAvailability = async(quick) => { asked.push(quick); return true; };
+      await client._isInternetAvailable(true);
+      await client._isInternetAvailable();
+      expect(asked).to.eql([true, false]);
     });
   });
 
@@ -732,5 +883,99 @@ describe('Test virtual wan group members', function() {
     }).catch(err => error = err);
     expect(error).to.include({ code: 400 });
     expect(error.msg).to.contain('direct');
+  });
+});
+
+// a member is ready when its tunnel is up and the internet works behind it
+describe('Test virtual wan group link state', function() {
+  this.timeout(3000);
+
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  before(() => {
+    rclient.existsAsync = async() => true; // the group is still there, what it would save to redis goes nowhere
+    rclient.hsetAsync = async() => 1;
+  });
+  after(() => {
+    delete rclient.existsAsync;
+    delete rclient.hsetAsync;
+  });
+
+  // primary A (seq 0) and standby B (seq 1), both ready, A active unless said otherwise
+  function newGroup(props = {}, ready = { A: true, B: true }, active = 'A') {
+    const group = Object.create(VirtWanGroup.prototype);
+    Object.assign(group, { uuid: 'test', type: 'primary_standby', failback: true, refreshes: 0, alarms: [] }, props);
+    group.connState = {};
+    ['A', 'B'].forEach((profileId, seq) => group.connState[profileId] = { profileId, seq, enabled: true, ready: ready[profileId], active: profileId === active });
+    group.refreshRT = async() => group.refreshes++;
+    group._memberRoutesMissing = async() => false;
+    // [member, whether the active wan switched]
+    group.generateConnChangeAlarm = async(e, wanSwitched) => group.alarms.push([e.profileId, wanSwitched]);
+    return group;
+  }
+  const state = (profileId, link, internet, extra) => Object.assign({ type: 'link_state_change', profileId, link, internet }, extra);
+  const readyOf = (group) => [group.connState.A.ready, group.connState.B.ready];
+
+  it('should take a member without internet as not ready, and fail over', async() => {
+    const group = newGroup();
+    await group.processLinkStateEvent(state('A', true, false));
+    expect(readyOf(group)).to.eql([false, true]);
+    expect(group.refreshes).to.equal(1);
+    expect(group.alarms).to.eql([['A', true]]);
+  });
+
+  it('should take a broken link as not ready too', async() => {
+    const group = newGroup();
+    await group.processLinkStateEvent(state('A', false, false));
+    expect(readyOf(group)).to.eql([false, true]);
+    expect(group.refreshes).to.equal(1);
+    expect(group.alarms).to.eql([['A', true]]);
+  });
+
+  it('should only alarm for a standby that loses its internet', async() => {
+    const group = newGroup();
+    await group.processLinkStateEvent(state('B', true, false));
+    expect(readyOf(group)).to.eql([true, false]);
+    expect(group.refreshes).to.equal(0);
+    expect(group.alarms).to.eql([['B', false]]);
+  });
+
+  it('should not switch a group of a single member', async() => {
+    const group = newGroup({ type: 'single' });
+    await group.processLinkStateEvent(state('A', true, false));
+    expect(readyOf(group)).to.eql([false, true]);
+    expect(group.refreshes).to.equal(0);
+    expect(group.alarms).to.eql([['A', false]]);
+  });
+
+  it('should leave a member that is not ready alone', async() => {
+    const group = newGroup({}, { A: false, B: true }, 'B');
+    await group.processLinkStateEvent(state('A', true, false));
+    expect(readyOf(group)).to.eql([false, true]);
+    expect(group.refreshes).to.equal(0);
+    expect(group.alarms).to.eql([]);
+  });
+
+  it('should fail back when the primary has its internet again', async() => {
+    const group = newGroup({}, { A: false, B: true }, 'B');
+    await group.processLinkStateEvent(state('A', true, true));
+    expect(readyOf(group)).to.eql([true, true]);
+    expect(group.refreshes).to.equal(1);
+    expect(group.alarms).to.eql([['A', true]]);
+  });
+
+  it('should not switch back to a primary that recovers when failback is off', async() => {
+    const group = newGroup({ failback: false }, { A: false, B: true }, 'B');
+    await group.processLinkStateEvent(state('A', true, true));
+    expect(readyOf(group)).to.eql([true, true]);
+    expect(group.refreshes).to.equal(0);
+    expect(group.alarms).to.eql([['A', false]]);
+  });
+
+  it('should refresh the routes after a route update of a member that is ready', async() => {
+    const group = newGroup();
+    await group.processLinkStateEvent(state('B', true, true, { routeUpdated: true }));
+    expect(readyOf(group)).to.eql([true, true]);
+    expect(group.refreshes).to.equal(1);
+    expect(group.alarms).to.eql([]);
   });
 });

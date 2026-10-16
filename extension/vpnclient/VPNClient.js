@@ -49,6 +49,7 @@ const INTERNET_ON_OFF_THRESHOLD = 2; // consecutive failed checks to take the in
 const INTERNET_OFF_ON_THRESHOLD = 5; // consecutive good checks to take it as up again
 const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 const PING_TEST_MAX_COUNT = 8;
+const START_PING_TEST_COUNT = 3; // the check after a start only has to tell a tunnel that works from one that does not
 const PING_TEST_TIMEOUT = 12000;
 // a dig that gets no reply ends by itself after DIG_TRIES x DIG_TIMEOUT seconds with exit 9, the kill only has to come after that
 const DNS_TEST_TIMEOUT = (DIG_TIMEOUT * DIG_TRIES + 4) * 1000;
@@ -82,11 +83,13 @@ class VPNClient {
             if (c === channel && message === this.profileId) {
               log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
               this._scheduleRefreshRoutes();
-              // emit link established event immediately
+              // emit link state change event immediately, with the tunnel up. it does not wait for the internet check, the next check judges it again
               if (this._started) {
                 sem.emitEvent({
-                  type: "link_established",
+                  type: "link_state_change",
                   profileId: this.profileId,
+                  link: true,
+                  internet: true,
                   routeUpdated: true,
                   suppressEventLogging: true,
                 });
@@ -418,20 +421,22 @@ class VPNClient {
   async _checkConnectivity(force = false) {
     if (!this._started) {
       await this._setCachedState(false);
+      await this._setCachedInternetState(null);
       return;
     }
     if (this._restarting)
       return;
     if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
       return;
-    let result = await this._isLinkUp();
-    let internetLost = false;
-    if (result === false) {
+    const link = await this._isLinkUp();
+    // a client that does not override the default route is not tested for the internet, it has it as long as its link is up
+    let internet = link;
+    if (link === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
-        const internetAvailability = await this._isInternetAvailable();
+        const internetAvailability = await this._isInternetAvailable(force);
         if (internetAvailability === null) {
           // could not tell: neither counter moves. a probe that stays blind for as long as a recovery
           // takes falls back to the link-only verdict, so it can never keep a client demoted
@@ -457,43 +462,35 @@ class VPNClient {
         }
         // update result if consecutive internet connectivity tests return same results
         if (this.internetSuccessCount >= INTERNET_OFF_ON_THRESHOLD)
-          result = true;
-        else {
-          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD) {
-            result = false;
-            internetLost = true;
-          } else // internet success/failure count is within switching threshold, pending another consecutive result to decide
-            result = null;
-        }
+          internet = true;
+        else if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+          internet = false;
+        else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+          internet = null;
       }
     }
     // Re-check after async tests so a stale successful check cannot override stop().
     if (!this._started) {
       await this._setCachedState(false);
+      await this._setCachedInternetState(null);
       return;
     }
     if (this._restarting)
       return;
-    // result is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
-    if (result === null)
+    // internet is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
+    if (internet === null)
       return;
-    if (result) {
-      await this._setCachedState(true);
-      sem.emitEvent({
-        type: "link_established",
-        profileId: this.profileId,
-        routeUpdated: force,
-        suppressEventLogging: true,
-      });
-    } else {
-      await this._setCachedState(false);
-      sem.emitEvent({
-        type: "link_broken",
-        profileId: this.profileId,
-        internet: internetLost,
-        suppressEventLogging: true,
-      });
-    }
+    // status is the link alone, the internet is a state of its own
+    await this._setCachedState(link);
+    await this._setCachedInternetState(internet);
+    sem.emitEvent({
+      type: "link_state_change",
+      profileId: this.profileId,
+      link,
+      internet,
+      routeUpdated: force,
+      suppressEventLogging: true,
+    });
   }
 
   // a start needs 2 failed checks to be taken as down, and the first good check to be taken as up
@@ -549,7 +546,8 @@ class VPNClient {
   }
 
   hookLinkStateChange() {
-    sem.on('link_broken', async (event) => {
+    // the client acts on the link only. the internet is for the virtual wan group, losing it behind a tunnel that is up changes nothing here
+    const onLinkBroken = async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
           // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
@@ -585,14 +583,14 @@ class VPNClient {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        // a restart does not bring back the internet behind a tunnel that is up
-        if (!event.internet && await this._autoReconnectNeeded())
+        const autoReconnectNeeded = await this._autoReconnectNeeded();
+        if (autoReconnectNeeded)
           this.scheduleRestart();
         this._currentState = false;
       }
-    });
+    };
 
-    sem.on('link_established', async (event) => {
+    const onLinkEstablished = async (event) => {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
@@ -616,6 +614,13 @@ class VPNClient {
         }
         this._currentState = true;
       }
+    };
+
+    sem.on('link_state_change', async (event) => {
+      if (event.link === false)
+        await onLinkBroken(event);
+      else
+        await onLinkEstablished(event);
     });
 
     sem.on('link_wan_switched', async (event) => {
@@ -1121,10 +1126,11 @@ class VPNClient {
           establishmentTask = null;
         }
         await this._setCachedState(true);
+        await this._setCachedInternetState(null); // unknown until the first check
         this._scheduleRefreshRoutes();
         await this.addRemoteEndpointRoutes().catch((err) => { });
         if (f.isMain()) {
-          // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+          // check connectivity and emit link_state_change later, before which routes are already added and ping test using fwmark will work properly
           setTimeout(() => {
             this._checkConnectivity(true).catch((err) => {
               log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
@@ -1226,6 +1232,7 @@ class VPNClient {
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
     await this._setCachedState(false);
+    await this._setCachedInternetState(null);
 
     if (!f.isMain()) {
       sem.emitEvent({
@@ -1407,6 +1414,9 @@ class VPNClient {
       result.status = await this.status();
     })());
     promises.push((async () => {
+      result.internet = await this._getCachedInternetState();
+    })());
+    promises.push((async () => {
       result.stats = await this.getStatistics();
     })());
     promises.push((async () => {
@@ -1473,9 +1483,10 @@ class VPNClient {
     return null;
   }
 
-  // true, false, or null when it could not be told. clients with a check of their own override this
-  async _checkInternetAvailability() {
-    const ping = await this._runPingTests();
+  // true, false, or null when it could not be told. clients with a check of their own override this.
+  // quick is the check right after a start, which pings less
+  async _checkInternetAvailability(quick = false) {
+    const ping = await this._runPingTests(quick);
     if (ping === false)
       return false;
     // an inconclusive DNS test counts like a skipped one
@@ -1499,21 +1510,21 @@ class VPNClient {
   }
 
   // true or false for whether the tunnel reaches the internet, null when that could not be told
-  async _isInternetAvailable() {
+  async _isInternetAvailable(quick = false) {
     if (!this._started)
       return null;
     if (!await this._isLinkUp())
       return null;
-    const result = await this._checkInternetAvailability();
+    const result = await this._checkInternetAvailability(quick);
     log.verbose(`VPN client ${this.profileId} internet availability: ${result}`);
     return result;
   }
 
-  async _runPingTests() {
+  async _runPingTests(quick = false) {
     const configured = this.settings.pingTestTargets;
     const targets = (_.isEmpty(configured) ? INTERNET_TEST_IPS : configured).slice(0, 3);
     const count = this.settings.pingTestCount || PING_TEST_MAX_COUNT;
-    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, quick ? Math.min(count, START_PING_TEST_COUNT) : count)));
     const verdict = VPNClient._pingVerdict(results);
     log.verbose(`VPN client ${this.profileId} ping tests [${results.map(r => `${r.target} ${r.successCount}/${r.totalCount}`)}] verdict ${verdict}`);
     return verdict;
@@ -1619,13 +1630,34 @@ class VPNClient {
     return `VC:${profileId}:connState`;
   }
 
+  static getInternetStateCacheKey(profileId) {
+    return `VC:${profileId}:internetState`;
+  }
+
   async _setCachedState(state) {
     await rclient.setAsync(VPNClient.getStateCacheKey(this.profileId), state);
     await rclient.expireAsync(VPNClient.getStateCacheKey(this.profileId), 86400 * 7);
   }
 
+  // true or false while the internet behind the tunnel is judged, null when it is not (stopped, just started)
+  async _setCachedInternetState(state) {
+    const key = VPNClient.getInternetStateCacheKey(this.profileId);
+    if (_.isNil(state))
+      return rclient.delAsync(key);
+    await rclient.setAsync(key, state);
+    await rclient.expireAsync(key, 86400 * 7);
+  }
+
+  async _getCachedInternetState() {
+    return VPNClient._getCachedBoolean(VPNClient.getInternetStateCacheKey(this.profileId));
+  }
+
   async _getCachedState() {
-    const state = await rclient.getAsync(VPNClient.getStateCacheKey(this.profileId));
+    return VPNClient._getCachedBoolean(VPNClient.getStateCacheKey(this.profileId));
+  }
+
+  static async _getCachedBoolean(key) {
+    const state = await rclient.getAsync(key);
     switch (state) {
       case "true":
         return true;
@@ -1637,7 +1669,7 @@ class VPNClient {
   }
 
   async _deleteCachedState() {
-    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId));
+    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId), VPNClient.getInternetStateCacheKey(this.profileId));
   }
 
   static async notifyWanSwitched() {
