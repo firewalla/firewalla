@@ -16,6 +16,7 @@
 'use strict';
 
 const net = require('net')
+const { isFQDN } = require('validator');
 const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
@@ -407,6 +408,10 @@ class VPNClient {
     }
   }
 
+  _inStartGracePeriod() {
+    return !!this._lastStartTime && Date.now() - this._lastStartTime < 70000;
+  }
+
   async _checkConnectivity(force = false) {
     if (!this._started) {
       await this._setCachedState(false);
@@ -414,7 +419,7 @@ class VPNClient {
     }
     if (this._restarting)
       return;
-    if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
+    if (this._inStartGracePeriod() && !force)
       return;
     let result = await this._isLinkUp();
     if (result === false) {
@@ -1465,15 +1470,21 @@ class VPNClient {
       return true;
     }
     const count = this.settings && this.settings.pingTestCount || 8;
-    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
+    const { ratio } = await this._runPingTests(targets, count);
     // TODO: evaluate ping test results and return false if it is lower than the threshold
-
-    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
     log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
-  async _runPingTest(target, count = 8) {
+  async _runPingTests(targets, count, probe) {
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, count, probe)));
+    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
+    return { results, ratio };
+  }
+
+  // probe: optional { mark, bindIntf, deadline } to ping with another routing mark, bound to an interface and
+  // killed at the deadline, the default is this client's own mark and source address
+  async _runPingTest(target, count = 8, probe = {}) {
     const result = { target, totalCount: count };
     // Validate target: must be a real IPv4 or IPv6 address
     const isV4 = new Address4(target).isValid();
@@ -1488,23 +1499,70 @@ class VPNClient {
       count = 8;
     }
     const ping = isV4 ? "ping" : "ping6";
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    const rtId = probe.mark || await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
     const args = [ping, '-n', '-q', '-m', String(rtId), '-c', String(count)];
-    if (_.isArray(ips) && ips.length > 0) {
-      const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
-      args.push('-I', srcIp.addressMinusSuffix);
+    if (probe.bindIntf)
+      args.push('-I', probe.bindIntf);
+    else {
+      const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+      if (_.isArray(ips) && ips.length > 0) {
+        const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
+        args.push('-I', srcIp.addressMinusSuffix);
+      }
     }
     args.push('-W', '1', '-i', '1', target);
-    await execFile('sudo', args).then((output) => {
+    // ping prints statistics even with 0 replies, so no statistics line means it could not run
+    const parse = (stdout) => {
       // parse "N received" or "N packets received" from ping statistics line
-      const match = output.stdout.match(/(\d+)\s+(?:packets\s+)?received/);
+      const match = stdout && stdout.match(/(\d+)\s+(?:packets\s+)?received/);
       result.successCount = match ? Number(match[1]) : 0;
-    }).catch((err) => {
-      result.successCount = 0;
-    });
+      if (!match)
+        result.error = true;
+    };
+    await execFile('sudo', VPNClient._underDeadline(probe.deadline, args)).then((output) => parse(output.stdout)).catch((err) => parse(err.stdout));
     log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  // ping runs under the group's mark, DNS under the client's own; null means the test could not run or hit the timeout
+  async testInternetVia({ mark, targets, count, rate, dnsDomain, timeout }) {
+    const deadline = Date.now() + timeout;
+    const { results } = await this._runPingTests(targets, count, { mark, bindIntf: this.getInterfaceName(), deadline });
+    if (Date.now() >= deadline)
+      return null;
+    if (!results.some(r => r.successCount >= count * rate))
+      return results.every(r => r.error) ? null : false;
+    // a DNS test that could not be made is skipped and the ping decides
+    const dns = dnsDomain ? await this._testDNSVia(dnsDomain, deadline) : true;
+    return Date.now() >= deadline ? null : dns !== false;
+  }
+
+  // sudo cannot be killed by the unprivileged node process, so the limit has to be set inside the sudo
+  static _underDeadline(deadline, args) {
+    return deadline ? ["timeout", "-k", "2", String(Math.max(1, Math.ceil((deadline - Date.now()) / 1000))), ...args] : args;
+  }
+
+  // true if a DNS server of this client answers, false if none does, null if no query could be made
+  async _testDNSVia(domain, deadline) {
+    // every token below ends up in the root bash -c line of test_wan.sh, so each is validated
+    const dnsServers = ((await this._getDNSServers()) || []).filter(server => net.isIPv4(server)).slice(0, 2);
+    const src = [].concat(await this.getVpnIP4s() || []).map(ip => ip.split('/')[0]).filter(ip => net.isIPv4(ip)).slice(0, 1);
+    if (!isFQDN(domain) || dnsServers.length === 0)
+      return null;
+    // the client's own table, not the group's: members often share a DNS server address and the group table
+    // sends it through the lowest metric member
+    const answers = await Promise.all(dnsServers.map(server =>
+      this._execUnderWanMark(this.getInterfaceName(), ["dig", `@${server}`, domain, "A", "+time=3", "+tries=2", "+noall", "+comments", "+answer", ...(src.length > 0 ? ["-b", src[0]] : [])], deadline)
+        .then(output => /status: NOERROR/.test(output.stdout) && /\sIN\s+A\s/.test(output.stdout))
+        // 9 is dig's no reply, other codes (test_wan.sh failed, dig is missing, killed at the deadline) mean the query could not be made
+        .catch(err => err.code === 9 ? false : null)
+    ));
+    return answers.includes(true) ? true : (answers.includes(false) ? false : null);
+  }
+
+  // run a command with the routing mark of a WAN, wanName is as accepted by scripts/test_wan.sh
+  async _execUnderWanMark(wanName, args, deadline) {
+    return await execFile("sudo", VPNClient._underDeadline(deadline, [`${f.getFirewallaHome()}/scripts/test_wan.sh`, wanName, ...args]));
   }
 
   async _setRouteMarkInRedis() {

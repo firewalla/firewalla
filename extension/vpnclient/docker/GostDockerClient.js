@@ -17,7 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
-const { exec, execFile } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
@@ -78,11 +78,7 @@ class GostDockerClient extends DockerBaseVPNClient {
   }
 
   async __checkInternetAvailability(target) {
-    const script = `${f.getFirewallaHome()}/scripts/test_wan.sh`;
-    const intf = this.getInterfaceName();
-    // triple backslash to escape the dollar sign on sudo bash
-    const cmd = `sudo ${script} ${intf} curl -m 5 -s -o /dev/null ${target}`;
-    const result = await exec(cmd).then(() => true).catch((err) => false);
+    const result = await this._execUnderWanMark(this.getInterfaceName(), ["curl", "-m", "5", "-s", "-o", "/dev/null", target]).then(() => true).catch((err) => false);
     return result;
   }
 

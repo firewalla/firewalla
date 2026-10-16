@@ -81,6 +81,10 @@ class VirtWanGroupManager {
       result.strictVPN = JSON.parse(o.strictVPN);
     else
       result.strictVPN = o.strictVPN;
+    if (_.isString(o.internetCheck))
+      result.internetCheck = JSON.parse(o.internetCheck);
+    else
+      result.internetCheck = o.internetCheck;
     return result;
   }
 
@@ -95,6 +99,8 @@ class VirtWanGroupManager {
       result.wans = JSON.stringify(o.wans);
     else
       result.wans = o.wans;
+    if (o.internetCheck)
+      result.internetCheck = JSON.stringify(o.internetCheck);
     return result;
   }
 
@@ -107,6 +113,8 @@ class VirtWanGroupManager {
       await rclient.hdelAsync(VirtWanGroup.getRedisKeyName(o.uuid), "failback");
     if (!o.hasOwnProperty("strictVPN"))
       await rclient.hdelAsync(VirtWanGroup.getRedisKeyName(o.uuid), "strictVPN");
+    if (!o.internetCheck)
+      await rclient.hdelAsync(VirtWanGroup.getRedisKeyName(o.uuid), "internetCheck");
     const event = {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };

@@ -39,6 +39,13 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const Config = require('./config.js')
 const envCreatedMap = {};
 
+const INTERNET_CHECK_INTERVAL = 30000;
+const INTERNET_CHECK_COUNT = 8;
+const INTERNET_CHECK_TIMEOUT = 25000;
+const INTERNET_CHECK_RATE = 0.5;
+const INTERNET_DOWN_THRESHOLD = 2;
+const INTERNET_UP_THRESHOLD = 5;
+
 const instances = {};
 
 class VirtWanGroup {
@@ -59,6 +66,8 @@ class VirtWanGroup {
       if (this.type === "primary_standby")
         this.failback = o.failback || false;
 
+      this.internetCheck = o.internetCheck;
+      this.internetState = {};
       this.connState = {};
       this.applyConfig();
       instances[uuid] = this;
@@ -72,11 +81,14 @@ class VirtWanGroup {
         sem.on("link_broken", this._linkStateEventListener);
         this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
+            if (event.type !== "VPNClient:SettingsChanged")
+              this._resetInternetState(event.profileId);
             await this.refreshRT().catch((err) => {
               log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`, err.message);
             });
           }
         }
+        this._internetCheckTimer = setInterval(() => this._internetCheckRound(), INTERNET_CHECK_INTERVAL);
         sem.on("VPNClient:Started", this._refreshRTListener);
         sem.on("VPNClient:Stopped", this._refreshRTListener);
         sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
@@ -94,6 +106,9 @@ class VirtWanGroup {
     this.wans = o.wans;
     this.type = o.type;
     this.strictVPN = o.strictVPN || false;
+    if (!_.isEqual(this.internetCheck, o.internetCheck))
+      Object.keys(this.connState).forEach(profileId => this._resetInternetState(profileId));
+    this.internetCheck = o.internetCheck;
     if (this.type === "primary_standby")
       this.failback = o.failback || false;
     else
@@ -474,10 +489,15 @@ class VirtWanGroup {
     let generateAlarmNeeded = false;
     let wanSwitched = false;
     await lock.acquire(`${LOCK_REFRESH}_${this.uuid}`, async () => {
+      // a verdict that waited for the lock must not rebuild the table of a deleted group
+      if (this._destroyed)
+        return;
       const profileId = e.profileId;
       switch (e.type) {
         case "link_established": {
-          if (this.connState[profileId] && this.connState[profileId].ready !== true) {
+          // the client's own link_established is not the internet being back, keep a member demoted by the internet test down
+          const heldDown = !e.internet && _.get(this.internetState, [profileId, "down"]);
+          if (this.connState[profileId] && this.connState[profileId].ready !== true && !heldDown) {
             if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
               || this.type === "load_balance"
               || this.connState[profileId].enabled === false) {
@@ -487,6 +507,7 @@ class VirtWanGroup {
             if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
               generateAlarmNeeded = true;
             this.connState[profileId].ready = true;
+            delete this.connState[profileId].internetDown;
           }
           // routeUpdated will be set if link_established event is trigger by route update message from underlying vpn client
           // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
@@ -496,6 +517,10 @@ class VirtWanGroup {
           break;
         }
         case "link_broken": {
+          if (!e.internet)
+            this._resetInternetState(profileId);
+          else if (this.connState[profileId])
+            this.connState[profileId].internetDown = true;
           if (this.connState[profileId] && this.connState[profileId].ready !== false) {
             if (this.connState[profileId].active === true && this.type !== "single") {
               wanSwitched = true;
@@ -650,6 +675,89 @@ class VirtWanGroup {
         }
         default:
       }
+      if (this.connState[profileId] && _.get(previousState, [profileId, "internetDown"]))
+        this.connState[profileId].internetDown = true;
+    }
+    Object.keys(this.internetState).filter(profileId => !this.connState[profileId]).forEach(profileId => delete this.internetState[profileId]);
+  }
+
+  _resetInternetState(profileId) {
+    delete this.internetState[profileId];
+    if (this.connState[profileId])
+      delete this.connState[profileId].internetDown;
+  }
+
+  async _internetCheckRound() {
+    // a round can take longer than the interval when pings are slow, do not stack them
+    if (this._internetChecking || this._destroyed)
+      return;
+    this._internetChecking = true;
+    try {
+      const off = this.type === "single" || _.get(this.internetCheck, "enabled") === false;
+      const rtId = off ? null : await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
+      // one member failing must not end the round while the others still run
+      await Promise.all(Object.keys(this.connState).map(async profileId => {
+        try {
+          if (off || !rtId)
+            this._resetInternetState(profileId);
+          else
+            await this._checkMemberInternet(profileId, rtId);
+        } catch (err) {
+          log.error(`Failed to check internet via ${profileId} in virtual wan group ${this.uuid}`, err.message);
+        }
+      }));
+    } catch (err) {
+      log.error(`Failed to check internet of virtual wan group ${this.uuid}`, err.message);
+    } finally {
+      this._internetChecking = false;
+    }
+  }
+
+  async _checkMemberInternet(profileId, rtId) {
+    const c = VPNClient.getInstance(profileId);
+    if (!c || !c.isStarted() || c._inStartGracePeriod() || !await c._isLinkUp()) {
+      this._resetInternetState(profileId);
+      return;
+    }
+    const settings = await c.loadSettings();
+    const defaults = Config.getConfig().vwgInternetCheck;
+    const ipv4Targets = (targets) => (_.isArray(targets) ? targets : []).filter(t => net.isIPv4(t)).slice(0, 3);
+    // group setting, then the client's own, then the default
+    const targets = [
+      ipv4Targets(_.get(this.internetCheck, "pingTestTargets")),
+      ipv4Targets(settings.pingTestTargets),
+      ipv4Targets(defaults.pingTestTargets)
+    ].find(t => !_.isEmpty(t));
+    const count = Number.isInteger(settings.pingTestCount) && settings.pingTestCount > 0 ? Math.min(settings.pingTestCount, INTERNET_CHECK_COUNT) : INTERNET_CHECK_COUNT;
+    const dnsDomain = settings.routeDNS ? (_.get(this.internetCheck, "dnsTestDomain") || defaults.dnsTestDomain) : null;
+    const verdict = await c.testInternetVia({ mark: rtId, targets, count, rate: INTERNET_CHECK_RATE, dnsDomain, timeout: INTERNET_CHECK_TIMEOUT });
+    if (this._destroyed)
+      return;
+    if (verdict === null) {
+      log.verbose(`Internet test via ${profileId} in virtual wan group ${this.uuid} is inconclusive`);
+      return;
+    }
+    if (!this.internetState[profileId])
+      this.internetState[profileId] = { failures: 0, successes: 0, down: false };
+    const state = this.internetState[profileId];
+    log.verbose(`Internet test via ${profileId} in virtual wan group ${this.uuid}: ${verdict}`, state);
+    // not shared with VPNClient._checkConnectivity: that one starts at its threshold, can stay pending and restarts the tunnel
+    if (verdict) {
+      state.failures = 0;
+      state.successes++;
+      if (state.down && state.successes >= INTERNET_UP_THRESHOLD) {
+        state.down = false;
+        log.info(`Internet is back via ${profileId} in virtual wan group ${this.uuid}`);
+        await this.processLinkStateEvent({ type: "link_established", profileId, internet: true });
+      }
+    } else {
+      state.successes = 0;
+      state.failures++;
+      if (!state.down && state.failures >= INTERNET_DOWN_THRESHOLD) {
+        state.down = true;
+        log.info(`Internet is unavailable via ${profileId} in virtual wan group ${this.uuid}`);
+        await this.processLinkStateEvent({ type: "link_broken", profileId, internet: true });
+      }
     }
   }
 
@@ -673,6 +781,8 @@ class VirtWanGroup {
 
   // this function is invoked when the virtual wan group is removed
   async destroyEnv() {
+    this._destroyed = true;
+    clearInterval(this._internetCheckTimer);
     await VirtWanGroup.ensureCreateEnforcementEnv(this.uuid);
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     if (!rtId)
@@ -729,6 +839,8 @@ class VirtWanGroup {
     json.strictVPN = this.strictVPN || false;
     if (this.type === "primary_standby")
       json.failback = this.failback || false;
+    if (this.internetCheck)
+      json.internetCheck = this.internetCheck;
     // read connState from redis, which is available in all processes
     const connState = await rclient.hgetAsync(VirtWanGroup.getRedisKeyName(this.uuid), "connState").then(result => JSON.parse(result)).catch((err) => null);
     if (connState)
