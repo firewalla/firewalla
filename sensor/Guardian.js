@@ -49,11 +49,12 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
-const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
+const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS, REDIS_KEY_EID_BLACKLIST } = require('../net2/Constants.js');
 const { execFile } = require('child-process-promise');
 
 const RECONNECT_DELAY_MAX = 5 * 60 * 1000; // socket.io defaults to 5s, way too aggressive for a server that is gone for good
 const SESSION_TTL = 24 * 60 * 60 * 1000; // idle lifetime of a non-msp (my.firewalla) session
+const READONLY_ACCESS_PROFILE = "readonly"; // msp mobileAccess profile denied set/cmd via the eid blacklist
 
 module.exports = class {
   constructor(name, config = {}, daemon = true) {
@@ -269,7 +270,31 @@ module.exports = class {
   }
 
   async setMspData(data = {}) {
-    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
+    const prev = await this.getMspData();
+    const result = await rclient.setAsync(this.mspDataKey, JSON.stringify(data));
+    await this.syncEidBlacklist(data, prev).catch(err => log.error("Failed to sync eid blacklist from msp data", err.message));
+    return result;
+  }
+
+  getReadonlyEids(data) {
+    const mobileAccess = _.get(data, "mobileAccess");
+    if (!_.isPlainObject(mobileAccess)) return [];
+    return Object.keys(mobileAccess).filter(eid => _.get(mobileAccess[eid], "profileId") == READONLY_ACCESS_PROFILE);
+  }
+
+  // put readonly app eids into the eid blacklist, only remove eids readonly in previous msp data to keep manual entries
+  async syncEidBlacklist(data, prev) {
+    if (!_.isPlainObject(_.get(data, "mobileAccess"))) return; // keep the blacklist as is if msp doesn't send mobileAccess
+    const readonlyEids = this.getReadonlyEids(data);
+    const revokedEids = _.difference(this.getReadonlyEids(prev), readonlyEids);
+    if (revokedEids.length) {
+      await rclient.sremAsync(REDIS_KEY_EID_BLACKLIST, revokedEids);
+      log.info("Remove eids from blacklist, no longer readonly in msp mobileAccess", revokedEids);
+    }
+    if (readonlyEids.length) {
+      await rclient.saddAsync(REDIS_KEY_EID_BLACKLIST, readonlyEids);
+      log.info("Add eids to blacklist, readonly in msp mobileAccess", readonlyEids);
+    }
   }
 
   async getMspData() {
@@ -620,6 +645,8 @@ module.exports = class {
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
     await rclient.unlinkAsync(this.configActiveTsKey);
+    // msp no longer manages the box, release its readonly eids before msp data is gone
+    await this.syncEidBlacklist({ mobileAccess: {} }, await this.getMspData()).catch(err => log.error("Failed to clean eid blacklist on reset", err.message));
     await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
