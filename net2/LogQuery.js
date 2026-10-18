@@ -483,7 +483,6 @@ class LogQuery {
           // lodash/assign appears to be x4 times less efficient
           // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
           if (intel) {
-            if (intel.country) f.country = intel.country
             if (intel.category) f.category = intel.category
             // if (intel.app) f.app = intel.app
           }
