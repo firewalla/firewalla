@@ -149,6 +149,7 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -1486,6 +1487,20 @@ class netBot extends ControllerBot {
         }
         const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
         return { blockStats };
+      }
+      case "dailyInboundBlockStats": {
+        //  value.ts: any time in the local day to return, within the last 7 days
+        const value = msg.data.value || {};
+        if (value.ts == null || isNaN(value.ts)) {
+          throw new Error('Invalid ts');
+        }
+        const dayStart = localDayStart(Number(value.ts), sysManager.getTimezone());
+        const json = {};
+        await Promise.all([
+          netBotTool.prepareTopFlows(json, 'ipB', 'out', {dayStart, limit: 400}),
+          netBotTool.prepareTopFlows(json, 'ifB', 'out', {dayStart, limit: 400}),
+        ]);
+        return { ts: dayStart, flows: json.flows };
       }
       case "neighbors":
       case "neighborsLocal": {
