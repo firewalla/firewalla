@@ -30,6 +30,7 @@ const identityManager = require('../net2/IdentityManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const sysManager = require('./SysManager.js');
+const { nextLocalDayStart } = require('../util/TimeSlot.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('./Message.js');
 
@@ -193,6 +194,10 @@ class NetBotTool {
         begin = ts.begin
         end = ts.end
       }
+    } else if (options.dayStart != null) {
+      begin = options.dayStart
+      end = nextLocalDayStart(begin, sysManager.getTimezone())
+      sumFlowKey = flowAggrTool.getDailySumFlowKey(target, dimension, fd, begin);
     } else {
       sumFlowKey = flowAggrTool.getSumFlowKey(target, dimension, begin, end, fd);
     }

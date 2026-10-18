@@ -35,6 +35,7 @@ const platform = platformLoader.getPlatform();
 
 const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowAggrTool = require('./FlowAggrTool');
@@ -113,6 +114,8 @@ const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 // block stats inlined in every init response, per entry
 const BLOCK_STATS_INIT_MAX_IDENTITIES = 10;
 const BLOCK_STATS_INIT_MAX_DESTS = 10;
+// daily inbound block records inlined in every init response, per day
+const DAILY_INBOUND_BLOCK_INIT_RECORDS = 10;
 
 // the n records with the highest cnt, without reordering the input
 function topByCnt(records, n) {
@@ -1739,6 +1742,8 @@ module.exports = class HostManager extends Monitorable {
 
     if (options.legacySystemFlows)
       requiredPromises.push(this.loadStats(json))
+    if (platform.isAuditLogSupported())
+      requiredPromises.push(this.dailyInboundBlockStatsForInit(json))
 
     for (const i in requiredPromises) {
       requiredPromises[i] = (async() => {
@@ -1879,6 +1884,38 @@ module.exports = class HostManager extends Monitorable {
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
     json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, true);
+  }
+
+  // inbound blocks of today and the previous local days, newest first; the counts cover every
+  // stored member, records only the top ones
+  async dailyInboundBlockStatsForInit(json) {
+    const tz = sysManager.getTimezone();
+    const dayStarts = [localDayStart(Date.now() / 1000, tz)];
+    while (dayStarts.length < FlowAggrTool.DAILY_SUMFLOW_DAYS)
+      dayStarts.push(localDayStart(dayStarts[dayStarts.length - 1] - 1, tz));
+
+    json.dailyInboundBlockStats = await Promise.all(dayStarts.map(async ts => {
+      const [ipB, ifB] = await Promise.all(['ipB', 'ifB'].map(dimension =>
+        flowAggrTool.getTopSumFlowByKey(flowAggrTool.getDailySumFlowKey('global', dimension, 'out', ts), 400)
+      ));
+      const records = new Map();
+      const countries = new Set();
+      for (const flow of ipB.concat(ifB)) {
+        const c = country.getCountry(flow.ip);
+        if (c) countries.add(c);
+        const key = `${flow.device},${c || ''}`;
+        if (!records.has(key))
+          records.set(key, c ? {device: flow.device, country: c, cnt: 0} : {device: flow.device, cnt: 0});
+        records.get(key).cnt += Number(flow.count);
+      }
+      return {
+        ts,
+        records: topByCnt(Array.from(records.values()), DAILY_INBOUND_BLOCK_INIT_RECORDS),
+        deviceCnt: new Set(ipB.map(f => f.device)).size,
+        intfCnt: new Set(ifB.map(f => f.device)).size,
+        countryCnt: countries.size,
+      };
+    }));
   }
 
   // block stats buckets whose ts falls in [begin, end), newest first, with every identity and
