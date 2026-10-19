@@ -33,6 +33,8 @@ const yaml = require('../../api/dist/lib/js-yaml.min.js');
 const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 const ipset = require('../../net2/Ipset.js');
+const sysManager = require('../../net2/SysManager.js');
+
 
 const fs = require('fs');
 
@@ -95,6 +97,27 @@ class Clash {
     return serversConfig.map((config) => config.server);
   }
 
+  async setupIptables() {
+    await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').opr('-N'));
+    await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').opr('-F'));
+
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, 'hash:ip', false, { hashsize: 16384 });
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, 'hash:net', false, { hashsize: 4096 });
+    for (const net of ipset.CONSTANTS.CLASH_EXCLUDED_NETS) {
+      await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, net);
+    }
+
+    if (sysManager.publicIp) {
+      await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').dst(sysManager.publicIp).jmp('RETURN'));
+    }
+
+    await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, 'dst').jmp('RETURN'));
+    await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, 'dst').jmp('RETURN'));
+
+    await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').pro('tcp')
+      .mdl('multiport', '--dports 22:1023,5228').jmp('REDIRECT --to-ports 9954'));
+  }
+
   async preStart() {
     log.info("Preparing environment for Clash...");
     this.ready = false;
@@ -105,18 +128,18 @@ class Clash {
       await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
 
       // setup iptables
-      await exec(`${__dirname}/setup_iptables.sh`);
+      await this.setupIptables();
 
       const servers = this.getServers();
 
       for(const server of servers) {
-        await exec(`sudo ipset add -! fw_clash_whitelist ${server}`);
+        await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, server);
       }
 
       // add exclude lists
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
-          await exec(`sudo ipset add -! fw_clash_whitelist ${exclude}`);
+          await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, exclude);
         }
       }
 

@@ -118,9 +118,15 @@ class DomainBlock {
 
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
       if (addresses) {
-        await Block.batchUnblock(addresses, blockSet).catch((err) => {
-          log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
-        });
+        if (options.port) {
+          await Block.batchUnblockNetPort(addresses, options.port, blockSet).catch((err) => {
+            log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+          });
+        } else {
+          await Block.batchUnblock(addresses, blockSet).catch((err) => {
+            log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+          });
+        }
       }
     }
     const tlsHostSet = options.tlsHostSet;

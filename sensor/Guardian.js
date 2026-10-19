@@ -38,6 +38,9 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+const sem = require('./SensorEventManager.js').getInstance();
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
 const FireRouter = require('../net2/FireRouter');
 const _ = require('lodash');
@@ -75,11 +78,11 @@ module.exports = class {
   }
 
   cleanupLiveTransport() {
-    for (const alias in this.liveTransportCache) {
-      const liveTransport = this.liveTransportCache[alias];
+    for (const key in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[key];
       if (!liveTransport.isLivetimeValid()) {
-        log.info("Destory live transport for", alias);
-        delete this.liveTransportCache[alias];
+        log.info("Destory live transport for", key);
+        delete this.liveTransportCache[key];
       }
     }
   }
@@ -95,13 +98,16 @@ module.exports = class {
     }
   }
 
-  registerLiveTransport(options) {
-    const alias = options.alias;
-    if (!(alias in this.liveTransportCache)) {
-      this.liveTransportCache[alias] = new LiveTransport(options);
+  registerLiveTransport(key, options) {
+    let liveTransport = this.liveTransportCache[key];
+    if (!liveTransport) {
+      liveTransport = new LiveTransport(options);
+      this.liveTransportCache[key] = liveTransport;
+    } else {
+      // refresh stored request so a re-subscribe is not pinned to the first caller's message/replyid
+      liveTransport.updateSubscription(options);
     }
-
-    return this.liveTransportCache[alias];
+    return liveTransport;
   }
 
   getKeySuffix(name) {
@@ -510,6 +516,17 @@ module.exports = class {
     return false
   }
 
+  // same staleness caveat as isMspRelatedRule above: mspData.targetlists may be stale if the
+  // box was offline when the msp-side target list/membership changed
+  async isMspRelatedException(exception, { mspData }) {
+    if (mspData && mspData.targetlists) {
+      if (_.find(mspData.targetlists, { id: exception['p.category.id'] })) { // if it references an msp target list
+        return true;
+      }
+    }
+    return false
+  }
+
   async reset() {
     log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
@@ -525,46 +542,61 @@ module.exports = class {
         }
       }))
 
+      // remove all msp related exceptions, e.g. exceptions muting alarms on an msp target list;
+      // these are not tied to any rule's lifecycle and would otherwise keep the target list's
+      // category activated (and its hashset polled) forever
+      const exceptions = await exceptionManager.loadExceptionsAsync();
+      const mspRelatedEids = (await Promise.all(exceptions.map(async e =>
+        await this.isMspRelatedException(e, { mspData }) ? e.eid : null
+      ))).filter(eid => eid);
+      if (mspRelatedEids.length) {
+        log.info("Remove msp exceptions", mspRelatedEids);
+        await exceptionManager.deleteExceptions(mspRelatedEids);
+        // same notification netbot sends on exception:delete, otherwise FireMain keeps a stale
+        // CategoryMatcher for the removed exception and can re-activate its target list
+        sem.sendEventToOthers({
+          type: "ExceptionChange",
+          message: "msp exceptions removed"
+        });
+      }
+
       // reset no_auto_upgrade flags
       await upgradeManager.setAutoUpgradeState()
 
       if (platform.isFireRouterManaged()) {
-        // delete related mesh settings
+        // delete related mesh settings (WireGuard and AmneziaWG)
         const networkConfig = await FireRouter.getConfig(true);
-
-        const wireguard = networkConfig.interface.wireguard || {};
         let updateNetworkConfig = false;
-        Object.keys(wireguard).map(intf => {
-          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
-            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+        for (const ncKey of ['wireguard', 'amneziawg']) {
+          const ifaces = networkConfig.interface[ncKey] || {};
+          for (const intf of Object.keys(ifaces)) {
+            if (ifaces[intf] && ifaces[intf].mspId == mspId) {
+              networkConfig.interface[ncKey] = _.omit(networkConfig.interface[ncKey], intf);
 
-            // delete dns config
-            const dns = networkConfig.dns || {};
-            networkConfig.dns = _.omit(dns, intf);
+              // delete dns config
+              networkConfig.dns = _.omit(networkConfig.dns || {}, intf);
 
-            // delete icmp config
-            const icmp = networkConfig.icmp || {};
-            networkConfig.icmp = _.omit(icmp, intf);
+              // delete icmp config
+              networkConfig.icmp = _.omit(networkConfig.icmp || {}, intf);
 
-            // delete mdns_reflector config
-            const mdns_reflector = networkConfig.mdns_reflector || {};
-            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+              // delete mdns_reflector config
+              networkConfig.mdns_reflector = _.omit(networkConfig.mdns_reflector || {}, intf);
 
-            // delete sshd config
-            const sshd = networkConfig.sshd || {};
-            networkConfig.sshd = _.omit(sshd, intf);
+              // delete sshd config
+              networkConfig.sshd = _.omit(networkConfig.sshd || {}, intf);
 
-            // delete nat config
-            const nat = networkConfig.nat || {};
-            for (const key in nat) {
-              if (key.startsWith(`${intf}-`)) {
-                delete nat[key];
+              // delete nat config
+              const nat = networkConfig.nat || {};
+              for (const key in nat) {
+                if (key.startsWith(`${intf}-`)) {
+                  delete nat[key];
+                }
               }
+              networkConfig.nat = nat;
+              updateNetworkConfig = true;
             }
-            networkConfig.nat = nat;
-            updateNetworkConfig = true;
           }
-        })
+        }
         if (updateNetworkConfig) {
           networkConfig.ts = Date.now();
           await FireRouter.setConfig(networkConfig);
@@ -728,16 +760,21 @@ module.exports = class {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
+      // decryptRequest reports the request scheme (gcm/cbc-iv/legacy) so the
+      // reply mirrors it; the iv/tag travel inside the message envelope.
+      let replyScheme = 'legacy';
       try {
-        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-        decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        const { decrypted, scheme } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        decryptedMessage = decrypted;
+        replyScheme = scheme;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
         const value = JSON.parse(JSON.stringify(obj.data.value || {}))
         if (value.streaming) {
-          const liveTransport = this.registerLiveTransport({
+          // key by item + streaming.id so concurrent same-item queries get separate transports
+          const key = value.streaming.id ? `${item}:${value.streaming.id}` : item;
+          const liveTransport = this.registerLiveTransport(key, {
             alias: item,
             gid: gid,
             mspId: mspId,
@@ -764,7 +801,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyScheme);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
@@ -777,6 +814,8 @@ module.exports = class {
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
+            // The reply IV (if any) is embedded in the message envelope, so no
+            // top-level iv field. On error frames encryptedResponse is undefined.
             message: encryptedResponse,
             gid: gid,
             mspId: mspId,

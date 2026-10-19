@@ -1155,7 +1155,7 @@ class OverDataPlanUsageAlarm extends Alarm {
     if (alarm.type !== alarm2.type) {
       return false;
     }
-    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']) {
+    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level'] || alarm['p.wan.uuid'] != alarm2['p.wan.uuid']) {
       return false;
     }
     return true;
