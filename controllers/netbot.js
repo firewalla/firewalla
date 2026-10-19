@@ -935,11 +935,11 @@ class netBot extends ControllerBot {
           script = args.shift();
         }
         if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
-          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+          log.debug("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
         } else {
-          log.error("FIREWALLA CLOUD SCRIPT", script, args);
+          log.debug("FIREWALLA CLOUD SCRIPT", script, args);
           execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
-            .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+            .catch((err) => log.debug("FIREWALLA CLOUD SCRIPT failed", script, err.message));
         }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
