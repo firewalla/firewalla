@@ -17,7 +17,6 @@
 const chai = require('chai');
 const expect = chai.expect;
 const proxyquire = require('proxyquire').noPreserveCache().noCallThru();
-const util = require('util');
 
 function loadDNSMASQ(options = {}) {
   const commands = [];
@@ -39,9 +38,8 @@ function loadDNSMASQ(options = {}) {
       timer.cleared = true;
   };
 
-  // the module reaches the shell two ways: execAsync = util.promisify(child_process.exec) with a
-  // command string, and execFile from child-process-promise with argv. both land here as one
-  // string, so this table and the command assertions read the same either way
+  // the module runs commands only through execFile from child-process-promise; its argv lands here
+  // joined into one string, which is what this table and the command assertions match on
   const execResult = (cmd) => {
     commands.push(cmd);
     if (cmd.includes('find ')) {
@@ -58,18 +56,6 @@ function loadDNSMASQ(options = {}) {
 
     return { stdout: '', stderr: '' };
   };
-
-  const exec = (cmd, cb) => {
-    try {
-      const result = execResult(cmd);
-      cb(null, result.stdout, result.stderr);
-    } catch (err) {
-      cb(err, '', err.message);
-    }
-  };
-  // child_process.exec carries its own promisify.custom and resolves {stdout, stderr}; promisifying
-  // a plain (err, stdout, stderr) callback would resolve stdout alone and drop stderr
-  exec[util.promisify.custom] = async (cmd) => execResult(cmd);
 
   // child-process-promise takes argv, resolves a result object and rejects on failure
   const execFile = async (file, args = []) => execResult([file, ...args].join(' '));
@@ -154,7 +140,6 @@ function loadDNSMASQ(options = {}) {
     '../../sensor/SensorEventManager.js': {
       getInstance: () => ({ once: () => {}, on: () => {}, sendEventToFireMain: () => {} })
     },
-    'child_process': { exec },
     'child-process-promise': { execFile },
     'fs': fsStub,
     '../../net2/Mode.js': {},

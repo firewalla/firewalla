@@ -25,8 +25,6 @@ const util = require('util');
 const net = require('net');
 const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
-const childProcess = require('child_process');
-const execAsync = util.promisify(childProcess.exec);
 const { execFile } = require('child-process-promise');
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
@@ -246,9 +244,8 @@ module.exports = class DNSMASQ {
   }
 
   async install() {
-    let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
     try {
-      await execAsync(install_cmd);
+      await execFile("bash", ["./install.sh"], { cwd: __dirname });
       log.info("DNSMASQ:INSTALL:Success", "Dnsmasq is installed successfully");
     } catch (err) {
       log.error("DNSMASQ:INSTALL:Error", "Failed to execute script install.sh", err);
@@ -329,8 +326,7 @@ module.exports = class DNSMASQ {
     await execFile("sudo", ["systemctl", "stop", SERVICE_NAME]).catch((err) => { });
     this.counter.restart++;
     log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
-    const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
-    await execAsync(cmd).then(() => {
+    await execFile("sudo", ["systemctl", "restart", SERVICE_NAME]).then(() => {
       log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
     }).catch((err) => {
       log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
@@ -1557,10 +1553,10 @@ module.exports = class DNSMASQ {
   }
 
   async getCurrentNameServerList() {
-    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
-    log.info("Command to get current name server: ", cmd);
-
-    let { stdout } = await execAsync(cmd);
+    // grep fails on no match or a missing file, which the pipeline it replaces turned into empty output
+    let { stdout } = await execFile("grep", ["-m", "1", "nameserver", resolvFile]).catch(() => ({ stdout: '' }));
+    // cut -d ' ' -f 2: the second field, or the whole line when it has no space
+    stdout = stdout.split('\n').map(line => line.includes(' ') ? line.split(' ')[1] : line).join('\n');
 
     if (!stdout || stdout === '') {
       return [];
@@ -1809,8 +1805,7 @@ module.exports = class DNSMASQ {
     const keys = [`ip${fam}_addresses`, `ip${fam}_masks`]
     if (intf[keys[0]])
       await Promise.all(intf[keys[0]].map(async (ip, i) => {
-        const cmd = `sudo conntrack -D -f ipv${fam} -p udp --dport 53 --src ${ip} --mask-src ${intf[keys[1]][i]}`;
-        return execAsync(cmd).catch(err => {
+        return execFile("sudo", ["conntrack", "-D", "-f", `ipv${fam}`, "-p", "udp", "--dport", "53", "--src", ip, "--mask-src", intf[keys[1]][i]]).catch(err => {
           log.debug(`Failed to remove conntrack entry for ${intf.name}`, err.message)
         })
       }))
@@ -1915,14 +1910,12 @@ module.exports = class DNSMASQ {
   }
 
   async isDNSServiceActive() {
-    let cmd = `systemctl -q is-active ${SERVICE_NAME}`;
-    const result = await execAsync(cmd).then(() => true).catch(() => false);
+    const result = await execFile("systemctl", ["-q", "is-active", SERVICE_NAME]).then(() => true).catch(() => false);
     return result;
   }
 
   async isDHCPServiceActive() {
-    let cmd = `systemctl -q is-active ${DHCP_SERVICE_NAME}`;
-    const result = await execAsync(cmd).then(() => true).catch(() => false);
+    const result = await execFile("systemctl", ["-q", "is-active", DHCP_SERVICE_NAME]).then(() => true).catch(() => false);
     return result;
   }
 
@@ -2260,7 +2253,7 @@ module.exports = class DNSMASQ {
     log.info(`Command to stop ${SERVICE_NAME}: ${cmd}`);
 
     try {
-      await execAsync(cmd);
+      await execFile("sudo", ["systemctl", "stop", SERVICE_NAME]);
     } catch (err) {
       log.error(`Failed to stop ${SERVICE_NAME}`, err);
     }
@@ -2358,9 +2351,10 @@ module.exports = class DNSMASQ {
           log.error(`Failed to resolve ${domain} on ${intfIP}`, err.stdout, err.stderr);
           if ((err.stdout && err.stdout.includes('address in use')) 
             || (err.stderr && err.stderr.includes('address in use'))) {
-            let { stdout: netstatResult } = await execAsync(`sudo netstat -4uanp|grep ${intfIP}:${Constants.PORT_DNS_TEST_SRC}`).catch(err => {
+            let { stdout: netstatResult } = await execFile("sudo", ["netstat", "-4uanp"]).catch(err => {
               return { stdout: '' };
             });
+            netstatResult = netstatResult.split('\n').filter(line => line.includes(`${intfIP}:${Constants.PORT_DNS_TEST_SRC}`)).join('\n');
             log.error(`Address in use on ${intfIP}. Diagnostic info: netstat=${netstatResult}`);
           }
         }
