@@ -4354,6 +4354,7 @@ class netBot extends ControllerBot {
                 options.includeAppTimeIntervals = data.includeAppTimeIntervals;
               if (data.timeUsageApps)
                 options.timeUsageApps = data.timeUsageApps;
+              options.blockStatsAggrFilter = data.blockStatsAggrFilter;
 
               if (!data.apiVer || data.apiVer <= 2) {
                 options.legacyLocalBlock = true;
