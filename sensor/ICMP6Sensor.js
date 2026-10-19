@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const readline = require('readline');
 const net = require('net')
+const dgram = require('dgram');
 
 const ipUtil = require('../util/IPUtil.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -37,6 +38,7 @@ class ICMP6Sensor extends Sensor {
     super(config);
     this.intfPidMap = {};
     this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 5});
+    this.ndpTriggerSocket = this.createNDPTriggerSocket();
   }
 
   async restart() {
@@ -82,9 +84,9 @@ class ICMP6Sensor extends Sensor {
       log.info("Schedule reload ICMP6Sensor since network info is reloaded");
       reloadJob.exec();
     })
-    // ping known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
+    // trigger NDP for known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
     setInterval(() => {
-      this.pingKnownIPv6s().catch((err) => {});
+      this.triggerNDPForKnownIPv6s().catch((err) => {});
     }, 240000);
   }
 
@@ -125,9 +127,9 @@ class ICMP6Sensor extends Sensor {
         this.cache.set(tgtIp, dstMac);
         if (!newlyFound)
           return;
-        // ping newly found public ipv6 to refresh neighbor cache on the box
+        // trigger NDP for newly found public ipv6 to refresh neighbor cache on the box
         if (ipUtil.isPublic(tgtIp))
-          this.pingIPv6(tgtIp);
+          this.triggerNDPForIPv6(tgtIp).catch((err) => {});
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
@@ -145,16 +147,40 @@ class ICMP6Sensor extends Sensor {
     }
   }
 
-  async pingKnownIPv6s() {
+  async triggerNDPForKnownIPv6s() {
     this.cache.prune();
     await asyncNative.eachLimit(this.cache.keys(), 10, async (ipv6) => {
       if (ipUtil.isPublic(ipv6))
-        await this.pingIPv6(ipv6).catch((err) => {});
+        await this.triggerNDPForIPv6(ipv6);
     });
   }
 
   async pingIPv6(ipv6) {
     await execAsync(`ping6 -c1 -W1 -w2 ${ipv6}`, { timeout: 3000 }).catch((err) => {});
+  }
+
+  async triggerNDPForIPv6(ipv6) {
+    // arbitrary high port, not expected to have anything listening; the reply (if any) is discarded
+    const NDP_TRIGGER_PORT = 33434;
+    if (!this.ndpTriggerSocket)
+      this.ndpTriggerSocket = this.createNDPTriggerSocket();
+    await new Promise((resolve) => {
+      this.ndpTriggerSocket.send(Buffer.alloc(0), NDP_TRIGGER_PORT, ipv6, () => resolve());
+    });
+  }
+
+  createNDPTriggerSocket() {
+    const sock = dgram.createSocket('udp6');
+    let dropped = false;
+    sock.on('error', (err) => {
+      log.warn("NDP trigger socket error, will recreate on next use:", err);
+      if (dropped) return;
+      dropped = true;
+      if (this.ndpTriggerSocket === sock) this.ndpTriggerSocket = null;
+      sock.close();
+    });
+    sock.bind();
+    return sock;
   }
 }
 

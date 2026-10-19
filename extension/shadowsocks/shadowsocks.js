@@ -74,7 +74,7 @@ module.exports = class {
     _stop(callback) {
       callback = callback || function() {}
 
-      let cmd = "pkill -9 fw_ss_server";
+      let cmd = "pkill -9 -x fw_ss_server";
       cp.exec(cmd, (err, out, code) => {
         if(err) {
           log.debug("Failed to stop fw_ss_server", err);

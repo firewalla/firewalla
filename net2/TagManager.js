@@ -357,9 +357,12 @@ class TagManager {
         try {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
+          // unsubscribe policy change event first, so that resetting policies below
+          // does not schedule another policy apply on this tag
+          await removedTags[uid].destroy();
+          // reset policies before destroying ipsets, iptables rules still reference them
           await removedTags[uid].resetPolicies();
           await removedTags[uid].destroyEnv();
-          await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
         } catch (err) {
           log.error(`Error destroying environment for tag ${uid} ${removedTags[uid].name}`, err);

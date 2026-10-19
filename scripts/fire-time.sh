@@ -22,6 +22,8 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
+source "${FIREWALLA_HOME}/platform/platform.sh"
+
 logger "FIREWALLA.DATE.SYNC"
 
 TIME_THRESHOLD="2020-03-27"
@@ -50,12 +52,18 @@ function sync_time() {
     fi
 }
 
-ntp_process_cnt=`sudo systemctl status ntp |grep 'active (running)' | wc -l`
+ntp_svc="${NTP_SVC:-ntp}"
+
+ntp_process_cnt=`sudo systemctl status "$ntp_svc" | grep 'active (running)' | wc -l`
 if [[ $ntp_process_cnt == 0 ]]; then
-    logger "ntp not running, restart"
-    sudo systemctl stop ntp
-    sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
-    sudo systemctl start ntp
+    logger "$ntp_svc not running, restart"
+    sudo systemctl stop "$ntp_svc"
+    if [[ $ntp_svc == "chrony" ]]; then
+        sudo timeout 30 chronyd -q "pool time.nist.gov iburst"
+    else
+        sudo timeout 30 ntpd -gq || sudo ntpdate -b -u -s time.nist.gov
+    fi
+    sudo systemctl start "$ntp_svc"
 fi
 
 if [[ ! -f /.dockerenv ]]; then

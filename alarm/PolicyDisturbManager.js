@@ -35,7 +35,11 @@ class PolicyDisturbManager {
 
     this._generalConfValue = {};
     this._appConfValue = {};
-    this.loadConfig();
+    // the initial load is async, anything that reads the config has to await this first,
+    // otherwise it sees an empty config and silently decides as if nothing were configured
+    this.configLoaded = this.loadConfig().catch((err) => {
+      log.error(`Failed to load policy disturb config`, err.message);
+    });
 
     sem.on(Message.MSG_APP_DISTURB_VALUE_UPDATED, async (event) => {
       if (!event || !event.disturbConfs) {
@@ -80,6 +84,7 @@ class PolicyDisturbManager {
   }
 
   async registerPolicy(policy) {
+    await this.configLoaded;
     await lock.acquire(LOCK_RW, async () => {
       const pid = String(policy.pid);
       if (pid && _.has(this.registeredPolicies, pid)) {
@@ -207,6 +212,7 @@ class PolicyDisturbManager {
       const quicBlock = this._buildQuicBlockPolicy(registeredPolicy.policy, registeredPolicy.quicBlockTargets);
       await pm2.enforce(quicBlock);
     }
+
   }
 
   async deregisterPolicy(policy) {
@@ -245,7 +251,8 @@ class PolicyDisturbManager {
     await DisturbDispatch.teardownDispatchForPolicy(state.policy);
   }
 
-  checkIfNeedDisableQuic(policy) {
+  async checkIfNeedDisableQuic(policy) {
+    await this.configLoaded;
     const targets = this._getPolicyTargets(policy);
     if (_.isEmpty(targets)) return false;
 
