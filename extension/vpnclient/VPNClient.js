@@ -52,6 +52,8 @@ const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 const PING_TEST_MAX_COUNT = 8;
 const START_PING_TEST_COUNT = 3; // the check after a start only has to tell a tunnel that works from one that does not
 const PING_TEST_TIMEOUT = 12000;
+// curl gives up after -m 5 itself, this only ends a wrapper that hangs
+const CURL_TEST_TIMEOUT = 10000;
 // a dig that gets no reply ends by itself after DIG_TRIES x DIG_TIMEOUT seconds with exit 9, the kill only has to come after that
 const DNS_TEST_TIMEOUT = (DIG_TIMEOUT * DIG_TRIES + 4) * 1000;
 const DEFAULT_DNS_TEST_DOMAIN = "github.com";
@@ -1503,7 +1505,7 @@ class VPNClient {
 
   async _checkInternetByCurl() {
     for (const ip of INTERNET_TEST_IPS) {
-      const result = await this._execWithClientMark(['curl', '-m', '5', '-s', '-o', '/dev/null', `https://${ip}`]).then(() => true).catch((err) => false);
+      const result = await this._execWithClientMark(['curl', '-m', '5', '-s', '-o', '/dev/null', `https://${ip}`], { timeout: CURL_TEST_TIMEOUT, killSignal: 'SIGKILL' }).then(() => true).catch((err) => false);
       if (result)
         return true;
     }

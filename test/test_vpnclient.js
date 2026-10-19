@@ -837,8 +837,10 @@ describe('Test vpnClient internet probes', function() {
       for (const c of [GostDockerClient, HysteriaDockerClient]) {
         const client = Object.create(c.prototype);
         const calls = [];
-        client._execWithClientMark = async(args) => {
+        const timeouts = [];
+        client._execWithClientMark = async(args, options) => {
           calls.push(args.join(' '));
+          timeouts.push(options.timeout);
           if (calls.length < 3)
             throw new Error('curl failed');
         };
@@ -848,6 +850,7 @@ describe('Test vpnClient internet probes', function() {
           'curl -m 5 -s -o /dev/null https://8.8.8.8',
           'curl -m 5 -s -o /dev/null https://9.9.9.9'
         ]);
+        expect(timeouts).to.eql([10000, 10000, 10000]);
       }
     });
 
