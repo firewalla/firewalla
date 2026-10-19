@@ -95,6 +95,7 @@ const Constants = require('./Constants.js');
 const FireRouter = require('./FireRouter.js');
 const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
 const destIPFoundHook = new DestIPFoundHook();
+destIPFoundHook.setConfig(_.get(fc.getConfig(), 'hooks.DestIPFoundHook', {}));
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
