@@ -1919,22 +1919,20 @@ module.exports = class HostManager extends Monitorable {
       const [ipB, ifB] = await Promise.all(['ipB', 'ifB'].map(dimension =>
         flowAggrTool.getTopSumFlowByKey(flowAggrTool.getDailySumFlowKey('global', dimension, 'out', ts), 400)
       ));
+      // by country only, so blocks spread over several WANs or devices add up to one region
       const records = new Map();
-      const countries = new Set();
       for (const flow of ipB.concat(ifB)) {
-        const c = country.getCountry(flow.ip);
-        if (c) countries.add(c);
-        const key = `${flow.device},${c || ''}`;
-        if (!records.has(key))
-          records.set(key, c ? {device: flow.device, country: c, cnt: 0} : {device: flow.device, cnt: 0});
-        records.get(key).cnt += Number(flow.count);
+        const c = country.getCountry(flow.ip) || '';
+        if (!records.has(c))
+          records.set(c, c ? {country: c, cnt: 0} : {cnt: 0});
+        records.get(c).cnt += Number(flow.count);
       }
       return {
         ts,
         records: topByCnt(Array.from(records.values()), DAILY_INBOUND_BLOCK_INIT_RECORDS),
         deviceCnt: new Set(ipB.map(f => f.device)).size,
         intfCnt: new Set(ifB.map(f => f.device)).size,
-        countryCnt: countries.size,
+        countryCnt: records.size - (records.has('') ? 1 : 0),
       };
     }));
   }
