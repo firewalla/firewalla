@@ -279,14 +279,14 @@ describe('Test vpnClient internet check hysteresis', function() {
   it('should start with 0 failures and 1 success short of recovery', () => {
     const client = newStubClient();
     expect(client.internetFailureCount).to.equal(0);
-    expect(client.internetSuccessCount).to.equal(4);
+    expect(client.internetSuccessCount).to.equal(1);
     expect(client.internetUnknownCount).to.equal(0);
     client.internetFailureCount = 3;
     client.internetSuccessCount = 0;
     client.internetUnknownCount = 2;
     client._resetInternetCounters();
     expect(client.internetFailureCount).to.equal(0);
-    expect(client.internetSuccessCount).to.equal(4);
+    expect(client.internetSuccessCount).to.equal(1);
     expect(client.internetUnknownCount).to.equal(0);
   });
 
@@ -297,23 +297,27 @@ describe('Test vpnClient internet check hysteresis', function() {
   it('should need 2 consecutive failures after a reset', async() => {
     expect(await run(newStubClient(), [false])).to.eql(['']);
     expect(await run(newStubClient(), [false, false])).to.eql(['', 'no-internet']);
-    // a failure spends the head start of the first good sample
-    expect(await run(newStubClient(), [false, true, true, true, true])).to.eql(['', '', '', '', '']);
+    // a failure spends the head start of the first good sample, so 2 good samples are needed again
+    expect(await run(newStubClient(), [false, true, true, true, true])).to.eql(['', '', 'ready', 'ready', 'ready']);
   });
 
-  it('should break on the 2nd failure and recover on the 5th success', async() => {
+  it('should break on the 2nd failure and recover on the 2nd success', async() => {
     const client = newStubClient();
     expect(await run(client, [true, false, false, true, true, true, true, true])).to.eql([
-      'ready', '', 'no-internet', '', '', '', '', 'ready'
+      'ready', '', 'no-internet', '', 'ready', 'ready', 'ready', 'ready'
     ]);
+  });
+
+  it('should take the internet up again on the 2nd good sample, not the 1st', async() => {
+    const client = newStubClient();
+    await run(client, [true, false, false]);
+    expect(await run(client, [true, true])).to.eql(['', 'ready']);
   });
 
   it('should restart the success count on a failure while recovering', async() => {
     const client = newStubClient();
     await run(client, [true, false, false]);
-    expect(await run(client, [true, true, true, true, false, true, true, true, true, true])).to.eql([
-      '', '', '', '', '', '', '', '', '', 'ready'
-    ]);
+    expect(await run(client, [true, false, true, true])).to.eql(['', '', '', 'ready']);
   });
 
   it('should not count a sample that could not tell', async() => {
@@ -486,7 +490,7 @@ describe('Test vpnClient link_state_change listener', function() {
       hooked.remove();
     }
     expect(client._started).to.equal(true);
-    expect([client.internetFailureCount, client.internetSuccessCount, client.internetUnknownCount]).to.eql([0, 4, 0]);
+    expect([client.internetFailureCount, client.internetSuccessCount, client.internetUnknownCount]).to.eql([0, 1, 0]);
   });
 
   describe('side effects of a broken link', () => {

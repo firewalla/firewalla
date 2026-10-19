@@ -46,7 +46,8 @@ const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2; // consecutive failed checks to take the internet as down
-const INTERNET_OFF_ON_THRESHOLD = 5; // consecutive good checks to take it as up again
+const INTERNET_OFF_ON_THRESHOLD = 2; // consecutive good checks to take it as up again
+const INTERNET_UNKNOWN_THRESHOLD = 5; // consecutive checks that could not tell, before the link alone is taken as the verdict
 const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 const PING_TEST_MAX_COUNT = 8;
 const START_PING_TEST_COUNT = 3; // the check after a start only has to tell a tunnel that works from one that does not
@@ -438,9 +439,9 @@ class VPNClient {
       if (this.settings.overrideDefaultRoute) {
         const internetAvailability = await this._isInternetAvailable(force);
         if (internetAvailability === null) {
-          // could not tell: neither counter moves. a probe that stays blind for as long as a recovery
-          // takes falls back to the link-only verdict, so it can never keep a client demoted
-          if (++this.internetUnknownCount >= INTERNET_OFF_ON_THRESHOLD) {
+          // could not tell: neither counter moves. a probe that stays blind falls back to the link-only verdict,
+          // so it cannot keep a client demoted
+          if (++this.internetUnknownCount >= INTERNET_UNKNOWN_THRESHOLD) {
             this.internetFailureCount = 0;
             this.internetSuccessCount = INTERNET_OFF_ON_THRESHOLD;
           }
