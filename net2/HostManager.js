@@ -195,9 +195,7 @@ module.exports = class HostManager extends Monitorable {
           if (!host) return
         }
 
-        if (host.ipv4Addr) {
-          this.hostsdb[`host:ip4:${obj.ipv4Addr}`] = host
-        }
+        this.syncV4DB(host, obj && obj.ipv4Addr)
         this.syncV6DB(host)
       })
 
@@ -2126,6 +2124,18 @@ module.exports = class HostManager extends Monitorable {
 
     this.syncV6DB(host)
     return host
+  }
+
+  // maps ipv4 to host in hostsdb. host.o may already hold the new address when this runs
+  // (Host.onUpdate), so the previous one is found in hostsdb instead of on the host
+  syncV4DB(host, ipv4) {
+    if (!host || !ipv4) return
+    const key = `host:ip4:${ipv4}`
+    for (const k of Object.keys(this.hostsdb)) {
+      if (k !== key && k.startsWith('host:ip4:') && this.hostsdb[k] === host)
+        delete this.hostsdb[k]
+    }
+    this.hostsdb[key] = host
   }
 
   syncV6DB(host) {
