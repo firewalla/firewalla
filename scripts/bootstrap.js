@@ -191,6 +191,15 @@ async function configureGuardian({ server, region, business }) {
   await rclient.setAsync('ext.guardian.business', JSON.stringify(business));
 }
 
+async function saveMspdToken(mspd) {
+  if (!mspd) {
+    log('no mspd token in onboard-config, skipping');
+    return;
+  }
+  await rclient.hsetAsync('policy:system', 'mspd', JSON.stringify(mspd));
+  log(`mspd token saved, expires_at=${mspd.expires_at}`);
+}
+
 
 async function applyTimezone(tz) {
   if (!tz) {
@@ -250,6 +259,9 @@ async function main(onboard) {
 
   await applyTimezone(_.get(onboard, 'timezone'))
       .catch((e) => warn(`applyTimezone failed: ${e.message}`));
+
+  await saveMspdToken(_.get(onboard, 'mspd'))
+      .catch((e) => warn(`saveMspdToken failed: ${e.message}`));
 
   const bid = _.get(onboard, 'activation.bid') || uuid.v4();
   const rid = eptcloud.eptGenerateInvite().r;
