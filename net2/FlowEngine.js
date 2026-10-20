@@ -29,8 +29,8 @@
 // the applied answer.
 //
 // The features:
-//   pcap_zeek_fleet      zssids runs as brofish.service instead of zeek
-//   pcap_suricata_fleet   zssids evaluates the suricata rule set instead of suricata
+//   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
+//   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
 // Defaults come from the platform's files/config.json (userFeatures), the
 // runtime state from sys:features like every other feature. The shell side
 // (platform.sh get_flow_engine_zeek / get_flow_engine_suricata) reads the same
@@ -59,11 +59,11 @@ function zssidsAvailable() {
 }
 
 function zeekEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_FLEET) && zssidsAvailable() ? 'zssids' : 'zeek';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'zeek';
 }
 
 function suricataEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_FLEET) && zssidsAvailable() ? 'zssids' : 'suricata';
+  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'suricata';
 }
 
 const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/zssids.conf';
@@ -97,8 +97,37 @@ function applyHeld() {
   }
 }
 
+// scripts/zssids-engine.sh holds this directory for the whole of an apply, with
+// its pid inside. Every apply sets the hold marker as its transaction, so a
+// marker alone does not mean an apply failed: it may still be running.
+const APPLY_LOCK = '/dev/shm/zssids-engine.lock.d';
+// an apply that waits on brofish's start (250 s) and the script's own lock
+// wait (600 s) fits well inside this
+const APPLY_WAIT_MS = 15 * 60 * 1000;
+
+function applyRunning() {
+  let pid;
+  try {
+    pid = fs.readFileSync(`${APPLY_LOCK}/pid`, 'utf8').trim();
+  } catch (err) {
+    // the lock is published before its owner writes the pid
+    return fs.existsSync(APPLY_LOCK);
+  }
+  return /^[0-9]+$/.test(pid) && fs.existsSync(`/proc/${pid}`);
+}
+
+// Wait while an apply is in progress. True when the hold is gone, false when it
+// is still there with no apply running (a failed apply) or the wait ran out.
+async function waitForApply(timeoutMs = APPLY_WAIT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (applyHeld() && applyRunning() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return !applyHeld();
+}
+
 module.exports = {
   zeekEngine, suricataEngine,
   appliedZeekEngine, appliedSuricataEngine,
-  zssidsAvailable, applyHeld, ZSSIDS_BIN, APPLY_FAILED_MARKER,
+  zssidsAvailable, applyHeld, applyRunning, waitForApply, ZSSIDS_BIN, APPLY_FAILED_MARKER,
 };
