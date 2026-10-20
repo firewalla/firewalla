@@ -26,6 +26,7 @@ let mockGetTagByUid = () => null;
 let mockLoadedPolicies = [];
 let mockPm2UpdateCalled = [];
 let mockPm2SaveResult = { policy: { pid: 999 } };
+let mockPm2SaveCalled = [];
 let mockPm2GetPolicyFn = async () => null;
 let mockAppTimeUsed = 0;
 
@@ -80,7 +81,7 @@ function setupMocks() {
       updatePolicyAsync: async (policy) => { mockPm2UpdateCalled.push(policy); },
       getPolicy: async (pid) => mockPm2GetPolicyFn(pid),
       tryPolicyEnforcement: () => {},
-      checkAndSaveAsync: async () => mockPm2SaveResult,
+      checkAndSaveAsync: async (policy) => { mockPm2SaveCalled.push(policy); return mockPm2SaveResult; },
     };
   });
 
@@ -793,6 +794,7 @@ describe('AccessRequestManager', function () {
       mockLoadedPolicies = [];
       mockPm2UpdateCalled = [];
       mockPm2SaveResult = { policy: { pid: 999 } };
+      mockPm2SaveCalled = [];
       mockPm2GetPolicyFn = async () => null;
       mockAppTimeUsed = 0;
     });
@@ -951,6 +953,113 @@ describe('AccessRequestManager', function () {
       expect(result.ok).to.be.true;
       // updatePolicyAsync called for the existing bypass policy, not checkAndSaveAsync
       expect(mockPm2UpdateCalled.some(p => p.pid === 777)).to.be.true;
+    });
+
+
+    // ─── bypass expiry (issue #10264) ──────────────────────────────────────────
+    //
+    // A policy expires at (activatedTime || timestamp) + expire. A bypass rule granting
+    // extra time must expire exactly at midnight after every approval of the day, so both
+    // the clock base and the duration have to be restarted on each approval.
+
+    describe('bypass rule expiry on repeated approvals', () => {
+      // morning approval, 6 hours ago
+      const sixHoursAgo = () => Math.floor(Date.now() / 1000) - 6 * 3600;
+
+      function expectExpiresAtEndOfDay(updated) {
+        const endOfTodayTs = mgr._getEndOfDayTimestamp('America/New_York');
+        const base = Number(updated.activatedTime) || Number(updated.timestamp);
+        expect(base + Number(updated.expire)).to.be.closeTo(endOfTodayTs, 2);
+      }
+
+      async function approveSecondTime(existingBypass) {
+        const req = await mgr.createOrUpdateRequest('u1', 'internet', 30, 5, {});
+        mockGetTagByUid = (uid) => uid === 'u1' ? makeUserTag('u1') : null;
+        mockLoadedPolicies = [makeBlockPolicy({ pid: 42 })];
+        store[mgr.getBypassPolicyKey('u1', ['internet'])] = '777';
+        mockPm2GetPolicyFn = async (pid) => pid === 777 ? Object.assign({}, existingBypass) : null;
+
+        const result = await mgr.approveRequest(req.requestId, 30);
+        expect(result.ok).to.be.true;
+        const updated = mockPm2UpdateCalled.find(p => p.pid === 777);
+        expect(updated).to.exist;
+        return updated;
+      }
+
+      it('new bypass policy expires at end of day', async () => {
+        const req = await mgr.createOrUpdateRequest('u1', 'internet', 30, 5, {});
+        mockGetTagByUid = (uid) => uid === 'u1' ? makeUserTag('u1') : null;
+        mockLoadedPolicies = [makeBlockPolicy({ pid: 42 })];
+
+        await mgr.approveRequest(req.requestId, 30);
+        expect(mockPm2SaveCalled).to.have.lengthOf(1);
+        expectExpiresAtEndOfDay(mockPm2SaveCalled[0]);
+      });
+
+      it('second approval keeps the still-enforced bypass expiring at midnight, not earlier', async () => {
+        const t1 = sixHoursAgo();
+        const nowTs = Math.floor(Date.now() / 1000);
+        const updated = await approveSecondTime({
+          pid: 777,
+          action: 'bypass',
+          autoDeleteWhenExpires: '1',
+          timestamp: t1,
+          activatedTime: t1, // rule still enforced, activated in the morning
+          expire: mgr._getEndOfDayTimestamp('America/New_York') - t1,
+          appTimeUsage: { quota: 5, extraQuota: 10, extraQuotaUntilTs: nowTs + 3600 },
+          appTimeUsed: 0,
+        });
+
+        // the stale morning clock must not survive, otherwise the rule expires
+        // (T2 - T1) early or is deleted outright on reenforce
+        expect(Number(updated.timestamp)).to.be.closeTo(nowTs, 2);
+        expect(Number(updated.activatedTime)).to.be.closeTo(nowTs, 2);
+        expectExpiresAtEndOfDay(updated);
+      });
+
+      it('second approval after the extra quota ran out does not push expiry past midnight', async () => {
+        // quota reached → AppTimeUsageManager unenforced the bypass → activatedTime was cleared.
+        // Basing expire on timestamp alone would be re-stamped to T2 by _refreshActivatedTime on
+        // reenforce, leaving the rule alive past midnight.
+        const t1 = sixHoursAgo();
+        const nowTs = Math.floor(Date.now() / 1000);
+        const updated = await approveSecondTime({
+          pid: 777,
+          action: 'bypass',
+          autoDeleteWhenExpires: '1',
+          timestamp: t1,
+          expire: mgr._getEndOfDayTimestamp('America/New_York') - t1,
+          appTimeUsage: { quota: 5, extraQuota: 10, extraQuotaUntilTs: nowTs + 3600 },
+          appTimeUsed: 15,
+        });
+
+        expect(Number(updated.timestamp)).to.be.closeTo(nowTs, 2);
+        expect(Number(updated.expire)).to.be.closeTo(mgr._getEndOfDayTimestamp('America/New_York') - nowTs, 2);
+        expectExpiresAtEndOfDay(updated);
+      });
+
+      it('bypass never expires in the past, even when the first approval was long ago', async function () {
+        const nowTs = Math.floor(Date.now() / 1000);
+        const endOfTodayTs = mgr._getEndOfDayTimestamp('America/New_York');
+        // the assertion below is meaningless within the last 2 minutes of the day
+        if (endOfTodayTs - nowTs < 120) this.skip();
+        // a clock base old enough that keeping it would put the recomputed expiry
+        // (t1 + endOfToday - now) an hour in the past, whatever the time of day
+        const t1 = 2 * nowTs - endOfTodayTs - 3600;
+        const updated = await approveSecondTime({
+          pid: 777,
+          action: 'bypass',
+          autoDeleteWhenExpires: '1',
+          timestamp: t1,
+          activatedTime: t1,
+          expire: endOfTodayTs - t1,
+          appTimeUsage: { quota: 5, extraQuota: 10, extraQuotaUntilTs: nowTs + 3600 },
+          appTimeUsed: 15,
+        });
+
+        const base = Number(updated.activatedTime) || Number(updated.timestamp);
+        expect(base + Number(updated.expire)).to.be.above(nowTs + 60); // not willExpireSoon()
+      });
     });
   });
 
