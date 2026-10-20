@@ -4311,7 +4311,7 @@ class netBot extends ControllerBot {
           const forbid = (await rclient.typeAsync(Constants.REDIS_KEY_EID_BLACKLIST)) == "set" &&
             await rclient.sismemberAsync(Constants.REDIS_KEY_EID_BLACKLIST, eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
-            log.warn('deny access from eid', eid);
+            log.warn('deny access from eid', eid, msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
