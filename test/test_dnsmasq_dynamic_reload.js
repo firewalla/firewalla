@@ -22,6 +22,7 @@ function loadDNSMASQ(options = {}) {
   const commands = [];
   const redisOps = [];
   const timers = [];
+  const fileWrites = [];
   const logs = { info: [], warn: [], error: [], debug: [], verbose: [] };
   let nextTimerId = 1;
 
@@ -79,6 +80,13 @@ function loadDNSMASQ(options = {}) {
     stat: (path, cb) => cb(Object.assign(new Error('missing'), { code: 'ENOENT' })),
     promises: {
       readFile: async (path) => {
+        if (options.files && Object.prototype.hasOwnProperty.call(options.files, path)) {
+          const content = options.files[path];
+          // readGate holds a read that already has the content, to model a removal landing before it returns
+          if (options.readGate)
+            await options.readGate;
+          return content;
+        }
         if (options.pidFiles && Object.prototype.hasOwnProperty.call(options.pidFiles, path))
           return `${options.pidFiles[path]}\n`;
         // cmdline validation: return a dnsmasq cmdline for any PID listed in pidFiles
@@ -94,10 +102,20 @@ function loadDNSMASQ(options = {}) {
       readdir: async (path) => {
         if (options.pidDirEntries && path === '/home/pi/.router/run/dnsmasq')
           return options.pidDirEntries;
+        const dir = path.endsWith('/') ? path : path + '/';
+        const names = Object.keys(options.files || {}).filter(p => p.startsWith(dir)).map(p => p.slice(dir.length));
+        if (names.length)
+          return names;
         throw Object.assign(new Error('missing'), { code: 'ENOENT' });
       },
       rmdir: async () => {},
-      writeFile: async () => {},
+      writeFile: async (path, content) => {
+        if (options.failWrites > 0) {
+          options.failWrites--;
+          throw Object.assign(new Error('write failed'), { code: 'EIO' });
+        }
+        fileWrites.push([path, content]);
+      },
       opendir: async function* () {},
     },
   };
@@ -118,7 +136,7 @@ function loadDNSMASQ(options = {}) {
       getUserHome: () => '/home/pi',
       getRuntimeInfoFolder: () => '/tmp/firewalla/run',
       getFirewallaHome: () => '/home/pi/firewalla',
-      isMain: () => false,
+      isMain: () => Boolean(options.isMain),
     },
     '../../util/redis_manager.js': {
       getRedisClient: () => redisClient,
@@ -129,6 +147,7 @@ function loadDNSMASQ(options = {}) {
         getDNSServiceName: () => options.fireRouterManaged ? 'firerouter_dns' : 'dnsmasq',
         getDHCPServiceName: () => options.fireRouterManaged ? 'firerouter_dhcp' : 'dnsmasq',
         isFireRouterManaged: () => Boolean(options.fireRouterManaged),
+        getDnsmasqLeaseFilePath: () => '/home/pi/.router/run/dhcp/dnsmasq.leases',
       })
     },
     '../../net2/config.js': {
@@ -155,6 +174,11 @@ function loadDNSMASQ(options = {}) {
       getMonitoringInterfaces: () => options.monitoringInterfaces || [],
       myResolver: () => [],
       myResolver6: () => [],
+      inMySubnets4: () => true,
+      isMyMac: () => false,
+    },
+    '../../net2/HostManager.js': class {
+      async getHostsAsync() { return options.hosts || []; }
     },
     '../../net2/FlowUtil.js': {},
     '../../net2/Constants.js': {},
@@ -164,7 +188,13 @@ function loadDNSMASQ(options = {}) {
       isHashDomain: () => false,
       formulateHostname: h => h,
       isDomainValid: () => true,
-      fileRemove: async () => {},
+      fileRemove: async (path) => {
+        if (options.failRemoves > 0) {
+          options.failRemoves--;
+          throw Object.assign(new Error('remove failed'), { code: 'EIO' });
+        }
+        if (options.files) delete options.files[path];
+      },
     },
     '../../vendor_lib/async-lock': class {
       acquire(key, fn) { return fn(); }
@@ -179,7 +209,7 @@ function loadDNSMASQ(options = {}) {
     global.clearTimeout = oldClearTimeout;
   };
 
-  return { dnsmasq, commands, redisOps, timers, logs };
+  return { dnsmasq, commands, redisOps, timers, fileWrites, logs };
 }
 
 describe('dnsmasq restart/reload switch', function() {
@@ -429,11 +459,15 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     expect(dnsmasq.counter.reloadDHCP).to.equal(1);
   });
 
+  // a new reservation, so the write changes the file and schedules a DHCP action
+  const reservation = { ipAllocation: { allocations: { lan1: { type: 'static', ipv4: '192.0.2.10' } } } };
+  const lan = { uuid: 'lan1', name: 'br0' };
+
   it('writeHostsFile schedules a DHCP reload (not restart) on a FireRouter-managed box', async function() {
-    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true, monitoringInterfaces: [lan] });
     this.test.ctx.dnsmasq = dnsmasq;
 
-    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: {} }, true);
+    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: reservation });
     await timers[0].fn();
 
     expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(true);
@@ -441,10 +475,10 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
   });
 
   it('writeHostsFile falls back to a full restart on a non-FireRouter box', async function() {
-    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: false });
+    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: false, monitoringInterfaces: [lan] });
     this.test.ctx.dnsmasq = dnsmasq;
 
-    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: {} }, true);
+    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: reservation });
     await timers[0].fn();
 
     expect(commands.some(cmd => cmd.includes('systemctl restart dnsmasq'))).to.equal(true);
@@ -471,5 +505,428 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
 
     expect(commands.some(cmd => cmd.includes('systemctl restart dnsmasq'))).to.equal(true);
     expect(commands.some(cmd => cmd.includes('systemctl reload dnsmasq'))).to.equal(false);
+  });
+});
+
+describe('dnsmasq bulk hosts-file refresh', function() {
+  const HOSTS_DIR = '/home/pi/.router/config/dhcp/hosts2/';
+  const RESERVED_MAC = '00:00:5E:00:53:01';
+  const RESERVED_CONTENT = `${RESERVED_MAC},tag:br0,192.0.2.10\n`;
+  const lan = { uuid: 'lan1', name: 'br0' };
+  const LEASE_FILE = '/home/pi/.router/run/dhcp/dnsmasq.leases';
+
+  function reservedHost() {
+    return {
+      o: { mac: RESERVED_MAC },
+      policy: { ipAllocation: { allocations: { lan1: { type: 'static', ipv4: '192.0.2.10' } } } },
+    };
+  }
+  function plainHost(n) {
+    return { o: { mac: `00:00:5E:00:53:1${n}` }, policy: {} };
+  }
+
+  async function runPendingTimers(timers) {
+    for (let i = 0; i < timers.length; i++)
+      if (!timers[i].cleared) {
+        timers[i].cleared = true; // a fired timer does not fire again
+        await timers[i].fn();
+      }
+  }
+
+  // checkConfsChange that reports each listed key as changed once and then as current, like the redis hashes
+  function hashState(changedKeys) {
+    const pending = new Set(changedKeys);
+    const calls = [];
+    const checkConfsChange = async (key, paths) => {
+      calls.push({ key, paths });
+      const changed = pending.has(key);
+      pending.delete(key);
+      return changed;
+    };
+    return { calls, checkConfsChange };
+  }
+
+  afterEach(function() {
+    if (this.currentTest.ctx.dnsmasq)
+      this.currentTest.ctx.dnsmasq.restoreTestTimers();
+  });
+
+  it('rawStart schedules one DHCP action and no per-device reload', async function() {
+    const { dnsmasq, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1), plainHost(2)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await dnsmasq.rawStart();
+
+    // one DNS timer and one DHCP timer, whatever the number of devices
+    expect(timers.length).to.equal(2);
+    expect(dnsmasq.reloadDHCPTask).to.equal(undefined);
+    expect(dnsmasq.restartDHCPTask).to.not.equal(undefined);
+  });
+
+  it('rawStart does not restart DHCP when the DHCP config is unchanged', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1)],
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+    dnsmasq.leaseCleanupPending = false; // a DHCP restart already ran since FireMain started
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.some(cmd => cmd.includes('firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('the first rawStart after FireMain starts restarts DHCP once even when the hashes match', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1)],
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+  });
+
+  it('a lease cleanup by a single-device write before the full rewrite still gets a DHCP restart', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1)],
+      files: { [HOSTS_DIR + RESERVED_MAC]: `${RESERVED_MAC},tag:br0,192.0.2.20\n` },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+    dnsmasq.leaseCleanupPending = false;
+
+    // the reservation moved from .20 to .10, so the single-device path rewrites it and cleans up the lease
+    await dnsmasq.writeHostsFile(reservedHost());
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('sed')).length).to.equal(1);
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+  });
+
+  it('rawStart restarts DHCP once when the DHCP config changed', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1), plainHost(2)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => true;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+    expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('a bulk write leaves an unchanged reservation file and its lease record alone', async function() {
+    const { dnsmasq, commands, fileWrites } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      files: {
+        [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT,
+        [LEASE_FILE]: `1792000000 ${RESERVED_MAC.toLowerCase()} 192.0.2.10 test-device *\n`,
+      },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await dnsmasq.writeHostsFile(reservedHost(), true);
+
+    expect(fileWrites.length).to.equal(0);
+    expect(commands.some(cmd => cmd.includes('sed'))).to.equal(false);
+  });
+
+  it('after a FireMain restart, a single-device write of an unchanged reservation does nothing', async function() {
+    const { dnsmasq, commands, fileWrites, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    // a fresh instance has no in-memory hash; it is seeded from the file on disk
+    await dnsmasq.writeHostsFile(reservedHost());
+
+    expect(fileWrites.length).to.equal(0);
+    expect(commands.some(cmd => cmd.includes('sed'))).to.equal(false);
+    expect(timers.length).to.equal(0);
+  });
+
+  it('FireMain seeds the hosts-file hashes when it starts, before any write', async function() {
+    const { dnsmasq } = loadDNSMASQ({
+      fireRouterManaged: true,
+      isMain: true,
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await dnsmasq.hostsFileHashesLoaded;
+
+    expect(dnsmasq.lastHostsFileHash[RESERVED_MAC]).to.equal(dnsmasq.computeHash(RESERVED_CONTENT));
+  });
+
+  it('a removal during the startup read of the hashes leaves no hash for the removed file', async function() {
+    let openGate;
+    const readGate = new Promise(resolve => { openGate = resolve; });
+    const { dnsmasq } = loadDNSMASQ({
+      fireRouterManaged: true,
+      isMain: true,
+      readGate,
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    // the startup read has listed the file and holds its content, but has not stored the hash yet
+    await new Promise(resolve => setImmediate(resolve));
+    const removal = dnsmasq.removeHostsFile({ o: { mac: RESERVED_MAC }, getGUID: () => RESERVED_MAC });
+    openGate();
+    await removal;
+    await dnsmasq.hostsFileHashesLoaded;
+
+    expect(dnsmasq.lastHostsFileHash).to.not.have.property(RESERVED_MAC);
+  });
+
+  it('a stale-file removal during the startup read of the hashes leaves no hash for the removed file', async function() {
+    let openGate;
+    const readGate = new Promise(resolve => { openGate = resolve; });
+    const { dnsmasq } = loadDNSMASQ({
+      fireRouterManaged: true,
+      isMain: true,
+      readGate,
+      hosts: [],
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await new Promise(resolve => setImmediate(resolve));
+    const rewrite = dnsmasq.writeAllHostsFiles();
+    // release the read only after a rewrite that does not wait for it would already have removed the file
+    setImmediate(openGate);
+    await rewrite;
+    await dnsmasq.hostsFileHashesLoaded;
+
+    expect(dnsmasq.lastHostsFileHash).to.not.have.property(RESERVED_MAC);
+  });
+
+  it('a reservation file whose write failed is written again on the next call', async function() {
+    const { dnsmasq, fileWrites } = loadDNSMASQ({ fireRouterManaged: true, monitoringInterfaces: [lan], failWrites: 1 });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await dnsmasq.writeHostsFile(reservedHost()).catch(() => {});
+    await dnsmasq.writeHostsFile(reservedHost());
+
+    expect(fileWrites).to.deep.equal([[HOSTS_DIR + RESERVED_MAC, RESERVED_CONTENT]]);
+  });
+
+  it('a hosts file whose removal failed is removed again on the next call', async function() {
+    const files = { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT };
+    const { dnsmasq } = loadDNSMASQ({ fireRouterManaged: true, monitoringInterfaces: [lan], files, failRemoves: 1 });
+    this.test.ctx.dnsmasq = dnsmasq;
+    // the reservation was removed, so the device now has no lines
+    const unreserved = { o: { mac: RESERVED_MAC }, policy: {} };
+
+    await dnsmasq.writeHostsFile(unreserved);
+    expect(files).to.have.property(HOSTS_DIR + RESERVED_MAC);
+    await dnsmasq.writeHostsFile(unreserved);
+
+    expect(files).to.not.have.property(HOSTS_DIR + RESERVED_MAC);
+  });
+
+  it('a hosts file the full rewrite removed as stale is written again when its device comes back', async function() {
+    const { dnsmasq, fileWrites } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [],
+      files: { [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    await dnsmasq.loadHostsFileHashes(); // a running FireMain has already seen the file
+
+    await dnsmasq.writeAllHostsFiles();
+    await dnsmasq.writeHostsFile(reservedHost());
+
+    expect(fileWrites).to.deep.equal([[HOSTS_DIR + RESERVED_MAC, RESERVED_CONTENT]]);
+  });
+
+  it('a bulk write of an unchanged reservation still clears a lease another MAC holds on its IP', async function() {
+    const { dnsmasq, commands } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      files: {
+        [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT,
+        [LEASE_FILE]: '1792000000 00:00:5e:00:53:99 192.0.2.10 other-device *\n',
+      },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.leaseCleanupPending = false;
+
+    await dnsmasq.writeHostsFile(reservedHost(), true);
+
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(dnsmasq.leaseCleanupPending).to.equal(true);
+  });
+
+  it('a lease deleted directly through deleteLeaseRecord gets the next DHCP restart even when the hashes match', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+    dnsmasq.leaseCleanupPending = false;
+
+    // the shape of the netbot path that forgets a device
+    await dnsmasq.deleteLeaseRecord('00:00:5E:00:53:99');
+    dnsmasq.scheduleRestartDHCPService();
+    await timers[0].fn();
+
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+    expect(dnsmasq.leaseCleanupPending).to.equal(false);
+  });
+
+  it('a bulk write rewrites a changed reservation file and clears the lease on its IP', async function() {
+    const { dnsmasq, commands, fileWrites } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      files: { [HOSTS_DIR + RESERVED_MAC]: `${RESERVED_MAC},tag:br0,192.0.2.20\n` },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    await dnsmasq.writeHostsFile(reservedHost(), true);
+
+    expect(fileWrites).to.deep.equal([[HOSTS_DIR + RESERVED_MAC, RESERVED_CONTENT]]);
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+  });
+
+  it('rawStart reloads, not restarts, DHCP when only the reservations differ from what dnsmasq last loaded', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [plainHost(1)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = hashState(['dnsmasq:dhcphosts']).checkConfsChange;
+    dnsmasq.leaseCleanupPending = false;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('systemctl reload firerouter_dhcp')).length).to.equal(1);
+    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('a conf change restarts DHCP and records the reservations as applied, so no reload follows', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [plainHost(1)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = hashState(['dnsmasq:dhcp', 'dnsmasq:dhcphosts']).checkConfsChange;
+    dnsmasq.leaseCleanupPending = false;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+    dnsmasq.scheduleReloadDHCPService();
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+    expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('dnsmasq:dhcp hashes only what needs a restart, and dnsmasq:dhcphosts only the reservations', async function() {
+    const { dnsmasq, timers } = loadDNSMASQ({ fireRouterManaged: true });
+    this.test.ctx.dnsmasq = dnsmasq;
+    const state = hashState(['dnsmasq:dhcp']);
+    dnsmasq.checkConfsChange = state.checkConfsChange;
+
+    dnsmasq.scheduleRestartDHCPService();
+    await runPendingTimers(timers);
+
+    const restartKey = state.calls.find(c => c.key === 'dnsmasq:dhcp');
+    const hostsKey = state.calls.find(c => c.key === 'dnsmasq:dhcphosts');
+    expect(restartKey.paths).to.not.include(HOSTS_DIR);
+    expect(restartKey.paths).to.include('/home/pi/.router/config/dhcp/conf');
+    expect(hostsKey.paths).to.deep.equal([HOSTS_DIR]);
+  });
+
+  it('rawStart restarts DHCP after a lease cleanup in the full rewrite even when the hashes match', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [reservedHost(), plainHost(1)],
+      files: { [HOSTS_DIR + RESERVED_MAC]: `${RESERVED_MAC},tag:br0,192.0.2.20\n` },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    // a restart already pending when the full rewrite starts can record both hashes before the cleanup ends
+    dnsmasq.checkConfsChange = async () => false;
+    dnsmasq.leaseCleanupPending = false;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+  });
+
+  it('a DHCP restart pending when the full rewrite starts does not fire during it, leaving one restart', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [plainHost(1), reservedHost()],
+      files: { [HOSTS_DIR + RESERVED_MAC]: `${RESERVED_MAC},tag:br0,192.0.2.20\n` },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+    // FireMain start: the startup lease flag is set, and DnsmasqDhcpSensor queues a restart
+    dnsmasq.scheduleRestartDHCPService();
+    // each host write in the bulk loop is a moment where an expired timer could fire
+    const writeHostsFile = dnsmasq.writeHostsFile.bind(dnsmasq);
+    dnsmasq.writeHostsFile = async (...args) => {
+      await runPendingTimers(timers);
+      return writeHostsFile(...args);
+    };
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
+  });
+
+  it('a DHCP reload pending when the full rewrite starts is folded into the action after the loop', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [plainHost(1)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = hashState(['dnsmasq:dhcphosts']).checkConfsChange;
+    dnsmasq.leaseCleanupPending = false;
+
+    dnsmasq.scheduleReloadDHCPService();
+    await dnsmasq.rawStart();
+
+    expect(timers[0].cleared).to.equal(true);
+    await runPendingTimers(timers);
+
+    expect(commands.filter(cmd => cmd.includes('systemctl reload firerouter_dhcp')).length).to.equal(1);
+    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(false);
   });
 });
