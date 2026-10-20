@@ -679,6 +679,15 @@ class VPNClient {
         this._started = true;
         this._lastStartTime = Date.now();
         this._resetInternetCounters();
+        // the tunnel is started in FireApi, which arms no check of its own: FireMain checks 20 s after the start, as a start done here does
+        if (f.isMain()) {
+          clearTimeout(this.startCheckTask);
+          this.startCheckTask = setTimeout(() => {
+            this._checkConnectivity(true).catch((err) => {
+              log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+            });
+          }, 20000);
+        }
       }
     })
   }
