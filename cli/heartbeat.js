@@ -94,7 +94,12 @@ async function isBooted() {
 }
 
 async function getCpuTemperature() {
-  const temp = await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+  const tempFile = '/sys/class/thermal/thermal_zone0/temp';
+  // Crystal installed in a VM may have no thermal zone
+  if (!fs.existsSync(tempFile)) {
+    return null;
+  }
+  const temp = await getShellOutput(`cat ${tempFile}`);
   return Number(temp);
 }
 
@@ -345,6 +350,9 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
 async function monitorTemperature() {
   try {
       const cpuTempCurrent = await getCpuTemperature();
+      if (cpuTempCurrent === null) {
+        return;
+      }
       const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
       const sysStateCurrent = (cpuTempCurrent>cpuTempThreshold) ? "overheated":"normal";
       const sysStateOther = (cpuTempCurrent>cpuTempThreshold) ? "normal":"overheated";
