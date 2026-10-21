@@ -52,6 +52,14 @@ const LOCK_SHARED = "LOCK_SHARED";
 const LOCK_QUEUE = "LOCK_QUEUE";
 
 const scheduler = require('../../util/scheduler.js');
+const cronParser = require('cron-parser');
+
+// re-arm the schedule check at least this often, so that a long pending schedule survives
+// a timezone change or a suspended box
+const MAX_SCHEDULE_DELAY = 6 * 3600 * 1000;
+// always evaluate a bit after the boundary, a timer that fires right on it would see the
+// previous cron occurrence and miss the window
+const SCHEDULE_SKEW = 500;
 
 // Configure Port Forwarding
 // Example:
@@ -65,14 +73,25 @@ const scheduler = require('../../util/scheduler.js');
 //      toMac: mac of the destination
 //      toPort: ip port
 //      enabled: true/false, activate/deactivate port forward, default to true
+//      expireTs: optional epoch timestamp in seconds, the port forward expires at this moment
+//      autoDeleteWhenExpires: optional, defaults to true, whether the entry is removed when expireTs is reached
+//        instead of being kept in a disabled state. Only meaningful together with expireTs
+//      idleTs: optional epoch timestamp in seconds, a disabled port forward is turned back on automatically at this moment
+//      cronTime: optional cron expression, same as the one in rules, the port forward is only applied in the scheduled window
+//      duration: optional length of the scheduled window in seconds, mandatory if cronTime is set
 //   ]
 // }
+//
+// expireTs/idleTs/cronTime are evaluated by applySchedules(), which asserts the desired
+// iptables state of every scheduled entry on each pass. A cron window is gated without
+// touching the user facing enabled flag, so manual on/off keeps working on a scheduled entry.
 
 // only supports IPv4 for now
 class PortForward {
   constructor() {
     if (!instance) {
       this.config = { maps: [] }
+      this.scheduleCheckTimer = null;
       if (f.isMain()) {
         this.requestQueue = [];
         // this job will be scheduled each time a new portforward request is received, or the firemain is restarted
@@ -94,7 +113,16 @@ class PortForward {
                 if (obj.state == false) {
                   await this.removePort(obj);
                 } else {
-                  if (obj.enabled === false)
+                  if (!this.normalizeSchedule(obj)) {
+                    log.error("Invalid schedule in port forward request, ignore it", obj);
+                    return;
+                  }
+                  const oldIndex = this.find(obj);
+                  // the schedule of an existing entry is changed, remove the old one first so that
+                  // the iptables rule is re-applied according to the new schedule
+                  if (oldIndex >= 0 && this._scheduleChanged(this.config.maps[oldIndex], obj))
+                    await this.removePort(obj);
+                  if (obj.enabled === false || this._isScheduleSuppressed(obj))
                     await this.removePort(obj);
                   if (obj.toMac && !obj.toIP) {
                     const macEntry = await hostTool.getMACEntry(obj.toMac);
@@ -109,6 +137,7 @@ class PortForward {
                 }
                 // TODO: config should be saved after rule successfully applied
                 await this.saveConfig();
+                this._scheduleNextCheck();
               }
             }).catch((err) => {
               log.error('Error applying port-forward', obj, err);
@@ -166,6 +195,8 @@ class PortForward {
               await this.loadConfig();
               await this.restore();
               await this.refreshConfig();
+              await this.applySchedules();
+              this._scheduleNextCheck();
             }).catch((err) => {
               log.error("Failed to refresh port forward rules", err);
             });
@@ -338,7 +369,7 @@ class PortForward {
       if (init == false || init == null) {
         let old = this.find(map);
         if (old >= 0) {
-          if (this.config.maps[old].enabled === map.enabled) {
+          if (this.config.maps[old].enabled === map.enabled && !this._scheduleChanged(this.config.maps[old], map)) {
             log.verbose("PORTMAP:addPort Duplicated MAP", map);
             return;
           } else {
@@ -356,6 +387,11 @@ class PortForward {
 
       if (map.enabled === false) {
         log.debug("Port forward is disabled now", map);
+        return;
+      }
+
+      if (this._isScheduleSuppressed(map)) {
+        log.debug("Port forward is outside of its scheduled window now", map);
         return;
       }
 
@@ -429,18 +465,21 @@ class PortForward {
         await this.loadConfig()
         await this.restore()
         await this.refreshConfig()
+        await this.applySchedules()
         await this._syncDMZAllowRules(await Mode.isRouterModeOn());
       }).catch((err) => {
         log.error(`Failed to initialize PortForwarder`, err);
       });
       await this.applyRequestJob.exec();
+      this._scheduleNextCheck();
 
       setInterval(() => {
         lock.acquire(LOCK_SHARED, async () => {
           await this.refreshConfig();
+          await this.applySchedules();
         }).catch((err) => {
           log.error(`Failed to refresh config`, err);
-        });
+        }).then(() => this._scheduleNextCheck());
       }, 60000); // refresh config once every minute
     }
     this._started = true;
@@ -448,14 +487,234 @@ class PortForward {
 
   async stop() {
     log.info("PortForwarder:Stopping PortForwarder ...")
+    if (this.scheduleCheckTimer) {
+      clearTimeout(this.scheduleCheckTimer);
+      this.scheduleCheckTimer = null;
+    }
     await this.saveConfig().catch(() => { })
+  }
+
+  // normalize the optional scheduling fields of a port forward entry in place,
+  // returns an error message if they are invalid, null otherwise
+  static validateSchedule(map) {
+    if (!_.isObject(map))
+      return null;
+    for (const key of ["expireTs", "idleTs", "duration"]) {
+      // the app clears a schedule by sending 0 as readily as by sending "" or null
+      if (map[key] === undefined || map[key] === null || map[key] === "" || Number(map[key]) === 0) {
+        delete map[key];
+        continue;
+      }
+      const value = Number(map[key]);
+      if (!Number.isFinite(value) || value <= 0)
+        return `${key} of port forward should be a positive number`;
+      map[key] = value;
+    }
+    if (map.cronTime === null || map.cronTime === "")
+      delete map.cronTime;
+    if (map.cronTime) {
+      if (!_.isString(map.cronTime))
+        return "cronTime of port forward should be a string";
+      if (!map.duration)
+        return "duration of port forward is required when cronTime is set";
+      try {
+        cronParser.parseExpression(map.cronTime, { tz: sysManager.getTimezone() });
+      } catch (err) {
+        return `invalid cronTime of port forward: ${map.cronTime}`;
+      }
+    } else {
+      // duration alone is meaningless
+      delete map.duration;
+    }
+    if (!map.expireTs || map.autoDeleteWhenExpires === undefined || map.autoDeleteWhenExpires === null || map.autoDeleteWhenExpires === "")
+      // the flag only makes sense with expireTs, and leaving it out means true
+      delete map.autoDeleteWhenExpires;
+    else
+      map.autoDeleteWhenExpires = ![false, 0, "0", "false"].includes(map.autoDeleteWhenExpires);
+    return null;
+  }
+
+  // validate an incoming request, returns false if its schedule is invalid
+  normalizeSchedule(map) {
+    const err = PortForward.validateSchedule(map);
+    if (err) {
+      log.error("Failed to validate port forward schedule:", err);
+      return false;
+    }
+    return true;
+  }
+
+  _hasSchedule(map) {
+    return Boolean(map.expireTs || map.idleTs || (map.cronTime && map.duration));
+  }
+
+  _scheduleChanged(oldMap, newMap) {
+    // autoDeleteWhenExpires false and absent mean different things, so compare the raw
+    // values and only fold undefined into null
+    const value = (map, key) => (map[key] === undefined ? null : map[key]);
+    return ["expireTs", "idleTs", "cronTime", "duration", "autoDeleteWhenExpires"]
+      .some(key => value(oldMap, key) !== value(newMap, key));
+  }
+
+  // the most recent occurrence of cronTime at or before now. prev() in cron-parser is strictly
+  // before currentDate, so look from 1ms later, otherwise an occurrence exactly at now, which is
+  // when the schedule timer fires, is reported as the previous one and the window start is missed
+  _cronWindowBegin(map, now) {
+    const interval = cronParser.parseExpression(map.cronTime, { tz: sysManager.getTimezone(), currentDate: new Date(now * 1000 + 1) });
+    return interval.prev().getTime() / 1000;
+  }
+
+  // the first occurrence of cronTime strictly after now
+  _cronNextBegin(map, now) {
+    const interval = cronParser.parseExpression(map.cronTime, { tz: sysManager.getTimezone(), currentDate: new Date(now * 1000) });
+    return interval.next().getTime() / 1000;
+  }
+
+  // whether now is inside a window that starts at an occurrence of cronTime and lasts for duration
+  _inCronWindow(map, now = Date.now() / 1000) {
+    try {
+      return now < this._cronWindowBegin(map, now) + Number(map.duration);
+    } catch (err) {
+      // keep the port closed if the schedule cannot be evaluated
+      log.error(`Failed to parse cron expression ${map.cronTime}`, err.message);
+      return false;
+    }
+  }
+
+  _isScheduleSuppressed(map, now = Date.now() / 1000) {
+    if (map.idleTs && now < Number(map.idleTs))
+      return true;
+    if (map.expireTs && now >= Number(map.expireTs))
+      return true;
+    if (map.cronTime && map.duration && !this._inCronWindow(map, now))
+      return true;
+    return false;
+  }
+
+  // the desired state of an entry: whether its iptables rule should be installed right now.
+  // addPort() gates on the same conditions, this is the single place they are written down
+  async _shouldBeApplied(map, now = Date.now() / 1000) {
+    if (map.active === false || map.enabled === false)
+      return false;
+    if (this._isScheduleSuppressed(map, now))
+      return false;
+    if (!this._isLANInterfaceIP(map.toIP))
+      return false;
+    if (map._type === "dmz_host" && !(await Mode.isRouterModeOn()))
+      return false;
+    return true;
+  }
+
+  async _setIptables(map, apply) {
+    const dupMap = JSON.parse(JSON.stringify(map));
+    dupMap.state = apply;
+    await this.enforceIptables(dupMap);
+    map.state = apply;
+  }
+
+  // evaluate the schedule of every entry and assert the resulting iptables state.
+  // the desired state is recomputed from now rather than driven by a CronJob per entry the way
+  // scheduler.js does for rules: a port forward entry has no stable id and removePort() drops it
+  // from a dozen call sites, so a job registry would leak jobs that re-open a deleted port.
+  // nothing records whether a rule is currently installed either: IptablesControl dedups -I/-A
+  // and drops a -D that matches nothing, so asserting the desired state every pass is idempotent
+  // and self-heals after a missed tick, a clock jump, a reload or a timezone change
+  async applySchedules() {
+    if (!this.config || !_.isArray(this.config.maps))
+      return;
+    const now = Date.now() / 1000;
+    const previously = this.lastScheduleEvalTs;
+    this.lastScheduleEvalTs = now;
+    let dirty = false;
+    const expiredMaps = new Set();
+    // iterate a snapshot, an expired entry may be dropped from this.config.maps below
+    for (const map of this.config.maps.slice()) {
+      if (!this._hasSchedule(map))
+        continue;
+
+      if (map.expireTs && now >= Number(map.expireTs)) {
+        // an expired entry is finished: idleTs must not resurrect it in this same pass
+        delete map.expireTs;
+        delete map.idleTs;
+        map.enabled = false;
+        dirty = true;
+        if (map.autoDeleteWhenExpires !== false) {
+          log.info("Port forward is expired, removing it", map);
+          expiredMaps.add(map);
+        } else {
+          log.info("Port forward is expired, turning it off", map);
+        }
+      } else if (map.idleTs && now >= Number(map.idleTs)) {
+        log.info("Port forward pause is over, turning it back on", map);
+        delete map.idleTs;
+        map.enabled = true;
+        dirty = true;
+      } else if (previously && map.cronTime && map.duration
+          && this._isScheduleSuppressed(map, previously) !== this._isScheduleSuppressed(map, now)) {
+        // logging only, the assert below is what actually changes anything
+        log.info(`Port forward scheduled window ${this._inCronWindow(map, now) ? "opened" : "closed"}`, map);
+      }
+
+      const apply = !expiredMaps.has(map) && await this._shouldBeApplied(map, now);
+      await this._setIptables(map, apply);
+    }
+    if (expiredMaps.size)
+      this.config.maps = this.config.maps.filter(map => !expiredMaps.has(map));
+    if (dirty)
+      await this.saveConfig();
+  }
+
+  // the nearest moment in the future at which any entry changes its scheduled state
+  _getNextScheduleTs(now = Date.now() / 1000) {
+    if (!this.config || !_.isArray(this.config.maps))
+      return null;
+    let next = null;
+    const update = (ts) => {
+      if (Number.isFinite(ts) && ts > now && (next === null || ts < next))
+        next = ts;
+    };
+    for (const map of this.config.maps) {
+      if (!this._hasSchedule(map))
+        continue;
+      update(Number(map.expireTs));
+      update(Number(map.idleTs));
+      if (map.cronTime && map.duration) {
+        try {
+          // end of the current window and beginning of the next one
+          update(this._cronWindowBegin(map, now) + Number(map.duration));
+          update(this._cronNextBegin(map, now));
+        } catch (err) {
+          log.error(`Failed to parse cron expression ${map.cronTime}`, err.message);
+        }
+      }
+    }
+    return next;
+  }
+
+  _scheduleNextCheck() {
+    if (this.scheduleCheckTimer) {
+      clearTimeout(this.scheduleCheckTimer);
+      this.scheduleCheckTimer = null;
+    }
+    const next = this._getNextScheduleTs();
+    if (next === null)
+      return;
+    const delay = Math.min(Math.max((next - Date.now() / 1000) * 1000 + SCHEDULE_SKEW, SCHEDULE_SKEW), MAX_SCHEDULE_DELAY);
+    log.debug(`Next port forward schedule check in ${Math.floor(delay / 1000)} seconds`);
+    this.scheduleCheckTimer = setTimeout(() => {
+      lock.acquire(LOCK_SHARED, async () => {
+        await this.applySchedules();
+      }).catch((err) => {
+        log.error("Failed to apply port forward schedules", err);
+      }).then(() => this._scheduleNextCheck());
+    }, delay);
   }
 
   async _syncDMZRules(routerMode) {
     if (!this.config || !Array.isArray(this.config.maps)) return;
     for (const map of this.config.maps) {
       if (map._type !== "dmz_host") continue;
-      if (map.active === false || map.enabled === false) continue;
+      if (map.active === false || map.enabled === false || this._isScheduleSuppressed(map)) continue;
       if (!map.toIP || !this._isLANInterfaceIP(map.toIP)) continue;
       const dupMap = JSON.parse(JSON.stringify(map));
       dupMap.state = false;

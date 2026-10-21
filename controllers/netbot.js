@@ -506,6 +506,11 @@ class netBot extends ControllerBot {
 
   async _portforward(target, msg) {
     log.info("_portforward", msg);
+    // reject an invalid schedule here, the message bus gives no feedback to the app
+    const PortForward = require('../extension/portforward/portforward.js');
+    const err = PortForward.validateSchedule(msg);
+    if (err)
+      throw { code: 400, msg: err };
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
