@@ -87,6 +87,7 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 remote_branch=$(map_target_branch $branch)
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+git config "branch.$branch.remote" origin
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
 # bare fetch: the refspec above scopes it, and default tag auto-following then
 # brings only this branch's tags, which is what keeps "git describe --tags"
