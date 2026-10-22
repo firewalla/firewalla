@@ -17,6 +17,7 @@ cp $CUR_DIR/well-known-server-ports/* /home/pi/.firewalla/run/zeek/scripts/well-
 cp $CUR_DIR/dns-mac-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/http-fast-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/ssl-alpn-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
+cp $CUR_DIR/ssl-cert-chain.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/vlan-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/conn-worker-id.zeek /home/pi/.firewalla/run/zeek/scripts/
 
