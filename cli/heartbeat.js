@@ -35,6 +35,7 @@
 
 const { exec, execFile } = require('child-process-promise');
 const fs = require('fs');
+const fsp = fs.promises;
 const io2 = require('socket.io-client');
 const os = require('os');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -96,7 +97,9 @@ async function isBooted() {
 async function getCpuTemperature() {
   const tempFile = '/sys/class/thermal/thermal_zone0/temp';
   // Crystal installed in a VM may have no thermal zone
-  if (!fs.existsSync(tempFile)) {
+  try {
+    await fsp.stat(tempFile);
+  } catch (err) {
     return null;
   }
   const temp = await getShellOutput(`cat ${tempFile}`);
