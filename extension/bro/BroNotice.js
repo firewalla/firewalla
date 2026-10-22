@@ -16,6 +16,16 @@
 'use strict';
 let instance = null;
 
+// openssl verify errors (X509_verify_cert_error_string) as stable values for the app
+const CERT_ERRORS = {
+  "unable to get issuer certificate": "cert_invalid_issuer",
+  "unable to get local issuer certificate": "cert_invalid_issuer",
+  "unable to verify the first certificate": "cert_invalid_issuer",
+  "self signed certificate in certificate chain": "cert_invalid_issuer",
+  "certificate has expired": "cert_expired",
+  "certificate is not yet valid": "cert_not_yet_valid",
+};
+
 const sysManager = require('../../net2/SysManager.js')
 const fc = require('../../net2/config.js')
 const conntrack = require('../../net2/Conntrack.js')
@@ -147,6 +157,13 @@ class BroNotice {
       log.verbose("Ignoring invalid server cert notice", broObj);
       return false;
     }
+    // zeek's msg is "SSL certificate validation failed with (<openssl error>)", newer openssl spells "self-signed"
+    const status = ((/\((.*)\)$/.exec(broObj.msg) || [])[1] || "").replace("self-signed", "self signed");
+    if (status == "self signed certificate") {
+      log.verbose("Ignoring self-signed server cert notice", broObj);
+      return false;
+    }
+    alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
     // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
     try {
       const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);

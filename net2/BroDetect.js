@@ -137,7 +137,7 @@ class BroDetect {
   initWatchers() {
     const watchers = {
       "intelLog": [config.intel.path, this.processIntelData],
-      "noticeLog": [config.notice.path, this.processNoticeData, 3000], // wait 3 seconds for ssl.log to cache the conn host
+      "noticeLog": [config.notice.path, this.processNoticeData, 5000], // wait 5 seconds for ssl.log to cache the conn host and cert failure
       "dnsLog": [config.dns.path, this.processDnsData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
@@ -1827,10 +1827,13 @@ class BroDetect {
         return
       }
 
-      // do not process ssl log that does not pass the certificate validation
-      if (obj["validation_status"] && obj["validation_status"] !== "ok")
-        return;
       let dst = obj["id.resp_h"];
+      // do not process ssl log that does not pass the certificate validation, only keep why it failed
+      if (obj["validation_status"] && obj["validation_status"] !== "ok") {
+        if (!firewalla.isReservedBlockingIP(dst))
+          await this.saveCertValidationFailure(obj);
+        return;
+      }
       if (firewalla.isReservedBlockingIP(dst))
         return;
       if (obj['server_name']) {
@@ -1866,7 +1869,9 @@ class BroDetect {
 
         try {
           const multi = rclient.multi()
-          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          // delete before hmset in case number of keys is not same in old and new data, but only for a validated record,
+          // a ClientHello record of another connection must not drop the failure saveCertValidationFailure kept
+          if (obj["validation_status"]) multi.unlink(key)
           multi.hmset(key, xobj)
           if (config.ssl.expires) {
             multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
@@ -1939,6 +1944,31 @@ class BroDetect {
     } catch (e) {
       log.error("SSL:Error Unable to save", e, data);
     }
+  }
+
+  // fields from ssl-cert-chain.zeek, merged into the ssl cert key so the server_name saved at ClientHello stays
+  async saveCertValidationFailure(obj) {
+    if (!obj.cert_chain_issuers) return;
+    const key = intelTool.getSSLCertKey(obj["id.resp_h"]);
+    const xobj = {
+      validation_status: obj.validation_status,
+      cert_chain_issuers: JSON.stringify(obj.cert_chain_issuers),
+    };
+    if (obj.cert_chain_fps) xobj.cert_chain_fps = JSON.stringify(obj.cert_chain_fps);
+    // the first failed cert is enough to tell which CA broke the chain
+    if (obj.validation_failed_certs) {
+      const idx = obj.validation_failed_certs[0];
+      if (obj.cert_chain_fps) xobj.validation_failed_cert = obj.cert_chain_fps[idx];
+      xobj.validation_failed_issuer = obj.validation_failed_issuers[0];
+    }
+    const multi = rclient.multi();
+    // a culprit from an earlier failure must not outlive this one
+    multi.hdel(key, ["cert_chain_fps", "validation_failed_cert", "validation_failed_issuer"]);
+    multi.hmset(key, xobj);
+    if (config.ssl.expires) {
+      multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+    }
+    await multi.execAsync();
   }
 
   processX509Data(data) {
