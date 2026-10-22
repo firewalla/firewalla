@@ -17,6 +17,9 @@
 let instance = null;
 
 const sysManager = require('../../net2/SysManager.js')
+const fc = require('../../net2/config.js')
+const conntrack = require('../../net2/Conntrack.js')
+const Constants = require('../../net2/Constants.js')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -28,6 +31,13 @@ class BroNotice {
     if (instance === null) {
       instance = this;
     }
+  }
+
+  // zeek's src is the client; sets p.local_is_client and returns whether the alarm device is it
+  localIsClient(alarm, broObj) {
+    const isClient = alarm["p.device.ip"] == broObj.src;
+    alarm["p.local_is_client"] = isClient ? "1" : "0";
+    return isClient;
   }
 
   //  src: guesser
@@ -56,13 +66,11 @@ class BroNotice {
 
     let target = addresses[0];
 
-    if (alarm["p.device.ip"] == broObj.src) {
+    if (this.localIsClient(alarm, broObj)) {
       // attacker is internal device
-      alarm["p.local_is_client"] = "1";
       alarm["p.dest.ip"] = target;
     } else {
       // attacker is external device
-      alarm["p.local_is_client"] = "0";
       alarm["p.device.ip"] = target;
       alarm["device"] = target;
     }
@@ -74,11 +82,7 @@ class BroNotice {
   //  dst: target
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
-    if (alarm["p.device.ip"] == broObj.src) {
-      alarm["p.local_is_client"] = "1";
-    } else {
-      alarm["p.local_is_client"] = "0";
-    }
+    this.localIsClient(alarm, broObj);
     // zeek's src is always the scanner, but BroDetect files the alarm under the target
     // when src is not a local device, so the scanner is p.dest.ip in that case
     const scanner = alarm["p.local_is_client"] == "1" ? alarm["p.device.ip"] : alarm["p.dest.ip"];
@@ -95,11 +99,8 @@ class BroNotice {
   }
 
   async processHeartbleed(alarm, broObj) {
-    if (alarm["p.device.ip"] == broObj.src) {
-      alarm["p.local_is_client"] = "1";
-    } else {
+    if (!this.localIsClient(alarm, broObj)) {
       // initiated from outside
-      alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
@@ -119,11 +120,8 @@ class BroNotice {
   // on HTTP src/dst compiles with HTTP connection
   // sub: match description link
   async processTeamCymru(alarm, broObj) {
-    if (alarm["p.device.ip"] == broObj.src) {
-      alarm["p.local_is_client"] = "1";
-    } else {
+    if (!this.localIsClient(alarm, broObj)) {
       // initiated from outside
-      alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
@@ -140,8 +138,28 @@ class BroNotice {
     }
   }
 
+  //  src: tls client
+  //  dst: tls server
+  async processInvalidServerCert(alarm, broObj) {
+    if (!fc.isFeatureOn("cyber_security.invalidServerCert")) return false;
+    // local servers are dropped: self-signed NAS, printer and router UIs would only be noise
+    if (!this.localIsClient(alarm, broObj) || sysManager.isLocalIP(broObj.dst)) {
+      log.verbose("Ignoring invalid server cert notice", broObj);
+      return false;
+    }
+    // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
+    try {
+      const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);
+      if (host) alarm["p.dest.name"] = host;
+    } catch (err) {
+      log.warn("Failed to look up server name for invalid server cert notice", err.message);
+    }
+    return true;
+  }
+
   //  src: victim
   //  dst: no presence
+  // not localIsClient: here zeek's src is the attacked server, so the direction is inverse
   async processSQLInjection(alarm, broObj) {
     if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "0";
@@ -192,6 +210,10 @@ class BroNotice {
       case 'HTTP::SQL_Injection_Victim':
         await this.processSQLInjection(alarm, broObj);
         break
+
+      case "SSL::Invalid_Server_Cert":
+        if (!await this.processInvalidServerCert(alarm, broObj)) return null;
+        break;
 
       case 'Signatures::Sensitive_Signature':
         // should dealing with signature event here?

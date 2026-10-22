@@ -27,7 +27,13 @@ const V6_OUTSIDE = '2001:db8:2::10';
 // device with a host record at an address outside every subnet of the box
 const KNOWN_OUTSIDE = '10.99.0.20';
 
-const localIPs = new Set([BOX_IP, BOX_LL, LAN_DEVICE]);
+// a second LAN device, used as a local TLS server
+const LAN_SERVER = '192.168.1.20';
+
+const localIPs = new Set([BOX_IP, BOX_LL, LAN_DEVICE, LAN_SERVER]);
+const features = {};
+// conntrack host entries keyed as orig_h:orig_p:resp_h:resp_p:proto
+const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
 
 let mock;
@@ -43,6 +49,14 @@ function setupMocks() {
     isLocalIP: (ip) => localIPs.has(ip),
     isMyIP: (ip) => ip === BOX_IP,
     isMyIP6: (ip) => ip === BOX_LL || ip === BOX_V6,
+  });
+  mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
+  mock('../net2/Conntrack.js', {
+    getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
+      const host = subKey === 'host' ? connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`] : undefined;
+      if (host instanceof Error) throw host;
+      return host;
+    },
   });
   mock('../net2/HostTool.js', class HostTool {
     async getName(ip) { return names[ip] || null; }
@@ -155,6 +169,121 @@ describe('BroNotice inbound auto-block', function () {
       expect(alarm['p.dest.ip']).to.equal(REMOTE);
       expect(alarm['p.local_is_client']).to.equal('0');
       expect(alarm['p.action.block']).to.equal(true);
+    }
+  });
+});
+
+describe('BroNotice SSH password guessing', function () {
+  before(setupMocks);
+  after(restoreMocks);
+
+  function sshScan(src, dst) {
+    return {
+      ts: 1700000000.1,
+      note: 'SSH::Password_Guessing',
+      msg: `${src} appears to be guessing SSH passwords (seen in 30 connections).`,
+      sub: `Sampled servers:  ${dst}, ${dst}`,
+      src,
+      actions: ['Notice::ACTION_LOG'],
+    };
+  }
+
+  it('keeps a local guesser as the device and the sampled server as the dest', async () => {
+    const notice = sshScan(LAN_DEVICE, REMOTE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+    expect(alarm['p.local_is_client']).to.equal('1');
+    expect(alarm['p.device.ip']).to.equal(LAN_DEVICE);
+    expect(alarm['p.dest.ip']).to.equal(REMOTE);
+  });
+
+  it('files a remote guesser under the sampled local server', async () => {
+    const notice = sshScan(REMOTE, LAN_DEVICE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+    expect(alarm['p.local_is_client']).to.equal('0');
+    expect(alarm['p.device.ip']).to.equal(LAN_DEVICE);
+    expect(alarm.device).to.equal(LAN_DEVICE);
+    expect(alarm['p.message']).to.equal(`${REMOTE} appears to be guessing SSH passwords (seen in 30 connections) on device: Test Laptop`);
+  });
+});
+
+describe('BroNotice invalid server certificate', function () {
+  before(setupMocks);
+  after(restoreMocks);
+  afterEach(() => { delete features['cyber_security.invalidServerCert']; });
+
+  // zeek's validate-certs raises the notice with $conn, so src/dst are the tls client/server
+  function invalidCert(src, dst) {
+    return {
+      ts: 1700000000.1,
+      uid: 'C1a2b3',
+      'id.orig_h': src,
+      'id.orig_p': 52000,
+      'id.resp_h': dst,
+      'id.resp_p': 443,
+      note: 'SSL::Invalid_Server_Cert',
+      msg: 'SSL certificate validation failed with (self signed certificate)',
+      sub: 'CN=*.badssl.com,O=BadSSL,L=San Francisco,ST=California,C=US',
+      src,
+      dst,
+      p: 443,
+      actions: ['Notice::ACTION_LOG'],
+      suppress_for: 3600.0,
+    };
+  }
+
+  it('raises an alarm for a local client of a remote server, without auto-block', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+    expect(alarm['p.device.ip']).to.equal(LAN_DEVICE);
+    expect(alarm['p.dest.ip']).to.equal(REMOTE);
+    expect(alarm['p.local_is_client']).to.equal('1');
+    expect(alarm['p.action.block']).to.equal(undefined);
+    expect(alarm['p.message']).to.equal(notice.msg);
+  });
+
+  it('names the dest with the SNI cached for the connection', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`] = 'self-signed.badssl.com';
+    try {
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.name']).to.equal('self-signed.badssl.com');
+    } finally {
+      delete connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`];
+    }
+  });
+
+  it('leaves the dest name unset when no SNI is cached', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+    expect(alarm).to.not.equal(null);
+    expect(alarm).to.not.have.property('p.dest.name');
+  });
+
+  it('still raises the alarm when the lookup fails', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`] = new Error('redis down');
+    try {
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm).to.not.equal(null);
+      expect(alarm).to.not.have.property('p.dest.name');
+    } finally {
+      delete connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`];
+    }
+  });
+
+  it('raises nothing when the feature is off', async () => {
+    features['cyber_security.invalidServerCert'] = false;
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+  });
+
+  it('drops a local server, whichever side the client is on', async () => {
+    for (const [client, server] of [[LAN_DEVICE, LAN_SERVER], [REMOTE, LAN_SERVER]]) {
+      const notice = invalidCert(client, server);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     }
   });
 });
