@@ -463,11 +463,37 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
   const reservation = { ipAllocation: { allocations: { lan1: { type: 'static', ipv4: '192.0.2.10' } } } };
   const lan = { uuid: 'lan1', name: 'br0' };
 
-  it('writeHostsFile schedules a DHCP reload (not restart) on a FireRouter-managed box', async function() {
+  it('writeHostsFile restarts (not reloads) DHCP on a FireRouter-managed box when it cleans up a lease', async function() {
     const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true, monitoringInterfaces: [lan] });
     this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.leaseCleanupPending = false;
 
     await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: reservation });
+    expect(dnsmasq.leaseCleanupPending).to.equal(true);
+    await timers[0].fn();
+
+    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('writeHostsFile restarts DHCP when an earlier lease cleanup is still pending', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.leaseCleanupPending = true;
+
+    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: { ipAllocation: { dhcpIgnore: true } } });
+    await timers[0].fn();
+
+    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(false);
+  });
+
+  it('writeHostsFile schedules a DHCP reload (not restart) on a FireRouter-managed box when no lease is cleaned up', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.leaseCleanupPending = false;
+
+    await dnsmasq.writeHostsFile({ o: { mac: 'AA:BB:CC:DD:EE:FF' }, policy: { ipAllocation: { dhcpIgnore: true } } });
     await timers[0].fn();
 
     expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(true);
