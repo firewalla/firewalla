@@ -2114,8 +2114,8 @@ module.exports = class DNSMASQ {
     if (bulk)
       return
 
-    // reload or not is check with config hash
-    if (platform.isFireRouterManaged())
+    // a reload does not re-read the lease file, so a pending lease cleanup needs the restart
+    if (platform.isFireRouterManaged() && !this.leaseCleanupPending)
       this.scheduleReloadDHCPService()
     else
       this.scheduleRestartDHCPService()
