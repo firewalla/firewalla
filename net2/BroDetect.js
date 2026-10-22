@@ -132,7 +132,7 @@ class BroDetect {
   initWatchers() {
     const watchers = {
       "intelLog": [config.intel.path, this.processIntelData],
-      "noticeLog": [config.notice.path, this.processNoticeData],
+      "noticeLog": [config.notice.path, this.processNoticeData, 3000], // wait 3 seconds for ssl.log to cache the conn host
       "dnsLog": [config.dns.path, this.processDnsData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
