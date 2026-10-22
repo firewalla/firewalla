@@ -17,6 +17,7 @@
 let instance = null;
 
 const sysManager = require('../../net2/SysManager.js')
+const fc = require('../../net2/config.js')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -135,6 +136,18 @@ class BroNotice {
     }
   }
 
+  //  src: tls client
+  //  dst: tls server
+  processInvalidServerCert(alarm, broObj) {
+    if (!fc.isFeatureOn("cyber_security.invalidServerCert")) return false;
+    // local servers are dropped: self-signed NAS, printer and router UIs would only be noise
+    if (!this.localIsClient(alarm, broObj) || sysManager.isLocalIP(broObj.dst)) {
+      log.verbose("Ignoring invalid server cert notice", broObj);
+      return false;
+    }
+    return true;
+  }
+
   //  src: victim
   //  dst: no presence
   // not localIsClient: here zeek's src is the attacked server, so the direction is inverse
@@ -188,6 +201,10 @@ class BroNotice {
       case 'HTTP::SQL_Injection_Victim':
         await this.processSQLInjection(alarm, broObj);
         break
+
+      case "SSL::Invalid_Server_Cert":
+        if (!this.processInvalidServerCert(alarm, broObj)) return null;
+        break;
 
       case 'Signatures::Sensitive_Signature':
         // should dealing with signature event here?
