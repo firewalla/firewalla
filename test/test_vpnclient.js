@@ -361,11 +361,24 @@ describe('Test vpnClient internet check hysteresis', function() {
     expect(client.cachedInternetStates).to.eql([false]);
   });
 
-  it('should not probe a client that does not override the default route', async() => {
-    const client = newStubClient({ overrideDefaultRoute: false });
-    client._isInternetAvailable = async() => { throw new Error('should not probe'); };
-    await client._checkConnectivity();
-    expect(emitted.map(e => [e.link, e.internet])).to.eql([[true, true]]);
+  describe('a client that does not override the default route', () => {
+    let origHasMember;
+    beforeEach(() => origHasMember = VirtWanGroup.hasMember);
+    afterEach(() => VirtWanGroup.hasMember = origHasMember);
+
+    it('should not be probed outside a group', async() => {
+      VirtWanGroup.hasMember = () => false;
+      const client = newStubClient({ overrideDefaultRoute: false });
+      client._isInternetAvailable = async() => { throw new Error('should not probe'); };
+      await client._checkConnectivity();
+      expect(emitted.map(e => [e.link, e.internet])).to.eql([[true, true]]);
+    });
+
+    it('should be probed as a member of a group, which routes through it', async() => {
+      VirtWanGroup.hasMember = () => true;
+      const client = newStubClient({ overrideDefaultRoute: false });
+      expect(await run(client, [false, false])).to.eql(['', 'no-internet']);
+    });
   });
 
   it('should ping less in the check after a start, which also tells the group to refresh', async() => {
@@ -376,6 +389,54 @@ describe('Test vpnClient internet check hysteresis', function() {
     await client._checkConnectivity();
     expect(asked).to.eql([true, false]);
     expect(emitted.map(e => e.routeUpdated)).to.eql([true, false]);
+  });
+
+  describe('a route update', () => {
+    let origHasMember;
+    beforeEach(() => origHasMember = VirtWanGroup.hasMember);
+    afterEach(() => VirtWanGroup.hasMember = origHasMember);
+
+    // the cached internet verdict is what the client had before the update
+    function routeUpdateClient(settings, cached, inGroup = false) {
+      VirtWanGroup.hasMember = () => inGroup;
+      const client = newStubClient(settings);
+      client.refreshes = 0;
+      client._scheduleRefreshRoutes = () => client.refreshes++;
+      client._getCachedInternetState = async() => cached;
+      return client;
+    }
+    const reported = () => emitted.map(e => [e.link, e.internet, e.routeUpdated]);
+
+    it('should report the link up and keep the internet of the last check', async() => {
+      const client = routeUpdateClient({}, false);
+      await client._handleRouteUpdated();
+      expect(reported()).to.eql([[true, false, true]]);
+      expect(client.refreshes).to.equal(1);
+    });
+
+    it('should report the internet up when there is no last verdict', async() => {
+      await routeUpdateClient({}, null)._handleRouteUpdated();
+      expect(reported()).to.eql([[true, true, true]]);
+    });
+
+    it('should keep the internet of a member that does not override the default route', async() => {
+      await routeUpdateClient({ overrideDefaultRoute: false }, false, true)._handleRouteUpdated();
+      expect(reported()).to.eql([[true, false, true]]);
+    });
+
+    it('should report the internet up for a client that is not probed', async() => {
+      // its last verdict only copies a link that was down
+      await routeUpdateClient({ overrideDefaultRoute: false }, false)._handleRouteUpdated();
+      expect(reported()).to.eql([[true, true, true]]);
+    });
+
+    it('should only refresh the routes of a client that is stopped', async() => {
+      const client = routeUpdateClient({}, false);
+      client._started = false;
+      await client._handleRouteUpdated();
+      expect(emitted).to.eql([]);
+      expect(client.refreshes).to.equal(1);
+    });
   });
 
   it('should discard a sample that finishes after the client is stopped', async() => {
@@ -865,31 +926,19 @@ describe('Test vpnClient internet probes', function() {
 describe('Test virtual wan group members', function() {
   this.timeout(3000);
 
-  const clients = {};
-  let origGetInstance;
-  before(() => {
-    origGetInstance = VPNClient.getInstance;
-    VPNClient.getInstance = (profileId) => clients[profileId] || null;
-    for (const [profileId, overrideDefaultRoute] of [['direct', false], ['internet', true], ['internet2', true]])
-      clients[profileId] = { loadSettings: async() => ({ overrideDefaultRoute }) };
-  });
-  after(() => {
-    VPNClient.getInstance = origGetInstance;
-  });
-
-  it('should find the members that do not override the default route', async() => {
-    const wans = [{ profileId: 'internet', seq: 0 }, { profileId: 'direct', seq: 1 }, { profileId: 'unknown', seq: 2 }];
-    expect(await VirtWanGroup.getDirectMembers(wans)).to.eql(['direct']);
-    expect(await VirtWanGroup.getDirectMembers([wans[0], wans[2]])).to.eql([]);
-  });
-
-  it('should reject a group with such a member with 400, before anything is written', async() => {
-    let error;
-    await virtWanGroupManager.createOrUpdateVirtWanGroup({
-      name: 'test', type: 'primary_standby', wans: [{ profileId: 'internet2', seq: 0 }, { profileId: 'direct', seq: 1 }]
-    }).catch(err => error = err);
-    expect(error).to.include({ code: 400 });
-    expect(error.msg).to.contain('direct');
+  it('should tell whether a vpn client is a member of a group', () => {
+    const group = new VirtWanGroup({
+      uuid: '00000000-0000-4000-8000-000000000001', name: 'test', type: 'primary_standby',
+      wans: [{ profileId: 'internet', seq: 0 }, { profileId: 'direct', seq: 1 }]
+    });
+    try {
+      expect(VirtWanGroup.hasMember('direct')).to.equal(true);
+      expect(VirtWanGroup.hasMember('internet')).to.equal(true);
+      expect(VirtWanGroup.hasMember('other')).to.equal(false);
+    } finally {
+      group.wans = []; // the instance stays registered, there is no environment to destroy here
+    }
+    expect(VirtWanGroup.hasMember('direct')).to.equal(false);
   });
 });
 

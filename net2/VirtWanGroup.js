@@ -101,15 +101,8 @@ class VirtWanGroup {
     return refreshNeeded;
   }
 
-  // a Direct client is never probed for loss of internet, so as a member it would never fail over for it
-  static async getDirectMembers(wans) {
-    const result = [];
-    for (const wan of wans) {
-      const c = VPNClient.getInstance(wan.profileId);
-      if (c && !(await c.loadSettings()).overrideDefaultRoute)
-        result.push(wan.profileId);
-    }
-    return result;
+  static hasMember(profileId) {
+    return Object.values(instances).some(group => group.wans.some(wan => wan.profileId === profileId));
   }
 
   static getRedisKeyName(uuid) {
@@ -672,13 +665,6 @@ class VirtWanGroup {
     // create ip rule
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`);
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6);
-    // only informs, a member whose settings cannot be read must not leave the group without its environment
-    const directMembers = await VirtWanGroup.getDirectMembers(this.wans).catch((err) => {
-      log.warn(`Failed to check the members of virtual wan group ${this.uuid}`, err.message);
-      return [];
-    });
-    for (const profileId of directMembers)
-      log.warn(`VPN client ${profileId} in virtual wan group ${this.uuid} does not override the default route, its loss of internet is not detected`);
   }
 
   // this function is invoked when the virtual wan group is removed

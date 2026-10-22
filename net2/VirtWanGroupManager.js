@@ -99,9 +99,6 @@ class VirtWanGroupManager {
   }
 
   async createOrUpdateVirtWanGroup(o) {
-    const directMembers = await VirtWanGroup.getDirectMembers(o.wans);
-    if (!_.isEmpty(directMembers))
-      throw { code: 400, msg: `VPN client ${directMembers} does not override the default route and cannot be a member` };
     if (!o.uuid) {
       o.uuid = require('uuid').v4();
     }

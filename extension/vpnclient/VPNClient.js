@@ -84,19 +84,9 @@ class VPNClient {
           const channel = this._getRedisRouteUpdateMessageChannel();
           sclient.on("message", (c, message) => {
             if (c === channel && message === this.profileId) {
-              log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
-              this._scheduleRefreshRoutes();
-              // emit link state change event immediately, with the tunnel up. it does not wait for the internet check, the next check judges it again
-              if (this._started) {
-                sem.emitEvent({
-                  type: "link_state_change",
-                  profileId: this.profileId,
-                  link: true,
-                  internet: true,
-                  routeUpdated: true,
-                  suppressEventLogging: true,
-                });
-              }
+              this._handleRouteUpdated().catch((err) => {
+                log.error(`Failed to handle route update of VPN client ${this.profileId}`, err.message);
+              });
             }
           });
           sclient.subscribe(channel);
@@ -104,6 +94,34 @@ class VPNClient {
       }
     }
     return instances[profileId];
+  }
+
+  // a route update only says the tunnel is back (openvpn reconnected by itself), so the internet keeps its last verdict until the next check
+  async _handleRouteUpdated() {
+    log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
+    this._scheduleRefreshRoutes();
+    if (!this._started)
+      return;
+    let internet = true;
+    if (this._isInternetProbed()) {
+      const lastInternet = await this._getCachedInternetState();
+      if (lastInternet !== null)
+        internet = lastInternet;
+    }
+    sem.emitEvent({
+      type: "link_state_change",
+      profileId: this.profileId,
+      link: true,
+      internet,
+      routeUpdated: true,
+      suppressEventLogging: true,
+    });
+  }
+
+  // a virtual wan group routes through its members whether or not they override the default route
+  _isInternetProbed() {
+    const VirtWanGroup = require('../../net2/VirtWanGroup.js');
+    return Boolean(this.settings.overrideDefaultRoute) || VirtWanGroup.hasMember(this.profileId);
   }
 
   static getInstance(profileId) {
@@ -432,13 +450,13 @@ class VPNClient {
     if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
       return;
     const link = await this._isLinkUp();
-    // a client that does not override the default route is not tested for the internet, it has it as long as its link is up
+    // a client that carries no default route is not tested for the internet, it has it as long as its link is up
     let internet = link;
     if (link === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
-      if (this.settings.overrideDefaultRoute) {
+      if (this._isInternetProbed()) {
         const internetAvailability = await this._isInternetAvailable(force);
         if (internetAvailability === null) {
           // could not tell: neither counter moves. a probe that stays blind falls back to the link-only verdict,
