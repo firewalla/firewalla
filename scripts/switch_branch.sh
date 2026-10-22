@@ -72,6 +72,8 @@ switch_branch() {
     fi
     git checkout -f -B $tgt_branch origin/$remote_branch || exit 1
     git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+    git config "branch.$tgt_branch.remote" origin
+    git config "branch.$tgt_branch.merge" "refs/heads/$remote_branch"
     ) || return 1
 
     # node modules repo; the pin file comes from the target branch tree
