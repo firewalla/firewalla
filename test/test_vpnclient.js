@@ -437,6 +437,13 @@ describe('Test vpnClient internet check hysteresis', function() {
       expect(emitted).to.eql([]);
       expect(client.refreshes).to.equal(1);
     });
+
+    it('should report nothing when the client is stopped while the last verdict is read', async() => {
+      const client = routeUpdateClient({}, false);
+      client._getCachedInternetState = async() => { client._started = false; return false; };
+      await client._handleRouteUpdated();
+      expect(emitted).to.eql([]);
+    });
   });
 
   it('should discard a sample that finishes after the client is stopped', async() => {

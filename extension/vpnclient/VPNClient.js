@@ -108,6 +108,9 @@ class VPNClient {
       if (lastInternet !== null)
         internet = lastInternet;
     }
+    // stop() may have run while the cache was read
+    if (!this._started)
+      return;
     sem.emitEvent({
       type: "link_state_change",
       profileId: this.profileId,
