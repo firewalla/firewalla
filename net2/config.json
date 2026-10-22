@@ -1108,7 +1108,6 @@
     "notice": {
       "monitor": {},
       "ignore": {
-        "SSL::Invalid_Server_Cert": "ignore",
         "PacketFilter::Dropped_Packets": "ignore",
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
@@ -1220,6 +1219,7 @@
     "cyber_security": true,
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
+    "cyber_security.invalidServerCert": true,
     "vulnerability": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
