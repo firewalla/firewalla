@@ -49,6 +49,7 @@
     "notification.resend.duration": 86400,
     "notification.resend.maxcount": 50,
     "alarm.sshPwdGuess.cooldown": 3600,
+    "alarm.invalidServerCert.cooldown": 3600,
     "monitor.tick": 900,
     "monitor.window": 14400,
     "monitor.neighbor.max": 20,

@@ -33,6 +33,9 @@ class SSLIntel extends Intel {
             let detailKey = "e.dest.ssl." + key;
             alarm[detailKey] = sslInfo[key];
           }
+          // also a basic field: dedup only loads basic fields of earlier alarms
+          if (sslInfo.validation_failed_issuer)
+            alarm["p.dest.ssl.validation_failed_issuer"] = sslInfo.validation_failed_issuer;
         }
       } catch (err) {
           log.error("Failed to get ssl cert info: " + err);
