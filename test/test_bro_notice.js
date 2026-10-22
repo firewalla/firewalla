@@ -32,6 +32,8 @@ const LAN_SERVER = '192.168.1.20';
 
 const localIPs = new Set([BOX_IP, BOX_LL, LAN_DEVICE, LAN_SERVER]);
 const features = {};
+// conntrack host entries keyed as orig_h:orig_p:resp_h:resp_p:proto
+const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
 
 let mock;
@@ -49,6 +51,13 @@ function setupMocks() {
     isMyIP6: (ip) => ip === BOX_LL || ip === BOX_V6,
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
+  mock('../net2/Conntrack.js', {
+    getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
+      const host = subKey === 'host' ? connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`] : undefined;
+      if (host instanceof Error) throw host;
+      return host;
+    },
+  });
   mock('../net2/HostTool.js', class HostTool {
     async getName(ip) { return names[ip] || null; }
   });
@@ -233,6 +242,36 @@ describe('BroNotice invalid server certificate', function () {
     expect(alarm['p.local_is_client']).to.equal('1');
     expect(alarm['p.action.block']).to.equal(undefined);
     expect(alarm['p.message']).to.equal(notice.msg);
+  });
+
+  it('names the dest with the SNI cached for the connection', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`] = 'self-signed.badssl.com';
+    try {
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.name']).to.equal('self-signed.badssl.com');
+    } finally {
+      delete connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`];
+    }
+  });
+
+  it('leaves the dest name unset when no SNI is cached', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+    expect(alarm).to.not.equal(null);
+    expect(alarm).to.not.have.property('p.dest.name');
+  });
+
+  it('still raises the alarm when the lookup fails', async () => {
+    const notice = invalidCert(LAN_DEVICE, REMOTE);
+    connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`] = new Error('redis down');
+    try {
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm).to.not.equal(null);
+      expect(alarm).to.not.have.property('p.dest.name');
+    } finally {
+      delete connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`];
+    }
   });
 
   it('raises nothing when the feature is off', async () => {
