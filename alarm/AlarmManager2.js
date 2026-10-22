@@ -2211,6 +2211,18 @@ module.exports = class {
     return vendor;
   }
 
+  // device ip, mac and VPN guid of an alarm from a mac or guid and/or an ip, enrichDeviceInfo fills in the rest.
+  // null when it is neither a known host nor an identity
+  async getDeviceAlarmFields({ ip, mac }) {
+    const macEntry = mac && await hostTool.getMACEntry(mac);
+    if (macEntry)
+      return { "p.device.ip": macEntry.ipv4 || macEntry.ipv6 || ip, "p.device.mac": mac };
+    const identity = ip ? IdentityManager.getIdentityByIP(ip) : mac && IdentityManager.getIdentityByGUID(mac);
+    if (!identity) return null;
+    const guid = identity.getGUID();
+    return { "p.device.ip": ip || identity.getIPs()[0], "p.device.mac": guid, "p.device.guid": guid };
+  }
+
   async enrichDeviceInfo(alarm) {
     const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN', 'ALARM_VPN_CLIENT_CONNECTION'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
