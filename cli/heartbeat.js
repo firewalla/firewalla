@@ -35,6 +35,7 @@
 
 const { exec, execFile } = require('child-process-promise');
 const fs = require('fs');
+const fsp = fs.promises;
 const io2 = require('socket.io-client');
 const os = require('os');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -94,7 +95,14 @@ async function isBooted() {
 }
 
 async function getCpuTemperature() {
-  const temp = await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+  const tempFile = '/sys/class/thermal/thermal_zone0/temp';
+  // Crystal installed in a VM may have no thermal zone
+  try {
+    await fsp.stat(tempFile);
+  } catch (err) {
+    return null;
+  }
+  const temp = await getShellOutput(`cat ${tempFile}`);
   return Number(temp);
 }
 
@@ -345,6 +353,9 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
 async function monitorTemperature() {
   try {
       const cpuTempCurrent = await getCpuTemperature();
+      if (cpuTempCurrent === null) {
+        return;
+      }
       const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
       const sysStateCurrent = (cpuTempCurrent>cpuTempThreshold) ? "overheated":"normal";
       const sysStateOther = (cpuTempCurrent>cpuTempThreshold) ? "normal":"overheated";
