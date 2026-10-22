@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/03_remove_crontab.sh

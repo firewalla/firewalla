@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/04_docker_compose.sh
