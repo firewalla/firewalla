@@ -163,6 +163,8 @@ done
 
 if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
   $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+  # check and retry the ca installation here to address any previous installation failures.
+  $FIREWALLA_HOME/scripts/update_ca_certificates.sh
 fi
 
 logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"
