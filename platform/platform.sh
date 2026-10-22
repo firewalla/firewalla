@@ -64,7 +64,7 @@ function get_cloud_endpoint {
   fi
 }
 
-NODE_UPGRADE_VERSION=v24.21.0   # must match NODE_UPGRADE_VERSION in firerouter bin/node
+NODE_UPGRADE_VERSION=v24.22.1   # must match NODE_UPGRADE_VERSION in firerouter bin/node
 : ${NODE_VERSIONS_DIR:=/home/pi/.node_versions}
 
 # Upgraded Node, installed by scripts/install_node.sh from assets and shared with firerouter.
