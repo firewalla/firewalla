@@ -158,3 +158,38 @@ describe('BroNotice inbound auto-block', function () {
     }
   });
 });
+
+describe('BroNotice SSH password guessing', function () {
+  before(setupMocks);
+  after(restoreMocks);
+
+  function sshScan(src, dst) {
+    return {
+      ts: 1700000000.1,
+      note: 'SSH::Password_Guessing',
+      msg: `${src} appears to be guessing SSH passwords (seen in 30 connections).`,
+      sub: `Sampled servers:  ${dst}, ${dst}`,
+      src,
+      actions: ['Notice::ACTION_LOG'],
+    };
+  }
+
+  it('keeps a local guesser as the device and the sampled server as the dest', async () => {
+    const notice = sshScan(LAN_DEVICE, REMOTE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+    expect(alarm['p.local_is_client']).to.equal('1');
+    expect(alarm['p.device.ip']).to.equal(LAN_DEVICE);
+    expect(alarm['p.dest.ip']).to.equal(REMOTE);
+  });
+
+  it('files a remote guesser under the sampled local server', async () => {
+    const notice = sshScan(REMOTE, LAN_DEVICE);
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+
+    expect(alarm['p.local_is_client']).to.equal('0');
+    expect(alarm['p.device.ip']).to.equal(LAN_DEVICE);
+    expect(alarm.device).to.equal(LAN_DEVICE);
+    expect(alarm['p.message']).to.equal(`${REMOTE} appears to be guessing SSH passwords (seen in 30 connections) on device: Test Laptop`);
+  });
+});
