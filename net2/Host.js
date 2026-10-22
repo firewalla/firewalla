@@ -287,7 +287,7 @@ class Host extends Monitorable {
       return;
     try {
       const parsed = JSON.parse(autoGroup);
-      if (!parsed || !parsed.tag || !parsed.ssid)
+      if (!parsed || !parsed.tag || (!parsed.ssid && parsed.auth !== "mab"))
         return;
       this.o.autoGroup = parsed;
       await this.save(["autoGroup"]);
@@ -298,12 +298,12 @@ class Host extends Monitorable {
 
   // 1. if not connected (no staStatus), keep autoGroup until expire
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
-  // 3. otherwise (ppsk/default), reset if connected on a different ssid
+  // 3. otherwise (ppsk/default/mab), reset if connected on a different ssid, mab may have no ssid
   async getHostAutoGroup(staStatus) {
     if (!this.o.autoGroup)
       return null;
     const autoGroup = this.o.autoGroup;
-    if (!_.isObject(autoGroup) || !autoGroup.tag || !autoGroup.ssid) {
+    if (!_.isObject(autoGroup) || !autoGroup.tag || (!autoGroup.ssid && autoGroup.auth !== "mab")) {
       await this.resetAutoGroupAsync();
       return null;
     }
