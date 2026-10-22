@@ -30,4 +30,8 @@ else
   [[ -e $PLATFORM_HOOK_DIR/local.bro ]] && sudo bash -c "cat $PLATFORM_HOOK_DIR/local.bro ${ADDITIONAL_FILE} > /usr/local/$BRO_PROC_NAME/share/$BRO_PROC_NAME/site/local.$BRO_PROC_NAME"
 fi
 
+# the CA list bundled with zeek is outdated, replace it with one generated from the system bundle
+ZEEK_CA_LIST=/usr/local/zeek/share/zeek/base/protocols/ssl/mozilla-ca-list.zeek
+[[ -e $ZEEK_CA_LIST ]] && sudo cp $CUR_DIR/mozilla-ca-list.zeek $ZEEK_CA_LIST
+
 sync
