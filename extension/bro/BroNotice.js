@@ -18,6 +18,8 @@ let instance = null;
 
 const sysManager = require('../../net2/SysManager.js')
 const fc = require('../../net2/config.js')
+const conntrack = require('../../net2/Conntrack.js')
+const Constants = require('../../net2/Constants.js')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -138,12 +140,19 @@ class BroNotice {
 
   //  src: tls client
   //  dst: tls server
-  processInvalidServerCert(alarm, broObj) {
+  async processInvalidServerCert(alarm, broObj) {
     if (!fc.isFeatureOn("cyber_security.invalidServerCert")) return false;
     // local servers are dropped: self-signed NAS, printer and router UIs would only be noise
     if (!this.localIsClient(alarm, broObj) || sysManager.isLocalIP(broObj.dst)) {
       log.verbose("Ignoring invalid server cert notice", broObj);
       return false;
+    }
+    // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
+    try {
+      const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);
+      if (host) alarm["p.dest.name"] = host;
+    } catch (err) {
+      log.warn("Failed to look up server name for invalid server cert notice", err.message);
     }
     return true;
   }
@@ -203,7 +212,7 @@ class BroNotice {
         break
 
       case "SSL::Invalid_Server_Cert":
-        if (!this.processInvalidServerCert(alarm, broObj)) return null;
+        if (!await this.processInvalidServerCert(alarm, broObj)) return null;
         break;
 
       case 'Signatures::Sensitive_Signature':
