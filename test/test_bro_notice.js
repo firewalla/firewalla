@@ -214,7 +214,7 @@ describe('BroNotice invalid server certificate', function () {
   afterEach(() => { delete features['cyber_security.invalidServerCert']; });
 
   // zeek's validate-certs raises the notice with $conn, so src/dst are the tls client/server
-  function invalidCert(src, dst) {
+  function invalidCert(src, dst, status = 'unable to get local issuer certificate') {
     return {
       ts: 1700000000.1,
       uid: 'C1a2b3',
@@ -223,7 +223,7 @@ describe('BroNotice invalid server certificate', function () {
       'id.resp_h': dst,
       'id.resp_p': 443,
       note: 'SSL::Invalid_Server_Cert',
-      msg: 'SSL certificate validation failed with (self signed certificate)',
+      msg: `SSL certificate validation failed with (${status})`,
       sub: 'CN=*.badssl.com,O=BadSSL,L=San Francisco,ST=California,C=US',
       src,
       dst,
@@ -278,6 +278,29 @@ describe('BroNotice invalid server certificate', function () {
     features['cyber_security.invalidServerCert'] = false;
     const notice = invalidCert(LAN_DEVICE, REMOTE);
     expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+  });
+
+  it('raises nothing for a self-signed leaf, in either openssl spelling', async () => {
+    for (const status of ['self signed certificate', 'self-signed certificate']) {
+      const notice = invalidCert(LAN_DEVICE, REMOTE, status);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    }
+  });
+
+  it('records the validation failure on the alarm as a constant', async () => {
+    const expected = {
+      'unable to get local issuer certificate': 'cert_invalid_issuer',
+      'self signed certificate in certificate chain': 'cert_invalid_issuer',
+      'self-signed certificate in certificate chain': 'cert_invalid_issuer',
+      'certificate has expired': 'cert_expired',
+      'certificate is not yet valid': 'cert_not_yet_valid',
+      'certificate signature failure': 'cert_invalid',
+    };
+    for (const [status, constant] of Object.entries(expected)) {
+      const notice = invalidCert(LAN_DEVICE, REMOTE, status);
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_status']).to.equal(constant);
+    }
   });
 
   it('drops a local server, whichever side the client is on', async () => {
