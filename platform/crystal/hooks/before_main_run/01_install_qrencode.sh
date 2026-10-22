@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/01_install_qrencode.sh

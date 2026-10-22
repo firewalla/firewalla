@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/09_update_fake_hwclock_service.sh
