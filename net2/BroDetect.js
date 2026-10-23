@@ -1845,8 +1845,10 @@ class BroDetect {
         try {
           const multi = rclient.multi()
           // delete before hmset in case number of keys is not same in old and new data, but only for a validated record,
-          // a ClientHello record of another connection must not drop the failure saveCertValidationFailure kept
+          // a ClientHello record of another connection must not drop the failure saveCertValidationFailure kept.
+          // it has no subject though, so an old one, maybe of another host on this ip, goes
           if (obj["validation_status"]) multi.unlink(key)
+          else multi.hdel(key, "subject")
           multi.hmset(key, xobj)
           if (config.ssl.expires) {
             multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
