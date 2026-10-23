@@ -1003,20 +1003,20 @@ module.exports = class HostManager extends Monitorable {
     json.internetSpeedtestResults = results;
   }
 
-  async listLatestAllStateEvents(json) {
+  async listLatestAllStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest all state events");
-      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true);
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true, stateEventTypeFilter);
       if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
     } catch (err) {
       log.error("failed to get latest all state events:",err);
     }
   }
 
-  async listLatestErrorStateEvents(json) {
+  async listLatestErrorStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest error state events");
-      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true);
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true, stateEventTypeFilter);
       if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
     } catch (err) {
       log.error("failed to get latest error state events:",err);
@@ -1711,8 +1711,8 @@ module.exports = class HostManager extends Monitorable {
       this.ruleGroupsForInit(json),
       this.virtWanGroupsForInit(json),
       this.getLatestConnStates(json),
-      this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json),
+      this.listLatestAllStateEvents(json, options.stateEventTypeFilter),
+      this.listLatestErrorStateEvents(json, options.stateEventTypeFilter),
       this.loadDDNSForInit(json),
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
