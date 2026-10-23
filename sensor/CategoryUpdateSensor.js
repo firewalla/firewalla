@@ -529,6 +529,13 @@ class CategoryUpdateSensor extends Sensor {
     // a part can be reassigned to another category while this callback stays attached to the
     // cache item, so trust the current mapping over the one captured when it was created
     const owner = categoryUpdater.getCategoryByBfPart(part) || category;
+    // updateCategory() can drop a part while cloudcache is downloading it, and the part-to-category
+    // mapping keeps removed parts. Applying that late download would put the data file and its meta
+    // back for a part no round will ever list as removed again, so they would never be cleaned up.
+    if (!categoryUpdater.getCategoryBfParts(owner).includes(part)) {
+      log.info(`Part ${part} is no longer a part of category ${owner}, ignore its bf update`);
+      return;
+    }
     // Category:Delete drops the category and its dnsmasq config but leaves the bf cache item
     // registered, so this callback outlives the category it was created for. Without this check
     // the next filter the cloud publishes would recreate the conf of a target list the user
