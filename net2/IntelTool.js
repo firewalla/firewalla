@@ -802,6 +802,14 @@ class IntelTool {
     return result;
   }
 
+  // issuer DN of the first cert that failed validation on this server, saved by BroDetect.saveCertValidationFailure
+  async getCertFailedIssuer(ip) {
+    const value = await rclient.hgetAsync(this.getSSLCertKey(ip), "validation_failed_issuer");
+    if (!value) return null;
+    // saved as a DN string before it was saved as an object
+    return value.startsWith("{") ? JSON.parse(value) : this.parseDN(value);
+  }
+
   // RFC 2253 DN as zeek and openssl print it, e.g. "CN=a\, b,O=c" -> {CN: "a, b", O: "c"}.
   // a repeated attribute (OU, DC) becomes an array of its values in order
   parseDN(dn) {

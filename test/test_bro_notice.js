@@ -35,6 +35,8 @@ const features = {};
 // conntrack host entries keyed as orig_h:orig_p:resp_h:resp_p:proto
 const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
+// failed issuer saved on the ssl cert key, by server ip; an Error is thrown by the lookup
+const failedIssuers = {};
 
 let mock;
 let cacheSnapshot;
@@ -51,6 +53,14 @@ function setupMocks() {
     isMyIP6: (ip) => ip === BOX_LL || ip === BOX_V6,
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
+  mock('../net2/IntelTool.js', class IntelTool {
+    async getCertFailedIssuer(ip) {
+      if (failedIssuers[ip] instanceof Error) throw failedIssuers[ip];
+      return failedIssuers[ip] || null;
+    }
+    // enough for the plain DNs used here
+    parseDN(dn) { return Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))); }
+  });
   mock('../net2/Conntrack.js', {
     getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
       const host = subKey === 'host' ? connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`] : undefined;
@@ -301,6 +311,47 @@ describe('BroNotice invalid server certificate', function () {
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
       expect(alarm['p.dest.ssl.validation_status']).to.equal(constant);
     }
+  });
+
+  describe('failed issuer', () => {
+    afterEach(() => {
+      delete failedIssuers[REMOTE];
+      broNotice.setIgnoredIssuers(null);
+    });
+
+    it('puts the failed issuer on the alarm as an object', async () => {
+      failedIssuers[REMOTE] = { CN: 'emSign ECC Root CA - G3', C: 'IN' };
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_failed_issuer']).to.deep.equal({ CN: 'emSign ECC Root CA - G3', C: 'IN' });
+    });
+
+    it('drops an issuer of the default list, whatever the attribute order', async () => {
+      failedIssuers[REMOTE] = { C: 'US', ST: 'Washington', L: 'Redmond', O: 'Microsoft Corporation', CN: 'Microsoft Root Certificate Authority 2011' };
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    });
+
+    it('uses the cloud list instead of the default one, and falls back when it is empty', async () => {
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      broNotice.setIgnoredIssuers(['C=US,O=Other Root']);
+      failedIssuers[REMOTE] = { O: 'Other Root', C: 'US' };
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+      failedIssuers[REMOTE] = { C: 'US', ST: 'Washington', L: 'Redmond', O: 'Microsoft Corporation', CN: 'Microsoft Root Certificate Authority 2011' };
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
+      broNotice.setIgnoredIssuers([]);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    });
+
+    it('still raises the alarm, without the issuer, when none is saved or the lookup fails', async () => {
+      for (const saved of [undefined, new Error('redis down')]) {
+        failedIssuers[REMOTE] = saved;
+        const notice = invalidCert(LAN_DEVICE, REMOTE);
+        const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+        expect(alarm).to.not.equal(null);
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_issuer');
+      }
+    });
   });
 
   it('drops a local server, whichever side the client is on', async () => {
