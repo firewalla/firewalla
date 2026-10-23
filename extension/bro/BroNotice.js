@@ -33,6 +33,7 @@ const Constants = require('../../net2/Constants.js')
 const IntelTool = require('../../net2/IntelTool.js')
 const intelTool = new IntelTool()
 const _ = require('lodash')
+const validator = require('validator')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -198,6 +199,12 @@ class BroNotice {
       return false;
     }
     alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
+    // a CN that is no domain, e.g. "Mijia Cloud", is a private CA's device cert, never meant for public CA validation
+    const cns = [].concat(intelTool.parseDN(broObj.sub || "").CN || []);
+    if (cns.length && !cns.some(cn => validator.isFQDN(cn.startsWith("*.") ? cn.slice(2) : cn, { allow_underscores: true }))) {
+      log.verbose("Ignoring invalid server cert notice of a non-domain CN", broObj.sub);
+      return false;
+    }
     // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
     try {
       const issuer = await intelTool.getCertFailedIssuer(broObj.dst);

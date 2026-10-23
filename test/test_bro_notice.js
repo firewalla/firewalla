@@ -354,6 +354,20 @@ describe('BroNotice invalid server certificate', function () {
     });
   });
 
+  it('raises nothing when the cert CN is not a domain', async () => {
+    for (const sub of ['CN=Mijia Cloud,O=Xiaomi', 'CN=localhost', 'CN=192.168.1.1,O=Router']) {
+      const notice = Object.assign(invalidCert(LAN_DEVICE, REMOTE), { sub });
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    }
+  });
+
+  it('keeps a domain or wildcard CN, and a subject without CN', async () => {
+    for (const sub of ['CN=*.badssl.com,O=BadSSL', 'CN=dv-g3b-emudhra.we-have-a-problem.com', 'O=No CN Inc', undefined]) {
+      const notice = Object.assign(invalidCert(LAN_DEVICE, REMOTE), { sub });
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
+    }
+  });
+
   it('drops a local server, whichever side the client is on', async () => {
     for (const [client, server] of [[LAN_DEVICE, LAN_SERVER], [REMOTE, LAN_SERVER]]) {
       const notice = invalidCert(client, server);
