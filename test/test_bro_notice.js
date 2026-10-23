@@ -327,7 +327,7 @@ describe('BroNotice invalid server certificate', function () {
       failedFps[REMOTE] = 'ba105ce02bac';
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
-      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ CN: 'emSign ECC Root CA - G3', C: 'IN' });
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
       expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
     });
 
