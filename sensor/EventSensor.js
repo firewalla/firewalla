@@ -78,7 +78,7 @@ class EventSensor extends Sensor {
         extensionManager.onGet("latestAllStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestStateEventsAll(data.parse_json);
+                let result = await ea.listLatestStateEventsAll(data.parse_json, data.stateEventTypeFilter);
                 return result;
             } catch (err) {
                 log.error(`failed to list latest all events with ${JSON.stringify(data)}, ${err}`);
@@ -88,7 +88,7 @@ class EventSensor extends Sensor {
         extensionManager.onGet("latestErrorStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest error events with data(${JSON.stringify(data)})`);
-                let result = await ea.listLatestStateEventsError(data.parse_json);
+                let result = await ea.listLatestStateEventsError(data.parse_json, data.stateEventTypeFilter);
                 return result;
             } catch (err) {
                 log.error(`failed to list latest error events with ${JSON.stringify(data)}, ${err}`);
