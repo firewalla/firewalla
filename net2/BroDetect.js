@@ -1929,21 +1929,23 @@ class BroDetect {
   async saveCertValidationFailure(obj) {
     if (!obj.cert_chain_issuers) return;
     const key = intelTool.getSSLCertKey(obj["id.resp_h"]);
-    const xobj = {
-      validation_status: obj.validation_status,
-      // DNs as objects, e.g. {"CN": "...", "O": "..."}, easier for the app than RFC 2253 strings
-      cert_chain_issuers: JSON.stringify(obj.cert_chain_issuers.map(dn => intelTool.parseDN(dn))),
-    };
-    if (obj.cert_chain_fps) xobj.cert_chain_fps = JSON.stringify(obj.cert_chain_fps);
+    const fps = obj.cert_chain_fps || [];
+    const notBefore = obj.cert_chain_not_valid_before || [];
+    const notAfter = obj.cert_chain_not_valid_after || [];
+    // one object per server-sent cert, leaf first; DNs as objects, easier for the app than RFC 2253 strings
+    const chain = obj.cert_chain_issuers.map((dn, i) => ({
+      fp: fps[i], issuer: intelTool.parseDN(dn), not_valid_before: notBefore[i], not_valid_after: notAfter[i]
+    }));
+    const xobj = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
     // the first failed cert is enough to tell which CA broke the chain
     if (obj.validation_failed_certs) {
-      const idx = obj.validation_failed_certs[0];
-      if (obj.cert_chain_fps) xobj.validation_failed_cert = obj.cert_chain_fps[idx];
       xobj.validation_failed_issuer = JSON.stringify(intelTool.parseDN(obj.validation_failed_issuers[0]));
+      const fp = fps[obj.validation_failed_certs[0]];
+      if (fp) xobj.validation_failed_fp = fp;
     }
     const multi = rclient.multi();
-    // a culprit from an earlier failure must not outlive this one
-    multi.hdel(key, ["cert_chain_fps", "validation_failed_cert", "validation_failed_issuer"]);
+    // a culprit from an earlier failure must not outlive this one, nor fields of the earlier format
+    multi.hdel(key, ["validation_failed_issuer", "validation_failed_fp", "cert_chain_fps", "cert_chain_issuers", "validation_failed_cert"]);
     multi.hmset(key, xobj);
     if (config.ssl.expires) {
       multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);

@@ -37,6 +37,8 @@ const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
 // failed issuer saved on the ssl cert key, by server ip; an Error is thrown by the lookup
 const failedIssuers = {};
+// sha256 of the first failed cert saved on the ssl cert key, by server ip
+const failedFps = {};
 
 let mock;
 let cacheSnapshot;
@@ -54,9 +56,9 @@ function setupMocks() {
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
   mock('../net2/IntelTool.js', class IntelTool {
-    async getCertFailedIssuer(ip) {
+    async getCertValidationFailure(ip) {
       if (failedIssuers[ip] instanceof Error) throw failedIssuers[ip];
-      return failedIssuers[ip] || null;
+      return { issuer: failedIssuers[ip] || null, fp: failedFps[ip] || null };
     }
     // enough for the plain DNs used here
     parseDN(dn) { return Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))); }
@@ -316,14 +318,17 @@ describe('BroNotice invalid server certificate', function () {
   describe('failed issuer', () => {
     afterEach(() => {
       delete failedIssuers[REMOTE];
+      delete failedFps[REMOTE];
       broNotice.setIgnoredIssuers(null);
     });
 
-    it('puts the failed issuer on the alarm as an object', async () => {
+    it('puts the first failed cert issuer and fingerprint on the alarm', async () => {
       failedIssuers[REMOTE] = { CN: 'emSign ECC Root CA - G3', C: 'IN' };
+      failedFps[REMOTE] = 'ba105ce02bac';
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
-      expect(alarm['p.dest.ssl.validation_failed_issuer']).to.deep.equal({ CN: 'emSign ECC Root CA - G3', C: 'IN' });
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ CN: 'emSign ECC Root CA - G3', C: 'IN' });
+      expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
     });
 
     it('drops an issuer of the default list, whatever the attribute order', async () => {
@@ -349,7 +354,8 @@ describe('BroNotice invalid server certificate', function () {
         const notice = invalidCert(LAN_DEVICE, REMOTE);
         const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
         expect(alarm).to.not.equal(null);
-        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_issuer');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_fp');
       }
     });
   });
