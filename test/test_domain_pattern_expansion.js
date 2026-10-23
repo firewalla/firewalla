@@ -19,6 +19,7 @@ const { expect } = require('chai');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const DNSTool = require('../net2/DNSTool.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
+const OldDataCleanSensor = require('../sensor/OldDataCleanSensor.js');
 
 // a subdomain list larger than the max number of function arguments (~125k on node 12)
 // used to crash category ipset recycle with "RangeError: Maximum call stack size exceeded"
@@ -161,24 +162,27 @@ describe('Test subdomains2 zset lifecycle', function() {
   const dnsTool = new DNSTool();
   const SUFFIX2 = 'fwtest-subdomains2.com';
   const KEY2 = `subdomains2:${SUFFIX2}`;
+  const LEGACY_KEY2 = `subdomains:${SUFFIX2}`;
 
   beforeEach(async () => {
     await unlinkByPattern(`rdns:domain:*${SUFFIX2}`);
-    await rclient.unlinkAsync(KEY2);
+    await rclient.unlinkAsync(KEY2, LEGACY_KEY2);
   });
 
   after(async () => {
     await unlinkByPattern(`rdns:domain:*${SUFFIX2}`);
-    await unlinkByPattern(`subdomains2_rebuild:${SUFFIX2}:*`);
-    await rclient.unlinkAsync(KEY2);
+    await rclient.unlinkAsync(KEY2, LEGACY_KEY2);
   });
 
-  it('getSubDomains should drop names not seen in 24 hours', async () => {
+  it('getSubDomains should be read only, OldDataCleanSensor drops names not seen in 24 hours', async () => {
     const now = Date.now() / 1000;
     await rclient.zaddAsync(KEY2, now - 2 * 86400, `old.${SUFFIX2}`, now, `fresh.${SUFFIX2}`);
-    const domains = await dnsTool.getSubDomains(SUFFIX2);
-    expect(domains).to.deep.equal([`fresh.${SUFFIX2}`]);
-    expect(await rclient.zscoreAsync(KEY2, `old.${SUFFIX2}`)).to.equal(null);
+    expect((await dnsTool.getSubDomains(SUFFIX2)).sort()).to.deep.equal([`fresh.${SUFFIX2}`, `old.${SUFFIX2}`]);
+
+    const batch = [];
+    await OldDataCleanSensor.prototype.cleanSubdomains('subdomains2', KEY2, batch);
+    await rclient.pipelineAndLog(batch);
+    expect(await dnsTool.getSubDomains(SUFFIX2)).to.deep.equal([`fresh.${SUFFIX2}`]);
   });
 
   it('getSubDomains should not refresh TTL', async () => {
@@ -188,41 +192,28 @@ describe('Test subdomains2 zset lifecycle', function() {
     expect(await rclient.ttlAsync(KEY2)).to.be.within(1, 100);
   });
 
-  it('getSubDomains should rebuild from rdns when empty', async () => {
+  it('getSubDomains should not scan rdns when the index is empty', async () => {
     await rclient.zaddAsync(`rdns:domain:a.${SUFFIX2}`, Date.now() / 1000, '198.18.0.1');
-    await rclient.zaddAsync(`rdns:domain:b.${SUFFIX2}`, Date.now() / 1000, '198.18.0.2');
-    const domains = await dnsTool.getSubDomains(SUFFIX2);
-    expect(domains.slice().sort()).to.deep.equal([`a.${SUFFIX2}`, `b.${SUFFIX2}`, SUFFIX2].sort());
-    expect(await rclient.zcardAsync(KEY2)).to.equal(3);
-    expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);
+    const scan = rclient.scanAsync;
+    let scans = 0;
+    rclient.scanAsync = function() {
+      scans++;
+      return scan.apply(this, arguments);
+    };
+    try {
+      expect(await dnsTool.getSubDomains(SUFFIX2)).to.be.empty;
+    } finally {
+      rclient.scanAsync = scan;
+    }
+    expect(scans).to.equal(0);
+    expect(await rclient.typeAsync(KEY2)).to.equal('none');
   });
 
-  it('getSubDomains should never return or expose a partially rebuilt index', async () => {
-    const count = 20000;
-    const now = Date.now() / 1000;
-    const cmds = [];
-    for (let i = 0; i < count; i++)
-      cmds.push(['zadd', `rdns:domain:r${i}.${SUFFIX2}`, now, '198.18.0.1']);
-    for (let i = 0; i < cmds.length; i += 1000)
-      await rclient.pipelineAndLog(cmds.slice(i, i + 1000));
-
-    let done = false;
-    const rebuild = dnsTool.getSubDomains(SUFFIX2).then((domains) => { done = true; return domains; });
-    // poll the index while the rebuild is in progress, it must be either absent or complete.
-    // a reader started on an absent index rebuilds by itself, so only read once the index shows up
-    const sizes = [];
-    let read = null;
-    while (!done) {
-      const size = await rclient.zcardAsync(KEY2);
-      sizes.push(size);
-      if (size > 0 && !read)
-        read = await dnsTool.getSubDomains(SUFFIX2);
-    }
-    expect((await rebuild).length).to.equal(count + 1);
-    for (const size of sizes)
-      expect([0, count + 1]).to.include(size);
-    if (read)
-      expect(read.length).to.equal(count + 1);
+  it('addSubDomains should create the index', async () => {
+    const name = `create-${Date.now()}.${SUFFIX2}`;
+    await dnsTool.addSubDomains(SUFFIX2, [name]);
+    expect(await dnsTool.getSubDomains(SUFFIX2)).to.deep.equal([name]);
+    expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);
   });
 
   async function seedRdns(count, scoreOf) {
@@ -233,89 +224,52 @@ describe('Test subdomains2 zset lifecycle', function() {
       await rclient.pipelineAndLog(cmds.slice(i, i + 5000));
   }
 
-  it('rebuild temp key should never exist without TTL', async () => {
-    await seedRdns(20000, () => Date.now() / 1000);
-    let done = false;
-    const rebuild = dnsTool.getSubDomains(SUFFIX2).then(() => { done = true; });
-    const ttls = [];
-    while (!done) {
-      for (const k of await rclient.scanResults(`subdomains2_rebuild:${SUFFIX2}:*`))
-        ttls.push(await rclient.ttlAsync(k));
-    }
-    await rebuild;
-    expect(ttls).to.not.include(-1);
-  });
+  async function seedLegacy(names) {
+    for (let i = 0; i < names.length; i += 5000)
+      await rclient.saddAsync(LEGACY_KEY2, names.slice(i, i + 5000));
+  }
 
-  it('concurrent rebuilds in one process should share one run, publish one complete index and leave no temp key', async () => {
-    const count = 20000;
-    await seedRdns(count, () => Date.now() / 1000);
-    const doRebuild = dnsTool._doRebuildSubDomains;
-    let runs = 0;
-    dnsTool._doRebuildSubDomains = function(suffix) {
-      runs++;
-      return doRebuild.call(this, suffix);
-    };
-    let results;
-    try {
-      results = await Promise.all([0, 1, 2].map(() => dnsTool.getSubDomains(SUFFIX2)));
-    } finally {
-      dnsTool._doRebuildSubDomains = doRebuild;
-    }
-    expect(runs).to.equal(1);
-    expect(dnsTool.subDomainRebuilds.size).to.equal(0);
-    for (const domains of results)
-      expect(domains.length).to.equal(count + 1);
-    // each caller gets its own copy
-    results[0].pop();
-    expect(results[1].length).to.equal(count + 1);
-    expect(await rclient.zcardAsync(KEY2)).to.equal(count + 1);
+  it('migrateLegacySubDomains should keep names with rdns, scored by last resolve time, and unlink the legacy set', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await seedRdns(10, i => now - i);
+    const names = [];
+    for (let i = 0; i < 20; i++) // r10 ~ r19 have no rdns
+      names.push(`r${i}.${SUFFIX2}`);
+    await seedLegacy(names);
+    // names written after upgrade are kept
+    await rclient.zaddAsync(KEY2, now, `written.${SUFFIX2}`);
+
+    await dnsTool.migrateLegacySubDomains();
+
+    expect(await rclient.typeAsync(LEGACY_KEY2)).to.equal('none');
+    expect(await rclient.zcardAsync(KEY2)).to.equal(11);
+    for (let i = 0; i < 10; i++)
+      expect(Number(await rclient.zscoreAsync(KEY2, `r${i}.${SUFFIX2}`))).to.equal(now - i);
+    expect(await rclient.zscoreAsync(KEY2, `written.${SUFFIX2}`)).to.not.equal(null);
     expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);
-    expect(await rclient.scanResults(`subdomains2_rebuild:${SUFFIX2}:*`)).to.be.empty;
   });
 
-  it('rebuild should not overwrite an index published in the meantime', async () => {
-    await seedRdns(10, () => Date.now() / 1000);
-    // another rebuild has published, and addSubDomains has added a name since then
-    await rclient.zaddAsync(KEY2, Date.now() / 1000, `written.${SUFFIX2}`);
-    const domains = await dnsTool._rebuildSubDomains(SUFFIX2);
-    expect(domains.length).to.equal(11);
-    expect(await rclient.zrangeAsync(KEY2, 0, -1)).to.deep.equal([`written.${SUFFIX2}`]);
-    expect(await rclient.scanResults(`subdomains2_rebuild:${SUFFIX2}:*`)).to.be.empty;
-  });
-
-  it('rebuild over the limit should keep the most recently resolved names and the suffix itself', async () => {
+  it('migrateLegacySubDomains over the limit should keep the most recently resolved names', async () => {
     const limit = 100000;
     const extra = 10;
     const now = Date.now() / 1000;
     // the first `extra` names were resolved earlier than the others
     await seedRdns(limit + extra, i => i < extra ? now - 3600 : now - i / 1000);
-    const domains = await dnsTool.getSubDomains(SUFFIX2);
-    expect(domains.length).to.equal(limit);
+    const names = [];
+    for (let i = 0; i < limit + extra; i++)
+      names.push(`r${i}.${SUFFIX2}`);
+    await seedLegacy(names);
+
+    await dnsTool.migrateLegacySubDomains();
+
     expect(await rclient.zcardAsync(KEY2)).to.equal(limit);
-    expect(await rclient.zscoreAsync(KEY2, SUFFIX2)).to.not.equal(null);
     for (let i = 0; i < extra; i++)
       expect(await rclient.zscoreAsync(KEY2, `r${i}.${SUFFIX2}`)).to.equal(null);
-    // kept names carry their last resolve time, so later trims and retention follow it
-    expect(Number(await rclient.zscoreAsync(KEY2, `r${extra}.${SUFFIX2}`))).to.be.closeTo(now - extra / 1000, 0.01);
+    expect(await rclient.typeAsync(LEGACY_KEY2)).to.equal('none');
   }).timeout(120000);
-
-  it('addSubDomains should not create the index, so an empty index is still rebuilt from rdns', async () => {
-    await rclient.zaddAsync(`rdns:domain:a.${SUFFIX2}`, Date.now() / 1000, '198.18.0.1');
-    await rclient.zaddAsync(`rdns:domain:b.${SUFFIX2}`, Date.now() / 1000, '198.18.0.2');
-    const name = `skip-${Date.now()}.${SUFFIX2}`;
-    await dnsTool.addSubDomains(SUFFIX2, [name]);
-    expect(await rclient.typeAsync(KEY2)).to.equal('none');
-
-    const domains = await dnsTool.getSubDomains(SUFFIX2);
-    expect(domains.slice().sort()).to.deep.equal([`a.${SUFFIX2}`, `b.${SUFFIX2}`, SUFFIX2].sort());
-    // a skipped write is not cached, the same name is written as soon as the index exists
-    await dnsTool.addSubDomains(SUFFIX2, [name]);
-    expect(await rclient.zscoreAsync(KEY2, name)).to.not.equal(null);
-  });
 
   it('addSubDomains should set TTL and skip the same name within write interval', async () => {
     const name = `dedup-${Date.now()}.${SUFFIX2}`;
-    await rclient.zaddAsync(KEY2, Date.now() / 1000, SUFFIX2); // index exists, without TTL
     await dnsTool.addSubDomains(SUFFIX2, [name]);
     expect(Number(await rclient.zscoreAsync(KEY2, name))).to.be.above(0);
     expect(await rclient.ttlAsync(KEY2)).to.be.above(86400);

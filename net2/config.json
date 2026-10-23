@@ -774,7 +774,8 @@
         "clairvoyant",
         "bipartite_graph",
         "per_wan_data_usage",
-        "flow_inline_intel"
+        "flow_inline_intel",
+        "subdomains_zset"
       ]
     },
     "FlowCompressionSensor": {

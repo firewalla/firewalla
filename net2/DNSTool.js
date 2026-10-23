@@ -32,15 +32,15 @@ const LRU = require('lru-cache');
 // (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
 
-// number of rdns keys read per pipeline when expanding a domain pattern via subdomains2:<suffix>
-const SUBDOMAIN_BATCH_SIZE = 5000;
+// number of rdns keys read per pipeline when expanding a domain pattern via subdomains2:<suffix>, and number of
+// names read and written per batch when migrating legacy sets. pipelineAndLog() wraps a batch in MULTI/EXEC,
+// 5000 reads were measured to block redis for 60~85ms on gold
+const SUBDOMAIN_BATCH_SIZE = 1000;
 
 // subdomains2:<suffix> is a zset of subdomain names seen under a suffix, score is the last seen timestamp.
 // it replaces the legacy subdomains:<suffix> set, which only grew and could reach hundreds of thousands of names.
 // a different prefix keeps old and new code from touching each other's key when switching versions
 const SUBDOMAIN_KEY_PREFIX = "subdomains2:";
-// names not seen for this long are dropped on read, aligned with the lifetime of rdns:domain:<name>
-const SUBDOMAIN_RETENTION = 86400;
 // TTL is only refreshed on write, a suffix nobody writes any more expires by itself
 const SUBDOMAIN_KEY_TTL = 86400 * 2;
 // keep at most this many names per suffix, the oldest ones are trimmed beyond it
@@ -49,40 +49,8 @@ const SUBDOMAIN_MAX_COUNT = 100000;
 const SUBDOMAIN_WRITE_INTERVAL = 600 * 1000;
 // at most one warning per suffix per this interval when a suffix is trimmed
 const SUBDOMAIN_TRIM_WARN_INTERVAL = 3600 * 1000;
-// adds names to an existing subdomains2:<suffix> only, returns the new size, or -1 if the key does not exist.
-// only getSubDomains creates the key, from a full rdns scan, so a nonempty key always holds a complete index.
-// if writers could create it, a single name written to an empty key would be taken as the whole index and
-// suppress the rebuild. names skipped here are not lost, see addSubDomains.
-// ARGV: ttl, score, name1, name2, ...
-const ADD_SUBDOMAINS_LUA = [
-  'if redis.call("exists", KEYS[1]) == 0 then',
-  '  return -1',
-  'end',
-  'for i = 3, #ARGV do',
-  '  redis.call("zadd", KEYS[1], ARGV[2], ARGV[i])',
-  'end',
-  'redis.call("expire", KEYS[1], ARGV[1])',
-  'return redis.call("zcard", KEYS[1])'
-].join("\n");
-// a rebuild is written into a private temp key in batches, then published by renaming it to the index.
-// a single ZADD of ~100k names was measured to block redis for 200~400ms on gold, longer on slower boxes
-const SUBDOMAIN_REBUILD_TMP_PREFIX = "subdomains2_rebuild:";
-// a temp key left behind by a crash in the middle of a rebuild expires by itself
-const SUBDOMAIN_REBUILD_TMP_TTL = 600;
-let subDomainRebuildSeq = 0;
-// publishes a rebuilt temp key KEYS[1] as the index KEYS[2] only if the index does not exist, returns 1 if published.
-// if another rebuild has published first, the index is kept as is, it may already hold names added by
-// addSubDomains after that, and this rebuild is dropped. RENAME onto an absent key is O(1)
-// ARGV: ttl
-const PUBLISH_SUBDOMAINS_LUA = [
-  'if redis.call("exists", KEYS[2]) == 1 or redis.call("exists", KEYS[1]) == 0 then',
-  '  redis.call("unlink", KEYS[1])',
-  '  return 0',
-  'end',
-  'redis.call("rename", KEYS[1], KEYS[2])',
-  'redis.call("expire", KEYS[2], ARGV[1])',
-  'return 1'
-].join("\n");
+// legacy subdomains:<suffix> set, migrated into subdomains2:<suffix> once by DataMigrationSensor
+const LEGACY_SUBDOMAIN_KEY_PREFIX = "subdomains:";
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -109,8 +77,6 @@ class DNSTool {
       this.subDomainWriteTs = new LRU({max: 20000, maxAge: SUBDOMAIN_WRITE_INTERVAL});
       // last trim warning time per suffix
       this.subDomainTrimWarnTs = new LRU({max: 1000, maxAge: SUBDOMAIN_TRIM_WARN_INTERVAL});
-      // in-flight rebuild per suffix, concurrent readers in this process share it
-      this.subDomainRebuilds = new Map();
     }
     return instance;
   }
@@ -266,76 +232,46 @@ class DNSTool {
     return `${SUBDOMAIN_KEY_PREFIX}${domainSuffix}`;
   }
 
-  // read does not refresh TTL, otherwise frequent category recycles would keep the key alive forever
+  // read only: it neither refreshes TTL, otherwise frequent category recycles would keep the key alive forever,
+  // nor prunes old names, which OldDataCleanSensor does (see cleanSubdomains). a name not seen for 24 hours has
+  // no rdns left in practice, so a stale name kept until the next cleanup contributes no IP.
+  // the index is only built by addSubDomains, an empty index means no subdomain has been seen recently.
+  // it is never rebuilt by scanning rdns:domain:*, a full keyspace scan blocks redis for long on boxes with
+  // many keys, and readers like acl:check may ask for any domain
   async getSubDomains(domainSuffix) {
-    const key = this.getSubDomainKey(domainSuffix);
-    // the key is deleted by redis once all names are pruned, the next read then rebuilds it
-    await rclient.zremrangebyscoreAsync(key, "-inf", Date.now() / 1000 - SUBDOMAIN_RETENTION);
-    let domains = await rclient.zrangeAsync(key, 0, -1) || [];
-    if (_.isEmpty(domains)) {
-      domains = await this._rebuildSubDomains(domainSuffix);
-    }
-    return domains;
+    return await rclient.zrangeAsync(this.getSubDomainKey(domainSuffix), 0, -1) || [];
   }
 
-  // concurrent rebuilds of the same suffix in this process share one run, each one would otherwise scan rdns and
-  // write its own temp key of up to SUBDOMAIN_MAX_COUNT names. rebuilds from different processes are not
-  // coordinated on purpose: the first one publishes and the others are dropped (see PUBLISH_SUBDOMAINS_LUA),
-  // and rebuild only happens when the index is empty, i.e. on first use after upgrade, on a new pattern rule,
-  // or after a suffix got no write for days, so the cost is at most a redundant rebuild in these rare cases
-  _rebuildSubDomains(domainSuffix) {
-    let rebuild = this.subDomainRebuilds.get(domainSuffix);
-    if (!rebuild) {
-      rebuild = this._doRebuildSubDomains(domainSuffix).finally(() => {
-        this.subDomainRebuilds.delete(domainSuffix);
+  // one-time migration of legacy subdomains:<suffix> sets, called by DataMigrationSensor.
+  // only names whose rdns still exists are kept, others have no IP to contribute to pattern expansion
+  async migrateLegacySubDomains() {
+    const legacyKeys = await rclient.scanResults(`${LEGACY_SUBDOMAIN_KEY_PREFIX}*`);
+    for (const legacyKey of legacyKeys) {
+      const domainSuffix = legacyKey.substring(LEGACY_SUBDOMAIN_KEY_PREFIX.length);
+      await this._migrateLegacySubDomains(legacyKey, domainSuffix).catch((err) => {
+        log.error(`Failed to migrate legacy subdomains of ${domainSuffix}`, err.message);
       });
-      this.subDomainRebuilds.set(domainSuffix, rebuild);
+      // legacy key is no longer used, unlink frees a large set in background
+      await rclient.unlinkAsync(legacyKey);
     }
-    // each caller gets its own copy of the shared result
-    return rebuild.then(domains => domains.slice());
   }
 
-  // rebuild the index from rdns. names are written into a private temp key in batches, so no single command
-  // blocks redis for long, and the temp key is published with RENAME, so a concurrent reader sees either
-  // no index (and rebuilds by itself) or the complete one, never a partial one
-  async _doRebuildSubDomains(domainSuffix) {
-    const key = this.getSubDomainKey(domainSuffix);
-    const keys = await rclient.scanResults(`rdns:domain:*.${domainSuffix}`);
-    let domains = keys.map(k => k.substring("rdns:domain:".length));
-    const now = Date.now() / 1000;
-    let scores = null;
-    if (domains.length + 1 > SUBDOMAIN_MAX_COUNT) {
-      // over the limit, keep the most recently resolved names. last resolve time is only read in this rare case,
-      // a normal rebuild uses the rebuild time as score, names are aged out SUBDOMAIN_RETENTION after it
-      const count = domains.length + 1;
+  // a legacy set may hold hundreds of thousands of names, it is read and written in batches.
+  // names are scored by their last resolve time, so they age out together with their rdns
+  async _migrateLegacySubDomains(legacyKey, domainSuffix) {
+    let cursor = 0;
+    do {
+      const [next, domains] = await rclient.sscanAsync(legacyKey, cursor, "COUNT", SUBDOMAIN_BATCH_SIZE);
+      cursor = next;
       const resolved = await this._getLastResolveTimes(domains);
-      const order = domains.map((d, i) => i).sort((a, b) => resolved[b] - resolved[a]).slice(0, SUBDOMAIN_MAX_COUNT - 1);
-      domains = order.map(i => domains[i]);
-      scores = order.map(i => resolved[i]);
-      this._warnTrimSubDomains(domainSuffix, count);
-    }
-    domains.push(domainSuffix); // add suffix itself, always kept
-
-    const tmpKey = `${SUBDOMAIN_REBUILD_TMP_PREFIX}${domainSuffix}:${process.pid}:${++subDomainRebuildSeq}`;
-    try {
-      for (let i = 0; i < domains.length; i += SUBDOMAIN_BATCH_SIZE) {
-        const args = [tmpKey];
-        for (let j = i; j < Math.min(i + SUBDOMAIN_BATCH_SIZE, domains.length); j++)
-          args.push(scores && j < scores.length ? scores[j] : now, domains[j]);
-        // ZADD and EXPIRE in one MULTI/EXEC, the temp key never exists without TTL even if the process dies
-        const results = await rclient.multi().zadd(args).expire(tmpKey, SUBDOMAIN_REBUILD_TMP_TTL).execAsync();
-        // execAsync only logs errors of queued commands, a failed batch must not be published as a complete index
-        const err = (results || []).find(r => r instanceof Error);
-        if (err)
-          throw err;
-      }
-      await rclient.evalAsync(PUBLISH_SUBDOMAINS_LUA, 2, tmpKey, key, SUBDOMAIN_KEY_TTL);
-    } catch (err) {
-      await rclient.unlinkAsync(tmpKey).catch(() => {});
-      throw err;
-    }
-    // whether published or dropped in favor of another rebuild, this list is a complete view from rdns
-    return domains;
+      const pairs = [];
+      domains.forEach((d, i) => {
+        if (resolved[i] > 0)
+          pairs.push(resolved[i], d);
+      });
+      if (pairs.length)
+        await this._writeSubDomains(domainSuffix, pairs);
+    } while (cursor != 0);
   }
 
   // last resolve time of each name, i.e. the latest score in rdns:domain:<name>, 0 if the rdns key is gone
@@ -349,25 +285,29 @@ class DNSTool {
     return times;
   }
 
-  // only extends an existing index, the key is created by _rebuildSubDomains only (see ADD_SUBDOMAINS_LUA).
-  // skipping a name while the key does not exist loses nothing: callers record rdns:domain:<name> before
-  // this (DomainUpdater is called from addReverseDns after its ZADD), so the next rebuild picks it up by
-  // rdns scan, and a name without rdns has no IP to contribute to pattern expansion anyway.
-  // a name written while a rebuild is between its rdns scan and its publish is missed until the name is
-  // written again on its next DNS answer. acceptable, the window is short, DomainUpdater still adds its
-  // IPs to the ipset directly, and the write is not cached below so the next answer is not deduped
+  // called on DNS answers under a registered suffix, see DomainUpdater
   async addSubDomains(domainSuffix, domains) {
     if (_.isEmpty(domains))
       return;
     const toWrite = domains.filter(d => !this.subDomainWriteTs.get(`${domainSuffix}|${d}`));
     if (_.isEmpty(toWrite))
       return;
-    const count = await rclient.evalAsync([ADD_SUBDOMAINS_LUA, 1, this.getSubDomainKey(domainSuffix), SUBDOMAIN_KEY_TTL, Date.now() / 1000].concat(toWrite));
-    if (count < 0)
-      return;
+    const now = Date.now() / 1000;
+    await this._writeSubDomains(domainSuffix, _.flatMap(toWrite, d => [now, d]));
     for (const d of toWrite)
       this.subDomainWriteTs.set(`${domainSuffix}|${d}`, 1);
-    await this._trimSubDomains(domainSuffix, count);
+  }
+
+  // pairs: score1, name1, score2, name2, ...
+  // ZADD and EXPIRE in one MULTI/EXEC, the index never exists without TTL
+  async _writeSubDomains(domainSuffix, pairs) {
+    const key = this.getSubDomainKey(domainSuffix);
+    const results = await rclient.multi().zadd([key].concat(pairs)).expire(key, SUBDOMAIN_KEY_TTL).zcard(key).execAsync();
+    // execAsync only logs errors of queued commands
+    const err = (results || []).find(r => r instanceof Error);
+    if (err)
+      throw err;
+    await this._trimSubDomains(domainSuffix, results[2]);
   }
 
   async _trimSubDomains(domainSuffix, count) {
