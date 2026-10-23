@@ -28,6 +28,8 @@ const intelTool = new IntelTool()
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const Constants = require('../net2/Constants.js');
+const broDetect = require('../net2/BroDetect.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const DomainTrie = require('../util/DomainTrie.js');
@@ -174,4 +176,52 @@ describe('test process conn data', function(){
     });
   });
 
+});
+
+// pure function, no redis, no fixtures - kept outside the describe above whose before()
+// runs fireRouter.waitTillReady()/sysManager.updateAsync(), which this doesn't need
+describe('_isBlockedUDPFlow', () => {
+  it('local flow with bpid marker -> blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42' }, undefined, true)).to.equal(true);
+  });
+  it('local flow with no conn entry -> not blocked (40bcfbd33 regression guard)', () => {
+    expect(broDetect._isBlockedUDPFlow(null, undefined, true)).to.equal(false);
+  });
+  it('local flow with unrelated conn entry -> not blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ apid: '7' }, undefined, true)).to.equal(false);
+  });
+  it('bpid sentinel value 0 (number) -> blocked, presence not truthiness', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: 0 }, undefined, true)).to.equal(true);
+  });
+  it('bpid sentinel value "0" (string, as redis returns) -> blocked, presence not truthiness', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '0' }, undefined, true)).to.equal(true);
+  });
+  it('non-local flow with bpid marker overrides a stale oIntf -> blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(true);
+  });
+  it('non-local flow, allowed WAN flow with oIntf -> not blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(false);
+  });
+  it('non-local flow with no conn entry and no outIntfId -> blocked (legacy fallback)', () => {
+    expect(broDetect._isBlockedUDPFlow(null, undefined, false)).to.equal(true);
+  });
+
+  describe('bpidts aging (stale marker no longer suppresses forever)', () => {
+    it('fresh bpidts within the window -> still blocked', () => {
+      const bpidts = Date.now() / 1000 - 10;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(true);
+    });
+    it('local flow, bpidts older than the max age -> marker is stale, falls back to localFlow=false', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, oIntf present -> stale marker no longer overrides an allowed flow', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts, oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, no oIntf -> falls through to the legacy fallback, still blocked', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, false)).to.equal(true);
+    });
+  });
 });

@@ -29,8 +29,29 @@ const LOCK_TTL_SEC = 60;
 const LOCK_WAIT_POLL_MS = 500;
 const LOCK_WAIT_TIMEOUT_MS = (LOCK_TTL_SEC + 5) * 1000;
 const PSTORE_PATH = "/sys/fs/pstore";
+// systemd-pstore.service (enabled by default) harvests /sys/fs/pstore early in boot:
+// it moves the records to /var/lib/systemd/pstore and clears pstore (Unlink=yes). When
+// it wins that race, /sys/fs/pstore is already empty by the time FireMain/FireApi run,
+// so fall back to systemd's archive. Native pstore records are dmesg-<backend>-<n>;
+// systemd additionally writes a merged dmesg.txt there, so match dmesg* for its copy.
+// Ordered by preference: the live pstore first, systemd's copy only when it is empty.
+const SYSTEMD_PSTORE_PATH = "/var/lib/systemd/pstore";
+const PSTORE_SOURCES = [
+  { path: PSTORE_PATH, glob: "dmesg-*" },
+  { path: SYSTEMD_PSTORE_PATH, glob: "dmesg*" },
+];
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// Some platforms ship a pstore backend as a module that is never auto-loaded, so crash
+// records sit in the backend's storage but never surface under /sys/fs/pstore. The main
+// case is efi_pstore on older x86 images: its only autoload alias is the legacy
+// platform:efivars device, which modern kernels no longer create, so a crash lands in EFI
+// NVRAM and nothing (systemd-pstore or us) ever reads it. When no backend is registered we
+// try to load one. ramoops is intentionally excluded - it needs a reserved memory region
+// and fails to register without one; the backends worth loading blindly are EFI-only.
+const PSTORE_BACKEND_PARAM = "/sys/module/pstore/parameters/backend";
+const LOADABLE_PSTORE_BACKENDS = ["efi_pstore"];
 
 // In-memory cache of the "disable UDP TLS" decision so hot-path rule builders
 // (Block/TLSSetControl/AdblockPlugin/QuicLogPlugin) can read it synchronously
@@ -222,24 +243,77 @@ async function cleanupOldPstoreArchives() {
   }
 }
 
-// copy pstore contents to PSTORE_ARCHIVE_PATH for later inspection, then clear pstore
-// (unlinking files in pstore frees the underlying persistent ram/flash backend) so
-// space is available for the next crash.
-async function archiveAndClearPstore(crashTS) {
+// copy crash records from sourcePath to PSTORE_ARCHIVE_PATH for later inspection, then
+// clear sourcePath so space is freed for the next crash. Unlinking files in /sys/fs/pstore
+// frees the underlying persistent ram/flash backend; clearing systemd's archive stops us
+// from re-detecting the same crash on every subsequent boot (its files otherwise linger).
+async function archiveAndClearPstore(sourcePath, crashTS) {
   try {
     await execFile('sudo', ['mkdir', '-p', PSTORE_ARCHIVE_PATH]);
     await cleanupOldPstoreArchives();
 
     const archiveDir = `${PSTORE_ARCHIVE_PATH}/${crashTS}`;
     await execFile('sudo', ['mkdir', '-p', archiveDir]);
-    await execFile('sudo', ['cp', '-a', `${PSTORE_PATH}/.`, `${archiveDir}/`]);
-    log.info(`Archived pstore files to ${archiveDir}`);
+    await execFile('sudo', ['cp', '-a', `${sourcePath}/.`, `${archiveDir}/`]);
+    log.info(`Archived pstore files from ${sourcePath} to ${archiveDir}`);
 
-    await execFile('sudo', ['find', PSTORE_PATH, '-mindepth', '1', '-delete']);
-    log.info("Cleared pstore directory after archiving");
+    await execFile('sudo', ['find', sourcePath, '-mindepth', '1', '-delete']);
+    log.info(`Cleared ${sourcePath} after archiving`);
   } catch (err) {
     log.error("Failed to archive/clear pstore:", err.message);
   }
+}
+
+// The registered pstore backend name, '' when none ("(null)" on a kernel with no backend).
+async function currentPstoreBackend() {
+  const r = await execFile('sudo', ['cat', PSTORE_BACKEND_PARAM]).catch(() => ({ stdout: '' }));
+  const v = (r.stdout || '').trim();
+  return (v === '(null)' || v === 'null') ? '' : v;
+}
+
+// When no pstore backend is registered, load one so any crash the box just took becomes
+// visible under /sys/fs/pstore before we scan. This runs at FireMain/FireApi startup, long
+// after systemd-pstore's boot-time oneshot has already given up on an empty pstore, so once
+// we load the module the records are ours to read directly (and archiveAndClearPstore then
+// frees the backend's storage - unlinking the EFI variables - as usual).
+async function ensurePstoreBackendLoaded() {
+  const backend = await currentPstoreBackend();
+  if (backend) {
+    log.debug(`pstore backend already registered: ${backend}`);
+    return;
+  }
+  const isEfi = await execFile('test', ['-d', '/sys/firmware/efi']).then(() => true).catch(() => false);
+  for (const mod of LOADABLE_PSTORE_BACKENDS) {
+    if (mod === 'efi_pstore' && !isEfi) continue;
+    const loaded = await execFile('sudo', ['modprobe', mod])
+      .then(() => true)
+      .catch((err) => { log.debug(`modprobe ${mod} failed:`, err.message); return false; });
+    if (!loaded) continue;
+    const now = await currentPstoreBackend();
+    if (now) {
+      log.info(`Loaded pstore backend module ${mod}; backend now '${now}'`);
+      return;
+    }
+    log.warn(`Loaded ${mod} but no pstore backend registered (module may be disabled)`);
+  }
+}
+
+// Return the first pstore source that actually holds crash records, with its dmesg files
+// as "%T@ %p" lines sorted newest-first. With systemd-pstore's default Unlink=yes only one
+// source is ever populated: the live pstore when we reach it first, or systemd's copy once
+// it has harvested. A source directory that does not exist (systemd's, on boxes without the
+// service) makes find fail and is skipped.
+async function findPstoreSource() {
+  for (const source of PSTORE_SOURCES) {
+    const findResult = await execFile('sudo',
+      ['find', source.path, '-name', source.glob, '-type', 'f', '-printf', '%T@ %p\n']
+    ).catch((err) => ({ stdout: (err && err.stdout) || '' }));
+    const lines = findResult.stdout.trim().split('\n').filter(Boolean)
+      .sort((a, b) => parseFloat(b) - parseFloat(a));
+    if (lines.length)
+      return { sourcePath: source.path, lines };
+  }
+  return { sourcePath: null, lines: [] };
 }
 
 // Called at FireMain and FireApi startup. modName is the module name (e.g. "xt_udp_tls")
@@ -260,13 +334,12 @@ async function checkPstoreAndUpdateRedis(modName, koPath) {
     return;
   }
   try {
-    // find dmesg-* pstore files, sorted newest first (mirrors `| sort -rn` on the printf'd mtime)
-    const findResult = await execFile('sudo',
-      ['find', PSTORE_PATH, '-name', 'dmesg-*', '-type', 'f', '-printf', '%T@ %p\n']
-    ).catch((err) => ({ stdout: (err && err.stdout) || '' }));
-
-    const lines = findResult.stdout.trim().split('\n').filter(Boolean)
-      .sort((a, b) => parseFloat(b) - parseFloat(a));
+    // On platforms whose pstore backend is a module that never auto-loads (efi_pstore on
+    // some x86 images), load it first so a just-taken crash surfaces under /sys/fs/pstore.
+    await ensurePstoreBackendLoaded();
+    // dmesg pstore files, newest first, from the live pstore or - if systemd-pstore
+    // already harvested it - from systemd's archive (see PSTORE_SOURCES).
+    const { sourcePath, lines } = await findPstoreSource();
 
     const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
@@ -375,7 +448,7 @@ async function checkPstoreAndUpdateRedis(modName, koPath) {
 
     // preserve the crash logs and free up pstore space for the next crash
     if (dumpPstoreNeeded)
-      await archiveAndClearPstore(latestCrashTSSec);
+      await archiveAndClearPstore(sourcePath, latestCrashTSSec);
   } catch (err) {
     log.error("Error in checkPstoreAndUpdateRedis:", err.message);
   } finally {

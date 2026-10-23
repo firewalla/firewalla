@@ -327,6 +327,23 @@ if [[ ! -f /.dockerenv ]]; then
       sudo cp $(get_suricata_service) /etc/systemd/system/.
     fi
 
+    # This snapshot belongs to the previous FireMain/configuration. Do not let
+    # an upgrade or restart apply its stale feature state before the new
+    # FireMain publishes and reconciles the current effective configuration.
+    sudo rm -f "${FW_EFFECTIVE_FEATURES:-/dev/shm/zssids-engine.features}"
+
+    # flow engines: install or remove the zssids drop-ins beside the unit files
+    # just copied, per the pcap_zeek_zssids / pcap_suricata_zssids features. On
+    # failure the drop-ins may not match the features, and starting brofish or
+    # suricata could run zeek and zssids against the same spool: the script
+    # leaves its hold marker in place (honoured by BroControl.restart,
+    # SuricataControl.restart and its own restart path), and both services are
+    # stopped here so nothing keeps running on a configuration nobody verified.
+    if ! ${FIREWALLA_HOME}/scripts/zssids-engine.sh apply; then
+      logger "FIREWALLA:ZSSIDS-ENGINE apply failed, holding brofish and suricata"
+      sudo systemctl stop brofish suricata 2>/dev/null || true
+    fi
+
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/. && sudo systemctl enable firestatus
 
     if ${OVERLAY_RESET_ON_BOOT}; then
@@ -400,8 +417,13 @@ else
 fi
 cd ..
 
-sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
-sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
+# `zeekctl cron` restarts nodes ZeekControl believes crashed: skip it when
+# zssids owns the zeek role, and while a failed flow-engine apply holds the
+# pcap services off, or zeek would come back beside zssids on the same spool
+if [[ $(get_flow_engine_zeek) != zssids && ! -e /dev/shm/zssids-engine.failed ]]; then
+  sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
+  sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
+fi
 sync
 
 cd api
