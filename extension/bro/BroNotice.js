@@ -212,7 +212,8 @@ class BroNotice {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
       }
-      if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = issuer;
+      // same shape as an e.dest.ssl.cert_chain entry
+      if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = { issuer };
       if (fp) alarm["p.dest.ssl.validation_failed_fp"] = fp;
     } catch (err) {
       log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
