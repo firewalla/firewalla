@@ -860,11 +860,11 @@ class BroNoticeAlarm extends Alarm {
     if (alarm['p.noticeType'] != alarm2['p.noticeType']) {
       return false;
     }
-    const failedIssuer = alarm2['p.dest.ssl.validation_failed_issuer'];
+    const failedIssuer = alarm2['p.dest.ssl.validation_failed_cert'];
     // one alarm per device per failing CA, whichever server it was hit through; dest ip when either CA is unknown
-    if (alarm2['p.noticeType'] == 'SSL::Invalid_Server_Cert' && failedIssuer && alarm['p.dest.ssl.validation_failed_issuer']) {
+    if (alarm2['p.noticeType'] == 'SSL::Invalid_Server_Cert' && failedIssuer && alarm['p.dest.ssl.validation_failed_cert']) {
       // a DN object, parsed back from its JSON string when an earlier alarm is loaded
-      return alarm['p.device.ip'] == alarm2['p.device.ip'] && _.isEqual(alarm['p.dest.ssl.validation_failed_issuer'], failedIssuer);
+      return alarm['p.device.ip'] == alarm2['p.device.ip'] && _.isEqual(alarm['p.dest.ssl.validation_failed_cert'], failedIssuer);
     }
     if (alarm['p.dest.ip'] != alarm2['p.dest.ip'] || alarm['p.device.ip'] != alarm2['p.device.ip']) {
       return false;

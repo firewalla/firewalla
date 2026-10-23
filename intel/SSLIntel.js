@@ -30,8 +30,8 @@ class SSLIntel extends Intel {
         if (sslInfo) {
           log.verbose("Got ssl info of " + ip + ": " + JSON.stringify(sslInfo));
           for (var key in sslInfo) {
-            // BroNotice puts it on the alarm as a basic field, the only place dedup can read it
-            if (key == "validation_failed_issuer") continue;
+            // BroNotice puts these on the alarm as basic fields, the only place dedup can read them
+            if (key == "validation_failed_issuer" || key == "validation_failed_fp") continue;
             let detailKey = "e.dest.ssl." + key;
             alarm[detailKey] = sslInfo[key];
           }

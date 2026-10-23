@@ -207,12 +207,13 @@ class BroNotice {
     }
     // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
     try {
-      const issuer = await intelTool.getCertFailedIssuer(broObj.dst);
+      const { issuer, fp } = await intelTool.getCertValidationFailure(broObj.dst);
       if (issuer && this.isIgnoredIssuer(issuer)) {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
       }
-      if (issuer) alarm["p.dest.ssl.validation_failed_issuer"] = issuer;
+      if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = issuer;
+      if (fp) alarm["p.dest.ssl.validation_failed_fp"] = fp;
     } catch (err) {
       log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
     }
