@@ -30,17 +30,51 @@ const sysManager = require('../../net2/SysManager.js')
 const fc = require('../../net2/config.js')
 const conntrack = require('../../net2/Conntrack.js')
 const Constants = require('../../net2/Constants.js')
+const IntelTool = require('../../net2/IntelTool.js')
+const intelTool = new IntelTool()
+const _ = require('lodash')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const log = require('../../net2/logger.js')(__filename);
 
+// issuers whose chains fail validation for known benign reasons, used until the cloud hashset gives a list
+const DEFAULT_IGNORED_ISSUERS = [
+  "CN=Microsoft ECC Product Root Certificate Authority 2018,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
+  "CN=Microsoft Root Certificate Authority 2011,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
+];
+
 class BroNotice {
   constructor() {
     if (instance === null) {
       instance = this;
+      this.setIgnoredIssuers(null);
     }
+  }
+
+  // FireMain only; required here, it opens a redis subscription when loaded
+  startIgnoredIssuersLoader() {
+    const CloudConfigLoader = require('../../sensor/CloudConfigLoader.js');
+    this.ignoredIssuersLoader = new CloudConfigLoader({
+      cacheKey: Constants.REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG,
+      hashsetName: Constants.KEY_INVALID_CERT_IGNORED_ISSUERS,
+      label: 'invalid cert ignored issuers',
+      apply: dns => this.setIgnoredIssuers(dns),
+      acceptEmpty: true // an emptied cloud list brings the default list back
+    });
+    return this.ignoredIssuersLoader.start();
+  }
+
+  // an array of DN strings from the cloud replaces the default list
+  setIgnoredIssuers(dns) {
+    if (!Array.isArray(dns) || !dns.length) dns = DEFAULT_IGNORED_ISSUERS;
+    this.ignoredIssuers = dns.filter(_.isString).map(dn => intelTool.parseDN(dn));
+  }
+
+  // compared attribute by attribute, so the order of the DN doesn't matter
+  isIgnoredIssuer(issuer) {
+    return this.ignoredIssuers.some(dn => _.isEqual(dn, issuer));
   }
 
   // zeek's src is the client; sets p.local_is_client and returns whether the alarm device is it
@@ -164,6 +198,17 @@ class BroNotice {
       return false;
     }
     alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
+    // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
+    try {
+      const issuer = await intelTool.getCertFailedIssuer(broObj.dst);
+      if (issuer && this.isIgnoredIssuer(issuer)) {
+        log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
+        return false;
+      }
+      if (issuer) alarm["p.dest.ssl.validation_failed_issuer"] = issuer;
+    } catch (err) {
+      log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
+    }
     // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
     try {
       const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);
