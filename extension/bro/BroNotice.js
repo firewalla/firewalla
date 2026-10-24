@@ -200,19 +200,27 @@ class BroNotice {
     }
     alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
     // a CN that is no domain, e.g. "Mijia Cloud", is a private CA's device cert, never meant for public CA validation
-    const cns = [].concat(intelTool.parseDN(broObj.sub || "").CN || []);
+    // zeek's sub is the subject of the site's own cert
+    const subject = intelTool.parseDN(broObj.sub || "");
+    const cns = [].concat(subject.CN || []);
     if (cns.length && !cns.some(cn => validator.isFQDN(cn.startsWith("*.") ? cn.slice(2) : cn, { allow_underscores: true }))) {
       log.verbose("Ignoring invalid server cert notice of a non-domain CN", broObj.sub);
       return false;
     }
+    if (!_.isEmpty(subject)) alarm["p.dest.ssl.subject"] = subject;
     // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
     try {
-      const issuer = await intelTool.getCertFailedIssuer(broObj.dst);
+      const { issuer, fp } = await intelTool.getCertValidationFailure(broObj.dst);
       if (issuer && this.isIgnoredIssuer(issuer)) {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
       }
-      if (issuer) alarm["p.dest.ssl.validation_failed_issuer"] = issuer;
+      // same shape as an e.dest.ssl.cert_chain entry
+      if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = { issuer };
+      // a flat string, so an exception (mute) can match it
+      const issuerCN = issuer && [].concat(issuer.CN || [])[0];
+      if (issuerCN) alarm["p.dest.ssl.validation_failed_cert_issuer_CN"] = issuerCN;
+      if (fp) alarm["p.dest.ssl.validation_failed_fp"] = fp;
     } catch (err) {
       log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
     }

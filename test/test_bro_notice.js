@@ -37,6 +37,8 @@ const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
 // failed issuer saved on the ssl cert key, by server ip; an Error is thrown by the lookup
 const failedIssuers = {};
+// sha256 of the first failed cert saved on the ssl cert key, by server ip
+const failedFps = {};
 
 let mock;
 let cacheSnapshot;
@@ -54,12 +56,12 @@ function setupMocks() {
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
   mock('../net2/IntelTool.js', class IntelTool {
-    async getCertFailedIssuer(ip) {
+    async getCertValidationFailure(ip) {
       if (failedIssuers[ip] instanceof Error) throw failedIssuers[ip];
-      return failedIssuers[ip] || null;
+      return { issuer: failedIssuers[ip] || null, fp: failedFps[ip] || null };
     }
     // enough for the plain DNs used here
-    parseDN(dn) { return Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))); }
+    parseDN(dn) { return dn ? Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))) : {}; }
   });
   mock('../net2/Conntrack.js', {
     getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
@@ -316,14 +318,18 @@ describe('BroNotice invalid server certificate', function () {
   describe('failed issuer', () => {
     afterEach(() => {
       delete failedIssuers[REMOTE];
+      delete failedFps[REMOTE];
       broNotice.setIgnoredIssuers(null);
     });
 
-    it('puts the failed issuer on the alarm as an object', async () => {
+    it('puts the first failed cert issuer, its CN and fingerprint on the alarm', async () => {
       failedIssuers[REMOTE] = { CN: 'emSign ECC Root CA - G3', C: 'IN' };
+      failedFps[REMOTE] = 'ba105ce02bac';
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
-      expect(alarm['p.dest.ssl.validation_failed_issuer']).to.deep.equal({ CN: 'emSign ECC Root CA - G3', C: 'IN' });
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer_CN']).to.equal('emSign ECC Root CA - G3');
+      expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
     });
 
     it('drops an issuer of the default list, whatever the attribute order', async () => {
@@ -343,13 +349,23 @@ describe('BroNotice invalid server certificate', function () {
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     });
 
+    it('leaves the issuer CN out when the issuer has no CN', async () => {
+      failedIssuers[REMOTE] = { C: 'CN', O: 'Some Root' };
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { C: 'CN', O: 'Some Root' } });
+      expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_CN');
+    });
+
     it('still raises the alarm, without the issuer, when none is saved or the lookup fails', async () => {
       for (const saved of [undefined, new Error('redis down')]) {
         failedIssuers[REMOTE] = saved;
         const notice = invalidCert(LAN_DEVICE, REMOTE);
         const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
         expect(alarm).to.not.equal(null);
-        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_issuer');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_fp');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_CN');
       }
     });
   });
@@ -359,6 +375,14 @@ describe('BroNotice invalid server certificate', function () {
       const notice = Object.assign(invalidCert(LAN_DEVICE, REMOTE), { sub });
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     }
+  });
+
+  it('puts the site subject on the alarm as an object', async () => {
+    const notice = Object.assign(invalidCert(LAN_DEVICE, REMOTE), { sub: 'CN=*.badssl.com,O=BadSSL,C=US' });
+    const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+    expect(alarm['p.dest.ssl.subject']).to.deep.equal({ CN: '*.badssl.com', O: 'BadSSL', C: 'US' });
+    const noSub = Object.assign(invalidCert(LAN_DEVICE, REMOTE), { sub: undefined });
+    expect(await broNotice.processNotice(noticeToAlarm(noSub), noSub)).to.not.have.property('p.dest.ssl.subject');
   });
 
   it('keeps a domain or wildcard CN, and a subject without CN', async () => {
