@@ -4356,6 +4356,9 @@ class netBot extends ControllerBot {
               if (data.timeUsageApps)
                 options.timeUsageApps = data.timeUsageApps;
               options.blockStatsAggrFilter = data.blockStatsAggrFilter;
+              // { include: [<state_type>] } or { exclude: [<state_type>] } for the latest state events
+              if (data.stateEventTypeFilter)
+                options.stateEventTypeFilter = data.stateEventTypeFilter;
 
               if (!data.apiVer || data.apiVer <= 2) {
                 options.legacyLocalBlock = true;
