@@ -90,10 +90,12 @@ class FastIntelPlugin extends Sensor {
     }
   }
 
+  // returns true if a data file was actually removed, so a repeated no-op on a part the cloud
+  // does not serve doesn't restart intelproxy on every round
   async removeData(part) {
     const bfDataFile = this.getFile(part);
 
-    await fs.unlinkAsync(bfDataFile).catch(() => undefined); // ignore error
+    return fs.unlinkAsync(bfDataFile).then(() => true).catch(() => false); // ignore error
   }
 
   // return true on successful update.
@@ -106,8 +108,7 @@ class FastIntelPlugin extends Sensor {
       throw new Error("Invalid bloom filter data, missing data or info field");
     }
 
-    let bfInfo = {key: part, size: obj.info.s, error: obj.info.e};
-    this.bfInfoMap.set(part, bfInfo);
+    const bfInfo = {key: part, size: obj.info.s, error: obj.info.e};
 
     const bfDataFile = this.getFile(part);
 
@@ -121,18 +122,23 @@ class FastIntelPlugin extends Sensor {
     const buf = Buffer.from(obj.data, "base64");
     if (currentFileContent && buf.equals(currentFileContent)) {
       log.debug(`No filter update for fast_intel part:${part}, skip`);
+      this.bfInfoMap.set(part, bfInfo);
       return false;
     }
 
     try {
       const need_decompress = false;
-      await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
+      // updateBFData swallows its own write errors, so take its word for whether the file
+      // changed. Only advertise the new size/error once the file behind them is really there:
+      // intelproxy builds the filter from these parameters and imports whatever is on disk.
+      const written = await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
+      if (written)
+        this.bfInfoMap.set(part, bfInfo);
+      return written;
     } catch(e){
       log.error("Failed to process data file, err:", e);
       throw new Error(`Failed to updateBFData for ${part}, err: ${e.message}`);
     };
-
-    return true;
   }
 
 
@@ -167,7 +173,7 @@ class FastIntelPlugin extends Sensor {
     for (const part of removedParts) {
       const hashsetName = `bf:app.${part}`;
       await cc.disableCache(hashsetName);
-      this.removeData(part);
+      await this.removeData(part);
       this.bfInfoMap.delete(part);
     }
     
@@ -191,12 +197,16 @@ class FastIntelPlugin extends Sensor {
         } else {
           // remove obselete category data
           log.error(`fast_intel part ${part} data is invalid. Remove it`);
-          await this.removeData(part);
+          // the part list is unchanged here, so nothing else tells intelproxy to drop the filter
+          if (await this.removeData(part))
+            isConfigChanged = true;
           this.bfInfoMap.delete(part);
         }
       } catch (e) {
+        // break, not return: the parts above may already have new data on disk, and the part
+        // list was saved before this loop, so the next round would see nothing to restart for
         log.error(`Fail to update filter data for fast_intel part: ${part}.`, e);
-        return;
+        break;
       }
     }
 
