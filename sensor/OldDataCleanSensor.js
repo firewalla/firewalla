@@ -222,14 +222,8 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  // legacy subdomains:<suffix> set is replaced by subdomains2:<suffix> zset in net2/DNSTool.js and no longer used,
-  // unlink it to release memory early instead of waiting for its TTL, unlink frees large sets in background
-  async cleanLegacySubdomains(type, key, batch) {
-    batch.push(['unlink', key]);
-  }
-
-  // drop names not seen in 24 hours (SUBDOMAIN_RETENTION in net2/DNSTool.js),
-  // a suffix that is only written but never read is not pruned on read
+  // drop names of subdomains2:<suffix> (net2/DNSTool.js) not seen in 24 hours, aligned with the lifetime of
+  // rdns:domain:<name>. this is the only place old names are pruned, readers do not prune
   async cleanSubdomains(type, key, batch) {
     batch.push(['zremrangebyscore', key, '-inf', Date.now() / 1000 - 86400]);
   }
@@ -656,8 +650,6 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
     this._registerFilterFunction("ntp_off_set", (key) => key === Constants.REDIS_KEY_NTP_OFF_SET);
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
-    // TODO: remove legacySubdomains after one or two major releases, legacy keys are gone by then
-    this._registerFilterFunction("legacySubdomains", (key) => key.startsWith("subdomains:"), false, this.cleanLegacySubdomains);
     this._registerFilterFunction("subdomains2", (key) => key.startsWith("subdomains2:"), false, this.cleanSubdomains);
   }
 
