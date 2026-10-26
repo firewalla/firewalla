@@ -134,7 +134,7 @@ class IpsetControl extends ModuleControl {
         this.restore(ops, false).catch(e => log.error('ipset restore fallback failed', e.message));
       });
       if (!flushed)
-        log.warn('Interactive ipset stdin is backed up, buffering', ops.length, 'operations');
+        log.debug('Interactive ipset stdin is backed up, buffering', ops.length, 'operations');
     } catch (err) {
       // the stream is unusable, apply this batch through the file path rather than
       // retrying into a pipe that is already broken
