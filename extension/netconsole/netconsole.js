@@ -15,9 +15,10 @@
 
 'use strict';
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const fs = require('fs');
+const net = require('net');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
@@ -89,21 +90,37 @@ class Netconsole {
             log.error("netconsole config is invalid");
             return;
         }
+        if (!/^[A-Za-z0-9_.:-]+$/.test(src_intf)) {
+            log.error(`netconsole: invalid src_intf: ${src_intf}`);
+            return;
+        }
+        const portNum = parseInt(dst_port);
+        if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+            log.error(`netconsole: invalid dst_port: ${dst_port}`);
+            return;
+        }
+        if (!net.isIPv4(dst_ip) && !net.isIPv6(dst_ip)) {
+            log.error(`netconsole: invalid dst_ip: ${dst_ip}`);
+            return;
+        }
+        if (!/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(dst_mac)) {
+            log.error(`netconsole: invalid dst_mac: ${dst_mac}`);
+            return;
+        }
 
-        const cmd = `sudo modprobe netconsole netconsole=@/${src_intf},${dst_port}@${dst_ip}/${dst_mac}`;
-        await exec(cmd).then((r) => {
-            log.info(`netconsole installed: ${cmd}`);
+        const param = `netconsole=@/${src_intf},${dst_port}@${dst_ip}/${dst_mac}`;
+        await execFile('sudo', ['modprobe', 'netconsole', param]).then((r) => {
+            log.info(`netconsole installed: ${param}`);
         }).catch((e) => {
-            log.error(`failed to install netconsole, ${cmd}, error: ${e.message}`);
+            log.error(`failed to install netconsole, ${param}, error: ${e.message}`);
         });
     }
 
     async uninstall() {
-        const cmd = "sudo modprobe -r netconsole";
-        await exec(cmd).then((r) => {
-            log.info(`netconsole uninstalled: ${cmd}`);
+        await execFile('sudo', ['modprobe', '-r', 'netconsole']).then((r) => {
+            log.info(`netconsole uninstalled`);
         }).catch((e) => {
-            log.error(`failed to uninstall netconsole, ${cmd}, error: ${e.message}`);
+            log.error(`failed to uninstall netconsole, error: ${e.message}`);
         });
     }
 }

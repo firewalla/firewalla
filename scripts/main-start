@@ -28,6 +28,7 @@ heartbeatLED
 
 : ${PI_HOME:=/home/pi}
 MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+[ -s $FIREWALLA_HOME/scripts/upgrade_verify.sh ] && source $FIREWALLA_HOME/scripts/upgrade_verify.sh
 
 # use github to pull node modules to ~/.node_modules
 export FIREWALLA_NODE_MODULES_MODE=GIT
@@ -132,23 +133,24 @@ function update_node_modules {
   FW_NODE_MODULES_PATH=~/.node_modules
   if [[ "x$FIREWALLA_NODE_MODULES_MODE" == "xGIT" ]]; then
       sudo rm -f ~/.node_modules/.git/*.lock
+      REVISION_FILE=$(uv_node_modules_pin_file 2>/dev/null)
+
+      if type -t uv_sync_node_modules &>/dev/null && [[ -s $REVISION_FILE ]]; then
+        # strict path: only the pinned revision is ever checked out;
+        # on failure the repo is left unchanged
+        UV_GIT=$MGIT uv_sync_node_modules $FW_NODE_MODULES_PATH $NODE_MODULE_REPO $branch $REVISION_FILE ||
+          logger "MAIN-START MODULE PIN SYNC FAILED, node modules unchanged"
+        return
+      fi
+
+      logger "MAIN-START NO NODE MODULES PIN for platform $FIREWALLA_PLATFORM, legacy update"
       if [[ ! -d $FW_NODE_MODULES_PATH ]]; then
         cd
         # try again if failed, in case network issue
         git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH || git clone --recursive -b $branch --single-branch $NODE_MODULE_REPO $FW_NODE_MODULES_PATH
         cd - &>/dev/null
       fi
-      REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}
-
-      NODE_VERSION=$($FIREWALLA_HOME/bin/node -v)
-
-      RE_NODE4='^v4\..*$'
-      if [[ $NODE_VERSION =~ $RE_NODE4 ]]; then
-        REVISION_FILE=$FIREWALLA_HOME/scripts/NODE_MODULES_REVISION.${FIREWALLA_PLATFORM}.node4
-      fi
-
-
-      if [[ -d $FW_NODE_MODULES_PATH && -f $REVISION_FILE ]]; then
+      if [[ -d $FW_NODE_MODULES_PATH ]]; then
         cd $FW_NODE_MODULES_PATH
 
         modulesBranch=$(git rev-parse --abbrev-ref HEAD)
@@ -157,30 +159,6 @@ function update_node_modules {
             $MGIT remote set-branches origin $branch
             $MGIT fetch origin $branch
             $MGIT checkout $branch
-        fi
-
-        EXPECTED_REVISION=$(cat $REVISION_FILE)
-        CURRENT_REVISION=$(git log | head -n 1 | awk '{print $2}')
-
-        cd $FW_NODE_MODULES_PATH
-
-        logger "MAIN-START CHECKING MODULE STATUS $(date)"
-        if [[ `git status -uno --porcelain` ]]; then
-          NODE_MODULE_CHANGED=true
-        else
-          NODE_MODULE_CHANGED=false;
-        fi
-        logger "MAIN-START CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
-        # only reset head when there is new expected revision number
-        # this is to reduce the freq of calling 'git reset'
-        if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
-            logger "MAIN-START CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            $MGIT fetch origin  || $MGIT fetch origin || logger "MAIN-START MODULE FAILED TO FETCH ORIGIN"
-            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "MAIN-START MODULE FAILED TO RESET ORIGIN"
-            if [[ -n $FWPRODUCTION ]]; then
-                git clean -xdf # clean up all untracking files in node modules repo
-                # only clean untrack files in production mode
-            fi
         fi
         cd - &>/dev/null
       fi
@@ -306,6 +284,7 @@ function create_bootstrap_scripts_folder() {
     [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fire-ping.sh ] && cp /home/pi/firewalla/scripts/fire-ping.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/mgit ] && cp /home/pi/firewalla/scripts/mgit $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/upgrade_verify.sh ] && cp /home/pi/firewalla/scripts/upgrade_verify.sh $PI_HOME/scripts/.
     if [[ ! -f /.dockerenv ]]; then
         if [ -s /home/pi/scripts/fireupgrade.sh ]; then
             [ -s /home/pi/firewalla/etc/fireupgrade2.service ] && sudo cp /home/pi/firewalla/etc/fireupgrade2.service /etc/systemd/system/fireupgrade.service

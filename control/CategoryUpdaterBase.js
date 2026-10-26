@@ -46,11 +46,13 @@ const blackHoleHttpsPort = 8884;
 // References: 0
 // Number of entries: 1048576
 const IPSET_HASH_MAXELEM = 1048576 // 2^20
+// default maxelem used when creating category ipsets in setupCategoryEnv
+const IPSET_DEFAULT_MAXELEM = 65536
 
 class CategoryUpdaterBase {
 
   constructor() {
-    this.initializedCategories = {};
+    this.attemptedCategories = {};
   }
 
   getCategoryKey(category) {
@@ -137,10 +139,11 @@ class CategoryUpdaterBase {
       return
     }
 
-    let args = [this.getIPv4CategoryKey(category)]
-
-    args.push.apply(args, addresses)
-    return rclient.saddAsync(args)
+    const key = this.getIPv4CategoryKey(category);
+    const chunkSize = 4000;
+    for (let i = 0; i < addresses.length; i += chunkSize) {
+      await rclient.saddAsync([key].concat(addresses.slice(i, i + chunkSize)));
+    }
   }
 
   async flushIPv4Addresses(category) {
@@ -160,10 +163,11 @@ class CategoryUpdaterBase {
       return
     }
 
-    let commands = [this.getIPv6CategoryKey(category)]
-
-    commands.push.apply(commands, addresses)
-    return rclient.saddAsync(commands)
+    const key = this.getIPv6CategoryKey(category);
+    const chunkSize = 4000;
+    for (let i = 0; i < addresses.length; i += chunkSize) {
+      await rclient.saddAsync([key].concat(addresses.slice(i, i + chunkSize)));
+    }
   }
 
   async flushIPv6Addresses(category) {
@@ -254,7 +258,7 @@ class CategoryUpdaterBase {
 
   // add entries from category:{category}:ip:domain to ipset
   async updateIpset(category, ip6 = false, options) {
-    let ipsetName = this.getIPSetName(category, true, ip6);
+    const ipsetName = this.getIPSetName(category, true, ip6);
 
     const categoryIps = ip6 ? await this.getIPv6Addresses(category) : await this.getIPv4Addresses(category);
 
@@ -264,6 +268,34 @@ class CategoryUpdaterBase {
     }
 
     const comment = options.comment;
+
+    // When entry count exceeds the initial maxelem, rebuild via temp+swap to avoid
+    // silent truncation while keeping the live ipset reference valid in list:sets.
+    if (categoryIps.length > IPSET_DEFAULT_MAXELEM) {
+      let maxelem = categoryIps.length;
+      if (maxelem > IPSET_HASH_MAXELEM) {
+        log.warn(`Static ipset for ${category} has ${maxelem} IPs, truncating to ${IPSET_HASH_MAXELEM}`);
+        maxelem = IPSET_HASH_MAXELEM;
+      } else {
+        maxelem = 2 ** Math.ceil(Math.log2(maxelem));
+      }
+      const dstType = this.activeCategories[category] || 'hash:net';
+      const tmpIpsetName = this.getIPSetName(category, true, ip6, true);
+      await Ipset.flush(tmpIpsetName);
+      await Ipset.destroy(tmpIpsetName);
+      await Ipset.create(tmpIpsetName, dstType, ip6, { hashsize: maxelem / 4, maxelem, comment: this.needIpSetComment(category) });
+      const addLines = categoryIps.slice(0, maxelem).map(ip => {
+        let line = `add ${tmpIpsetName} ${ip}`;
+        if (comment) line += ` comment ${comment}`;
+        return line;
+      });
+      await Ipset.restore(addLines);
+      await Ipset.swap(ipsetName, tmpIpsetName);
+      await Ipset.flush(tmpIpsetName);
+      await Ipset.destroy(tmpIpsetName);
+      return;
+    }
+
     const addLines = categoryIps.map(ip => {
       let line = `add ${ipsetName} ${ip}`;
       if (comment) line += ` comment ${comment}`;
@@ -301,9 +333,16 @@ class CategoryUpdaterBase {
 
   async recycleIPSet(category) { }
 
-  // Returns categories that are activated but not yet initialized (recycleIPSet not completed).
-  getUninitializedCategories() {
-    return this.getActiveCategories().filter(c => !this.initializedCategories[c]);
+  // Marks a category's initial data load as attempted, whether or not it succeeded. Called once the
+  // cloud fetch returns, so that a category whose fetch failed - no UPDATE_CATEGORY_DOMAIN emitted,
+  // recycleIPSet never runs - does not hold up startup waiting for a signal that is never coming.
+  markAttempted(category) {
+    this.attemptedCategories[category] = true;
+  }
+
+  // Returns categories that are activated but whose initial data load has not been attempted yet.
+  getUnattemptedCategories() {
+    return this.getActiveCategories().filter(c => !this.attemptedCategories[c]);
   }
 
   // rebuild hash ipset with max size

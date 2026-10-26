@@ -24,6 +24,7 @@ const Promise = require('bluebird');
 const fs = require('fs');
 Promise.promisifyAll(fs);
 const _ = require('lodash');
+const Constants = require('./Constants.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const BRO_PROC_NAME = platform.getBroProcName();
 
@@ -75,9 +76,10 @@ class BroControl {
       // subsequent filters in restrict_filters will be applied properly
       if (intfType === "1")
         workerScript.push(`redef capture_filters += [["shift-vlan-offset"] = "(not ether proto 0x8100) or (ether proto 0x8100 and vlan)"];`);
+      const workerId = intf === Constants.INTF_PCAP_RSPAN ? "worker-rspan" : `worker-${index++}`;
       workerCfg.push(
         `\n`,
-        `[worker-${index++}]\n`,
+        `[${workerId}]\n`,
         `type=worker\n`,
         `host=localhost\n`,
         `interface=${intf}\n`,
