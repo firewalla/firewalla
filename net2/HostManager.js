@@ -131,6 +131,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
+const ethCounters = require('./EthCounters.js');
 const TAG_RULE_PREFIXES = Object.values(Constants.TAG_TYPE_MAP).map(t => t.ruleTagPrefix);
 const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
@@ -1319,9 +1320,30 @@ module.exports = class HostManager extends Monitorable {
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
+    // after the assignment on purpose: asyncBasicDataForInit runs under Promise.allSettled, so a
+    // throw here would otherwise drop nicStates from init data entirely. It fills the same object
+    await this.nicCountersForInit(nicStates);
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
     json.customizedCategories = customizedCategories;
+  }
+
+  // the driver counters NicStateSensor collects every minute, taken from redis instead of the
+  // NIC so that building init data costs no ethtool call. A counter reads -1 on a NIC whose
+  // driver cannot count it, e.g. atlantic reports no PAUSE frames at all, which is not the same
+  // as a 0 from a port that has seen none. It is absent only before the first round has run
+  async nicCountersForInit(nicStates) {
+    const ethInfo = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO).catch(() => null);
+    if (!ethInfo) return;
+    for (const intf in nicStates) {
+      for (const metric in ethCounters.ETH_COUNTERS) {
+        if (!ethCounters.ETH_COUNTERS[metric].nicStates)
+          continue;
+        const value = ethInfo[`${intf}_${ethCounters.ETH_COUNTERS[metric].key}`];
+        if (value !== undefined && !isNaN(value))
+          nicStates[intf][metric] = Number(value);
+      }
+    }
   }
 
   async getGuessedRouters(json) {
