@@ -156,6 +156,9 @@ class Alarm {
   needPolicyMatch() {
     return false;
   }
+  needCloudArbitration() {
+    return true;
+  }
   isSecurityAlarm() {
     return false;
   }

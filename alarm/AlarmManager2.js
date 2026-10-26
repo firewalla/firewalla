@@ -1126,7 +1126,7 @@ module.exports = class {
       throw trustErr;
     }
 
-    const arbitrationResult = await bone.arbitration(alarm);
+    const arbitrationResult = alarm.needCloudArbitration() ? await bone.arbitration(alarm) : alarm;
 
     if (!arbitrationResult) {
       throw new Error("invalid alarm, failed to pass cloud verification");
