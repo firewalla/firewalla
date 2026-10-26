@@ -130,7 +130,7 @@ class RuleStatsPlugin extends Sensor {
             continue;
           }
           // skip non global rules because they will already have their rule id logged.
-          if (!_.isEmpty(policy.tags) || !_.isEmpty(policy.intfs) || !_.isEmpty(policy.scope) || !_.isEmpty(policy.guids) || policy.localPort || policy.remotePort) {
+          if (!_.isEmpty(policy.tag) || !_.isEmpty(policy.scope) || !_.isEmpty(policy.guids) || policy.localPort || policy.remotePort) {
             continue;
           }
 
