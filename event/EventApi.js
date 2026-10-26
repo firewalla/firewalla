@@ -28,7 +28,11 @@ const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
 // hash of the latest event of each classified type, field = EventClassifier.classify(event)
 const KEY_EVENT_LAST_CACHE = "event:last:cache";
 
-const STATE_CACHE_MAX_KEYS_RETURN = 100;
+const STATE_CACHE_MAX_KEYS_RETURN = 200;
+// state types no client reads from the latest state maps. Each churns through many keys (one per
+// DAP device, per switch port) and would crowd the types apps do read out of
+// the cap above, firecommit#10398
+const DEFAULT_EXCLUDED_STATE_TYPES = ["dap_state", "switch_port_speed_change"];
 // cap on distinct types tracked in KEY_EVENT_LAST_CACHE, to bound its size. Entries also expire
 // via cleanLatestStateEventsByTime(), but that is scheduled inside EventSensor.startCollectEvents()
 // and therefore gated on the event_collect feature, while events are written regardless - so this
@@ -79,15 +83,51 @@ class EventApi {
         }
     }
 
-    async listLatestStateEventsAll(parse_json=true) {
+    /*
+     * filter: { include: [<state_type>] } or { exclude: [<state_type>] }, include wins.
+     * Returns whether a state type passes: include keeps only those types, otherwise the excluded
+     * types (DEFAULT_EXCLUDED_STATE_TYPES when none given) are left out
+     */
+    _stateTypeMatcher(filter) {
+        const types = (list) => Array.isArray(list) ? list.filter(t => typeof t === 'string') : null;
+        const include = types(filter && filter.include);
+        if (include)
+            return (t) => include.includes(t);
+        const exclude = types(filter && filter.exclude) || DEFAULT_EXCLUDED_STATE_TYPES;
+        return (t) => !exclude.includes(t);
+    }
+
+    // returns the raw hash and its newest entries that pass the filter, parsed
+    async _listLatestStateEvents(redisKey, filter) {
+        const match = this._stateTypeMatcher(filter);
+        const raw = await rclient.hgetallAsync(redisKey) || {};
+        const events = {};
+        for (const k of Object.keys(raw)) {
+            // field is "<state_type>:<state_key>", state_type itself never contains ":"
+            if (match(k.split(":", 1)[0]))
+                events[k] = JSON.parse(raw[k]);
+        }
+        const latest = Object.keys(events)
+          .sort( (a,b) => events[b].ts - events[a].ts )
+          .slice(0, STATE_CACHE_MAX_KEYS_RETURN)
+          .reduce((acc, k) => { acc[k] = events[k]; return acc; }, {});
+        return { raw, latest };
+    }
+
+    async listLatestStateEventsAll(parse_json=true, filter=null) {
         try {
-            const result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
-            if (result && parse_json) {
-                Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
-                const keys = Object.keys(result);
-                keys.sort( (a,b) => result[b].ts - result[a].ts )
-                return keys.slice(0, STATE_CACHE_MAX_KEYS_RETURN)
-                  .reduce((acc, k) => { acc[k] = result[k]; return acc; }, {});
+            if (parse_json) {
+                const [all, error] = await Promise.all([
+                    this._listLatestStateEvents(KEY_EVENT_STATE_CACHE, filter),
+                    this._listLatestStateEvents(KEY_EVENT_STATE_CACHE_ERROR, filter),
+                ]);
+                // clients pair each error with the entry under the same key here to tell whether it
+                // has recovered, so that entry is returned even if it is not among the newest
+                for (const k of Object.keys(error.latest)) {
+                    if (!(k in all.latest) && all.raw[k])
+                        all.latest[k] = JSON.parse(all.raw[k]);
+                }
+                return all.latest;
             }
         } catch (err) {
             log.error("failed to get all saved state event requests:",err);
@@ -106,15 +146,10 @@ class EventApi {
         }
     }
 
-    async listLatestStateEventsError(parse_json=true) {
+    async listLatestStateEventsError(parse_json=true, filter=null) {
         try {
-            const result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
-            if (result && parse_json) {
-                Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
-                const keys = Object.keys(result);
-                keys.sort( (a,b) => result[b].ts - result[a].ts )
-                return keys.slice(0, STATE_CACHE_MAX_KEYS_RETURN)
-                  .reduce((acc, k) => { acc[k] = result[k]; return acc; }, {});
+            if (parse_json) {
+                return (await this._listLatestStateEvents(KEY_EVENT_STATE_CACHE_ERROR, filter)).latest;
             }
         } catch (err) {
             log.error("failed to get all error state event requests:",err);
