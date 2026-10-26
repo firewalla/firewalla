@@ -28,6 +28,8 @@ const sysManager = require('../net2/SysManager.js');
 const Host = require('../net2/Host.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 const f = require('../net2/Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
@@ -119,7 +121,8 @@ class DestInfoIntel extends Intel {
     if (!destIP) {
       return alarm;
     }
-    if (sysManager.isLocalIP(destIP)) {
+    // same rule as the device side in BroDetect: a known device outside the box's subnets is local
+    if (sysManager.isLocalIP(destIP) || await hostTool.getMacEntryByIPRecord(destIP)) {
       try {
         if (sysManager.isMyIP(destIP) || sysManager.isMyIP6(destIP)) {
           Object.assign(alarm, {

@@ -16,18 +16,73 @@
 'use strict';
 let instance = null;
 
+// openssl verify errors (X509_verify_cert_error_string) as stable values for the app
+const CERT_ERRORS = {
+  "unable to get issuer certificate": "cert_invalid_issuer",
+  "unable to get local issuer certificate": "cert_invalid_issuer",
+  "unable to verify the first certificate": "cert_invalid_issuer",
+  "self signed certificate in certificate chain": "cert_invalid_issuer",
+  "certificate has expired": "cert_expired",
+  "certificate is not yet valid": "cert_not_yet_valid",
+};
+
 const sysManager = require('../../net2/SysManager.js')
+const fc = require('../../net2/config.js')
+const conntrack = require('../../net2/Conntrack.js')
+const Constants = require('../../net2/Constants.js')
+const IntelTool = require('../../net2/IntelTool.js')
+const intelTool = new IntelTool()
+const _ = require('lodash')
+const validator = require('validator')
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const log = require('../../net2/logger.js')(__filename);
 
+// issuers whose chains fail validation for known benign reasons, used until the cloud hashset gives a list
+const DEFAULT_IGNORED_ISSUERS = [
+  "CN=Microsoft ECC Product Root Certificate Authority 2018,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
+  "CN=Microsoft Root Certificate Authority 2011,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
+];
+
 class BroNotice {
   constructor() {
     if (instance === null) {
       instance = this;
+      this.setIgnoredIssuers(null);
     }
+  }
+
+  // FireMain only; required here, it opens a redis subscription when loaded
+  startIgnoredIssuersLoader() {
+    const CloudConfigLoader = require('../../sensor/CloudConfigLoader.js');
+    this.ignoredIssuersLoader = new CloudConfigLoader({
+      cacheKey: Constants.REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG,
+      hashsetName: Constants.KEY_INVALID_CERT_IGNORED_ISSUERS,
+      label: 'invalid cert ignored issuers',
+      apply: dns => this.setIgnoredIssuers(dns),
+      acceptEmpty: true // an emptied cloud list brings the default list back
+    });
+    return this.ignoredIssuersLoader.start();
+  }
+
+  // an array of DN strings from the cloud replaces the default list
+  setIgnoredIssuers(dns) {
+    if (!Array.isArray(dns) || !dns.length) dns = DEFAULT_IGNORED_ISSUERS;
+    this.ignoredIssuers = dns.filter(_.isString).map(dn => intelTool.parseDN(dn));
+  }
+
+  // compared attribute by attribute, so the order of the DN doesn't matter
+  isIgnoredIssuer(issuer) {
+    return this.ignoredIssuers.some(dn => _.isEqual(dn, issuer));
+  }
+
+  // zeek's src is the client; sets p.local_is_client and returns whether the alarm device is it
+  localIsClient(alarm, broObj) {
+    const isClient = alarm["p.device.ip"] == broObj.src;
+    alarm["p.local_is_client"] = isClient ? "1" : "0";
+    return isClient;
   }
 
   //  src: guesser
@@ -56,13 +111,11 @@ class BroNotice {
 
     let target = addresses[0];
 
-    if (alarm["p.device.ip"] == broObj.src) {
+    if (this.localIsClient(alarm, broObj)) {
       // attacker is internal device
-      alarm["p.local_is_client"] = "1";
       alarm["p.dest.ip"] = target;
     } else {
       // attacker is external device
-      alarm["p.local_is_client"] = "0";
       alarm["p.device.ip"] = target;
       alarm["device"] = target;
     }
@@ -74,28 +127,25 @@ class BroNotice {
   //  dst: target
   //  sub: "local" || "remote"
   async processPortScan(alarm, broObj) {
-    if (alarm["p.device.ip"] == broObj.src) {
-      alarm["p.local_is_client"] = "1";
-    } else {
-      alarm["p.local_is_client"] = "0";
-    }
+    this.localIsClient(alarm, broObj);
+    // zeek's src is always the scanner, but BroDetect files the alarm under the target
+    // when src is not a local device, so the scanner is p.dest.ip in that case
+    const scanner = alarm["p.local_is_client"] == "1" ? alarm["p.device.ip"] : alarm["p.dest.ip"];
+    const target = alarm["p.local_is_client"] == "1" ? alarm["p.dest.ip"] : alarm["p.device.ip"];
     let srcName = null;
     let dstName = null;
-    if (sysManager.isLocalIP(alarm["p.device.ip"])) {
-      srcName = await hostTool.getName(alarm["p.device.ip"]);
+    if (sysManager.isLocalIP(scanner)) {
+      srcName = await hostTool.getName(scanner);
     }
-    if (sysManager.isLocalIP(alarm["p.dest.ip"])) {
-      dstName = await hostTool.getName(alarm["p.dest.ip"]);
+    if (sysManager.isLocalIP(target)) {
+      dstName = await hostTool.getName(target);
     }
-    alarm['p.message'] = `${srcName ? srcName : alarm["p.device.ip"]} was scanning ports of ${dstName ? dstName + `(${alarm["p.dest.ip"]})`: alarm["p.dest.ip"]}.`;
+    alarm['p.message'] = `${srcName ? srcName : scanner} was scanning ports of ${dstName ? dstName + `(${target})`: target}.`;
   }
 
   async processHeartbleed(alarm, broObj) {
-    if (sysManager.isLocalIP(broObj["src"])) {
-      alarm["p.local_is_client"] = "1";
-    } else {
+    if (!this.localIsClient(alarm, broObj)) {
       // initiated from outside
-      alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
@@ -115,11 +165,8 @@ class BroNotice {
   // on HTTP src/dst compiles with HTTP connection
   // sub: match description link
   async processTeamCymru(alarm, broObj) {
-    if (sysManager.isLocalIP(broObj.src)) {
-      alarm["p.local_is_client"] = "1";
-    } else {
+    if (!this.localIsClient(alarm, broObj)) {
       // initiated from outside
-      alarm["p.local_is_client"] = "0";
       alarm["p.action.block"] = true; // block automatically if initiated from outside in
     }
 
@@ -136,8 +183,60 @@ class BroNotice {
     }
   }
 
+  //  src: tls client
+  //  dst: tls server
+  async processInvalidServerCert(alarm, broObj) {
+    if (!fc.isFeatureOn("cyber_security.invalidServerCert")) return false;
+    // local servers are dropped: self-signed NAS, printer and router UIs would only be noise
+    if (!this.localIsClient(alarm, broObj) || sysManager.isLocalIP(broObj.dst)) {
+      log.verbose("Ignoring invalid server cert notice", broObj);
+      return false;
+    }
+    // zeek's msg is "SSL certificate validation failed with (<openssl error>)", newer openssl spells "self-signed"
+    const status = ((/\((.*)\)$/.exec(broObj.msg) || [])[1] || "").replace("self-signed", "self signed");
+    if (status == "self signed certificate") {
+      log.verbose("Ignoring self-signed server cert notice", broObj);
+      return false;
+    }
+    alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
+    // a CN that is no domain, e.g. "Mijia Cloud", is a private CA's device cert, never meant for public CA validation
+    // zeek's sub is the subject of the site's own cert
+    const subject = intelTool.parseDN(broObj.sub || "");
+    const cns = [].concat(subject.CN || []);
+    if (cns.length && !cns.some(cn => validator.isFQDN(cn.startsWith("*.") ? cn.slice(2) : cn, { allow_underscores: true }))) {
+      log.verbose("Ignoring invalid server cert notice of a non-domain CN", broObj.sub);
+      return false;
+    }
+    if (!_.isEmpty(subject)) alarm["p.dest.ssl.subject"] = subject;
+    // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
+    try {
+      const { issuer, fp } = await intelTool.getCertValidationFailure(broObj.dst);
+      if (issuer && this.isIgnoredIssuer(issuer)) {
+        log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
+        return false;
+      }
+      // same shape as an e.dest.ssl.cert_chain entry
+      if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = { issuer };
+      // a flat string, so an exception (mute) can match it
+      const issuerCN = issuer && [].concat(issuer.CN || [])[0];
+      if (issuerCN) alarm["p.dest.ssl.validation_failed_cert_issuer_CN"] = issuerCN;
+      if (fp) alarm["p.dest.ssl.validation_failed_fp"] = fp;
+    } catch (err) {
+      log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
+    }
+    // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
+    try {
+      const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);
+      if (host) alarm["p.dest.name"] = host;
+    } catch (err) {
+      log.warn("Failed to look up server name for invalid server cert notice", err.message);
+    }
+    return true;
+  }
+
   //  src: victim
   //  dst: no presence
+  // not localIsClient: here zeek's src is the attacked server, so the direction is inverse
   async processSQLInjection(alarm, broObj) {
     if (alarm["p.device.ip"] == broObj.src) {
       alarm["p.local_is_client"] = "0";
@@ -156,7 +255,7 @@ class BroNotice {
     }
 
     // ignore notice triggered by Firewalla itself
-    if (sysManager.isMyIP(broObj.src)) {
+    if (sysManager.isMyIP(broObj.src) || sysManager.isMyIP6(broObj.src)) {
       log.info("Ignoring bro notice", broObj)
       return null;
     }
@@ -188,6 +287,10 @@ class BroNotice {
       case 'HTTP::SQL_Injection_Victim':
         await this.processSQLInjection(alarm, broObj);
         break
+
+      case "SSL::Invalid_Server_Cert":
+        if (!await this.processInvalidServerCert(alarm, broObj)) return null;
+        break;
 
       case 'Signatures::Sensitive_Signature':
         // should dealing with signature event here?

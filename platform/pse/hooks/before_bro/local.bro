@@ -112,6 +112,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load /home/pi/.firewalla/run/zeek/scripts/dns-mac-logging.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/http-fast-logging.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/ssl-alpn-logging.zeek
+@load /home/pi/.firewalla/run/zeek/scripts/ssl-cert-chain.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/vlan-logging.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/conn-worker-id.zeek
 

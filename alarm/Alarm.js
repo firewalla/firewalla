@@ -860,12 +860,20 @@ class BroNoticeAlarm extends Alarm {
     if (alarm['p.noticeType'] != alarm2['p.noticeType']) {
       return false;
     }
+    const failedIssuer = _.get(alarm2, ['p.dest.ssl.validation_failed_cert', 'issuer']);
+    // one alarm per device per failing CA, whichever server it was hit through; dest ip when either CA is unknown
+    if (alarm2['p.noticeType'] == 'SSL::Invalid_Server_Cert' && failedIssuer && _.get(alarm, ['p.dest.ssl.validation_failed_cert', 'issuer'])) {
+      // a DN object, parsed back from its JSON string when an earlier alarm is loaded
+      return alarm['p.device.ip'] == alarm2['p.device.ip'] && _.isEqual(alarm['p.dest.ssl.validation_failed_cert'].issuer, failedIssuer);
+    }
     if (alarm['p.dest.ip'] != alarm2['p.dest.ip'] || alarm['p.device.ip'] != alarm2['p.device.ip']) {
       return false;
     }
     return true;
   }
   getExpirationTime() {
+    if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
+      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
   }
 

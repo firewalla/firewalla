@@ -132,7 +132,7 @@ class BroDetect {
   initWatchers() {
     const watchers = {
       "intelLog": [config.intel.path, this.processIntelData],
-      "noticeLog": [config.notice.path, this.processNoticeData],
+      "noticeLog": [config.notice.path, this.processNoticeData, 5000], // wait 5 seconds for ssl.log to cache the conn host and cert failure
       "dnsLog": [config.dns.path, this.processDnsData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
@@ -156,6 +156,8 @@ class BroDetect {
     log.info('Initializing BroDetect')
     if (!firewalla.isMain() && !firewalla.isTest())
       return;
+    if (firewalla.isMain()) // no cloud fetch from test runs
+      broNotice.startIgnoredIssuersLoader().catch(err => log.error("Failed to load invalid cert ignored issuers", err.message));
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
@@ -1802,10 +1804,13 @@ class BroDetect {
         return
       }
 
-      // do not process ssl log that does not pass the certificate validation
-      if (obj["validation_status"] && obj["validation_status"] !== "ok")
-        return;
       let dst = obj["id.resp_h"];
+      // do not process ssl log that does not pass the certificate validation, only keep why it failed
+      if (obj["validation_status"] && obj["validation_status"] !== "ok") {
+        if (!firewalla.isReservedBlockingIP(dst))
+          await this.saveCertValidationFailure(obj);
+        return;
+      }
       if (firewalla.isReservedBlockingIP(dst))
         return;
       if (obj['server_name']) {
@@ -1841,7 +1846,11 @@ class BroDetect {
 
         try {
           const multi = rclient.multi()
-          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          // delete before hmset in case number of keys is not same in old and new data, but only for a validated record,
+          // a ClientHello record of another connection must not drop the failure saveCertValidationFailure kept.
+          // it has no subject though, so an old one, maybe of another host on this ip, goes
+          if (obj["validation_status"]) multi.unlink(key)
+          else multi.hdel(key, "subject")
           multi.hmset(key, xobj)
           if (config.ssl.expires) {
             multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
@@ -1914,6 +1923,34 @@ class BroDetect {
     } catch (e) {
       log.error("SSL:Error Unable to save", e, data);
     }
+  }
+
+  // fields from ssl-cert-chain.zeek, merged into the ssl cert key so the server_name saved at ClientHello stays
+  async saveCertValidationFailure(obj) {
+    if (!obj.cert_chain_issuers) return;
+    const key = intelTool.getSSLCertKey(obj["id.resp_h"]);
+    const fps = obj.cert_chain_fps || [];
+    const notBefore = obj.cert_chain_not_valid_before || [];
+    const notAfter = obj.cert_chain_not_valid_after || [];
+    // one object per server-sent cert, leaf first; DNs as objects, easier for the app than RFC 2253 strings
+    const chain = obj.cert_chain_issuers.map((dn, i) => ({
+      fp: fps[i], issuer: intelTool.parseDN(dn), not_valid_before: notBefore[i], not_valid_after: notAfter[i]
+    }));
+    const xobj = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
+    // the first failed cert is enough to tell which CA broke the chain
+    if (obj.validation_failed_certs) {
+      xobj.validation_failed_issuer = JSON.stringify(intelTool.parseDN(obj.validation_failed_issuers[0]));
+      const fp = fps[obj.validation_failed_certs[0]];
+      if (fp) xobj.validation_failed_fp = fp;
+    }
+    const multi = rclient.multi();
+    // a culprit from an earlier failure must not outlive this one, nor fields of the earlier format
+    multi.hdel(key, ["validation_failed_issuer", "validation_failed_fp", "cert_chain_fps", "cert_chain_issuers", "validation_failed_cert"]);
+    multi.hmset(key, xobj);
+    if (config.ssl.expires) {
+      multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+    }
+    await multi.execAsync();
   }
 
   processX509Data(data) {
@@ -2031,8 +2068,9 @@ class BroDetect {
         lh = lh || "0.0.0.0";
         dh = dh || "0.0.0.0";
 
-        // make sure lh points to local device
-        if (lh && !sysManager.isLocalIP(lh)) {
+        // make sure lh points to local device, a known device whose address is outside the box's
+        // subnets counts as local so the alarm is filed under it
+        if (lh && !sysManager.isLocalIP(lh) && !await hostTool.getMacEntryByIPRecord(lh)) {
           let tmp = lh;
           lh = dh;
           dh = tmp;

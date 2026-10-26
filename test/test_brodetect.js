@@ -175,3 +175,62 @@ describe('test process conn data', function(){
   });
 
 });
+
+describe('processNoticeData port scan device', function () {
+  this.timeout(30000);
+
+  const fc = require('../net2/config.js');
+  const broNotice = require('../extension/bro/BroNotice.js');
+  // documentation addresses, outside every subnet of a box
+  const KNOWN = '2001:db8:6151::10';
+  const UNKNOWN = '2001:db8:6151::20';
+  const TARGET = 'fe80::200:5eff:fe00:5301';
+  let processNotice;
+  let captured;
+
+  function portScan(src, dst) {
+    return JSON.stringify({
+      ts: Date.now() / 1000, note: 'Scan::Port_Scan',
+      msg: `${src} scanned at least 18 unique ports of host ${dst} in 1m6s`,
+      sub: 'remote', src, dst, actions: ['Notice::ACTION_LOG'], suppress_for: 3600.0,
+    });
+  }
+
+  before(async function () {
+    await fireRouter.waitTillReady();
+    await sysManager.updateAsync();
+    if (!fc.isFeatureOn('cyber_security')) this.skip();
+
+    const hosts = await hostManager.getHostsAsync();
+    const host = hosts.find(h => h.o.mac && !sysManager.isMyMac(h.o.mac));
+    if (!host) this.skip();
+    // a device seen on the LAN at an address from a prefix the box no longer has
+    await rclient.hmsetAsync(`host:ip6:${KNOWN}`, { mac: host.o.mac });
+    await rclient.expireAsync(`host:ip6:${KNOWN}`, 120);
+
+    processNotice = broNotice.processNotice;
+    broNotice.processNotice = async (alarm) => { captured = alarm; return null; };
+  });
+
+  after(async function () {
+    if (processNotice) broNotice.processNotice = processNotice;
+    await rclient.unlinkAsync(`host:ip6:${KNOWN}`);
+  });
+
+  beforeEach(() => { captured = null; });
+
+  it('files the alarm under a known device whose address is outside the box subnets', async function () {
+    expect(sysManager.isLocalIP(KNOWN)).to.equal(false);
+    await broDetect.processNoticeData(portScan(KNOWN, TARGET));
+
+    expect(captured['p.device.ip']).to.equal(KNOWN);
+    expect(captured['p.dest.ip']).to.equal(TARGET);
+  });
+
+  it('files the alarm under the target when the scanner is unknown', async function () {
+    await broDetect.processNoticeData(portScan(UNKNOWN, TARGET));
+
+    expect(captured['p.device.ip']).to.equal(TARGET);
+    expect(captured['p.dest.ip']).to.equal(UNKNOWN);
+  });
+});
