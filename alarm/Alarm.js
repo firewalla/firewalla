@@ -1720,6 +1720,39 @@ class FwApcAlarm extends Alarm {
   }
 }
 
+// informational, the category rule has already blocked the flow. Never set p.action.block or
+// p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
+class CategoryBlockAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_CATEGORY_BLOCK', timestamp, device, info);
+  }
+
+  // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
+  needCloudArbitration() {
+    return false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.mac', 'p.dest.name', 'p.dest.category'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup();
+  }
+
+  getExpirationTime() {
+    return this['p.cooldown'] || super.getExpirationTime();
+  }
+
+  localizedNotificationContentArray() {
+    const result = [this.getDeviceNameInNotification(), this["p.dest.name"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+}
+
 class NetworkMonitorRTTAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NETWORK_MONITOR_RTT", timestamp, device, info);
@@ -1806,6 +1839,7 @@ const classMapping = {
   ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_FW_APC: FwApcAlarm.prototype,
+  ALARM_CATEGORY_BLOCK: CategoryBlockAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
@@ -1816,6 +1850,7 @@ const classMapping = {
 module.exports = {
   Alarm,
   FwApcAlarm,
+  CategoryBlockAlarm,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,
