@@ -372,11 +372,6 @@ describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
   });
 });
 
-// The suite above stubs pm2.unenforce/enforceOnQueue, so it never reaches the real
-// _unenforce()/_enforce()/_applyBypass() and can't see resolveRuleScope() or the guard it
-// replaced. These tests call the real functions and stub only the outermost iptables/ipset
-// seam (__applyRules / Bypass.bypassIptablesRules), matching test_bypass.js's convention of
-// stubbing Tag.ensureCreateEnforcementEnv where a case still reaches it directly.
 describe('Test rule input validation', function() {
   this.timeout(5000);
 
