@@ -20,6 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
 const { delay } = require('../util/util.js');
+const path = require('path');
 
 const REDIS_KEY = "kernel_crash_info";
 const LOCK_KEY = "kernel_crash_info:lock";
@@ -52,6 +53,36 @@ const PSTORE_ARCHIVE_MAX_DIRS = 3;
 // and fails to register without one; the backends worth loading blindly are EFI-only.
 const PSTORE_BACKEND_PARAM = "/sys/module/pstore/parameters/backend";
 const LOADABLE_PSTORE_BACKENDS = ["efi_pstore"];
+
+// Throwaway variable used to force EFI NVRAM garbage collection after clearing pstore,
+// see reclaimEfiNvram. The GUID is ours and arbitrary; efivarfs requires a name-GUID pair.
+const EFIVARS_PATH = "/sys/firmware/efi/efivars";
+const RECLAIM_PROBE_PATH = `${EFIVARS_PATH}/fwPstoreReclaim-1ac80a2b-5f4e-4a53-9f1e-000000000001`;
+// Must stay above efi_pstore's per-record size (psinfo->bufsize, 1024 on every kernel we
+// ship - hardcoded up to 5.4, the efi_pstore.record_size param's default and minimum from
+// 6.x). A throttled dump stops below record_size + EFI_MIN_RESERVE, and the probe trips
+// collection below probe_size + EFI_MIN_RESERVE, so a smaller probe would only fire once
+// efi_pstore had already gone silent.
+const RECLAIM_PROBE_BYTES = 2048;
+// EFI_MIN_RESERVE from arch/x86/platform/efi/quirks.c - the kernel refuses a non-volatile
+// write that would leave less than this free, and that refusal is what we work around.
+const EFI_MIN_RESERVE = 5120;
+// Not reclaiming deleted variables is a firmware bug, not a platform one, and the BIOS
+// version is the only thing that tells the affected boxes apart: Gold v1 and Gold v2 both
+// report DMI product_name "FirewallaGold" and share platform/gold. Measured by writing an
+// 8KB variable and deleting it again - FWGOLDA03 (Gold v1, 2020-01-15) leaves remaining_size
+// 8228 bytes lower for good, while FWGOLDB04 (Gold v2), FWGOLDC05 (GoldPlus) and FWGOLDD06
+// (GoldPro) all return it immediately, even for a variable deleted from mid-log.
+const DMI_BIOS_VERSION_PATH = "/sys/class/dmi/id/bios_version";
+const LEAKY_EFI_FIRMWARE = /^FWGOLDA/;
+// Before 6.x there is no efivarfs statfs and QueryVariableInfo is reachable from kernel code
+// only, so test/kernel_crash/efi_qvi.c samples it into read-only module parameters. Built
+// per kernel release and dropped next to xt_udp_tls.ko in
+// platform/<platform>/files/kernel_modules/<uname -r>/, which scopes it on its own: only
+// Gold v1's 4.15 tree gets one, so Gold v2 (same platform/gold, different kernel release)
+// never finds it. Loading it is a query - it writes nothing to NVRAM.
+const EFI_QVI_MODULE = "efi_qvi";
+const EFI_QVI_REMAINING_PARAM = `/sys/module/${EFI_QVI_MODULE}/parameters/remaining_size`;
 
 // In-memory cache of the "disable UDP TLS" decision so hot-path rule builders
 // (Block/TLSSetControl/AdblockPlugin/QuicLogPlugin) can read it synchronously
@@ -245,8 +276,14 @@ async function cleanupOldPstoreArchives() {
 
 // copy crash records from sourcePath to PSTORE_ARCHIVE_PATH for later inspection, then
 // clear sourcePath so space is freed for the next crash. Unlinking files in /sys/fs/pstore
-// frees the underlying persistent ram/flash backend; clearing systemd's archive stops us
-// from re-detecting the same crash on every subsequent boot (its files otherwise linger).
+// releases the records in the underlying persistent ram/flash backend; clearing systemd's
+// archive stops us from re-detecting the same crash on every subsequent boot (its files
+// otherwise linger).
+// On EFI, releasing a record is not the same as getting the space back - the firmware only
+// marks it dead. reclaimEfiNvram() below has to run afterwards to make the space usable
+// again.
+// Returns true only when the records were actually unlinked, which is what lets the caller
+// run the EFI reclaim exactly once per crash: once they are gone a later pass finds nothing.
 async function archiveAndClearPstore(sourcePath, crashTS) {
   try {
     await execFile('sudo', ['mkdir', '-p', PSTORE_ARCHIVE_PATH]);
@@ -259,8 +296,10 @@ async function archiveAndClearPstore(sourcePath, crashTS) {
 
     await execFile('sudo', ['find', sourcePath, '-mindepth', '1', '-delete']);
     log.info(`Cleared ${sourcePath} after archiving`);
+    return true;
   } catch (err) {
     log.error("Failed to archive/clear pstore:", err.message);
+    return false;
   }
 }
 
@@ -271,11 +310,137 @@ async function currentPstoreBackend() {
   return (v === '(null)' || v === 'null') ? '' : v;
 }
 
+// Free bytes in the EFI variable store, or null when the kernel will not say. efivarfs only
+// grew a real statfs (backed by QueryVariableInfo) in 6.x; before that it is simple_statfs
+// and reports zero blocks. Reading costs nothing - no flash write - so where it works it
+// lets us skip the probe entirely.
+// Whether this box's firmware is one of the versions measured never to give the space back.
+// Only consulted when the free space cannot be read, see reclaimEfiNvram.
+async function hasLeakyEfiFirmware() {
+  const r = await execFile('cat', [DMI_BIOS_VERSION_PATH]).catch(() => null);
+  return !!r && LEAKY_EFI_FIRMWARE.test(r.stdout.trim());
+}
+
+async function efivarsFreeBytesViaStatfs() {
+  const r = await execFile('stat', ['-f', '-c', '%s %b %f', EFIVARS_PATH]).catch(() => null);
+  if (!r) return null;
+  const [bsize, blocks, free] = r.stdout.trim().split(/\s+/).map(Number);
+  if (![bsize, blocks, free].every(Number.isFinite) || !blocks) return null;
+  return bsize * free;
+}
+
+// Same number from efi_qvi, for the kernels statfs cannot answer on. koPath is the bundled
+// xt_udp_tls.ko; efi_qvi.ko sits in the same per-kernel-release directory, so no platform
+// lookup is needed. Returns null whenever the module is absent or will not load, and the
+// caller then falls back to the firmware list. The module is removed first so the sample is
+// always fresh rather than whatever a previous run left cached in its parameters.
+async function efivarsFreeBytesViaModule(koPath) {
+  if (!koPath) return null;
+  const qviPath = `${path.dirname(koPath)}/${EFI_QVI_MODULE}.ko`;
+  const present = await execFile('test', ['-f', qviPath]).then(() => true).catch(() => false);
+  if (!present) return null;
+
+  await execFile('sudo', ['rmmod', EFI_QVI_MODULE]).catch(() => {});
+  try {
+    await execFile('sudo', ['insmod', qviPath]);
+  } catch (err) {
+    log.warn(`Failed to load ${EFI_QVI_MODULE}, falling back to the firmware list:`, err.message);
+    return null;
+  }
+  try {
+    const r = await execFile('cat', [EFI_QVI_REMAINING_PARAM]);
+    const free = parseInt(r.stdout.trim(), 10);
+    return Number.isFinite(free) ? free : null;
+  } catch (err) {
+    log.warn(`Failed to read ${EFI_QVI_REMAINING_PARAM}:`, err.message);
+    return null;
+  } finally {
+    await execFile('sudo', ['rmmod', EFI_QVI_MODULE]).catch(() => {});
+  }
+}
+
+// Free bytes in the EFI variable store, or null when neither route can tell us. Reading
+// costs nothing - no flash write - so where it works the probe below is spent only when it
+// is guaranteed to trip collection rather than merely consume space.
+async function efivarsFreeBytes(koPath) {
+  const viaStatfs = await efivarsFreeBytesViaStatfs();
+  if (viaStatfs !== null) return viaStatfs;
+  return efivarsFreeBytesViaModule(koPath);
+}
+
+// EFI NVRAM is an append-only log: deleting a variable only marks its record dead, and the
+// firmware reclaims that space only during a garbage collection pass it runs when a
+// SetVariable does not fit. A panic never gets that far - efi_pstore writes through
+// query_variable_store_nonblocking() (arch/x86/platform/efi/quirks.c), which refuses the
+// write once remaining_size - size drops below EFI_MIN_RESERVE and deliberately skips
+// collection because it runs from a crash handler. So on firmware that does not reclaim on
+// delete (measured on Gold v1 / BIOS FWGOLDA03: one crash = two kmsg_dump events x
+// kmsg_bytes, 22779 bytes, never returned) efi-pstore stops recording after ~4 crashes, and
+// does so silently because pstore_dump() ignores the backend's write() return value.
+//
+// A userspace efivarfs write takes the *blocking* branch, which forces the collection by
+// writing an oversized dummy variable and then re-querying. So write one throwaway variable
+// here and delete it again. On firmware that does reclaim on delete (every Gold BIOS after
+// A03, and the arm boxes have no EFI at all) this costs nothing at all.
+// Note the efi_no_storage_paranoia boot parameter does NOT help: it is only tested in the
+// blocking branch, never in query_variable_store_nonblocking().
+//
+// Known limitation on kernels without efivarfs statfs: when the write does not trip
+// collection it still costs its own size on leaky firmware, which can leave the store just
+// under what efi_pstore needs for one record, and the next panic then records nothing. It
+// cannot be designed away - the probe has to be larger than a pstore record to fire in
+// time, so it always consumes more than the margin it protects - and the outcome is a
+// degraded new feature rather than a regression: before efi_pstore was enabled here the box
+// recorded nothing either.
+async function reclaimEfiNvram(koPath) {
+  // efi_pstore_info.name is "efi" up to 5.4 and KBUILD_MODNAME ("efi_pstore") from 6.x, so
+  // match the prefix - an exact "efi" test silently skips GoldPlus/GoldPro. Every other
+  // backend (ramoops on the arm boxes, none at all) has nothing to reclaim.
+  if (!/^efi/.test(await currentPstoreBackend())) return;
+  const hasEfivars = await execFile('test', ['-d', EFIVARS_PATH]).then(() => true).catch(() => false);
+  if (!hasEfivars) return;
+
+  const freeBytes = await efivarsFreeBytes(koPath);
+  if (freeBytes !== null) {
+    // The exact answer: write only when the write would actually trip collection. Correct
+    // on any firmware, so no version check belongs here - if a BIOS we believe to be fine
+    // ever does start leaking, this path still handles it.
+    if (freeBytes - RECLAIM_PROBE_BYTES >= EFI_MIN_RESERVE) {
+      log.info(`EFI variable store has ${freeBytes} bytes free, no reclaim needed`);
+      return;
+    }
+    log.info(`EFI variable store down to ${freeBytes} bytes free, forcing a reclaim`);
+  } else if (!await hasLeakyEfiFirmware()) {
+    // Flying blind, so spend a write only on firmware known not to collect on its own.
+    // Every kernel from 6.x implements efivarfs statfs and takes the branch above, so this
+    // one is legacy-only (Gold v1 on 4.15, Gold v2 on 5.4) and will not need new entries.
+    log.info("EFI variable store free space is unreadable and this firmware reclaims on delete, skipping");
+    return;
+  }
+
+  // efivarfs wants the 4-byte attribute word (NON_VOLATILE|BOOTSERVICE_ACCESS|RUNTIME_ACCESS)
+  // and the payload in a single write(2); iflag=fullblock makes dd assemble the whole block
+  // before writing it. Variables are created immutable, so chattr -i precedes every rm.
+  const cleanup = `chattr -i '${RECLAIM_PROBE_PATH}' 2>/dev/null; rm -f '${RECLAIM_PROBE_PATH}'`;
+  const write = `${cleanup}; { printf '\\x07\\x00\\x00\\x00'; head -c ${RECLAIM_PROBE_BYTES} /dev/zero; } | ` +
+    `dd of='${RECLAIM_PROBE_PATH}' bs=${RECLAIM_PROBE_BYTES + 4} count=1 iflag=fullblock status=none`;
+  try {
+    await execFile('sudo', ['bash', '-c', write]);
+    log.info("EFI NVRAM reclaim probe accepted; variable store can still take a crash dump");
+  } catch (err) {
+    // ENOSPC ("No space left on device") means the firmware had nothing left to collect, so
+    // efi_pstore cannot record the next panic and the UDP TLS kill switch is effectively off
+    log.error("EFI variable store is exhausted, kernel crash records will be lost:", err.message);
+  } finally {
+    await execFile('sudo', ['bash', '-c', cleanup]).catch(() => {});
+  }
+}
+
 // When no pstore backend is registered, load one so any crash the box just took becomes
 // visible under /sys/fs/pstore before we scan. This runs at FireMain/FireApi startup, long
 // after systemd-pstore's boot-time oneshot has already given up on an empty pstore, so once
 // we load the module the records are ours to read directly (and archiveAndClearPstore then
-// frees the backend's storage - unlinking the EFI variables - as usual).
+// releases the backend's records - unlinking the EFI variables - as usual).
 async function ensurePstoreBackendLoaded() {
   const backend = await currentPstoreBackend();
   if (backend) {
@@ -446,9 +611,19 @@ async function checkPstoreAndUpdateRedis(modName, koPath) {
       await saveCrashInfo(crashInfo);
     }
 
-    // preserve the crash logs and free up pstore space for the next crash
-    if (dumpPstoreNeeded)
-      await archiveAndClearPstore(sourcePath, latestCrashTSSec);
+    // Preserve the crash logs and free up pstore space for the next crash, then - on EFI -
+    // make the firmware actually reclaim that space, because unlinking the records only
+    // marks them dead (see reclaimEfiNvram).
+    //
+    // Chained on the archive succeeding, which gives three things at once: the records are
+    // gone before collection runs (collecting earlier would reclaim nothing), a box that
+    // never panics writes nothing to NVRAM at all, and a FireMain restart cannot repeat the
+    // write because the second pass finds pstore empty. efi_pstore is newly enabled on these
+    // boxes - before it nothing wrote to the EFI variable store - so every byte here is a
+    // cost this feature introduces, and tying it to a dump that just spent ~22KB keeps it at
+    // roughly 9% on top of a cost already accepted.
+    if (dumpPstoreNeeded && await archiveAndClearPstore(sourcePath, latestCrashTSSec))
+      await reclaimEfiNvram(koPath);
   } catch (err) {
     log.error("Error in checkPstoreAndUpdateRedis:", err.message);
   } finally {

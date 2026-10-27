@@ -851,7 +851,7 @@ class AdblockPlugin extends Sensor {
           }
         })
       } catch (err) {
-        log.err("Failed to delete file,", err)
+        log.error("Failed to delete file,", err)
       }
     }
 

@@ -62,7 +62,7 @@ function get_dynamic_assets_list {
 }
 
 function get_node_bin_path {
-  echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
+  node_bin_or_default /home/pi/.nvm/versions/node/v12.18.3/bin/node
 }
 
 function get_zeek_log_dir {

@@ -18,6 +18,7 @@ const config = winston.config;
 
 const loggerManager = require('./LoggerManager.js');
 const {argumentsToString} = require('../util/util.js');
+const { createFileTransport } = require('../util/logFileTransport.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -53,31 +54,14 @@ else if (production) {
 }
 
 function getFileTransport() {
-  let loglevel = 'silly';
-  // if (production) {
-  //   loglevel = 'warn';
-  // }
-
-  return new(winston.transports.File)({
-    level: loglevel,
+  return createFileTransport({
+    level: 'silly',
     name: 'log-file',
     filename: process.title + ".log",
-    json: false,
     dirname: `${process.env.HOME}/logs`,
     maxsize: 1000000,
     maxFiles: 3,
-    timestamp: function() {
-      return moment().format('YYYY-MM-DD HH:mm:ss')
-    },
-    formatter: function(options) {
-      // - Return string will be passed to logger.
-      // - Optionally, use options.colorize(options.level, <string>) to
-      //   colorize output based on the log level.
-      return options.timestamp() + ' ' +
-        options.level.toUpperCase() + ' ' +
-        (options.message ? options.message : '') +
-        (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
-    }
+    withLevel: true
   })
 }
 

@@ -17,7 +17,7 @@
 let ursa = null
 const crypto = require('crypto');
 const fs = require('fs');
-const request = require('requestretry');
+const request = require('../../vendor_lib/requestretry');
 const uuid = require("uuid");
 const io2 = require('socket.io-client');
 
@@ -38,7 +38,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const era = require('../../event/EventRequestApi.js')
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const rp = require('request-promise');
 
@@ -168,8 +168,8 @@ let legoEptCloud = class {
     this.myPublicKey = null;
     this.myPrivateKey = null;
 
-    await exec("sudo rm -f " + pathname + "/db/groupId")
-    await exec("sync")
+    await execFile("sudo", ["rm", "-f", pathname + "/db/groupId"])
+    await execFile("sync", [])
   }
 
   getPrivateKeyPath() {
@@ -230,7 +230,7 @@ let legoEptCloud = class {
 
     await fs.promises.writeFile(this.getPrivateKeyPath(), this.myprivkeyfile, 'ascii')
     await fs.promises.writeFile(this.getPublicKeyPath(), this.mypubkeyfile, 'ascii')
-    await exec("sync")
+    await execFile("sync", [])
   }
 
   publicEncrypt(key, utf8String) {

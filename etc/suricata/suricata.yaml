@@ -272,7 +272,9 @@ af-packet:
     # Block size is used by tpacket_v3 only. It should set to a value high enough to contain
     # a decent number of packets. Size is in bytes so please consider your MTU. It should be
     # a power of 2 and it must be multiple of page size (usually 4096).
-    block-size: 65536
+    # A packet larger than a block is truncated, and with defrag a packet can reach 65561
+    # bytes, so 131072 is the smallest value that captures every packet whole.
+    block-size: 131072
     # tpacket_v3 block timeout: an open block is passed to userspace if it is not
     # filled after block-timeout milliseconds.
     #block-timeout: 10

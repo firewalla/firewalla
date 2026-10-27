@@ -31,7 +31,7 @@ const df = util.promisify(require('node-df'))
 
 const os = require('../../vendor_lib/osutils.js');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const { execSync } = require('child_process')
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
@@ -73,6 +73,7 @@ let threadInfo = {};
 let diskInfo = null;
 
 let ethInfo = {};
+let sfpInfo = {};
 let wlanInfo = {}
 let slabInfo = {};
 
@@ -174,6 +175,7 @@ async function update() {
         .then(getMaxPid)
         .then(getActiveContainers)
         .then(getEthernetInfo)
+        .then(getSfpDeviceInfo)
         .then(getWlanInfo)
         .then(getSlabInfo)
         .then(getDiskUsage)
@@ -311,7 +313,7 @@ async function getAutoUpgrade() {
 
 async function getKernelVersion() {
   if (!kernelVersion) {
-    kernelVersion = await exec("uname -r").then(result => result.stdout.trim()).catch((err) => {
+    kernelVersion = await execFile("uname", ["-r"]).then(result => result.stdout.trim()).catch((err) => {
       log.error("Failed to get kernel version via uname -r", err.message);
       return null;
     });
@@ -349,7 +351,7 @@ function cachedAsync(producer, ttlMs) {
 
 // /proc/version never changes without a reboot, so cache it forever like kernelVersion above.
 const getProcVersion = cachedAsync(
-  () => exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+  () => execFile("cat", ["/proc/version"]).then(result => result.stdout.trim()).catch(err => null),
   Infinity
 );
 
@@ -370,7 +372,7 @@ async function getIntelQueueSize() {
 
 async function getRealMemoryUsage() {
   try {
-    const res = await exec('free');
+    const res = await execFile('free', []);
     var lines = res.stdout.split(/\n/g);
     for(var i = 0; i < lines.length; i++) {
       lines[i] = lines[i].split(/\s+/);
@@ -495,7 +497,7 @@ async function getMaxPid() {
 async function getActiveContainers() {
   try {
     if (! platform.isDockerSupported()) { return; }
-    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    const active = await execFile("sudo", ["systemctl", "-q", "is-active", "docker"]).then(() => true).catch((err) => false);
     if (active) {
       const cmd = await exec('sudo docker container ls -q | wc -l')
       activeContainers = Number(cmd.stdout)
@@ -533,7 +535,7 @@ async function computeTop10RSSProcesses() {
     // pids are guaranteed numeric (parsed above), so safe to interpolate into the script.
     if (needSudo.length) {
       const script = needSudo.map(p => `echo "${p.pid} $(readlink /proc/${p.pid}/exe 2>/dev/null)"`).join('; ');
-      const exeByPid = await exec(`sudo bash -c '${script}'`).then(result => {
+      const exeByPid = await execFile("sudo", ["bash", "-c", script]).then(result => {
         const map = {};
         for (const line of result.stdout.trim().split('\n')) {
           const idx = line.indexOf(' ');
@@ -604,6 +606,7 @@ async function getSysInfo() {
     autoupgrade,
     maxPid: maxPid,
     ethInfo,
+    sfpInfo,
     wlanInfo,
     usbInfo: usbInfoVal,
     slabInfo,
@@ -650,7 +653,7 @@ async function getRecentLogs() {
   let results = await Promise.all(logFiles.map(async file => {
     // ignore all errors
     try {
-      let res = await exec(util.format('tail -n %d %s', tailNum, file))
+      let res = await execFile('tail', ['-n', String(tailNum), file])
       return { file: file, content: res.stdout }
     } catch(err) {
       return { file: file, content: "" }
@@ -683,18 +686,12 @@ async function getPerfStats() {
   }
 }
 
-function getHeapDump(file, callback) {
-  callback(null);
-  // let heapdump = require('heapdump');
-  // heapdump.writeSnapshot(file, callback);
-}
-
 // returns the non-zero error counters of a NIC from `ethtool -S`, keyed as <nic>_<counter>,
 // null if ethtool fails, e.g. the driver does not support statistics.
 // counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
 // the ones with error in the name, same as `ethtool -S ethX | grep error`
 async function getEthErrorStats(nic) {
-  const output = await exec(`ethtool -S ${nic}`).then((result) => result.stdout).catch((err) => null);
+  const output = await execFile("ethtool", ["-S", nic]).then((result) => result.stdout).catch((err) => null);
   if (!output)
     return null;
   const stats = {};
@@ -746,38 +743,94 @@ async function getEthernetInfo() {
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
+const SFP_FIELDS = {
+  "Connector": "connector",
+  "Transceiver type": "transceiverType",
+  "Encoding": "encoding",
+  "Vendor name": "vendorName",
+  "Vendor OUI": "vendorOUI",
+  "Vendor PN": "vendorPN",
+  "Vendor rev": "vendorRev",
+  "Vendor SN": "vendorSN",
+  "Date code": "dateCode",
+};
+
+async function getSfpInfo(nic) {
+  const output = await execFile("sudo", ["ethtool", "-m", nic]).then((result) => result.stdout).catch((err) => null);
+  if (!output)
+    return null;
+  const info = {};
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(\S.*?)\s*:\s(.*)$/);
+    if (!match)
+      continue;
+    const key = SFP_FIELDS[match[1]];
+    if (!key)
+      continue;
+    const parenMatch = match[2].match(/^0x[0-9a-fA-F]+\s*\((.*)\)\s*$/);
+    const value = parenMatch ? parenMatch[1].trim() : match[2].trim();
+    if (key in info)
+      info[key] += "; " + value;
+    else
+      info[key] = value;
+  }
+  return Object.keys(info).length ? info : null;
+}
+
+async function getSfpDeviceInfo() {
+  const localSfpInfo = {};
+  for (const nic of platform.getSfpNicNames()) {
+    const info = await getSfpInfo(nic);
+    if (info)
+      localSfpInfo[nic] = info;
+  }
+  sfpInfo = localSfpInfo;
+}
+
 async function getWlanInfo() {
+  const localWlanInfo = {};
+
   for (const intf of platform.getAllNicNames()) try {
     const res = await exec(`iwconfig ${intf} | grep Quality`).catch(() => null)
     if (!res || !res.stdout || !res.stdout.length) {
       log.debug('[getWlanInfo] skipping', intf, 'no output')
       continue
     }
-
-    const segments = res.stdout.split('=')
     // unconnected interface might be
     // Link Quality:0  Signal level:0  Noise level:0
-    if (segments.length == 1) {
-      log.debug('[getWlanInfo] not connected', intf, segments)
-      wlanInfo[intf] = {};
+    if (!res.stdout.includes('=')) {
+      log.debug('[getWlanInfo] not connected', intf, res.stdout)
+      localWlanInfo[intf] = {};
       continue
     }
-
-    // Link Quality=80/100  Signal level=53/100  Noise level=0/100
-    for (const i in segments) {
-      segments[i] = segments[i].split('/')
+    // Realtek out-of-tree drivers: Link Quality=80/100  Signal level=53/100  Noise level=0/100
+    // cfg80211/mac80211 drivers:   Link Quality=62/70  Signal level=-48 dBm  (noise may be absent)
+    // parse by field name, the number of fields varies between drivers
+    const fields = {
+      quality: /Link Quality=\s*(-?\d+)/,
+      signal: /Signal level=\s*(-?\d+)/,
+      noise: /Noise level=\s*(-?\d+)/,
     }
-    log.debug('[getWlanInfo]', segments)
-    if (!wlanInfo[intf]) wlanInfo[intf] = {}
-    const wlan = wlanInfo[intf]
-    wlan.quality = segments[1][0]
-    wlan.signal = segments[2][0]
-    wlan.noise = segments[3][0]
+    log.debug('[getWlanInfo]', res.stdout)
+    if (!localWlanInfo[intf]) localWlanInfo[intf] = {}
+    const wlan = localWlanInfo[intf]
+    for (const key in fields) {
+      const m = res.stdout.match(fields[key])
+      if (m) wlan[key] = m[1]
+    }
   } catch(err) {
     log.error('Failed to parse wlan info for', intf, err)
   }
 
-  wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  try {
+    localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  } catch (err) {
+    log.error('Failed to get WLAN kernel reload state', err)
+    if (Object.prototype.hasOwnProperty.call(wlanInfo, 'kernelReload'))
+      localWlanInfo.kernelReload = wlanInfo.kernelReload
+  }
+  wlanInfo = localWlanInfo;
+
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
 }
@@ -880,7 +933,7 @@ async function isUsbWifi(id, name, device) {
 // which types of USB accessories are plugged into the box. bluetooth and wifi dongles are
 // reported with their id and product string, anything else is only counted as "other"
 async function readUsbInfo() {
-  const output = await exec("lsusb").then((result) => result.stdout).catch((err) => {
+  const output = await execFile("lsusb", []).then((result) => result.stdout).catch((err) => {
     if (!lsusbFailed) { // this is retried on every refresh, only complain about it once
       lsusbFailed = true;
       log.error("Failed to list USB devices", err.message);
@@ -1088,7 +1141,7 @@ async function getDiskUsage(path) {
 }
 
 async function getReleaseInfo() {
-  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return execFile('cat', ['/etc/firewalla_release']).then(result => result.stdout.trim().split("\n")).then(lines => {
     releaseInfo = {};
     lines.forEach(line => {
       const [key,value] = line.split(/: (.+)?/,2);
@@ -1103,14 +1156,15 @@ async function getReleaseInfo() {
 
 module.exports = {
   getSysInfo: getSysInfo,
+  getWlanInfo: getWlanInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump,
   getAutoUpgrade,
   getDiskWriteStats,
   getEthErrorStats,
+  getSfpInfo,
   getUsbInfo,
 };

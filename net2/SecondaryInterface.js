@@ -20,7 +20,7 @@ const os = require('os');
 const log = require('./logger.js')(__filename, 'info');
 const f = require('./Firewalla.js');
 const fc = require('./config.js');
-const { exec } = require('child-process-promise')
+const { execFile } = require('child-process-promise')
 
 function is_interface_valid(netif) {
   return (
@@ -147,8 +147,8 @@ exports.create = async function (config) {
   await fc.updateUserConfig(flippedConfig);
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
-  await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)
-  await exec(`sudo ${f.getFirewallaHome()}/scripts/config_secondary_interface.sh ${secondaryIpSubnet} ${conf.intf}`);
+  await execFile("sudo", ["ifconfig", conf.intf, secondaryIpSubnet])
+  await execFile("sudo", [`${f.getFirewallaHome()}/scripts/config_secondary_interface.sh`, secondaryIpSubnet, conf.intf]);
 
   return { secondaryIpSubnet, legacyIpSubnet };
 };

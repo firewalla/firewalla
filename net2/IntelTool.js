@@ -728,7 +728,9 @@ class IntelTool {
             result.originIP = hashCache[hash] // this could be either domain or IP
           }
         })
-      }
+      } else
+        // the check endpoint always answers with an array; bone returns undefined without a valid token
+        throw new Error('Invalid intel check response');
       log.verbose("IntelCheck Result:", ip, domain, results);
 
       return results

@@ -66,7 +66,22 @@ echo "build key pass"
 ./pkitool $NAME
 echo "After build key pass"
 cd keys
-openssl rsa -passout pass:$2 -in $NAME$OKEY -des3 -out $NAME$KEY
+# openssl 1.x writes the traditional PEM form here, whose key derivation is a single MD5 pass -- that
+# format has no field for an iteration count at all. openssl 3.x writes PKCS#8 with PBKDF2 instead,
+# so only the older images need the explicit form. The parameters below are openssl 3.x's own
+# defaults, so both branches produce the same thing: PBKDF2-HMAC-SHA256, 3DES-CBC, 2048 iterations.
+#
+# Do not "upgrade" this cipher to AES. mbedTLS only learned to read AES-CBC inside PKCS#8 PBES2 in
+# 3.6.0 -- its 2.28.x long term support line and everything up to 3.5 accept DES-EDE3-CBC and
+# DES-CBC only, and reject anything else with "Requested encryption or digest alg not available".
+# OpenVPN clients built against those versions would stop importing the profile. The cipher is not
+# the weak link here anyway: the passphrase carries far less entropy than 3DES does.
+if openssl version | grep -q '^OpenSSL 1\.'; then
+  openssl pkcs8 -topk8 -v2 des-ede3-cbc -v2prf hmacWithSHA256 \
+    -in "$NAME$OKEY" -passout "pass:$2" -out "$NAME$KEY"
+else
+  openssl rsa -passout "pass:$2" -in "$NAME$OKEY" -des3 -out "$NAME$KEY"
+fi
 #openssl rsa -in $NAME$OKEY -des3 -out $NAME$KEY
 echo "Openssl done "
  

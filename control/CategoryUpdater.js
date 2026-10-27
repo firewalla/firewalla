@@ -48,7 +48,12 @@ const CUSTOMIZED_CATEGORY_KEY_INDEX = "customized_category:key_index"
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
+const { isCategoryDomainValid, isHashDomain } = require('../util/util.js');
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
+// number of rdns zsets merged per ZUNIONSTORE when expanding a domain pattern
+const DOMAIN_MAPPING_UNION_BATCH_SIZE = 5000;
+// sequence for per-call temp keys of domain pattern unions
+let summedMappingSeq = 0;
 const AsyncLock = require('../vendor_lib/async-lock');
 const customizedCategoryLock = new AsyncLock();
 
@@ -672,6 +677,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   async addPatternDomains(pattern, domain) {
+    if (!isCategoryDomainValid(domain)) {
+      log.warn(`Ignore invalid domain matched by pattern ${pattern}`, domain);
+      return;
+    }
     await rclient.saddAsync(this.getPatternDomainsKey(pattern), domain);
     await rclient.expireAsync(this.getPatternDomainsKey(pattern), EXPIRE_TIME);
   }
@@ -747,8 +756,32 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
   }
 
+  // category and target list content comes from the cloud and from msp lists, and redis is the
+  // first sink on every ingest path, so filtering here is what keeps a malformed member out of
+  // the dnsmasq match set, the tls hostset and the ipsets that are all built by reading it back
+  filterValid(category, items, what, validator) {
+    const valid = [], dropped = [];
+    for (const item of items) {
+      let ok = false;
+      // a member shaped differently from what the validator reads is exactly what this filter is
+      // here to remove, so a throw drops that member instead of aborting the whole update
+      try {
+        ok = validator(item);
+      } catch (err) {}
+      (ok ? valid : dropped).push(item);
+    }
+    if (dropped.length > 0)
+      log.warn(`Dropped ${dropped.length} invalid ${what} of category ${category}`, dropped.slice(0, 10));
+    return valid;
+  }
+
   async addCategoryData(category, domainObjs) {
-    const domainObjStrs = domainObjs.map(obj => JSON.stringify(obj));
+    // ipv4 and ipv6 members already passed an Address4/Address6 parse in CategoryEntry. the object
+    // test is not redundant with the catch in filterValid: a primitive member does not throw, its
+    // .type just reads undefined, so without it a bare string would be written through as valid
+    const valid = this.filterValid(category, domainObjs, "entries",
+      obj => _.isPlainObject(obj) && (obj.type !== "domain" || isCategoryDomainValid(obj.id)));
+    const domainObjStrs = valid.map(obj => JSON.stringify(obj));
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
@@ -764,16 +797,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addDefaultDomains(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domains", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultDomainsOnly(category, domains, intelExpire) {
+    domains = this.filterValid(category, domains, "domainOnly", isCategoryDomainValid);
     await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
     await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultHashedDomains(category, domains) {
+    domains = this.filterValid(category, domains, "hashed domains", isHashDomain);
     await this.addSetMembers(this.getDefaultCategoryKeyHashed(category), domains);
   }
 
@@ -806,6 +842,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!regexList || regexList.length === 0) {
       return;
     }
+    regexList = this.filterValid(category, regexList, "regex domains", expr => CategoryEntry.isValidDomainRE(expr));
     await this.addSetMembers(this.getRegexCategoryKey(category), regexList);
     this._invalidateRegexCache(category);
   }
@@ -854,7 +891,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addIncludedDomain(category, domain) {
-    return rclient.saddAsync(this.getIncludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "included domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getIncludeCategoryKey(category), domains)
   }
 
   async removeIncludedDomain(category, domain) {
@@ -898,7 +938,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
     
     for (const element of elements) {
-      const entries = CategoryEntry.parse(element);
+      // parse throws on a malformed element, and the two flushes above have already run, so letting
+      // it out would leave the category emptied. the element stays in the included list either way
+      let entries;
+      try {
+        entries = CategoryEntry.parse(element);
+      } catch (err) {
+        log.warn(`Ignore invalid element of category ${category}`, element, err.message);
+        continue;
+      }
       await this.addCategoryData(category, entries);
     }
     // following code is for backward compatibility, will be removed in the future
@@ -906,7 +954,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.flushIPv6Addresses(category);
     await this.flushIncludedDomains(category);
 
-    const domainRegex = /^[-a-zA-Z0-9\.\*]+?$/;
     let ipv4Addresses = [];
     let ipv6Addresses = [];
     switch (this.customizedCategories[category].type) {
@@ -921,7 +968,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipv6Addresses = elements.filter(e => new Address6(e).isValid());
     }
 
-    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e)).map(domain => domain.toLowerCase());
+    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && isCategoryDomainValid(e)).map(domain => domain.toLowerCase());
     if (ipv4Addresses.length > 0)
       await this.addIPv4Addresses(category, ipv4Addresses);
     if (ipv6Addresses.length > 0)
@@ -953,7 +1000,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addExcludedDomain(category, domain) {
-    return rclient.saddAsync(this.getExcludeCategoryKey(category), domain)
+    const domains = this.filterValid(category, _.castArray(domain), "excluded domains", isCategoryDomainValid);
+    if (domains.length === 0)
+      return 0;
+    return rclient.saddAsync(this.getExcludeCategoryKey(category), domains)
   }
 
   async removeExcludedDomain(category, domain) {
@@ -1279,6 +1329,43 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return `srdns:pattern:${d}`
   }
 
+  // union rdns zsets of a domain pattern into dest in chunks
+  // a pattern may expand to hundreds of thousands of keys, which exceeds the max number of function
+  // arguments (push.apply) and blocks redis for long in a single ZUNIONSTORE
+  // AGGREGATE MAX keeps the latest timestamp of each IP and is associative, so chunked result equals one-shot result
+  // dest must be private to the caller, the union takes multiple commands and is not atomic
+  // ZUNIONSTORE drops the TTL of dest, so each chunk sets it again in the same MULTI/EXEC, dest never exists
+  // without TTL even if the process dies between chunks
+  async unionDomainMappings(dest, mappings) {
+    for (let i = 0; i < mappings.length; i += DOMAIN_MAPPING_UNION_BATCH_SIZE) {
+      const chunk = mappings.slice(i, i + DOMAIN_MAPPING_UNION_BATCH_SIZE);
+      const sources = i === 0 ? chunk : [dest].concat(chunk);
+      const results = await rclient.multi()
+        .zunionstore([dest, sources.length].concat(sources, ["AGGREGATE", "MAX"]))
+        .expire(dest, 600)
+        .execAsync();
+      // execAsync only logs errors of queued commands, a failed chunk must not pass as a complete union
+      const err = (results || []).find(r => r instanceof Error);
+      if (err)
+        throw err;
+    }
+  }
+
+  // return all IPs in rdns zsets of a domain pattern
+  // categories are recycled concurrently and may share a pattern, so each call unions into its own temp key,
+  // a shared key could be overwritten by another call's first chunk before it is read, giving an incomplete IP list
+  async getIPsByDomainMappings(domain, mappings) {
+    const dest = `${this.getSummedDomainMapping(domain)}:${process.pid}:${++summedMappingSeq}`;
+    try {
+      await this.unionDomainMappings(dest, mappings);
+      return await rclient.zrangeAsync(dest, 0, -1) || [];
+    } finally {
+      await rclient.unlinkAsync(dest).catch((err) => {
+        log.error(`Failed to remove ${dest}`, err.message);
+      });
+    }
+  }
+
   // use ipset.addRule() to queue rdns entries for batch processing
   async updateIPSetByDomain(category, domain, options = {}) {
     if (!this.inited) return
@@ -1403,25 +1490,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const mappings = await this.getDomainMappingsByDomainPattern(domain)
 
     if (mappings.length > 0) {
-      const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings, "AGGREGATE", "MAX");
-
-      await rclient.zunionstoreAsync(array)
-
-      const exists = await rclient.typeAsync(smappings);
-      if (exists === "none") {
-        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
-      }
-
-      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
+      // empty if no ip found for this domain, sometimes true for pre-provided domain list
+      const categoryFilterIps = await this.getIPsByDomainMappings(domain, mappings);
+      if (categoryFilterIps.length == 0) return;
 
       const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
       const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
-
-      const categoryFilterIps = await rclient.zrangeAsync(smappings, 0, -1);
-      if (categoryFilterIps.length == 0) return;
 
       await Ipset.restore(categoryFilterIps.map(ip =>
         `del ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}`
@@ -1438,33 +1512,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     log.debug(`About to update category ${category} with domain pattern ${domain}, options: ${JSON.stringify(options)}`)
 
+    // domain only entries are not translated into IPs, skip the union
+    if (options.domainOnly && !options.isStatic) {
+      return;
+    }
+
     const mappings = await this.getDomainMappingsByDomainPattern(domain)
 
     if (mappings.length > 0) {
-      const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings)
-
-      await rclient.zunionstoreAsync(array)
-
-      const exists = await rclient.typeAsync(smappings);
-      if (exists === "none") {
-        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
-      }
-
-      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
-
-      if (options.domainOnly && !options.isStatic) {
-        return;
-      }
-
       const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
       const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
 
-      const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
+      const categoryIps = (await this.getIPsByDomainMappings(domain, mappings)).filter(ip => !firewalla.isReservedBlockingIP(ip));
       if (categoryIps.length == 0) return;
-      
+
       const commentSuffix = options.needComment ? ` comment ${domain}` : '';
       await Ipset.restore(categoryIps.map(ip => 
         `add ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}${commentSuffix}`
@@ -1483,20 +1544,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const mappings = await this.getDomainMappingsByDomainPattern(domain)
 
     if (mappings.length > 0) {
-      const smappings = this.getSummedDomainMapping(domain)
-      let array = [smappings, mappings.length]
-
-      array.push.apply(array, mappings)
-
-      await rclient.zunionstoreAsync(array)
-
-      const exists = await rclient.typeAsync(smappings);
-      if (exists === "none") {
-        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
-      }
-
-      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
-
       let ipsetName = this.getDomainPortIPSetName(category, options.isStatic);
       let ipset6Name = this.getDomainPortIPSetNameForIPV6(category, options.isStatic);
 
@@ -1504,7 +1551,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempDomainPortIPSetName(category, options.isStatic);
         ipset6Name = this.getTempDomainPortIPSetNameForIPV6(category, options.isStatic);
       }
-      const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
+      const categoryIps = (await this.getIPsByDomainMappings(domain, mappings)).filter(ip => !firewalla.isReservedBlockingIP(ip));
       if (categoryIps.length == 0) return;
 
       const portObj = domainObj.port;
@@ -1752,36 +1799,42 @@ class CategoryUpdater extends CategoryUpdaterBase {
           domainSuffix = domainSuffix.substring(2);
         }
 
-        // in domainOnly mode non-static domains are not translated into IPs at all,
-        // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
-        const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
-        if (!domainOnly) {
-          const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-          if (!existing) { // a new domain
-            log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
-            await domainBlock.resolveDomain(domainSuffix)
-          }
-        }
         const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
         const port = v.port || null;
-        // regenerate ipmapping set in redis
-        await domainBlock.syncDomainIPMapping(domainSuffix,
-          {
-            blockSet: blockSet,
-            exactMatch: (domain.startsWith("*.") ? false : true),
-            overwrite: true,
-            ondemand: true, // do not try to resolve domain in syncDomainIPMapping
-            port: port
+        // one failing domain must not abort the whole recycle, otherwise temp ipsets are never swapped
+        // and domain updaters are never registered, leaving the category ipsets empty
+        try {
+          // in domainOnly mode non-static domains are not translated into IPs at all,
+          // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
+          const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
+          if (!domainOnly) {
+            const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+            if (!existing) { // a new domain
+              log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
+              await domainBlock.resolveDomain(domainSuffix)
+            }
           }
-        );
-        const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
-        if (!v.port) {
-          if (domainOnly) {
-            options.domainOnly = true;
+          // regenerate ipmapping set in redis
+          await domainBlock.syncDomainIPMapping(domainSuffix,
+            {
+              blockSet: blockSet,
+              exactMatch: (domain.startsWith("*.") ? false : true),
+              overwrite: true,
+              ondemand: true, // do not try to resolve domain in syncDomainIPMapping
+              port: port
+            }
+          );
+          const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
+          if (!v.port) {
+            if (domainOnly) {
+              options.domainOnly = true;
+            }
+            await this.updateIPSetByDomain(category, domain, options);
+          } else {
+            await this.updateIPSetByDomainPort(category, v, options);
           }
-          await this.updateIPSetByDomain(category, domain, options);
-        } else {
-          await this.updateIPSetByDomainPort(category, v, options);
+        } catch (err) {
+          log.error(`Failed to update ipset of domain ${domain} in category ${category}`, err);
         }
 
         // ipsets were fully rebuilt via swap; clear ipCache so DomainUpdater re-adds any
@@ -2062,7 +2115,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
   
   async updateFlowSignatureList(force = false) {
-    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60 * 1000) {
+    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60) {
       return;
     }
     const flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
@@ -2141,7 +2194,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if (sigConfig.timeout != null) {
             options.timeout = sigConfig.timeout;
           }
-          await Block.batchBlockConnection([sigData], connSet, options)
+          await Block.batchBlockConnection([sigData], connSet, options).catch((err) => {
+            log.error(`Failed to block connection for category ${category} and signature ${sigId}`, err.message);
+          });
           break;
         case "ipPort":
           await this.addSigDetectedServer(category, sigData).catch((err) => {

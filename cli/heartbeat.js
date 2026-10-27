@@ -33,8 +33,9 @@
 
 'use strict';
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const fs = require('fs');
+const fsp = fs.promises;
 const io2 = require('socket.io-client');
 const os = require('os');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -88,13 +89,20 @@ async function isBooted() {
     return false;
   } catch (err) {
     log("System was booted.");
-    await exec(`touch ${fwHeartbeatFile}`);
+    await execFile("touch", [fwHeartbeatFile]);
     return true;
   }
 }
 
 async function getCpuTemperature() {
-  const temp = await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+  const tempFile = '/sys/class/thermal/thermal_zone0/temp';
+  // Crystal installed in a VM may have no thermal zone
+  try {
+    await fsp.stat(tempFile);
+  } catch (err) {
+    return null;
+  }
+  const temp = await getShellOutput(`cat ${tempFile}`);
   return Number(temp);
 }
 
@@ -130,7 +138,7 @@ async function getGatewayMacPrefix() {
 
 async function getGitBranchName(cwd) {
   try {
-    const result = await exec("git rev-parse --abbrev-ref HEAD", { cwd: cwd, encoding: 'utf8' });
+    const result = await execFile("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: cwd, encoding: 'utf8' });
     return result && result.stdout && result.stdout.trim();
   } catch(err) {
     //log(`ERROR: failed to get latest branch name in ${cwd}`+err);
@@ -140,7 +148,7 @@ async function getGitBranchName(cwd) {
 
 async function getLatestCommitHash(cwd) {
   try {
-    const result = await exec("git rev-parse HEAD", { cwd: cwd, encoding: 'utf8' });
+    const result = await execFile("git", ["rev-parse", "HEAD"], { cwd: cwd, encoding: 'utf8' });
     return result && result.stdout && result.stdout.trim();
   } catch(err) {
     //log(`ERROR: failed to get latest commit hash in ${cwd}`+err);
@@ -315,7 +323,7 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
   //log("sysStateCurrent:"+sysStateCurrent);
   //log("sysStateInRedis:"+sysStateInRedis);
   if ( sysStateCurrent === sysStateInRedis ) { return; }
-  await exec(`redis-cli set sys:state ${sysStateCurrent}`, { encoding: 'utf8' });
+  await execFile("redis-cli", ["set", "sys:state", sysStateCurrent], { encoding: 'utf8' });
 
   const featureFlag = await getShellOutput("redis-cli hget sys:features temp_monitor_notif");
   if (featureFlag != "1") {
@@ -345,6 +353,9 @@ async function updateSysStateInRedis(sysStateCurrent, cpuTemperature) {
 async function monitorTemperature() {
   try {
       const cpuTempCurrent = await getCpuTemperature();
+      if (cpuTempCurrent === null) {
+        return;
+      }
       const cpuTempThreshold = 1000*overheatedThresholds.temperatureThreshold;
       const sysStateCurrent = (cpuTempCurrent>cpuTempThreshold) ? "overheated":"normal";
       const sysStateOther = (cpuTempCurrent>cpuTempThreshold) ? "normal":"overheated";
@@ -387,7 +398,7 @@ socket.on('update', () => {
 
 socket.on('upgrade', () => {
   log("Upgrade started via heartbeat");
-  exec("/home/pi/firewalla/scripts/fireupgrade_check.sh");
+  execFile("/home/pi/firewalla/scripts/fireupgrade_check.sh", []);
 });
 
 socket.on('reconnect', () => {

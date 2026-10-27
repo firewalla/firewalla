@@ -141,6 +141,8 @@ class OCDockerClient extends DockerBaseVPNClient {
       }
     };
 
+    if (!config.server)
+      throw new Error("'server' should be specified in 'config'");
     await this._prepareDockerCompose(yamlJSON);
     await this._prepareFile(config, "password", "passwd");
     await this._prepareFile(config, "server", "server");
@@ -154,7 +156,7 @@ class OCDockerClient extends DockerBaseVPNClient {
   async _prepareFile(config = {}, key, filename) {
     log.info(`Preparing file ${filename} for ${this.profileId}...`);
     const dst = `${this._getDockerConfigDirectory()}/${filename}`;
-    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
+    await fs.writeFileAsync(dst, config[key] || "", {encoding: 'utf8'});
   }
 
   async __isLinkUpInsideContainer() {

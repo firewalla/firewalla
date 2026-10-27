@@ -13,6 +13,13 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 : ${MAX_NUM_OF_PROCESSES:=4000}
 : ${MAX_NUM_OF_THREADS:=20000}
 
+# Boxes with > 2.5GB RAM: allow 1.3x
+if (( $(awk '/MemTotal/{print $2}' /proc/meminfo) > 2621440 )); then
+  FIREMAIN_MAX_MEMORY=$(( FIREMAIN_MAX_MEMORY * 13 / 10 ))
+  FIREMON_MAX_MEMORY=$(( FIREMON_MAX_MEMORY * 13 / 10 ))
+  FIREAPI_MAX_MEMORY=$(( FIREAPI_MAX_MEMORY * 13 / 10 ))
+fi
+
 firemon_pid=$(pidof FireMon)
 firemain_pid=$(pidof FireMain)
 firemon_mem2=$(pidof FireMon | xargs ps -o rss | awk 'FNR==2 {print $1}')

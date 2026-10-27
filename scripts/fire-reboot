@@ -1,5 +1,5 @@
 #!/bin/bash -
-branch=$(git rev-parse --abbrev-ref HEAD)
+branch=$(cd /home/pi/firewalla && git rev-parse --abbrev-ref HEAD)
 if [[ $branch =~ release.* ]]; then
     touch /home/pi/.firewalla/managed_reboot
     sync

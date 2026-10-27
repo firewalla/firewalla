@@ -77,6 +77,10 @@ const blockControl = require('../control/BlockControl.js');
 
 const envCreatedMap = {};
 
+// retry delay after a failed device identify, doubled per consecutive failure
+const IDENTIFY_RETRY_BASE = 5 * 60;
+const IDENTIFY_RETRY_MAX = 24 * 3600;
+
 class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
     if (!Monitorable.instances[obj.mac]) {
@@ -100,6 +104,10 @@ class Host extends Monitorable {
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
+
+        // derive bname/localDomain/userLocalDomain, a host created from scratch has none of them
+        // yet. The publish is picked up by the subscription above, which schedules the hosts file
+        await this.update(this.o, false, true)
 
         await this.applyPolicy()
       })().catch(err => {
@@ -279,7 +287,7 @@ class Host extends Monitorable {
       return;
     try {
       const parsed = JSON.parse(autoGroup);
-      if (!parsed || !parsed.tag || !parsed.ssid)
+      if (!parsed || !parsed.tag || (!parsed.ssid && parsed.auth !== "mab"))
         return;
       this.o.autoGroup = parsed;
       await this.save(["autoGroup"]);
@@ -290,12 +298,12 @@ class Host extends Monitorable {
 
   // 1. if not connected (no staStatus), keep autoGroup until expire
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
-  // 3. otherwise (ppsk/default), reset if connected on a different ssid
+  // 3. otherwise (ppsk/default/mab), reset if connected on a different ssid, mab may have no ssid
   async getHostAutoGroup(staStatus) {
     if (!this.o.autoGroup)
       return null;
     const autoGroup = this.o.autoGroup;
-    if (!_.isObject(autoGroup) || !autoGroup.tag || !autoGroup.ssid) {
+    if (!_.isObject(autoGroup) || !autoGroup.tag || (!autoGroup.ssid && autoGroup.auth !== "mab")) {
       await this.resetAutoGroupAsync();
       return null;
     }
@@ -737,6 +745,9 @@ class Host extends Monitorable {
 
       if (this.invalidateHostsFileTask)
         clearTimeout(this.invalidateHostsFileTask);
+      // otherwise a pending task will re-add ipset entries and re-create the hosts file below
+      if (this.updateHostDataTask)
+        clearTimeout(this.updateHostDataTask);
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       await fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
@@ -800,6 +811,12 @@ class Host extends Monitorable {
         if (ops.length)
           await Ipset.restore(ops, true);
 
+        // hosts file is derived from the same host object as the ipsets above.
+        // own catch + placed before identifyDevice() so neither can skip the other
+        await this.updateHostsFileIfChanged().catch((err) => {
+          log.error(`Failed to update hosts file of ${this.o.mac}`, err.message);
+        });
+
         await this.identifyDevice(false)
       } catch (err) {
         log.error('Error update host data', err)
@@ -807,87 +824,128 @@ class Host extends Monitorable {
     }, 3000);
   }
 
+  // normalized key of the IPv6 addresses that actually affect the hosts file,
+  // i.e. valid and not link-local, see the entry generation in updateHostsFile()
+  static hostsFileV6Key(v6) {
+    if (_.isString(v6)) {
+      try { v6 = JSON.parse(v6) } catch (err) { return "" }
+    }
+    if (!_.isArray(v6))
+      return "";
+    return v6.filter((ip) => {
+      try {
+        const addr6 = new Address6(ip);
+        // isValid() only exists in ip-address 6.x, newer versions throw in the constructor instead
+        if (_.isFunction(addr6.isValid) && !addr6.isValid())
+          return false;
+        return !addr6.isLinkLocal();
+      } catch (err) {
+        return false;
+      }
+    }).sort().join(",");
+  }
+
+  // refresh the hosts file only if one of the fields it is rendered from changed,
+  // this merely saves a couple of redis reads, updateHostsFile() dedups the write itself
+  async updateHostsFileIfChanged() {
+    if (!fc.isFeatureOn('local_domain'))
+      return;
+    const key = [
+      this.o.ipv4Addr,
+      Host.hostsFileV6Key(this.ipv6Addr),
+      this.o.localDomain,
+      this.o.userLocalDomain
+    ].join("|");
+    if (this._hostsFileKey === key)
+      return;
+    await this.updateHostsFile();
+    // only record on success so a failed write is retried on the next update
+    this._hostsFileKey = key;
+  }
+
   async updateHostsFile() {
-    const macEntry = await hostTool.getMACEntry(this.o.mac);
-    // update hosts file in dnsmasq
-    const hostsFile = Host.getHostsFilePath(this.o.mac);
-    const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
-      // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+    // serialize per device, _lastHostfileEntries is read and written across awaits below
+    await lock.acquire(`HOSTSFILE_${this.o.mac}`, async () => {
+      const macEntry = await hostTool.getMACEntry(this.o.mac);
+      // update hosts file in dnsmasq
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
+      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
+        // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    const ipv4Addr = macEntry && macEntry.ipv4Addr;
-    const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
-    const localDomain = macEntry.localDomain || "";
-    const userLocalDomain = macEntry.userLocalDomain || "";
-    if (!ipv4Addr) {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+      const ipv4Addr = macEntry && macEntry.ipv4Addr;
+      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
+      const localDomain = macEntry.localDomain || "";
+      const userLocalDomain = macEntry.userLocalDomain || "";
+      if (!ipv4Addr) {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    let ipv6Addr = null;
-    try {
-      ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-    } catch (err) {}
-    const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-      return a.indexOf(v) === i;
-    })
-    const iface = sysManager.getInterfaceViaIP(ipv4Addr);
-    if (!iface) {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
+      let ipv6Addr = null;
+      try {
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+      } catch (err) {}
+      const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+        return a.indexOf(v) === i;
+      })
+      const iface = sysManager.getInterfaceViaIP(ipv4Addr);
+      if (!iface) {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
+        return;
       }
-      return;
-    }
-    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
-    const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
-    const entries = [];
-    for (const suffix of suffixes) {
-      for (const alias of aliases) {
-        const fqdn = `${alias}.${suffix}`;
-        if (new Address4(ipv4Addr).isValid())
-          entries.push(`${ipv4Addr} ${fqdn}`);
-        let ipv6Found = false;
-        if (_.isArray(ipv6Addr)) {
-          for (const addr of ipv6Addr) {
-            const addr6 = new Address6(addr);
-            if (addr6.isValid() && !addr6.isLinkLocal()) {
-              ipv6Found = true;
-              entries.push(`${addr} ${fqdn}`);
+      const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+      const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
+      const entries = [];
+      for (const suffix of suffixes) {
+        for (const alias of aliases) {
+          const fqdn = `${alias}.${suffix}`;
+          if (new Address4(ipv4Addr).isValid())
+            entries.push(`${ipv4Addr} ${fqdn}`);
+          // No entry at all for a family the device has no address in. :: would be an address
+          // RFC 4291 says must never be assigned to a node, and a client that picks it connects
+          // to itself. The NODATA answer this leaves behind comes from the dnsmasq build that
+          // treats a name defined in a hosts file as authoritative for every family
+          // (dnsmasq_internal#137); an older build forwards the query upstream instead.
+          if (_.isArray(ipv6Addr)) {
+            for (const addr of ipv6Addr) {
+              const addr6 = new Address6(addr);
+              if (addr6.isValid() && !addr6.isLinkLocal())
+                entries.push(`${addr} ${fqdn}`);
             }
           }
         }
-        // add empty ipv6 address if no routable ipv6 address is available
-        if (!ipv6Found)
-          entries.push(`:: ${fqdn}`);
       }
-    }
-    if (entries.length !== 0) {
-      if (this._lastHostfileEntries !== entries.sort().join("\n")) {
-        await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
-          log.error(`Failed to write hosts file ${hostsFile}`, err.message);
-        });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = entries.sort().join("\n");
+      if (entries.length !== 0) {
+        if (this._lastHostfileEntries !== entries.sort().join("\n")) {
+          await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
+            log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+          });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = entries.sort().join("\n");
+        }
+      } else {
+        if (this._lastHostfileEntries !== null) {
+          await fs.unlinkAsync(hostsFile).catch((err) => { });
+          dnsmasq.scheduleReloadDNSService();
+          this._lastHostfileEntries = null;
+        }
       }
-    } else {
-      if (this._lastHostfileEntries !== null) {
-        await fs.unlinkAsync(hostsFile).catch((err) => { });
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }
-    }
-    this.scheduleInvalidateHostsFile();
+      this.scheduleInvalidateHostsFile();
+    });
   }
 
   scheduleInvalidateHostsFile() {
@@ -1041,6 +1099,35 @@ class Host extends Monitorable {
       log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
+    // every host update lands here, so without this a slow or failing cloud gets a new request,
+    // and FireMain holds another pending payload, per update until one finally succeeds
+    if (!force) {
+      if (this._identifyInFlight || this._identifyRetryTs > Date.now() / 1000) {
+        log.silly("HOST:IDENTIFY in flight or backing off", this.o.mac, this._identifyRetryTs);
+        return;
+      }
+      this._identifyInFlight = true;
+    }
+    try {
+      const data = await this._requestIdentify(classifyDetails);
+      if (!force) {
+        if (data) {
+          this._identifyFailures = 0;
+        } else {
+          this._identifyFailures = (this._identifyFailures || 0) + 1;
+          const delay = Math.min(IDENTIFY_RETRY_BASE * 2 ** (this._identifyFailures - 1), IDENTIFY_RETRY_MAX);
+          // jitter spreads hosts, and boxes, apart once the cloud recovers
+          this._identifyRetryTs = Date.now() / 1000 + delay * (0.5 + Math.random() / 2);
+        }
+      }
+      return data;
+    } finally {
+      if (!force)
+        this._identifyInFlight = false;
+    }
+  }
+
+  async _requestIdentify(classifyDetails) {
     log.verbose("HOST:IDENTIFY",this.o.mac);
     // need to have if condition, not sending too much info if the device is ...
     // this may be used initially _identifyExpiration
@@ -1053,7 +1140,6 @@ class Host extends Monitorable {
       ou: this.o.mac.slice(0,13),
       uuid: flowUtil.hashMac(this.o.mac),
       _ipv4: flowUtil.hashIp(this.o.ipv4),
-      ipv4: this.o.ipv4,
       firstFoundTimestamp: this.o.firstFoundTimestamp,
       lastActiveTimestamp: this.o.lastActiveTimestamp,
       bonjourName: this.o.bonjourName,
@@ -1087,10 +1173,6 @@ class Host extends Monitorable {
       // old data clean sensor should have cleaned most of obsolated entries
       const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)
       if (results.length) obj.agents = results.map(str => JSON.parse(str).ua)
-
-      if (this.ipv6Addr) {
-        obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
-      }
 
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor

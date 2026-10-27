@@ -17,7 +17,7 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const Message = require('../../net2/Message.js');
@@ -81,17 +81,17 @@ class NavyPlatform extends Platform {
   }
 
   async switchQoS(state, qdisc) {
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    const supported = await execFile("modinfo", [`sch_${qdisc}`]).then(() => true).catch((err) => false);
     if (!supported) {
       log.error(`qdisc ${qdisc} is not supported`);
       return;
     }
     if (state == true) {
-      await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", "eth0", "root", qdisc]).catch((err) => {
         log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);
       });
     } else {
-      await exec(`sudo tc qdisc del dev eth0 root`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", "eth0", "root"]).catch((err) => {
         log.error(`Failed to remove qdisc on eth0`, err.message);
       });
     }
@@ -182,7 +182,7 @@ class NavyPlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }

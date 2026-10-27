@@ -198,11 +198,14 @@ class DNSProxyPlugin extends Sensor {
     }
   }
 
+  // returns true if a data file was actually removed. Callers use it to tell a real change from
+  // a repeated no-op on a part the cloud does not serve, which would otherwise force a dnsmasq
+  // restart on every policy apply.
   async removeData(part) {
     const runTimeFolder = f.getRuntimeInfoFolder();
     const bfDataFile = `${runTimeFolder}/${featureName}.strict_${part}.bf.data`;
 
-    await fs.unlinkAsync(bfDataFile).catch(() => undefined); // ignore error
+    return fs.unlinkAsync(bfDataFile).then(() => true).catch(() => false); // ignore error
   }
 
   // return true on successful update.
@@ -215,8 +218,7 @@ class DNSProxyPlugin extends Sensor {
       throw new Error("Invalid bloom filter data, missing data or info field");
     }
 
-    let bfInfo = {key: part, size: obj.info.s, error: obj.info.e};
-    this.bfInfoMap.set(part, bfInfo);
+    const bfInfo = {key: part, size: obj.info.s, error: obj.info.e};
 
     const runTimeFolder = f.getRuntimeInfoFolder();
     const bfDataFile = `${runTimeFolder}/${featureName}.strict_${part}.bf.data`;
@@ -231,18 +233,27 @@ class DNSProxyPlugin extends Sensor {
     const buf = Buffer.from(obj.data, "base64");
     if (currentFileContent && buf.equals(currentFileContent)) {
       log.debug(`No filter update for dns_proxy part:${part}, skip`);
+      this.bfInfoMap.set(part, bfInfo);
       return false;
     }
 
     try {
       const need_decompress = false;
-      await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
+      // updateBFData swallows its own write errors, so take its word for whether the file
+      // changed rather than assuming it did - otherwise a disk error would have every later
+      // round report an update and force a dnsmasq restart with nothing to apply
+      const written = await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
+      // only advertise the new size/error once the file behind them is really there. dnsmasq
+      // checks st_size against the entry count before mapping a filter, so a conf that describes
+      // a write that never landed costs every instance its own unshared copy - and builds it with
+      // parameters that do not match the bytes on disk.
+      if (written)
+        this.bfInfoMap.set(part, bfInfo);
+      return written;
     } catch(e){
       log.error("Failed to process data file, err:", e);
       throw new Error(`Failed to updateBFData for ${part}, err: ${e.message}`);
     };
-
-    return true;
   }
 
   async applyDnsProxy(host, ip, policy) {
@@ -262,7 +273,10 @@ class DNSProxyPlugin extends Sensor {
 
     /* currently, only strict mode is used and only one dns_proxy BF profile 
      * and confirmed no likely to support multiple dns_proxy profiles in the future
-     */ 
+     */
+    // dnsmasq loads a bf file once per path and reuses it on every config reload, so a change to
+    // the data itself only takes effect after a full service restart
+    let bfDataChanged = false;
     if ("strict" in this.dnsProxyData && this.dnsProxyData["strict"]) {
       this.level = "strict";
 
@@ -286,7 +300,8 @@ class DNSProxyPlugin extends Sensor {
       for (const part of removedParts) {
         const hashsetName = `bf:app.${part}`;
         await cc.disableCache(hashsetName);
-        this.removeData(part);
+        if (await this.removeData(part))
+          bfDataChanged = true;
         this.bfInfoMap.delete(part);
       }
 
@@ -303,16 +318,18 @@ class DNSProxyPlugin extends Sensor {
         try {
           const content = await currentCacheItem.getLocalCacheContent();
           if (content) {
-            await this.updateData(part, content);
+            bfDataChanged = await this.updateData(part, content) || bfDataChanged;
           } else {
             // remove obselete category data
             log.error(`dns_proxy part ${part} data is invalid. Remove it`);
-            await this.removeData(part);
+            if (await this.removeData(part))
+              bfDataChanged = true;
             this.bfInfoMap.delete(part);
           }
         } catch (e) {
+          // break, not return: whatever the earlier parts already wrote still has to reach dnsmasq
           log.error(`Fail to update filter data for dns_proxy part: ${part}.`, e);
-          return;
+          break;
         }
       }
 
@@ -323,8 +340,10 @@ class DNSProxyPlugin extends Sensor {
       log.info('not strict mode, disable dnsmasq config');
       this.disableDnsmasqConfig();
     }
-    // always reschedule dnsmasq restarts when bf data is updated
-    dnsmasq.scheduleRestartDNSService();
+    // always reschedule dnsmasq restarts when bf data is updated. A reload is not enough when the
+    // bf content changed: the conf text carries only <path,size,error> and dnsmasq caches the
+    // filter per path, so force a service restart in that case.
+    dnsmasq.scheduleRestartDNSService(bfDataChanged, bfDataChanged);
   }
 
   async globalOn() {

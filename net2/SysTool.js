@@ -16,7 +16,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const { exec } = require('child-process-promise')
+const { exec, execFile } = require('child-process-promise')
 const { delay } = require('../util/util.js')
 
 let firewalla = require('../net2/Firewalla.js');
@@ -32,7 +32,7 @@ class SysTool {
   }
 
   stopServices() {
-    return exec(`${firewalla.getFirewallaHome()}/scripts/fire-stop`);
+    return execFile(`${firewalla.getFirewallaHome()}/scripts/fire-stop`, []);
   }
 
   // call main-run
@@ -53,7 +53,7 @@ class SysTool {
   }
 
   cancelShutdown() {
-    return exec("sudo shutdown -c")
+    return execFile("sudo", ["shutdown", "-c"])
   }
 
   restartFireKickService() {
@@ -61,12 +61,12 @@ class SysTool {
   }
 
   stopFireKickService() {
-    return exec("sudo systemctl stop firekick")
+    return execFile("sudo", ["systemctl", "stop", "firekick"])
   }
 
   async isFireKickRunning() {
     try {
-      await exec("systemctl is-active --quiet firekick");
+      await execFile("systemctl", ["is-active", "--quiet", "firekick"]);
       return true;
     } catch(err) {
       return false;
@@ -78,17 +78,17 @@ class SysTool {
   }
 
   resetPolicy() {
-    return exec("/home/pi/firewalla/scripts/reset-policy")
+    return execFile("/home/pi/firewalla/scripts/reset-policy", [])
   }
 
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
 //    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
 //    await exec("redis-cli keys 'rdns:domain:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli del intel:security:tracking").catch(() => undefined);
+    await execFile("redis-cli", ["del", "intel:security:tracking"]).catch(() => undefined);
     await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
     await exec("redis-cli keys 'inteldns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("sudo pkill -x -SIGHUP dnsmasq").catch(() => undefined);
+    await execFile("sudo", ["pkill", "-x", "-SIGHUP", "dnsmasq"]).catch(() => undefined);
   }
 }
 

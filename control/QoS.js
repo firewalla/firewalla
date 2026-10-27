@@ -17,7 +17,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const { Rule } = require('../net2/Iptables.js');
@@ -48,7 +48,7 @@ let _tcFilterReplaceBuggy = null;
 async function isTCDeletionBuggy() {
   if (_tcDeletionBuggy !== null)
     return _tcDeletionBuggy;
-  const release = await exec("uname -r").then(r => r.stdout.trim()).catch((err) => {
+  const release = await execFile("uname", ["-r"]).then(r => r.stdout.trim()).catch((err) => {
     log.error("Failed to get kernel version via uname -r", err.message);
     return null;
   });
@@ -75,7 +75,7 @@ async function isTCFilterReplaceBuggy() {
   const ALWAYS_BUGGY_BRANCHES = ['4.9', '5.4', '5.15'];
   const GSE = '5.10';
   const GSE_FIXED_VERSION = `${GSE}.190`;
-  const release = await exec("uname -r").then(r => r.stdout.trim()).catch((err) => {
+  const release = await execFile("uname", ["-r"]).then(r => r.stdout.trim()).catch((err) => {
     log.error("Failed to get kernel version via uname -r", err.message);
     return null;
   });
@@ -198,16 +198,16 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
   classId = Number(classId).toString(16);
   switch (qdisc) {
     case "fq_codel": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
+      await execFile("sudo", ["tc", "class", "replace", "dev", device, "parent", `${parent}:1`, "classid", `${parent}:0x${classId}`, "htb", "prio", String(priority), "rate", String(rateLimit), "ceil", String(ceilLimit), "burst", String(burstLimit), "cburst", String(burstLimit), "quantum", String(quantum)]).then(() => {
+        return execFile("sudo", ["tc", "qdisc", "replace", "dev", device, "parent", `${parent}:0x${classId}`, qdisc]);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
       break;
     }
     case "netem": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
+      await execFile("sudo", ["tc", "class", "replace", "dev", device, "parent", `${parent}:1`, "classid", `${parent}:0x${classId}`, "htb", "prio", String(priority), "rate", String(rateLimit), "ceil", String(ceilLimit), "burst", String(burstLimit), "cburst", String(burstLimit), "quantum", String(quantum)]).then(() => {
+        return execFile("sudo", ["tc", "qdisc", "replace", "dev", device, "parent", `${parent}:0x${classId}`, qdisc, "delay", `${increaseLatency}ms`, "loss", `${dropPacketRate}%`]);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -223,8 +223,8 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
           isolation = "triple-isolate";
       }
       // use htb rate limit, do not use cake's built in rate limit, which might not co-work well with htb rate limit
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} "unlimited" ${isolation} no-split-gso conservative`);
+      await execFile("sudo", ["tc", "class", "replace", "dev", device, "parent", `${parent}:1`, "classid", `${parent}:0x${classId}`, "htb", "prio", String(priority), "rate", String(rateLimit), "ceil", String(ceilLimit), "burst", String(burstLimit), "cburst", String(burstLimit), "quantum", String(quantum)]).then(() => {
+        return execFile("sudo", ["tc", "qdisc", "replace", "dev", device, "parent", `${parent}:0x${classId}`, qdisc, "unlimited", isolation, "no-split-gso", "conservative"]);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -265,7 +265,7 @@ async function destroyQoSClass(classId, parent, direction, rateLimit) {
     log.error(`Failed to destroy child qdisc for ${parent}:0x${classId}, direction ${direction}`, err.message);
   });
   if (await isTCDeletionBuggy()) {
-    await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO} quantum ${DEFAULT_QUANTUM}`).catch((err) => {
+    await execFile("sudo", ["tc", "class", "replace", "dev", device, "classid", `${parent}:0x${classId}`, "htb", "rate", DEFAULT_RATE_LIMIT, "ceil", DEFAULT_CEIL_LIMIT, "prio", String(DEFAULT_PRIO), "quantum", String(DEFAULT_QUANTUM)]).catch((err) => {
       log.error(`Failed to replace QoS class ${classId} with stub, direction ${direction}`, err.message);
     });
   } else {
@@ -316,11 +316,11 @@ async function createTCFilter(filterId, parent, classId, direction, prio, fwmark
     await exec(`sudo tc filter del dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 2>/dev/null || true`).catch((err) => {
       log.error(`Failed to delete tc filter ${filterId} before re-add, direction ${direction}, prio ${prio}`, err.message);
     });
-    await exec(`sudo tc filter add dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "add", "dev", device, "parent", `${parent}:`, "handle", `800::0x${filterId}`, "prio", String(prio), "u32", "match", "mark", `0x${fwmark}`, `0x${fwmask.toString(16)}`, "flowid", `${parent}:0x${classId}`]).catch((err) => {
       log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
     });
   } else {
-    await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", device, "parent", `${parent}:`, "handle", `800::0x${filterId}`, "prio", String(prio), "u32", "match", "mark", `0x${fwmark}`, `0x${fwmask.toString(16)}`, "flowid", `${parent}:0x${classId}`]).catch((err) => {
       log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
     });
   }
@@ -359,7 +359,7 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
 
   // https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   if (await isTCDeletionBuggy()) {
-    await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:1`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", device, "parent", `${parent}:`, "handle", `800::0x${filterId}`, "prio", String(prio), "u32", "match", "mark", `0x${fwmark}`, `0x${fwmask.toString(16)}`, "flowid", `${parent}:1`]).catch((err) => {
       log.error(`Failed to replace tc filter ${filterId} with stub, direction ${direction}, prio ${prio}`, err.message);
     });
   } else {

@@ -31,7 +31,7 @@ class Netconsole {
 
     async isAvailable() {
         // /lib/modules/5.15.78/kernel/drivers/net/netconsole.ko
-        const kernelVersion = await exec("uname -r").then((r) => r.stdout.trim()).catch((e) => "");
+        const kernelVersion = await execFile("uname", ["-r"]).then((r) => r.stdout.trim()).catch((e) => "");
         if (!kernelVersion) {
             return false;
         }

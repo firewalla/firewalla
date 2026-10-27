@@ -115,6 +115,7 @@ module.exports = {
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+  REDIS_KEY_EID_BLACKLIST: "sys:eid:blacklist",
 
   REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
 
@@ -124,6 +125,8 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+  REDIS_HKEY_CONN_BPID: "bpid", // block rule id; presence flags the 5-tuple as blocked
+  REDIS_HKEY_CONN_BPID_TS: "bpidts", // epoch seconds bpid was last (re)written; ages the marker off its own write time
 
   NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
   NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
@@ -217,6 +220,12 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
+  FEATURE_PCAP_ZEEK_ZSSIDS: "pcap_zeek_zssids",
+  FEATURE_PCAP_SURICATA_ZSSIDS: "pcap_suricata_zssids",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
@@ -241,5 +250,14 @@ module.exports = {
 
   // a plain file name: no path separators, so a value matching this cannot leave the directory it
   // is resolved against. use it wherever an untrusted value becomes a path component
-  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+  REGEX_FILENAME: /^[a-z0-9][a-z0-9._-]*$/i,
+
+  // matches if a value contains any control character. use it on untrusted values that end up in a
+  // line-oriented config file or on the stdin of a command interpreter, where a line break in the
+  // value injects a directive or a command
+  REGEX_CONTROL_CHARS: /[\x00-\x1f\x7f]/,
+
+  // same as above but tolerates CR and LF, for free text fields that are never written to a config
+  // file or a command line
+  REGEX_CONTROL_CHARS_MULTILINE: /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/,
 };

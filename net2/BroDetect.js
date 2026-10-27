@@ -77,6 +77,10 @@ const APP_MAP_SIZE = 1000;
 const SIG_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const DNS_CACHE_SIZE = 100;
+// max age (seconds) of a bpid block marker, checked against its own write time (bpidts) rather
+// than the conn hash's TTL, which slides forward on every read and would otherwise let a stale
+// marker suppress a flow indefinitely
+const BLOCK_MARKER_MAX_AGE = 600;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
@@ -91,6 +95,7 @@ const Constants = require('./Constants.js');
 const FireRouter = require('./FireRouter.js');
 const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
 const destIPFoundHook = new DestIPFoundHook();
+destIPFoundHook.setConfig(_.get(fc.getConfig(), 'hooks.DestIPFoundHook', {}));
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -349,7 +354,7 @@ class BroDetect {
         // adds uid to ignore list, related af will be removed later on saving conn log, or on flow stash rotation
         // won't be querying redis for written flows here as the cost is probably too much for this feature
         // it's possible that conn log goes to the next flowstash but we're just ingoring it for now
-        const key = `$(obj['id.orig_h']}:${ip}`
+        const key = `${obj['id.orig_h']}:${ip}`
         if (!this.flowstash.conn.ignore[key]) {
           this.flowstash.conn.ignore[key] = new Set()
         }
@@ -625,10 +630,11 @@ class BroDetect {
         // always sets conntrack so we keep the latest domain ip mapping
         const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && net.isIP(answer));
         const query = formulateHostname(obj['query']);
+        // l2 addr is added to dns.log in dns-mac-logging.zeek
+        const clientKey = conntrack.getDNSClientKey(obj["orig_l2_addr"], obj["id.orig_h"]);
         for (const answer of answers) {
-          // l2 addr is added to dns.log in dns-mac-logging.zeek
           await conntrack.setConnEntries(
-            obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns",
+            clientKey, "", answer, "", "dns",
             {proto: "dns", ip: answer, host: query.toLowerCase()}, 600
           );
         }
@@ -777,6 +783,25 @@ class BroDetect {
       this.sameNetworkFlowDedup.set(flowKey, source);
     }
     return false;
+  }
+
+  // decide whether a uni-directional UDP flow was blocked, from the conn entry ACLAuditLogPlugin/APCMsgSensor write on block
+  _isBlockedUDPFlow(connEntry, outIntfId, localFlow) {
+    // explicit block marker from the audit/AP path, works for local and internet flows alike.
+    // Age it off its own write time (bpidts), not the hash's TTL: getConnEntries refreshes the
+    // whole hash's TTL on every read, so without an independent write timestamp a marker that's
+    // merely being read (because the flow is still uni-directional) would never expire even after
+    // the rule that caused it is long gone.
+    if (connEntry && _.has(connEntry, Constants.REDIS_HKEY_CONN_BPID)) {
+      const bpidTs = Number(connEntry[Constants.REDIS_HKEY_CONN_BPID_TS])
+      if (!bpidTs || Date.now() / 1000 - bpidTs <= BLOCK_MARKER_MAX_AGE) return true
+      // marker is stale - fall through to the same logic as if no marker were present
+    }
+    // local flows never get a conn entry from the A=C accept log, so absence means nothing here.
+    // Treating it as blocked drops legitimate uni-directional local UDP (see 40bcfbd33)
+    if (localFlow) return false
+    // legacy heuristic for internet-bound flows: an allowed flow gets oIntf from the A=C log
+    return !outIntfId
   }
 
   async validateConnData(obj) {
@@ -1436,12 +1461,11 @@ class BroDetect {
         tmpspec.rl = extractIP(realLocal);
 
       // might be blocked UDP packets, checking conntrack
-      // blocked connections don't leave a trace in conntrack
-      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0) && !localFlow) {
-        if (!outIntfId) {
-          log.debug('Dropping blocked UDP', JSON.stringify(tmpspec))
-          return
-        }
+      // ACLAuditLogPlugin/APCMsgSensor write bpid on the conn entry when a UDP packet is dropped
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)
+        && this._isBlockedUDPFlow(connEntry, outIntfId, localFlow)) {
+        log.verbose('Dropping blocked UDP', JSON.stringify(tmpspec))
+        return
       }
 
       const sigs = this.getConnSignatures(uid);
@@ -1453,7 +1477,9 @@ class BroDetect {
       const ipPairKey = `${orig}:${resp}`
       if (!this.flowstash.conn.ignore[ipPairKey] || !this.flowstash.conn.ignore[ipPairKey].has(uid)) {
         afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
-        if (!afobj || !afobj.host) {
+        // only use information in app map for outbound flow, af describes remote site
+        const afApplicable = flowdir === "in" || localFlow
+        if ((!afobj || !afobj.host) && afApplicable) {
           // use recent DNS lookup records from this IP as a fallback to parse application level info
           const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
           afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
@@ -1462,8 +1488,7 @@ class BroDetect {
             await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600);
         }
 
-        // only use information in app map for outbound flow, af describes remote site
-        if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+        if (afobj && afobj.host && afApplicable) {
           if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto"]);
           afhost = afobj.host

@@ -43,7 +43,7 @@ class WlanVendorInfo {
     return { oui: Buffer.from(oui), vendorName };
   }
 
-  static async lookupMacVendor(mac, minimalMatchLen, ouiFile = OUI_FILE_PATH) {
+  static async lookupMacVendor(mac, minimalMatchLen = 6, ouiFile = OUI_FILE_PATH) {
     try {
       if (!mac || mac.length < minimalMatchLen) {
         return null;

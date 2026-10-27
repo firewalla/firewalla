@@ -40,8 +40,10 @@ class CpuProfile {
         if (typeof name !== 'string' || !Constants.REGEX_FILENAME.test(name)) {
             throw new Error(`Invalid profile name: ${name}`);
         }
-        await rclient.setAsync(activeProfileKey, name);
         const content = await rclient.hgetAsync(profilesKey, name);
+        if (content == null)
+            throw new Error(`Profile ${name} not found`);
+        await rclient.setAsync(activeProfileKey, name);
         await fs.writeFileAsync(`${profileUserDir}/${name}`, content);
         await platform.applyProfile();
     }

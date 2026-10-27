@@ -14,29 +14,17 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-const moment = require('moment');
 const winston = require('winston');
 const { argumentsToString } = require('./util.js');
+const { createFileTransport } = require('./logFileTransport.js');
 
 function getFileTransport() {
-  return new (winston.transports.File)({
+  return createFileTransport({
     name: 'log-file',
     filename: "Accounting.log",
-    json: false,
     dirname: "/home/pi/logs",
     maxsize: 10000000,
-    maxFiles: 3,
-    timestamp: function () {
-      return moment().format('YYYY-MM-DD HH:mm:ss')
-    },
-    formatter: function (options) {
-      // - Return string will be passed to logger.
-      // - Optionally, use options.colorize(options.level, <string>) to
-      //   colorize output based on the log level.
-      return options.timestamp() + ' ' +
-        (options.message ? options.message : '') +
-        (options.meta && Object.keys(options.meta).length ? '\n\t' + JSON.stringify(options.meta) : '');
-    }
+    maxFiles: 3
   })
 }
 const logger = new (winston.Logger)({

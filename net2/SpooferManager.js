@@ -35,7 +35,7 @@ const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool();
 const fc = require('./config.js')
 
-const exec = require('child-process-promise').exec
+const { execFile } = require('child-process-promise')
 
 let instance = null;
 
@@ -141,7 +141,7 @@ class SpooferManager {
 
   async ipv6On() {
     try {
-      await exec("touch /home/pi/.firewalla/config/enablev6");
+      await execFile("touch", ["/home/pi/.firewalla/config/enablev6"]);
       this.scheduleReload();
     } catch(err) {
       log.warn("Error when turn on ipv6", err);
@@ -150,7 +150,7 @@ class SpooferManager {
 
   async ipv6Off() {
     try {
-      await exec("rm -f /home/pi/.firewalla/config/enablev6");
+      await execFile("rm", ["-f", "/home/pi/.firewalla/config/enablev6"]);
       this.scheduleReload();
     } catch(err) {
       log.warn("Error when turn off ipv6", err);
@@ -162,13 +162,13 @@ class SpooferManager {
       clearTimeout(this.reloadTask);
     // multiple processes belong to bitbridge services. Stop can ensure all processes are stopped before start
     this.reloadTask = setTimeout(async () => {
-      await exec(`sudo systemctl stop bitbridge4;`).catch((err) => {});
-      await exec(`sudo systemctl stop bitbridge6;`).catch((err) => {});
+      await execFile("sudo", ["systemctl", "stop", "bitbridge4"]).catch((err) => {});
+      await execFile("sudo", ["systemctl", "stop", "bitbridge6"]).catch((err) => {});
       if (this.spoofStarted) {
-        await exec(`sudo systemctl restart bitbridge4`).catch((err) => {
+        await execFile("sudo", ["systemctl", "restart", "bitbridge4"]).catch((err) => {
           log.error("Failed to start bitbridge4", err.message);
         });
-        await exec(`sudo systemctl restart bitbridge6`).catch((err) => {
+        await execFile("sudo", ["systemctl", "restart", "bitbridge6"]).catch((err) => {
           log.error("Failed to start bitbridge6", err.message);
         });
       }
@@ -266,7 +266,7 @@ class SpooferManager {
 
   async isSpoofRunning() {
     try {
-      await exec("pidof bitbridge7")
+      await execFile("pidof", ["bitbridge7"])
 
       // TODO: add ipv6 check in the future
     } catch(err) {
@@ -280,7 +280,7 @@ class SpooferManager {
   // TODO support ipv6
   async isSpoof(ip) {
     try {
-      await exec("pidof bitbridge7")
+      await execFile("pidof", ["bitbridge7"])
 
       // TODO: add ipv6 check in the future
     } catch(err) {
