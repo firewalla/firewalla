@@ -1487,9 +1487,15 @@ class PolicyManager2 {
   async _applyBypass(bypassPolicy, action="enforce") {
     let {affectedPids, tag, pid, type, target, targets, scope, guids} = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
-    const ruleScope = await this.resolveRuleScope(tag, pid, action);
-    if (!ruleScope) return;
-    let { intfs, tags } = ruleScope;
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.verbose(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
+      return;
+    }
 
     if (_.isEmpty(targets)) {
       targets = [target];
@@ -1710,22 +1716,6 @@ class PolicyManager2 {
     return { intfs, tags }
   }
 
-  // Resolve a rule's tag/interface scope. Returns null when the rule's tag field is
-  // non-empty but names nothing usable, meaning the caller should stop.
-  async resolveRuleScope(tag, pid, action) {
-    let { intfs, tags } = this.parseTags(tag)
-    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
-    tags = tags.filter((_, index) => tagExistenceChecks[index])
-    // invalid tag should not continue
-    if (tag && tag.length && !tags.length && !intfs.length) {
-      const logFn = action === "enforce" ? log.verbose : log.warn;
-      logFn(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
-      return null;
-    }
-    return { intfs, tags };
-  }
-
   async _enforce(policy) {
     log.info(`Enforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
@@ -1763,9 +1753,15 @@ class PolicyManager2 {
     }
 
 
-    const ruleScope = await this.resolveRuleScope(tag, pid, "enforce");
-    if (!ruleScope) return;
-    let { intfs, tags } = ruleScope;
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.verbose(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
+      return;
+    }
 
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type);
@@ -2460,9 +2456,15 @@ class PolicyManager2 {
       return this._unenforceBypass(policy);
     }
 
-    const ruleScope = await this.resolveRuleScope(tag, pid, "unenforce");
-    if (!ruleScope) return;
-    let { intfs, tags } = ruleScope;
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
+      return;
+    }
 
     const devOpts = { tags, intfs, scope, guids };
 
