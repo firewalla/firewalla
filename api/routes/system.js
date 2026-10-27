@@ -26,8 +26,6 @@ const sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
 const zlib = require('zlib');
 
-const Firewalla = require('../../net2/Firewalla.js');
-
 const NetBotTool = require('../../net2/NetBotTool');
 const netBotTool = new NetBotTool();
 
@@ -193,59 +191,5 @@ router.get('/perfstat',
               res.send('server error');
             })
           });
-
-router.get('/heapdump',
-  (req, res, next) => {
-    let process = req.query.process;
-
-    process = process || "FireApi";
-
-    let file = Firewalla.getTempFolder() + "/" + process + "-heapdump-" + new Date() /1000 + ".heapsnapshot";
-
-    switch(process) {
-      case "FireApi":
-        sysInfo.getHeapDump(file, (err, file) => {
-          if(err) {
-            res.status(500);
-            res.send('server error: ' + err);
-            return;
-          }
-
-          res.download(file);
-        });
-
-        break;
-      case "FireMain":
-      case "FireMon":
-        const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
-        const pclient = require('../../util/redis_manager.js').getPublishClient()
-
-        sclient.on("message", (channel, message) => {
-          if(channel === "heapdump_done" && message ) {
-            try {
-              let msg = JSON.parse(message);
-              let file = msg.file;
-              let title = msg.title;
-              if(title === process) {
-                res.download(file);
-              }
-            } catch (err) {
-              log.error("Failed to parse payload of heapdump_done message: ", message, err);
-            }
-          }
-        });
-        sclient.subscribe("heapdump_done");
-        pclient.publish("heapdump", JSON.stringify({
-          title: process,
-          file: file
-        }));
-
-        break;
-      default:
-        res.status(404).send("");
-    }
-
-
-  });
 
 module.exports = router;

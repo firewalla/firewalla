@@ -43,7 +43,6 @@ const dnsmasq = new DNSMASQ();
 const util = require('util');
 
 const fs = require('fs');
-const exec = require('child-process-promise').exec;
 const { execSync } = require('child_process');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const writeFileAsync = util.promisify(fs.writeFile);
@@ -55,6 +54,10 @@ const crypto = require('crypto');
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
 const { CategoryEntry } = require('../control/CategoryEntry.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_BF_DATA = "LOCK_BF_DATA";
+const LOCK_BF_CONF = "LOCK_BF_CONF";
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
 
@@ -71,12 +74,27 @@ const Constants = require('../net2/Constants.js');
 // fallbacks in case a sensor config override omits one of these fields;
 // setInterval() clamps a NaN delay to 1ms instead of erroring out
 const DEFAULT_REGULAR_INTERVAL = 28800;
+// How long to hold a bf-driven dnsmasq restart so a batch of filter updates costs one restart
+// instead of one per category. A cloud rebuild publishes a batch of lists and regularJob() walks
+// them one at a time with a download each, which is well outside the 5s debounce inside
+// scheduleRestartDNSService(). The filter has been stale for hours by then, a minute more to
+// collapse the batch is a good trade for not stopping DNS on every network N times in a row.
+const BF_RESTART_DELAY = 60;
 const DEFAULT_SECURITY_INTERVAL = 14400;
 const DEFAULT_COUNTRY_INTERVAL = 86400;
 
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
+
+    // parts updateCategory() is currently working on, see getBfUpdateCallback(). Counted, not a
+    // plain set: regularJob() and the Policy:CategoryActivated handler can be in the same part at
+    // the same time, and the first one to finish must not drop the other's claim.
+    this.inlineBfParts = new Map();
+    // parts whose cloudcache callback was dropped because the part was claimed at the time
+    this.bfPartsMissedUpdate = new Set();
+    // categories waiting for a REFRESH_CATEGORY_FILTER, see scheduleCategoryFilterRefresh()
+    this.pendingFilterRefresh = new Set();
 
     this.resetCategoryHashsetMapping()
 
@@ -152,6 +170,12 @@ class CategoryUpdateSensor extends Sensor {
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
+    // dnsmasq keeps using the bf content it loaded at startup, so any change to the data
+    // files themselves needs a service restart rather than a config reload
+    let bfDataChanged = false;
+    // set when a part's data was deleted rather than rewritten, which is what tells
+    // updateDnsmasqConfig() that an empty meta set means "gone", not "not written yet"
+    let bfDataRemoved = false;
     const hashset = this.getCategoryHashset(category);
 
     let domains, info;
@@ -331,42 +355,85 @@ class CategoryUpdateSensor extends Sensor {
         for (const part of removedParts) {
           const hashsetName = `bf:app.${part}`;
           await cloudcache.disableCache(hashsetName);
-          await this.removeData(part).catch((err) => { });
-          updated = true;
+          if (await this.removeData(part).catch((err) => false)) {
+            updated = true;
+            bfDataChanged = true;
+            bfDataRemoved = true;
+          }
         }
         await categoryUpdater.setCategoryBfParts(category, parts);
         for (const part of parts) {
           const hashsetName = `bf:app.${part}`;
-          let currentCacheItem = cloudcache.getCacheItem(hashsetName);
-          if (currentCacheItem) {
-            await currentCacheItem.download();
-          } else {
-            log.debug("Add category data item to cloud cache:", part);
-            await cloudcache.enableCache(hashsetName);
-            currentCacheItem = cloudcache.getCacheItem(hashsetName);
-          }
+          const onUpdate = this.getBfUpdateCallback(category, part);
+          // download() invokes the callback inline when it pulls new content, which would do the
+          // same work this loop is about to do. Let the loop own the part while it is in here.
+          this.claimBfPart(part);
           try {
+            let currentCacheItem = cloudcache.getCacheItem(hashsetName);
+            if (currentCacheItem) {
+              // the item outlives this round, but the callback is only set by enableCache(), so
+              // re-attach it here. Without it only the very first round of a part carries one and
+              // the cloudcache job has no way to push a new filter out.
+              currentCacheItem.onUpdate(onUpdate);
+              await currentCacheItem.download();
+            } else {
+              log.debug("Add category data item to cloud cache:", part);
+              await cloudcache.enableCache(hashsetName, onUpdate);
+              // enableCache fires the callback once whether or not it downloaded anything, and
+              // the claim above turned that into a missed-update mark. Nothing was missed: this
+              // round reads the very content that callback carried, a few lines down.
+              this.bfPartsMissedUpdate.delete(part);
+              currentCacheItem = cloudcache.getCacheItem(hashsetName);
+            }
             const content = await currentCacheItem.getLocalCacheContent();
             if (content) {
-              updated = await this.updateData(part, content) || updated;
+              const result = await this.updateData(part, content);
+              bfDataChanged = bfDataChanged || result.dataChanged;
+              updated = updated || result.dataChanged || result.metaChanged;
             } else {
               // remove obselete category data
               log.error(`Category ${category} part ${part} data is invalid. Remove it`);
-              await this.removeData(part);
-              updated = true;
+              if (await this.removeData(part)) {
+                bfDataChanged = true;
+                bfDataRemoved = true;
+                updated = true;
+              }
             }
           } catch (e) {
+            // break, not return: whatever the earlier parts already wrote to disk still has to
+            // reach dnsmasq, otherwise a failure on one part strands the others' new data - and
+            // worse, a part removed earlier in this round would stay in the conf as a path with
+            // no file behind it. The cost is that a part that failed before its first download
+            // is left out of the conf until the next round, which is the better of the two:
+            // under-blocking one new part beats pointing dnsmasq at files that are gone.
             log.error(`Fail to update filter data for ${category}.`, e);
-            return;
+            break;
+          } finally {
+            this.releaseBfPart(part);
+          }
+          // a download landed while this round owned the part, so what the round applied above may
+          // already be one version behind. Re-run against the current cache content; updateData()
+          // is idempotent, so this is a no-op whenever the round did pick up the new copy. Leave
+          // the mark alone if another round still owns the part - that one will consume it.
+          if (this.bfPartsMissedUpdate.has(part) && !this.inlineBfParts.has(part)) {
+            this.bfPartsMissedUpdate.delete(part);
+            const item = cloudcache.getCacheItem(hashsetName);
+            const latest = item ? await item.getLocalCacheContent() : null;
+            // only content means "re-apply". A missed callback always carries content, so an empty
+            // read here is a local glitch, not the cloud dropping the part - passing it on would
+            // make applyBfUpdate() delete the data this round just wrote.
+            if (latest) {
+              log.info(`Re-applying bf part ${part} of category ${category}, a refresh landed mid-round`);
+              await this.applyBfUpdate(category, part, latest).catch((err) => {
+                log.error(`Failed to re-apply bf update of part ${part}`, err.message);
+              });
+            } else {
+              log.warn(`Missed bf refresh of part ${part} but its cache content is unreadable, skip`);
+            }
           }
         }
         if (updated) {
-          const filterRefreshEvent = {
-            type: "REFRESH_CATEGORY_FILTER",
-            category: category,
-            toProcess: "FireMain"
-          };
-          sem.emitEvent(filterRefreshEvent);
+          this.scheduleCategoryFilterRefresh(category);
         } else {
           log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
         }
@@ -384,7 +451,7 @@ class CategoryUpdateSensor extends Sensor {
       }
     }
 
-    await this.updateDnsmasqConfig(category);
+    await this.updateDnsmasqConfig(category, bfDataChanged, bfDataRemoved);
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
@@ -394,13 +461,129 @@ class CategoryUpdateSensor extends Sensor {
     sem.sendEventToAll(event);
   }
 
-  // return true on successful update.
-  // return false on skip.
+  // cloudcache refreshes every registered item every 3 hours, but without a callback a new bf only
+  // lands in the data file and in redis on the next updateCategory(), i.e. up to 8 hours later
+  // (regularInterval). This closure is what turns a cloudcache download into an immediate update.
+  getBfUpdateCallback(category, part) {
+    return (content) => {
+      // updateCategory() is already handling this part and will do the same work inline. Record
+      // it though: the round may have read the cache content before this download replaced it,
+      // in which case it applies the older copy and cloudcache never calls back again (it only
+      // does so when it writes new content), stranding the new filter until the next regularJob.
+      if (this.inlineBfParts.has(part)) {
+        this.bfPartsMissedUpdate.add(part);
+        return;
+      }
+      this.applyBfUpdate(category, part, content).catch((err) => {
+        log.error(`Failed to apply bf update of part ${part} for category ${category}`, err.message);
+      });
+    };
+  }
+
+  claimBfPart(part) {
+    this.inlineBfParts.set(part, (this.inlineBfParts.get(part) || 0) + 1);
+  }
+
+  releaseBfPart(part) {
+    const claims = (this.inlineBfParts.get(part) || 0) - 1;
+    if (claims > 0)
+      this.inlineBfParts.set(part, claims);
+    else
+      this.inlineBfParts.delete(part);
+  }
+
+  scheduleBfRestart() {
+    if (this.bfRestartTask)
+      clearTimeout(this.bfRestartTask);
+    this.bfRestartTask = setTimeout(() => {
+      delete this.bfRestartTask;
+      // ignoreFileCheck as well: the generated conf carries only <path,size,error> and stays
+      // byte-identical when a filter is rebuilt with the same entry count
+      dnsmasq.scheduleRestartDNSService(true, true);
+    }, BF_RESTART_DELAY * 1000);
+  }
+
+  // Every part of a category used to share one event per updateCategory() round; now that parts
+  // refresh independently, emitting per part would run CategoryExaminerPlugin.refreshCategoryFilter()
+  // once per part - and that walks the whole hit/passthrough set with an intelproxy call per
+  // domain. Collapse them back to one event per category.
+  scheduleCategoryFilterRefresh(category) {
+    this.pendingFilterRefresh.add(category);
+    if (this.filterRefreshTask)
+      return;
+    this.filterRefreshTask = setTimeout(() => {
+      delete this.filterRefreshTask;
+      const categories = Array.from(this.pendingFilterRefresh);
+      this.pendingFilterRefresh.clear();
+      for (const c of categories) {
+        sem.emitEvent({
+          type: "REFRESH_CATEGORY_FILTER",
+          category: c,
+          toProcess: "FireMain"
+        });
+      }
+    }, 5000);
+  }
+
+  async applyBfUpdate(category, part, content) {
+    // a part can be reassigned to another category while this callback stays attached to the
+    // cache item, so trust the current mapping over the one captured when it was created
+    const owner = categoryUpdater.getCategoryByBfPart(part) || category;
+    // updateCategory() can drop a part while cloudcache is downloading it, and the part-to-category
+    // mapping keeps removed parts. Applying that late download would put the data file and its meta
+    // back for a part no round will ever list as removed again, so they would never be cleaned up.
+    if (!categoryUpdater.getCategoryBfParts(owner).includes(part)) {
+      log.info(`Part ${part} is no longer a part of category ${owner}, ignore its bf update`);
+      return;
+    }
+    // Category:Delete drops the category and its dnsmasq config but leaves the bf cache item
+    // registered, so this callback outlives the category it was created for. Without this check
+    // the next filter the cloud publishes would recreate the conf of a target list the user
+    // deleted - and force a dnsmasq restart to put it back into service. Both structures below
+    // are what that handler clears; a native category with no rule behind it is in neither
+    // activeCategories nor deleted, which is why the hashset mapping is checked too.
+    if (!categoryUpdater.isActivated(owner) && !this.categoryHashsetMapping[owner]) {
+      log.info(`Category ${owner} is gone, ignore bf update of part ${part}`);
+      return;
+    }
+    const strategy = await categoryUpdater.getStrategy(owner);
+    if (!_.get(strategy, "dnsmasq.useFilter")) {
+      log.info(`Category ${owner} no longer uses a bloom filter, ignore update of part ${part}`);
+      return;
+    }
+
+    if (!content) {
+      // cloudcache gives up on the item: expired, or never served by the cloud at all. The latter
+      // repeats on every job round, so only act when there was something left to remove.
+      if (!await this.removeData(part))
+        return;
+      log.error(`Bf data of part ${part} of category ${owner} is gone, removed it`);
+      this.scheduleCategoryFilterRefresh(owner);
+      await this.updateDnsmasqConfig(owner, true, true);
+      return;
+    }
+
+    const { dataChanged, metaChanged } = await this.updateData(part, content);
+    if (!dataChanged && !metaChanged)
+      return;
+
+    log.info(`Bf part ${part} of category ${owner} refreshed by cloudcache, data changed: ${dataChanged}`);
+    this.scheduleCategoryFilterRefresh(owner);
+    await this.updateDnsmasqConfig(owner, dataChanged);
+  }
+
+  // returns { dataChanged, metaChanged }:
+  //   dataChanged - the bf data file on disk was replaced. dnsmasq only picks up new bf content
+  //                 on a full service restart (it caches the filter per file path for the lifetime
+  //                 of the process and never re-reads it on a config reload), so this is what
+  //                 decides whether we pay for a restart.
+  //   metaChanged - the meta in redis was (re)written, which is all intelproxy needs to reload.
   async updateData(category, content) {
     log.debug("Update category filter data", category);
+    const unchanged = { dataChanged: false, metaChanged: false };
     const obj = JSON.parse(content);
     if (!obj.data || !obj.info) {
-      return false;
+      return unchanged;
     }
 
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
@@ -420,82 +603,123 @@ class CategoryUpdateSensor extends Sensor {
     const actualChecksum = crypto.createHash('md5').update(buf).digest('hex');
     if (meta.checksum && actualChecksum !== meta.checksum) {
       log.error(`Checksum mismatch in bf data of ${category}, expect ${meta.checksum}, got ${actualChecksum}, skip`);
-      return false;
+      return unchanged;
     }
 
-    let currentFileContent;
-    try {
-      currentFileContent = await readFileAsync(filterFile);
-    } catch (e) {
-      currentFileContent = null;
-    }
-
-    if (currentFileContent && buf.equals(currentFileContent)) {
-      // the data file is already up to date, but the meta in redis may have fallen behind, e.g. a
-      // previous round wrote the file and then failed on hset. don't skip until both halves agree,
-      // otherwise the pair stays out of sync forever and intelproxy keeps failing the checksum
-      const currentMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid).then(r => r && JSON.parse(r)).catch(err => null);
-      if (_.isEqual(currentMeta, meta)) {
-        log.debug(`No filter update for ${category}, skip`);
-        return false;
-      }
-      log.warn(`Filter data of ${category} is up to date but its meta in redis is stale, repairing`, currentMeta);
-    } else {
-      // write to a temp file and rename, so intelproxy never reads a partially written data file
-      const tmpFile = `${filterFile}.tmp.${process.pid}`;
+    // the cloudcache job and updateCategory() can both land here for the same part, and they
+    // share the temp file path, so serialize per part
+    return lock.acquire(`${LOCK_BF_DATA}:${category}`, async () => {
+      let currentFileContent;
       try {
-        await writeFileAsync(tmpFile, buf);
-        await renameAsync(tmpFile, filterFile);
-      } catch (err) {
-        await unlinkAsync(tmpFile).catch(() => undefined);
-        throw err;
+        currentFileContent = await readFileAsync(filterFile);
+      } catch (e) {
+        currentFileContent = null;
       }
-    }
 
-    await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
-
-    const updateEvent = {
-      type: "update",
-      msg: {
-        uid: uid
+      let dataChanged = false;
+      if (currentFileContent && buf.equals(currentFileContent)) {
+        // the data file is already up to date, but the meta in redis may have fallen behind, e.g. a
+        // previous round wrote the file and then failed on hset. don't skip until both halves agree,
+        // otherwise the pair stays out of sync forever and intelproxy keeps failing the checksum
+        const currentMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid).then(r => r && JSON.parse(r)).catch(err => null);
+        if (_.isEqual(currentMeta, meta)) {
+          log.debug(`No filter update for ${category}, skip`);
+          return { dataChanged: false, metaChanged: false };
+        }
+        log.warn(`Filter data of ${category} is up to date but its meta in redis is stale, repairing`, currentMeta);
+      } else {
+        // write to a temp file and rename, so intelproxy never reads a partially written data file
+        const tmpFile = `${filterFile}.tmp.${process.pid}`;
+        try {
+          await writeFileAsync(tmpFile, buf);
+          await renameAsync(tmpFile, filterFile);
+        } catch (err) {
+          await unlinkAsync(tmpFile).catch(() => undefined);
+          throw err;
+        }
+        dataChanged = true;
       }
-    };
-    await rclient.publishAsync(INTEL_PROXY_CHANNEL, JSON.stringify(updateEvent));
-    return true;
+
+      await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
+
+      const updateEvent = {
+        type: "update",
+        msg: {
+          uid: uid
+        }
+      };
+      await rclient.publishAsync(INTEL_PROXY_CHANNEL, JSON.stringify(updateEvent));
+      return { dataChanged, metaChanged: true };
+    });
   }
 
+  // returns true if anything was actually removed. Callers use it to tell a real change from a
+  // repeated no-op: cloudcache keeps calling back for a part the cloud does not serve, and
+  // forcing a dnsmasq restart on every one of those rounds is exactly what this feature avoids.
   async removeData(category) {
     log.debug("Remove category filter data", category);
     const uid = `category:${category}`;
-    await rclient.hdelAsync(CATEGORY_DATA_KEY, uid);
-
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
-    await exec(`rm -fr ${filterFile}`);
+    // same lock as updateData(), so a removal can't land between its rename and its hset and
+    // leave redis pointing at a data file that is gone
+    return lock.acquire(`${LOCK_BF_DATA}:${category}`, async () => {
+      const metaRemoved = await rclient.hdelAsync(CATEGORY_DATA_KEY, uid);
+      const fileRemoved = await unlinkAsync(filterFile).then(() => true).catch((err) => {
+        if (err.code !== 'ENOENT')
+          log.error(`Failed to remove filter data of ${category}`, err.message);
+        return false;
+      });
+      return Boolean(metaRemoved) || fileRemoved;
+    });
   }
 
-  async updateDnsmasqConfig(category) {
-    const strategy = await categoryUpdater.getStrategy(category);
-    if (strategy.dnsmasq.useFilter) {
-      const parts = categoryUpdater.getCategoryBfParts(category);
-      const meta = {};
-      for (const part of parts) {
-        const key = `category:${part}`;
-        const partMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, key);
-        if (partMeta)
-          meta[part] = JSON.parse(partMeta);
-        else
-          log.error(`No bf data found for part ${part} of category ${category}`);
-      }
-      if (!_.isEmpty(meta)) {
-        await dnsmasq.createCategoryFilterMappingFile(category, meta);
+  async updateDnsmasqConfig(category, bfDataChanged = false, bfDataRemoved = false) {
+    // the parts of a multi-part category (porn_bf, intel_bf and allcat_bf each have a base and a
+    // diff part) refresh independently and their cloudcache callbacks land here concurrently,
+    // while writeConfig() truncates in place: two overlapping writes of different lengths can
+    // leave a fragment of the longer one behind, which dnsmasq then fails to parse on restart
+    return lock.acquire(`${LOCK_BF_CONF}:${category}`, async () => {
+      const strategy = await categoryUpdater.getStrategy(category);
+      if (strategy.dnsmasq.useFilter) {
+        const parts = categoryUpdater.getCategoryBfParts(category);
+        const meta = {};
+        for (const part of parts) {
+          const key = `category:${part}`;
+          const partMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, key);
+          if (partMeta)
+            meta[part] = JSON.parse(partMeta);
+          else
+            log.error(`No bf data found for part ${part} of category ${category}`);
+        }
+        if (!_.isEmpty(meta)) {
+          await dnsmasq.createCategoryFilterMappingFile(category, meta);
+        } else if (_.isEmpty(parts) || bfDataRemoved) {
+          // Nothing left to point at. Leaving the entry would keep <path,size,error> for a file
+          // that no longer exists, and on the next restart dnsmasq's mmap of it fails and every
+          // instance falls back to its own full-size empty filter - the very memory the shared
+          // mapping was introduced to save. Nothing retries either: once the cloud withdraws a
+          // list, updateCategory() returns on the missing target list info before it gets here.
+          log.error(`No bf data. Delete dns filter config for category: ${category}`);
+          await dnsmasq.deletePolicyCategoryFilterEntry(category);
+        } else {
+          // Parts are registered but none of them has its meta in redis, and nothing reported a
+          // removal: this is a concurrent round caught between setCategoryBfParts() and the first
+          // updateData() of its new parts. Deleting the config here would stop enforcing the
+          // category until that round finishes, so keep what dnsmasq already has.
+          log.warn(`No bf meta for any part of category ${category}, keep current dns filter config`);
+        }
       } else {
-        log.error(`No bf data. Delete dns filter config for category: ${category}`);
-        await dnsmasq.deletePolicyCategoryFilterEntry(category);
+        await dnsmasq.createCategoryMappingFile(category, [categoryUpdater.getIPSetName(category), `${categoryUpdater.getIPSetNameForIPV6(category)}`]);
       }
-    } else {
-      await dnsmasq.createCategoryMappingFile(category, [categoryUpdater.getIPSetName(category), `${categoryUpdater.getIPSetNameForIPV6(category)}`]);
-    }
-    dnsmasq.scheduleRestartDNSService();
+      // A config reload makes dnsmasq re-read these conf files, but not the bf data they point at:
+      // it keeps one filter per file path for the lifetime of the process and reuses it on every
+      // reload, so new bf content only takes effect on a full service restart. Anything else is
+      // a conf-only change and the usual reload path handles it.
+      if (bfDataChanged)
+        this.scheduleBfRestart();
+      else
+        dnsmasq.scheduleRestartDNSService();
+    });
   }
 
   async updateSecurityCategory(category) {

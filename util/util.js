@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,8 +20,7 @@ const { spawn } = require('child_process');
 const _ = require('lodash');
 const stream = require('stream');
 const moment = require('moment');
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
+const Constants = require('../net2/Constants.js');
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 const validVersionRegex = /^[0-9.]+/
@@ -215,6 +214,50 @@ function isDomainValid(domain) {
   return validDomainRegex.test(domain);
 }
 
+// a rule target or a TLS host, i.e. a domain name that may carry a leading "*." wildcard.
+// the same shape dnsmasq entries and iptables --tls-host arguments are built from
+function isDomainTargetValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return isDomainValid(domain.startsWith("*.") ? domain.substring(2) : domain);
+}
+
+// a category or target list member. unlike a rule target these carry "*" anywhere, not
+// only as a leading label, e.g. "*webapp*.tiktok.com" and "vod-hulu-*.media.dssott.com"
+function isCategoryDomainValid(domain) {
+  if (!domain || !_.isString(domain) || domain.length > 253)
+    return false;
+  return /^[-_a-zA-Z0-9.*]+$/.test(domain);
+}
+
+// Returns true if the policy holds a control character, or an object that could hide one.
+// JSON.stringify is used here as a tree walk. The replacer sees raw values, so a line break is
+// still a line break, unlike in the stringify output where it has become a backslash and an n.
+function objHasControlChar(policy) {
+  let found = false;
+  JSON.stringify(policy, function (key, value) {
+    if (found) return;
+    // stringify calls toJSON before the replacer, so what it returns would be scanned instead of
+    // the real fields. this[key] is the value before that call
+    const original = this[key];
+    if (original && typeof original.toJSON === 'function') {
+      found = true;
+      return;
+    }
+    if (_.isString(value)) {
+      // notes is user input for policy rules and may hold a line break
+      const regex = key === "notes" && this === policy
+        ? Constants.REGEX_CONTROL_CHARS_MULTILINE : Constants.REGEX_CONTROL_CHARS;
+      if (regex.test(value)) found = true;
+      return;
+    }
+    // returning undefined for a leaf drops it from the result, so stringify does not copy or
+    // escape it. the result is discarded either way
+    return value && typeof value === 'object' ? value : undefined;
+  });
+  return found;
+}
+
 function isValidCommonName(cn) {
   if (!cn || typeof cn !== 'string') return false;
   return /^[a-zA-Z0-9]{1,32}$/.test(cn);
@@ -235,7 +278,8 @@ function generateStrictDateTs(ts) {
 function isHashDomain(domain) {
   if (!domain || !_.isString(domain))
     return false;
-  return domain.endsWith("=") && domain.length == 44
+  // a sha256 digest in standard base64: 32 bytes always encode to 43 characters plus one pad
+  return /^[A-Za-z0-9+/]{43}=$/.test(domain)
 }
 
 class LineSplitter extends stream.Transform {
@@ -416,6 +460,9 @@ module.exports = {
   isSameOrSubDomain,
   formulateHostname,
   isDomainValid,
+  isDomainTargetValid,
+  isCategoryDomainValid,
+  hasControlChar: objHasControlChar,
   generateStrictDateTs,
   isHashDomain,
   LineSplitter,

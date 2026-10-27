@@ -21,7 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const ipset = require('./Ipset.js');
 const _ = require('lodash');
@@ -131,6 +131,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
+const ethCounters = require('./EthCounters.js');
 const TAG_RULE_PREFIXES = Object.values(Constants.TAG_TYPE_MAP).map(t => t.ruleTagPrefix);
 const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
@@ -195,9 +196,7 @@ module.exports = class HostManager extends Monitorable {
           if (!host) return
         }
 
-        if (host.ipv4Addr) {
-          this.hostsdb[`host:ip4:${obj.ipv4Addr}`] = host
-        }
+        this.syncV4DB(host, obj && obj.ipv4Addr)
         this.syncV6DB(host)
       })
 
@@ -788,8 +787,7 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    const settings = await dc.getSettings();
-    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
+    json.dohConfig = Object.assign(await dc.getSettings(), {selectedServers, allServers, customizedServers});
   }
 
   async unboundConfigDataForInit(json) {
@@ -1226,11 +1224,6 @@ module.exports = class HostManager extends Monitorable {
     json.boxMetrics = result;
   }
 
-  async getSysInfo(json) {
-    const result = await sysManager.getSysInfoAsync();
-    json.sysInfo = result;
-  }
-
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -1257,7 +1250,6 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json),
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
@@ -1328,9 +1320,30 @@ module.exports = class HostManager extends Monitorable {
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
+    // after the assignment on purpose: asyncBasicDataForInit runs under Promise.allSettled, so a
+    // throw here would otherwise drop nicStates from init data entirely. It fills the same object
+    await this.nicCountersForInit(nicStates);
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
     json.customizedCategories = customizedCategories;
+  }
+
+  // the driver counters NicStateSensor collects every minute, taken from redis instead of the
+  // NIC so that building init data costs no ethtool call. A counter reads -1 on a NIC whose
+  // driver cannot count it, e.g. atlantic reports no PAUSE frames at all, which is not the same
+  // as a 0 from a port that has seen none. It is absent only before the first round has run
+  async nicCountersForInit(nicStates) {
+    const ethInfo = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO).catch(() => null);
+    if (!ethInfo) return;
+    for (const intf in nicStates) {
+      for (const metric in ethCounters.ETH_COUNTERS) {
+        if (!ethCounters.ETH_COUNTERS[metric].nicStates)
+          continue;
+        const value = ethInfo[`${intf}_${ethCounters.ETH_COUNTERS[metric].key}`];
+        if (value !== undefined && !isNaN(value))
+          nicStates[intf][metric] = Number(value);
+      }
+    }
   }
 
   async getGuessedRouters(json) {
@@ -1737,7 +1750,7 @@ module.exports = class HostManager extends Monitorable {
       this.extraTimeRequestsForInit(json),
       this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
       this.eventSummaryForInit(json),
-      exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
+      execFile("sudo", ["systemctl", "is-active", "firekick"]).then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
     if (options.legacySystemFlows)
@@ -2135,6 +2148,18 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
+  // maps ipv4 to host in hostsdb. host.o may already hold the new address when this runs
+  // (Host.onUpdate), so the previous one is found in hostsdb instead of on the host
+  syncV4DB(host, ipv4) {
+    if (!host || !ipv4) return
+    const key = `host:ip4:${ipv4}`
+    for (const k of Object.keys(this.hostsdb)) {
+      if (k !== key && k.startsWith('host:ip4:') && this.hostsdb[k] === host)
+        delete this.hostsdb[k]
+    }
+    this.hostsdb[key] = host
+  }
+
   syncV6DB(host) {
     if (!host || !host.ipv6Addr || !Array.isArray(host.ipv6Addr)) return
 
@@ -2497,36 +2522,44 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      const wanConfs = _.isObject(policy) && policy.wanConfs || {};
-      const wanType = sysManager.getWanType();
-      const primaryWanIntf = sysManager.getPrimaryWanInterface();
-      const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-      if (platform.isFireRouterManaged()) {
-        for (const wanIntf of sysManager.getWanInterfaces()) {
-          const uuid = wanIntf.uuid;
-          if (_.has(wanConfs, uuid))
-            await this.qos(wanConfs[uuid], uuid);
-          else {
-            // use global config as a fallback for primary WAN or all wans in load balance mode
-            if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
-              await this.qos(policy, uuid)
+      // FW_QOS_GLOBAL_FALLBACK is rebuilt as flush-then-append with awaits in between, so two
+      // concurrent runs interleave into flush/flush/append/append and duplicate every rule. The
+      // callers are not serialized with each other (one firerouter reload emits
+      // MSG_SYS_NETWORK_INFO_RELOADED twice, and PolicyManager applies policies in parallel), so
+      // this has to be guarded here rather than at any single call site. Only the global branch
+      // takes the lock, the per-wan branch above is re-entered below while it's still held.
+      await lock.acquire("LOCK_QOS_GLOBAL", async () => {
+        await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        const wanConfs = _.isObject(policy) && policy.wanConfs || {};
+        const wanType = sysManager.getWanType();
+        const primaryWanIntf = sysManager.getPrimaryWanInterface();
+        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
+        if (platform.isFireRouterManaged()) {
+          for (const wanIntf of sysManager.getWanInterfaces()) {
+            const uuid = wanIntf.uuid;
+            if (_.has(wanConfs, uuid))
+              await this.qos(wanConfs[uuid], uuid);
+            else {
+              // use global config as a fallback for primary WAN or all wans in load balance mode
+              if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
+                await this.qos(policy, uuid)
+            }
           }
         }
-      }
-      
-      if (!state) {
-        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      } else {
-        const appConfs = await this.getAppConfs();
-        this.app(appConfs).catch((err) => {
-          log.error(`Failed to set app qos bandwidth`, err.message);
-        });
-      }
-      await this.setupDefaultQosAutoRules();
-      await this.setupDscpOverride();
-      await platform.switchQoS(state, qdisc);
+
+        if (!state) {
+          await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        } else {
+          const appConfs = await this.getAppConfs();
+          this.app(appConfs).catch((err) => {
+            log.error(`Failed to set app qos bandwidth`, err.message);
+          });
+        }
+        await this.setupDefaultQosAutoRules();
+        await this.setupDscpOverride();
+        await platform.switchQoS(state, qdisc);
+      });
     } 
   }
 
@@ -2619,56 +2652,61 @@ module.exports = class HostManager extends Monitorable {
     if (!policy) {
       return;
     }
-    //following part should be executed when app conf changes or WAN changes
-    //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
+    // serialize with concurrent callers: app() is reached from the policy apply path, from the
+    // MSG_SYS_NETWORK_INFO_RELOADED handler and from qos() itself, and overlapping runs race on
+    // setQoSBandwidth, leaving whichever happens to finish last in effect.
+    await lock.acquire("LOCK_QOS_APP", async () => {
+      //following part should be executed when app conf changes or WAN changes
+      //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
 
-    // get current qos mode
-    const qosConfs = await this.getQosConfs();
-    if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
-      log.info("Set app Qos to max speed since qos is not in adaptive mode");
-      await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      return;
-    }
-
-    // for load balance mode, set the speed rate limit to sum of all WANs
-    // for failover mode, set the speed to primary WAN only
-    // const appConfs = await this.getAppConfs();
-    const wanType = sysManager.getWanType();
-    const bandwidth = policy && policy.bandwidth || {};
-    let uploadSpeed = parseInt(bandwidth.upload) || 0;
-    let downloadSpeed = parseInt(bandwidth.download) || 0;
-    if (bandwidth.wanConfs) {
-      let totalUpload = 0;
-      let totalDownload = 0;
-      const activeWanIntf = sysManager.getDefaultWanInterface();
-      const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
-      for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
-        if (wanType === Constants.WAN_TYPE_FAILOVER) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_LB) {
-          const intf = sysManager.getInterfaceViaUUID(wanId);
-          if (!intf || intf.type !== "wan" || !intf.ready)
-            continue;
-          totalUpload += parseInt(wanConf.upload) || 0;
-          totalDownload += parseInt(wanConf.download) || 0;
-        }
+      // get current qos mode
+      const qosConfs = await this.getQosConfs();
+      if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
+        log.info("Set app Qos to max speed since qos is not in adaptive mode");
+        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        return;
       }
-      uploadSpeed = totalUpload;
-      downloadSpeed = totalDownload;
-    }
-    log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
 
-    await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+      // for load balance mode, set the speed rate limit to sum of all WANs
+      // for failover mode, set the speed to primary WAN only
+      // const appConfs = await this.getAppConfs();
+      const wanType = sysManager.getWanType();
+      const bandwidth = policy && policy.bandwidth || {};
+      let uploadSpeed = parseInt(bandwidth.upload) || 0;
+      let downloadSpeed = parseInt(bandwidth.download) || 0;
+      if (bandwidth.wanConfs) {
+        let totalUpload = 0;
+        let totalDownload = 0;
+        const activeWanIntf = sysManager.getDefaultWanInterface();
+        const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
+        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+          if (wanType === Constants.WAN_TYPE_FAILOVER) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_SINGLE) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_LB) {
+            const intf = sysManager.getInterfaceViaUUID(wanId);
+            if (!intf || intf.type !== "wan" || !intf.ready)
+              continue;
+            totalUpload += parseInt(wanConf.upload) || 0;
+            totalDownload += parseInt(wanConf.download) || 0;
+          }
+        }
+        uploadSpeed = totalUpload;
+        downloadSpeed = totalDownload;
+      }
+      log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
+
+      await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+    });
   }
 
   async aclTimer(policy = {}) {
@@ -2701,7 +2739,7 @@ module.exports = class HostManager extends Monitorable {
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
       } catch(err) {
-        await exec(`touch ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("touch", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       }
     } else {
@@ -2712,7 +2750,7 @@ module.exports = class HostManager extends Monitorable {
       // remove dev flag file if it exists and restart bitbridge
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
-        await exec(`rm ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("rm", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       } catch(err) {}
     }
@@ -2821,6 +2859,25 @@ module.exports = class HostManager extends Monitorable {
       log.error(err.message)
       return false
     }
+  }
+
+  /// return a list of profile id of every enabled VPN client, kill switch or not. Route rules with
+  /// routeType=hard block on disconnect regardless of strictVPN, so OSI matches them against this.
+  getAllActiveVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        if (!client.state)
+          continue;
+        const type = client.type;
+        const profileId = client[type] && client[type].profileId;
+        if (profileId)
+          list.push(profileId);
+      }
+    }
+
+    return list;
   }
 
   /// return a list of profile id

@@ -64,6 +64,24 @@ function get_cloud_endpoint {
   fi
 }
 
+NODE_UPGRADE_VERSION=v24.21.0   # must match NODE_UPGRADE_VERSION in firerouter bin/node
+: ${NODE_VERSIONS_DIR:=/home/pi/.node_versions}
+
+# Upgraded Node, installed by scripts/install_node.sh from assets and shared with firerouter.
+# Falls back to $1 (the platform default) when not installed, when config/.node_legacy is empty or
+# holds this version (written by hand for now, the crash guard in start_service.sh is disabled), or when
+# NODE_UPGRADE_OFF is set (test/setup.sh)
+function node_bin_or_default {
+  local bin=$NODE_VERSIONS_DIR/$NODE_UPGRADE_VERSION/bin/node
+  local latch=${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/.node_legacy
+  local l=$(head -n1 "$latch" 2>/dev/null)   # local masks the failure, so set -e callers don't exit
+  if [[ -z $NODE_UPGRADE_OFF && -x $bin ]] && ! [[ -e $latch && ( -z $l || $l == $NODE_UPGRADE_VERSION ) ]]; then
+    echo $bin
+  else
+    echo $1
+  fi
+}
+
 function get_node_bin_path {
   if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
     echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
@@ -82,6 +100,109 @@ function get_node_bin_path {
 
 function get_zeek_log_dir {
   echo "/log/blog/"
+}
+
+# Flow engines: which program handles each pcap role, decided by two features
+#   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
+#   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
+# Same sources as net2/config.js: the runtime value in redis sys:features (set
+# by the app / enableDynamicFeature), else the platform's files/config.json
+# userFeatures, else net2/config.json, else off. See scripts/zssids-engine.sh.
+# net2/config.js merges cloud, MSP and version configuration too, which no
+# shell can reproduce; ZssidsEnginePlugin writes the effective values of the
+# features below here whenever they change, and this file is consulted right
+# after the runtime overrides in sys:features
+FW_EFFECTIVE_FEATURES=${FW_EFFECTIVE_FEATURES:-/dev/shm/zssids-engine.features}
+
+function _fw_feature_on {
+  local name=$1 v
+  # What net2/config.js decided, first: it merges cloud, MSP and version
+  # configuration and drops anything in hiddenFeatures, so a feature hidden by
+  # a release while sys:features still says 1 must resolve to off here too.
+  if [[ -r $FW_EFFECTIVE_FEATURES ]]; then
+    v=$(jq -r --arg n "$name" 'if has($n) then (.[$n] | tostring) else empty end' "$FW_EFFECTIVE_FEATURES" 2>/dev/null)
+    case "$v" in
+      true) return 0 ;;
+      false) return 1 ;;
+    esac
+  fi
+  # At early boot main-start intentionally discards the snapshot from the
+  # previous FireMain. Honour the current release's kill switches before a
+  # stale runtime override in Redis can select an unsupported engine.
+  if [[ ${branch:-} == release_* || ${branch:-} == beta_* ]]; then
+    local hidden_cfg
+    for hidden_cfg in "${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/config.json" \
+                      "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" \
+                      "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+      [[ -f $hidden_cfg ]] || continue
+      v=$(jq -r --arg n "$name" '(.hiddenFeatures // []) | index($n) != null' "$hidden_cfg" 2>/dev/null)
+      [[ $v == true ]] && return 1
+    done
+  fi
+  # before FireMain has published (early boot), the runtime override in redis
+  v=$(timeout 3 redis-cli hget sys:features "$name" 2>/dev/null)
+  case "$v" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  # then the same file precedence as net2/config.js: user config, the platform
+  # default, the checked-in default. `has` keeps an explicit false, which
+  # `// empty` would have thrown away.
+  local cfg
+  for cfg in "${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/config.json" \
+             "${FW_PLATFORM_CUR_DIR:-/nonexistent}/files/config.json" \
+             "${FIREWALLA_HOME:-/home/pi/firewalla}/net2/config.json"; do
+    [[ -f $cfg ]] || continue
+    v=$(jq -r --arg n "$name" 'if (.userFeatures // {}) | has($n) then (.userFeatures[$n] | tostring) else empty end' "$cfg" 2>/dev/null)
+    case "$v" in
+      true) return 0 ;;
+      false) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+# the zssids binary arrives as an asset; until it is there (or if it goes
+# missing) the roles resolve to the stock engines so the box never ends up
+# with neither. Everything shell-side asks these, never the raw feature.
+ZSSIDS_BIN=${ZSSIDS_BIN:-/home/pi/.firewalla/run/assets/zssids}
+
+function zssids_available {
+  [[ -x $ZSSIDS_BIN ]]
+}
+
+function get_flow_engine_zeek {
+  if _fw_feature_on pcap_zeek_zssids && zssids_available; then echo zssids; else echo zeek; fi
+}
+
+# The IDS role exists only where PcapSuricataPlugin.isSupported() holds: a
+# suricata binary on the box, or one the platform takes from its assets
+# (Platform.isSuricataFromAssetsSupported, overridden per platform below). Only
+# then does the plugin write listen_interfaces.rc, the interface list an
+# IDS-only zssids captures on; without it zssids-ids-run could only exit, and
+# suricata.service (Restart=always) would restart it forever.
+SURICATA_BIN=${SURICATA_BIN:-/usr/bin/suricata}
+
+function suricata_from_assets_supported {
+  return 1
+}
+
+function suricata_role_supported {
+  [[ -e $SURICATA_BIN ]] || suricata_from_assets_supported
+}
+
+function get_flow_engine_suricata {
+  if _fw_feature_on pcap_suricata_zssids && zssids_available && suricata_role_supported; then echo zssids; else echo suricata; fi
+}
+
+# the roles themselves can be switched off by the box: pcap_zeek governs flow
+# capture and pcap_suricata the IDS, whichever program provides them
+function pcap_zeek_enabled {
+  _fw_feature_on pcap_zeek
+}
+
+function pcap_suricata_enabled {
+  _fw_feature_on pcap_suricata
 }
 
 function heartbeatLED {
@@ -139,6 +260,25 @@ function tls_module_matches_ko {
   "$TLS_MODULE_ID_SCRIPT" same "$1" "$2"
 }
 
+function installSchCakeModule {
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
+  if [[ -f $ko_path ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
+      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+  fi
+
+  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
+  tc_dst_path=$(which tc || echo "/sbin/tc")
+  if [[ -f $tc_path ]]; then
+    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
+      sudo cp $tc_path $tc_dst_path
+    fi
+  fi
+  return
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -151,6 +291,11 @@ case "$UNAME" in
         source $FW_PLATFORM_DIR/goldpro/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldpro
         export FIREWALLA_PLATFORM=goldpro
+        ;;
+      crystal)
+        source $FW_PLATFORM_DIR/crystal/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/crystal
+        export FIREWALLA_PLATFORM=crystal
         ;;
       *)
         source $FW_PLATFORM_DIR/gold/platform.sh
@@ -251,7 +396,7 @@ case "$UNAME" in
     ;;
 esac
 
-branch=$(cd /home/pi/firewalla;git rev-parse --abbrev-ref HEAD)
+branch=$(cd "${FIREWALLA_HOME:-/home/pi/firewalla}" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null)
 if [ "$branch" = "master" ]; then
   XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
 fi
@@ -347,25 +492,6 @@ function installTLSModule() {
       --arg v "$version" --arg sv "$srcversion" --arg ki "$ko_id" \
       '.udpModuleVersion = {"version": $v, "srcversion": $sv, "koId": $ki} | .shouldDisableUdpTls = false' 2>/dev/null | jq -c . )
     [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
-  fi
-  return
-}
-
-function installSchCakeModule {
-  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
-  if [[ -f $ko_path ]]; then
-    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
-      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
-      sudo depmod -a
-    fi
-  fi
-
-  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
-  tc_dst_path=$(which tc || echo "/sbin/tc")
-  if [[ -f $tc_path ]]; then
-    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
-      sudo cp $tc_path $tc_dst_path
-    fi
   fi
   return
 }

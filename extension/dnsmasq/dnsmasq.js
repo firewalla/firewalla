@@ -25,9 +25,7 @@ const util = require('util');
 const net = require('net');
 const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
-const childProcess = require('child_process');
-const execAsync = util.promisify(childProcess.exec);
-const execFileAsync = util.promisify(childProcess.execFile);
+const { execFile } = require('child-process-promise');
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -145,7 +143,16 @@ module.exports = class DNSMASQ {
       this.networkFailCountMap = {};
       this.reservedIPHost = {}
       this.lastHostsFileHash = {}
+      // FireMain owns the hosts files; seed their hashes as soon as it starts. writeHostsFile() still
+      // awaits the same promise, so a write that comes first waits for the seeding instead of racing it
+      if (f.isMain())
+        this.loadHostsFileHashes()
       this.writeHostsFileTask = {}
+      // dnsmasq reads its lease file only at startup, so a lease record deleted from the file takes
+      // effect at the next DHCP restart. Starts true, so the first DHCP check after every FireMain start
+      // restarts DHCP whatever the hashes say: dnsmasq then reloads everything from disk, and nothing a
+      // previous FireMain left half-applied depends on state that only lived in its memory
+      this.leaseCleanupPending = true
 
       this.hashTypes = {
         adblock: 'ads',
@@ -246,9 +253,8 @@ module.exports = class DNSMASQ {
   }
 
   async install() {
-    let install_cmd = util.format('cd %s; bash ./install.sh', __dirname);
     try {
-      await execAsync(install_cmd);
+      await execFile("bash", ["./install.sh"], { cwd: __dirname });
       log.info("DNSMASQ:INSTALL:Success", "Dnsmasq is installed successfully");
     } catch (err) {
       log.error("DNSMASQ:INSTALL:Error", "Failed to execute script install.sh", err);
@@ -312,7 +318,7 @@ module.exports = class DNSMASQ {
 
     let reloaded = true;
     for (const pid of pids) {
-      const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
+      const ok = await execFile("sudo", ["kill", "-RTMIN", String(pid)]).then(() => true).catch((err) => {
         // ESRCH means the process already exited — not a failure, the service will restart a fresh instance
         if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
           return true;
@@ -326,11 +332,10 @@ module.exports = class DNSMASQ {
   }
 
   async restartDNSService() {
-    await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
+    await execFile("sudo", ["systemctl", "stop", SERVICE_NAME]).catch((err) => { });
     this.counter.restart++;
     log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
-    const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
-    await execAsync(cmd).then(() => {
+    await execFile("sudo", ["systemctl", "restart", SERVICE_NAME]).then(() => {
       log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
     }).catch((err) => {
       log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
@@ -388,7 +393,7 @@ module.exports = class DNSMASQ {
       }
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
-      await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "reload", SERVICE_NAME]).then(() => {
         log.verbose(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
       }).catch((err) => {
         log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
@@ -407,17 +412,24 @@ module.exports = class DNSMASQ {
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+      // dnsmasq:dhcp covers only what a restart alone applies; the reservations are under dnsmasq:dhcphosts,
+      // because SIGHUP reloads them but not the conf dir or the lease file
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, DHCP_CONFIG_PATH]);
+      if (!this.restartDHCPIgnoreFileCheck && !confChanged && !this.leaseCleanupPending) {
         delete this.restartDHCPIgnoreFileCheck;
         delete this.restartDHCPTask;
+        // a reload applies any reservation change
+        this.scheduleReloadDHCPService();
         return;
       }
+      // the restart loads the reservations too, so record them as applied
+      await this.checkConfsChange('dnsmasq:dhcphosts', [HOSTFILE_PATH]);
       delete this.restartDHCPIgnoreFileCheck
-      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
+      this.leaseCleanupPending = false
+      await execFile("sudo", ["systemctl", "stop", DHCP_SERVICE_NAME]).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
-      await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "restart", DHCP_SERVICE_NAME]).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
@@ -439,7 +451,7 @@ module.exports = class DNSMASQ {
       }
       this.counter.reloadDHCP++;
       log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
-      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+      await execFile("sudo", ["systemctl", "reload", DHCP_SERVICE_NAME]).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
       }).catch((err) => {
         log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
@@ -1557,10 +1569,10 @@ module.exports = class DNSMASQ {
   }
 
   async getCurrentNameServerList() {
-    let cmd = `grep 'nameserver' ${resolvFile} | head -n 1 | cut -d ' ' -f 2`;
-    log.info("Command to get current name server: ", cmd);
-
-    let { stdout } = await execAsync(cmd);
+    // grep fails on no match or a missing file, which the pipeline it replaces turned into empty output
+    let { stdout } = await execFile("grep", ["-m", "1", "nameserver", resolvFile]).catch(() => ({ stdout: '' }));
+    // cut -d ' ' -f 2: the second field, or the whole line when it has no space
+    stdout = stdout.split('\n').map(line => line.includes(' ') ? line.split(' ')[1] : line).join('\n');
 
     if (!stdout || stdout === '') {
       return [];
@@ -1809,8 +1821,7 @@ module.exports = class DNSMASQ {
     const keys = [`ip${fam}_addresses`, `ip${fam}_masks`]
     if (intf[keys[0]])
       await Promise.all(intf[keys[0]].map(async (ip, i) => {
-        const cmd = `sudo conntrack -D -f ipv${fam} -p udp --dport 53 --src ${ip} --mask-src ${intf[keys[1]][i]}`;
-        return execAsync(cmd).catch(err => {
+        return execFile("sudo", ["conntrack", "-D", "-f", `ipv${fam}`, "-p", "udp", "--dport", "53", "--src", ip, "--mask-src", intf[keys[1]][i]]).catch(err => {
           log.debug(`Failed to remove conntrack entry for ${intf.name}`, err.message)
         })
       }))
@@ -1915,14 +1926,12 @@ module.exports = class DNSMASQ {
   }
 
   async isDNSServiceActive() {
-    let cmd = `systemctl -q is-active ${SERVICE_NAME}`;
-    const result = await execAsync(cmd).then(() => true).catch(() => false);
+    const result = await execFile("systemctl", ["-q", "is-active", SERVICE_NAME]).then(() => true).catch(() => false);
     return result;
   }
 
   async isDHCPServiceActive() {
-    let cmd = `systemctl -q is-active ${DHCP_SERVICE_NAME}`;
-    const result = await execAsync(cmd).then(() => true).catch(() => false);
+    const result = await execFile("systemctl", ["-q", "is-active", DHCP_SERVICE_NAME]).then(() => true).catch(() => false);
     return result;
   }
 
@@ -1943,8 +1952,26 @@ module.exports = class DNSMASQ {
     return crypto.createHash('md5').update(content).digest("hex");
   }
 
+  // lastHostsFileHash is kept in memory only. Seeding it once from the files on disk keeps a FireMain
+  // restart from making every unchanged reservation look new, which would rewrite the file and clean
+  // up its leases. Only FireMain writes HOSTFILE_PATH, so after that the in-memory hashes stay accurate
+  loadHostsFileHashes() {
+    if (!this.hostsFileHashesLoaded)
+      this.hostsFileHashesLoaded = (async () => {
+        const files = await fsp.readdir(HOSTFILE_PATH).catch(() => []);
+        for (const mac of files) {
+          const content = await fsp.readFile(HOSTFILE_PATH + mac, 'utf8').catch(() => null);
+          if (content !== null && !_.has(this.lastHostsFileHash, mac))
+            this.lastHostsFileHash[mac] = this.computeHash(content);
+        }
+      })();
+    return this.hostsFileHashesLoaded;
+  }
+
   async writeAllHostsFiles() {
     log.info("start to generate hosts files for dnsmasq...");
+    // the stale-file removal below must not race the startup read of the hashes either
+    await this.loadHostsFileHashes()
 
     const HostManager = require('../../net2/HostManager.js');
     const hostManager = new HostManager();
@@ -1953,17 +1980,38 @@ module.exports = class DNSMASQ {
     const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    // remove previously configured hosts files
-    await execAsync(`rm -rf ${HOSTFILE_PATH}; mkdir -p ${HOSTFILE_PATH}`)
+    // a DHCP reload or restart still pending would act on a half-written set if it fired during the
+    // loop. The DHCP action after the loop covers both: it compares against what dnsmasq last loaded,
+    // and a pending restart's intent stays in restartDHCPIgnoreFileCheck and leaseCleanupPending
+    if (this.reloadDHCPTask) {
+      clearTimeout(this.reloadDHCPTask);
+      delete this.reloadDHCPTask;
+    }
+    if (this.restartDHCPTask) {
+      clearTimeout(this.restartDHCPTask);
+      delete this.restartDHCPTask;
+    }
+
+    await execFile("mkdir", ["-p", HOSTFILE_PATH])
+    const staleFiles = new Set(await fsp.readdir(HOSTFILE_PATH).catch(err => { log.error('Error listing', HOSTFILE_PATH, err.message); return []; }))
 
     for (const h of hosts) try {
+      staleFiles.delete(h.o.mac)
       await this.writeHostsFile(h, true)
     } catch(err) {
       log.error('Error write hosts file for', h.o.mac, err)
     }
+
+    for (const mac of staleFiles) {
+      const staleFile = pathModule.join(HOSTFILE_PATH, mac)
+      delete this.lastHostsFileHash[mac]
+      await fileRemove(staleFile).catch((err) => log.error('Error removing stale hosts file', staleFile, err.message));
+    }
   }
 
-  async writeHostsFile(host, force = false) {
+  // bulk: called from writeAllHostsFiles(), whose caller applies the whole set with one DHCP action
+  async writeHostsFile(host, bulk = false) {
+    await this.loadHostsFileHashes()
     const mac = host.o.mac
     const p = host.policy.ipAllocation || {}
     const monitor = !(host.policy.monitor == false) // monitor default value is true
@@ -2020,27 +2068,29 @@ module.exports = class DNSMASQ {
     }
 
     if (_.isEmpty(lines)) {
-      if (!force && !_.has(this.lastHostsFileHash, mac)) {
+      if (!_.has(this.lastHostsFileHash, mac)) {
         log.verbose("No need to update hosts file, skipped", mac);
         return
       }
-      delete this.lastHostsFileHash[mac];
-      await fileRemove(HOSTFILE_PATH + mac).catch((err) => {});
+      // the hash goes only once the file is gone, so a failed removal is tried again next time
+      await fileRemove(HOSTFILE_PATH + mac).then(() => { delete this.lastHostsFileHash[mac] }).catch((err) => {});
     } else {
       const content = lines.join('\n') + '\n'
 
       const _hostsHash = this.computeHash(content);
 
-      if (!force && this.lastHostsFileHash[mac] == _hostsHash) {
+      // an unchanged reservation keeps its file and its leases, except that writeAllHostsFiles() still
+      // frees a reserved IP that another MAC holds in the lease file
+      if (this.lastHostsFileHash[mac] == _hostsHash && !(bulk && await this.leaseHeldByOtherMac(mac, reservedIPs))) {
         log.verbose("No need to update hosts file, skipped", mac);
         return
       }
 
-      this.lastHostsFileHash[mac] = _hostsHash;
-
       log.debug("HostsFile:", util.inspect(lines));
 
       await fsp.writeFile(HOSTFILE_PATH + mac, content);
+      // recorded only after the write succeeds, so a failed write is tried again next time
+      this.lastHostsFileHash[mac] = _hostsHash;
     }
     // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
     // dnsmasq seems to be able to handle IP conflict if misconfigured, so we are good here
@@ -2061,14 +2111,20 @@ module.exports = class DNSMASQ {
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
     log.verbose("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
-    // reload or not is check with config hash
-    if (platform.isFireRouterManaged())
+    if (bulk)
+      return
+
+    // a reload does not re-read the lease file, so a pending lease cleanup needs the restart
+    if (platform.isFireRouterManaged() && !this.leaseCleanupPending)
       this.scheduleReloadDHCPService()
     else
       this.scheduleRestartDHCPService()
   }
 
   async removeHostsFile(host) {
+    // like a write, a removal waits for the startup read of the hashes, which would otherwise put back
+    // the hash of a file removed while it ran
+    await this.loadHostsFileHashes()
     await fileRemove(HOSTFILE_PATH + host.o.mac);
     log.info("Hosts file has been removed:", host.o.mac)
 
@@ -2118,8 +2174,10 @@ module.exports = class DNSMASQ {
     })
 
     this.scheduleRestartDNSService(true);
+    // the only DHCP action for the hosts files written above: a restart if a conf file changed or a lease
+    // cleanup is pending, otherwise a reload if only the reservations changed
     if (DHCP_SERVICE_NAME !== SERVICE_NAME)
-      this.scheduleRestartDHCPService(true);
+      this.scheduleRestartDHCPService();
   }
 
   async writeStartScript(cmd) {
@@ -2254,7 +2312,7 @@ module.exports = class DNSMASQ {
     log.info(`Command to stop ${SERVICE_NAME}: ${cmd}`);
 
     try {
-      await execAsync(cmd);
+      await execFile("sudo", ["systemctl", "stop", SERVICE_NAME]);
     } catch (err) {
       log.error(`Failed to stop ${SERVICE_NAME}`, err);
     }
@@ -2339,7 +2397,7 @@ module.exports = class DNSMASQ {
         const digArgs = ['-4', 'A', '+short', '+time=3', '+tries=2', '-p', String(MASQ_PORT), '-b', `${intfIP}#${Constants.PORT_DNS_TEST_SRC}`, `@${intfIP}`, domain];
         log.debug(`Verifying DNS resolution to ${domain} on ${intfIP} ...`);
         try {
-          let { stdout, stderr } = await execFileAsync('dig', digArgs);
+          let { stdout, stderr } = await execFile('dig', digArgs);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`Error verifying dns resolution to ${domain} on ${intfIP}`, stderr, stdout);
           } else {
@@ -2352,9 +2410,10 @@ module.exports = class DNSMASQ {
           log.error(`Failed to resolve ${domain} on ${intfIP}`, err.stdout, err.stderr);
           if ((err.stdout && err.stdout.includes('address in use')) 
             || (err.stderr && err.stderr.includes('address in use'))) {
-            let { stdout: netstatResult } = await execAsync(`sudo netstat -4uanp|grep ${intfIP}:${Constants.PORT_DNS_TEST_SRC}`).catch(err => {
+            let { stdout: netstatResult } = await execFile("sudo", ["netstat", "-4uanp"]).catch(err => {
               return { stdout: '' };
             });
+            netstatResult = netstatResult.split('\n').filter(line => line.includes(`${intfIP}:${Constants.PORT_DNS_TEST_SRC}`)).join('\n');
             log.error(`Address in use on ${intfIP}. Diagnostic info: netstat=${netstatResult}`);
           }
         }
@@ -2390,7 +2449,7 @@ module.exports = class DNSMASQ {
       for (const {dnsServer, args} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
-          let { stdout, stderr } = await execFileAsync('dig', args);
+          let { stdout, stderr } = await execFile('dig', args);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
           } else {
@@ -2464,7 +2523,7 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await execAsync(`mkdir -p ${FILTER_DIR}`).catch((err) => {
+      await execFile("mkdir", ["-p", FILTER_DIR]).catch((err) => {
         log.error(`Failed to create ${FILTER_DIR}`, err);
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR, HOSTS_DIR];
@@ -2692,9 +2751,12 @@ module.exports = class DNSMASQ {
     return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
       // delete and write to stdout at the same time
-      const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
+      const result = await execFile("sudo", ["sed", "-i", "-r", "-e", `/${regex}/{w /dev/stdout`, "-e", "d}", leaseFile]).catch(err => {
         log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
       })
+      // set after the sed, so a restart that started before it cannot clear the flag. An empty result
+      // still counts: after an earlier `sed -i` dnsmasq may hold records the file no longer has
+      this.leaseCleanupPending = true
       return _.get(result, 'stdout', '').split('\n').filter(line => line.length).map(line => {
         const column = line.split(' ')
         return {
@@ -2704,6 +2766,28 @@ module.exports = class DNSMASQ {
           name: column.slice(3, -1).join(' ')
         }
       })
+    })
+  }
+
+  // whether the lease file gives any of these IPs to a MAC other than this one
+  async leaseHeldByOtherMac(mac, ips) {
+    const lines = await this.readLeaseFileLines();
+    return lines.some(line => {
+      const column = line.split(' ')
+      return ips.includes(column[2]) && column[1].toUpperCase() !== mac.toUpperCase()
+    })
+  }
+
+  async readLeaseFileLines() {
+    const leaseFilePath = platform.getDnsmasqLeaseFilePath();
+
+    return lock.acquire(LOCK_LEASE_FILE, async () => {
+      return fsp.readFile(leaseFilePath, {encoding: "utf8"})
+        .then(content => content.trim().split('\n'))
+        .catch((err) => {
+          log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+          return []
+        })
     })
   }
 
@@ -2839,16 +2923,7 @@ module.exports = class DNSMASQ {
       log.error(`Failed to read DHCP hosts file ${file}`, err.message);
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
-    const leaseFilePath = platform.getDnsmasqLeaseFilePath();
-
-    const lines = await lock.acquire(LOCK_LEASE_FILE, async () => {
-      return fsp.readFile(leaseFilePath, {encoding: "utf8"})
-        .then(content => content.trim().split('\n'))
-        .catch((err) => {
-          log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-          return []
-        })
-    })
+    const lines = await this.readLeaseFileLines();
     for (const line of lines) {
       const phrases = line.split(' ');
       if (!_.isEmpty(phrases)) {

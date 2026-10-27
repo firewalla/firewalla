@@ -261,7 +261,10 @@ async function run() {
     try {
       await policyManager.flush()
     } catch(err) {
-      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules", err);
+      // without the basic rules IPTABLES_READY is never emitted, so its listeners never run:
+      // new devices are dropped and policies are not enforced. systemd restarts FireMain instead
+      log.error("Failed to setup iptables basic rules, exiting so FireMain restarts", err);
+      setTimeout(() => process.exit(1), 1000 * 5); // give the logger time to write the error
       return;
     }
 
@@ -314,10 +317,9 @@ async function run() {
 
     try {
       await pm2.cleanupPolicyData()
-      //await pm2.enforceAllPolicies()
-      await pm2.checkRunPolicies(true)
+      await pm2.enforceAllPolicies()
     } catch (err) {
-      log.error("Failed to cleanup policy & check run policy rules: ", err);
+      log.error("Failed to cleanup policy & enforce policy rules: ", err);
     }
     require('./UpgradeManager').finishUpgrade();
 

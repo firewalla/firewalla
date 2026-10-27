@@ -17,7 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
@@ -80,35 +80,13 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     return ["1.0.0.1", "8.8.8.8", "9.9.9.9"];
   }
 
-  async __checkInternetAvailability(target) {
-    const script = `${f.getFirewallaHome()}/scripts/test_wan.sh`;
-    const intf = this.getInterfaceName();
-    // triple backslash to escape the dollar sign on sudo bash
-    const cmd = `sudo ${script} ${intf} curl -m 5 -s -o /dev/null ${target}`;
-    const result = await exec(cmd).then(() => true).catch((err) => false);
-    return result;
-  }
-
   async _checkInternetAvailability() {
-    const targets = [
-      "https://1.1.1.1",
-      "https://8.8.8.8",
-      "https://9.9.9.9"
-    ];
-
-    for (const target of targets) {
-      const result = await this.__checkInternetAvailability(target);
-      if (result) {
-        return true;
-      }
-    }
-
-    return false;
+    return this._checkInternetByCurl();
   }
 
   async getStatistics() {
     // a self-made hy_stats.sh script to get the stats
-    const result = await exec(`sudo docker exec ${this.getContainerName()} hy_stats.sh`)
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "hy_stats.sh"])
     .then(output => output.stdout.trim())
     .catch((err) => {
       log.error(`Failed to check hysteria stats on ${this.profileId}`, err.message);

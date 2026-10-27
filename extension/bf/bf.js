@@ -53,21 +53,36 @@ class bf {
     return `bf:${prefix}:${count}:${error}`;
   }
 
+  // returns true only if the data file was actually replaced. Callers decide whether anything
+  // downstream has to be told about it, and a swallowed failure that still reported success had
+  // them paying for a dnsmasq restart on every round without a single byte having changed.
   async updateBFData(item, content, outputFilePath, need_decompress = true) {
     try {
       if(!content || content.length < 10) {
         // likely invalid, return null for protection
         log.error(`Invalid bf data content for ${item && item.prefix}, ignored`);
-        return;
+        return false;
       }
       let output = Buffer.from(content, 'base64');
       if (need_decompress) {
         output = await inflateAsync(output);
       }
-      
-      await fs.writeFileAsync(outputFilePath, output);
+
+      // write to a temp file and rename, never in place: dnsmasq maps these files
+      // read-only and shares one copy across its per-network instances, so truncating
+      // the file it is holding takes the pages out from under it (SIGBUS)
+      const tmpFilePath = `${outputFilePath}.tmp.${process.pid}`;
+      try {
+        await fs.writeFileAsync(tmpFilePath, output);
+        await fs.renameAsync(tmpFilePath, outputFilePath);
+      } catch (err) {
+        await fs.unlinkAsync(tmpFilePath).catch(() => undefined);
+        throw err;
+      }
+      return true;
     } catch(err) {
       log.error("Failed to update bf data, err:", err);
+      return false;
     }
   }
 

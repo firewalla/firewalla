@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ var fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 var util = require('util');
-const cp = require('child_process');
 var key = require('../common/key.js');
 
 let f = require('../../net2/Firewalla.js');
@@ -34,8 +33,7 @@ var RSAComment = "firewalla";
 
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
-const execAsync = util.promisify(cp.exec);
-const execFileAsync = util.promisify(cp.execFile);
+const { execFile } = require('child-process-promise');
 const readFileAsync = util.promisify(fs.readFile);
 
 module.exports = class {
@@ -190,7 +188,7 @@ module.exports = class {
       // remove existing key files to avoid interactive overwrite prompt
       if (fs.existsSync(keyPath)) await fs.unlinkAsync(keyPath);
       if (fs.existsSync(`${keyPath}.pub`)) await fs.unlinkAsync(`${keyPath}.pub`);
-      await execFileAsync('ssh-keygen', ['-q', '-t', 'rsa', '-f', keyPath, '-N', '', '-C', identity]);
+      await execFile('ssh-keygen', ['-q', '-t', 'rsa', '-f', keyPath, '-N', '', '-C', identity]);
     }
 
     async getRSAPublicKey(identity) {
@@ -208,7 +206,7 @@ module.exports = class {
       identity = identity || "id_rsa_firewalla";
       const filename = `${f.getUserHome()}/.ssh/${identity}.pub`;
       if (fs.existsSync(filename)) {
-        const result = await execFileAsync('ssh-keygen', ['-f', filename, '-e', '-m', 'PKCS8']);
+        const result = await execFile('ssh-keygen', ['-f', filename, '-e', '-m', 'PKCS8']);
         if (result.stderr) {
           throw result.stderr;
         }
@@ -249,7 +247,7 @@ module.exports = class {
       username = username || "pi";
       identity = identity || "id_rsa_firewalla";
       const identity_file = `${f.getUserHome()}/.ssh/${identity}`;
-      await execFileAsync('ssh', ['-o', 'StrictHostKeyChecking=no', '-i', identity_file, `${username}@${host}`, command]);
+      await execFile('ssh', ['-o', 'StrictHostKeyChecking=no', '-i', identity_file, `${username}@${host}`, command]);
     }
 
     async scpFile(host, sourcePath, destPath, recursive, identity, username) {
@@ -260,7 +258,7 @@ module.exports = class {
       const args = ['-o', 'StrictHostKeyChecking=no', '-i', identity_file];
       if (recursive) args.push('-r');
       args.push(sourcePath, `${username}@${host}:${destPath}`);
-      await execFileAsync('scp', args);
+      await execFile('scp', args);
     }
 
     removePreviousKeyFromAuthorizedKeys(callback) {

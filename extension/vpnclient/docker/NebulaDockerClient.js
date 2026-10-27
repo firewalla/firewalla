@@ -20,7 +20,7 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
@@ -141,7 +141,7 @@ class NebulaDockerClient extends DockerBaseVPNClient {
   async __isLinkUpInsideContainer() {
     return true;
 
-    const result = await exec(`sudo docker exec ${this.getContainerName()} nebula status`).then(output => output.stdout.trim()).catch((err) => {
+    const result = await execFile("sudo", ["docker", "exec", this.getContainerName(), "nebula", "status"]).then(output => output.stdout.trim()).catch((err) => {
       log.error(`Failed to check nebula status on ${this.profileId}`, err.message);
       return null;
     });

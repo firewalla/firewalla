@@ -541,6 +541,13 @@ class AccessRequestManager {
           newPolicy.appTimeUsage.extraQuotaUntilTs = endOfTodayTs;
         }
         newPolicy.affectedPids = Array.from(affectedPids);
+        // a policy expires at (activatedTime || timestamp) + expire, so expire must be counted from
+        // the policy's own clock, not from now. Restart the clock together with the duration, so the
+        // bypass ends at midnight no matter how many times it is approved today. _refreshActivatedTime
+        // keeps an activatedTime that is already set, and if the rule is never re-enforced the expiry
+        // falls back to timestamp, which now carries the same value.
+        newPolicy.timestamp = nowTs;
+        newPolicy.activatedTime = nowTs;
         newPolicy.expire = endOfTodayTs - nowTs;
 
         await pm2.updatePolicyAsync(newPolicy);

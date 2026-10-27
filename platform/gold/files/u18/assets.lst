@@ -3,3 +3,4 @@
 /home/pi/.firewalla/run/assets/rand.lua /gold/assets/u18/rand.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/rand.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/rand.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/tableaux.lua /gold/assets/u18/tableaux.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/tableaux.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/tableaux.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /gold/assets/u18/zeek-dpi.fwsig 644
+/home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64-glibc-217.tar.xz /all/node/node-v24.21.0-linux-x64-glibc-217.tar.xz 644 ':' '/home/pi/firewalla/scripts/install_node.sh /home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64-glibc-217.tar.xz v24.21.0'

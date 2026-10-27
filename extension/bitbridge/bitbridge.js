@@ -26,7 +26,7 @@ Promise.promisifyAll(fs);
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 const Config = require('../../net2/config.js');
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 let instances = {};
 
@@ -131,8 +131,8 @@ class BitBridge {
 
     try {
       if(firewalla.isDocker() || firewalla.isTravis()) {
-        await exec("sudo pkill -x bitbridge7");
-        await exec("sudo pkill -x bitbridge6");
+        await execFile("sudo", ["pkill", "-x", "bitbridge7"]);
+        await execFile("sudo", ["pkill", "-x", "bitbridge6"]);
       } else {
         if (!this.isV6) {
           // remove corresponding rc file

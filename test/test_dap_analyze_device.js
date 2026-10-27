@@ -16,9 +16,7 @@
 
 const chai = require('chai');
 const expect = chai.expect;
-const { execFile } = require('child_process');
-const util = require('util');
-const execFileAsync = util.promisify(execFile);
+const { execFile } = require('child-process-promise');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
@@ -560,7 +558,7 @@ function isDapBinaryExecutable() {
 function runDap(args, execOpts) {
   const bin = getDapBinary();
   const opts = Object.assign({ maxBuffer: 10 * 1024 * 1024 }, execOpts);
-  return execFileAsync(bin, args, opts);
+  return execFile(bin, args, opts);
 }
 
 /**

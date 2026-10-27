@@ -28,7 +28,7 @@ const { fileRemove } = require('../../util/util.js')
 
 const rclient = require('../../util/redis_manager').getRedisClient();
 
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const configKey = "ext.unbound";
 
@@ -142,7 +142,7 @@ class Unbound {
   }
 
   async start() {
-    await exec("sudo systemctl start unbound");
+    await execFile("sudo", ["systemctl", "start", "unbound"]);
     return;
   }
 
@@ -151,7 +151,7 @@ class Unbound {
       clearTimeout(this._restartTask);
     }
     this._restartTask = setTimeout(() => {
-      exec("sudo systemctl restart unbound").catch((err) => {
+      execFile("sudo", ["systemctl", "restart", "unbound"]).catch((err) => {
         log.error("Failed to restart unbound", err.message);
       });
     }, 3000);
@@ -161,7 +161,7 @@ class Unbound {
     if (this._restartTask) {
       clearTimeout(this._restartTask);
     }
-    await exec("sudo systemctl stop unbound");
+    await execFile("sudo", ["systemctl", "stop", "unbound"]);
     return;
   }
 

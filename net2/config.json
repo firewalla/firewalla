@@ -1,5 +1,5 @@
 {
-  "version": 1.984,
+  "version": 1.985,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -144,6 +144,7 @@
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZssidsEnginePlugin": {},
     "IntelSensor": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
@@ -716,8 +717,12 @@
         "expires": 3600
       },
       "action_history":{
-        "expires": 2592000,
-        "count": 10000
+        "expires": 604800,
+        "count": 1000,
+        "limits": {
+          "maxMem": 5242880,
+          "keepCount": 100
+        }
       },
       "cpu_usage": {
         "expires": 86400,
@@ -769,7 +774,8 @@
         "clairvoyant",
         "bipartite_graph",
         "per_wan_data_usage",
-        "flow_inline_intel"
+        "flow_inline_intel",
+        "subdomains_zset"
       ]
     },
     "FlowCompressionSensor": {
@@ -915,6 +921,7 @@
     },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZssidsEnginePlugin": {},
     "ZeekDPISensor": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
@@ -1029,6 +1036,74 @@
             ]
           },
           "eventKeys": [ "state_key" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_state"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ap_ethernet_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "ap_ethernet_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "ap_mac", "intf" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_state",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_state"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::switch_port_speed_change",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "state"
+              },
+              {
+                "field": "state_type",
+                "value": "switch_port_speed_change"
+              }
+            ]
+          },
+          "labelKeys": [ "switch_mac", "port" ]
         }
       ]
     },
@@ -1270,6 +1345,8 @@
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
+    "pcap_zeek_zssids": false,
+    "pcap_suricata_zssids": false,
     "local_flow": false,
     "local_audit": true,
     "category_filter": true,

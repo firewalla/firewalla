@@ -20,6 +20,17 @@ const proxyquire = require('proxyquire');
 const REDIS_KEY = 'kernel_crash_info';
 const PSTORE_PATH = '/sys/fs/pstore';
 const PSTORE_ARCHIVE_PATH = '/log/system/pstore';
+const PSTORE_BACKEND_PARAM = '/sys/module/pstore/parameters/backend';
+const RECLAIM_PROBE_PATH = '/sys/firmware/efi/efivars/fwPstoreReclaim-1ac80a2b-5f4e-4a53-9f1e-000000000001';
+const BIOS_VERSION_PATH = '/sys/class/dmi/id/bios_version';
+// efi_qvi.ko ships next to the xt_udp_tls.ko that checkPstoreAndUpdateRedis is given
+const KO_PATH = '/lib/modules/xt_udp_tls.ko';
+const EFI_QVI_KO = '/lib/modules/efi_qvi.ko';
+const EFI_QVI_REMAINING = '/sys/module/efi_qvi/parameters/remaining_size';
+
+// the single `sudo bash -c "...dd of=<probe>..."` call that writes the reclaim probe
+const probeWrite = (execLog) =>
+  execLog.find(c => c.startsWith('sudo bash -c') && c.includes(`dd of='${RECLAIM_PROBE_PATH}'`));
 
 // ─── in-memory Redis string stub ───────────────────────────────────────────
 
@@ -73,6 +84,11 @@ function makeExecFile(fixtures) {
       if (fixtures.koDescribe === undefined) throw new Error(`tls_module_id.sh: nothing for ${args[1]}`);
       return { stdout: `${fixtures.koDescribe}\n` };
     }
+    // `stat -f` on efivarfs: "<bsize> <blocks> <free>". Kernels before 6.x use
+    // simple_statfs, which reports zero blocks - the default here.
+    if (file === 'stat' && args.includes('-f')) {
+      return { stdout: `${fixtures.efivarsStatfs || '4096 0 0'}\n` };
+    }
     if (file === 'stat' && args.includes('%Y')) {
       // `stat -L` dereferences the symlink (the real .ko), plain `stat` reports koPath itself
       const mtime = args.includes('-L') ? fixtures.koMtime
@@ -92,6 +108,18 @@ function makeExecFile(fixtures) {
     if (file === 'sudo' && args[0] === 'cat') {
       const paths = args.slice(1);
       return { stdout: paths.map(p => fixtures.fileContents[p] || '').join('') };
+    }
+    // plain `cat` of a sysfs/DMI attribute; a box without the file must reject
+    if (file === 'cat') {
+      const content = fixtures.fileContents && fixtures.fileContents[args[0]];
+      if (content === undefined) throw new Error(`cat: ${args[0]}: No such file or directory`);
+      return { stdout: content };
+    }
+    // `test -f <ko>`: present only when the fixture lists it
+    if (file === 'test' && args[0] === '-f') {
+      if (!(fixtures.fileContents && fixtures.fileContents[args[1]] !== undefined))
+        throw new Error(`test: ${args[1]}: not found`);
+      return { stdout: '' };
     }
     if (file === 'ls') {
       return { stdout: (fixtures.archiveDirs || []).join('\n') };
@@ -835,6 +863,217 @@ describe('KernelCrashMonitor', function () {
 
       await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
       expect(kcm._logs.error.some(m => m.includes('checkPstoreAndUpdateRedis'))).to.be.true;
+    });
+  });
+
+  // ── EFI NVRAM reclaim probe ────────────────────────────────────────────────
+
+  describe('EFI NVRAM reclaim probe', function () {
+    const run = async (fixtures) => {
+      const { execFile, execLog } = makeExecFile(fixtures);
+      const kcm = loadKCM(fakeRedis, execFile);
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', KO_PATH);
+      return { kcm, execLog };
+    };
+
+    // The probe runs only after a dump was archived AND cleared, so every fixture here
+    // needs a crash. efi_pstore is newly enabled on these boxes and an EFI write is a flash
+    // write, so a box that never panics must write nothing at all.
+    const withCrash = (fixtures = {}) => ({
+      ...fixtures,
+      dmesgFindOutput: `900.0 ${PSTORE_PATH}/dmesg-a\n`,
+      fileContents: {
+        [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls',
+        [BIOS_VERSION_PATH]: 'FWGOLDA03\n', // Gold v1: the firmware that never reclaims
+        ...(fixtures.fileContents || {}),
+      },
+    });
+
+    it('writes nothing when no crash records were found', async function () {
+      const { execLog } = await run({
+        dmesgFindOutput: '',
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+      });
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('runs after a dump was archived and cleared', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    // collection can only reclaim records that have already been unlinked, and a failed
+    // archive leaves them in place for the next pass
+    it('does not probe when the archive failed', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+        failOn: (cmd) => cmd.includes('-mindepth 1 -delete'),
+      }));
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('archives and clears pstore before probing', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+      }));
+      const cleared = execLog.findIndex(c => c.includes(`find ${PSTORE_PATH} -mindepth 1 -delete`));
+      const probed = execLog.findIndex(c => c === probeWrite(execLog));
+      expect(cleared).to.be.at.least(0);
+      expect(probed).to.be.above(cleared);
+    });
+
+    it('writes attributes and payload in a single 2052-byte write(2)', async function () {
+      const cmd = probeWrite((await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+      }))).execLog);
+      expect(cmd).to.include(`printf '\\x07\\x00\\x00\\x00'`); // NV|BS|RT, little endian
+      expect(cmd).to.include('head -c 2048 /dev/zero');            // > one 1024B pstore record
+      expect(cmd).to.include('bs=2052');
+      expect(cmd).to.include('count=1');
+      expect(cmd).to.include('iflag=fullblock');
+      expect(cmd).to.include(`chattr -i '${RECLAIM_PROBE_PATH}'`); // efivarfs marks it immutable
+    });
+
+    it('skips the probe on a ramoops backend (the arm boxes)', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'ramoops\n' },
+      }));
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('skips the probe when no backend is registered', async function () {
+      const { execLog } = await run(withCrash());
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    // efi_pstore_info.name is "efi" up to 5.4 and KBUILD_MODNAME from 6.x; an exact match
+    // on "efi" would silently skip GoldPlus and GoldPro
+    it('runs on 6.x where the backend is reported as efi_pstore', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi_pstore\n' },
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    // efivarfs grew a real statfs in 6.x, so there the free space is exact and free to read
+    it('writes nothing when statfs shows the store is nowhere near the threshold', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi_pstore\n' },
+        efivarsStatfs: '1 131072 70752', // GoldPlus
+      }));
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('writes when statfs shows the store is close to the threshold', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi_pstore\n' },
+        efivarsStatfs: '1 131072 6166', // 6166 - 2048 < 5120
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    // On Gold v1 (4.15, no statfs) efi_qvi.ko ships next to xt_udp_tls.ko and gives the
+    // exact number, so the write happens only when it would actually trip collection.
+    it('reads the free space from efi_qvi when statfs cannot answer', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: {
+          [PSTORE_BACKEND_PARAM]: 'efi\n',
+          [EFI_QVI_KO]: '',                  // module shipped for this kernel release
+          [EFI_QVI_REMAINING]: '66486\n',    // plenty
+        },
+      }));
+      expect(execLog.some(c => c === `sudo insmod ${EFI_QVI_KO}`)).to.be.true;
+      expect(execLog.some(c => c === `cat ${EFI_QVI_REMAINING}`)).to.be.true;
+      expect(execLog.filter(c => c === 'sudo rmmod efi_qvi')).to.have.lengthOf(2); // fresh sample, then cleanup
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('writes once efi_qvi reports the store is below the threshold', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: {
+          [PSTORE_BACKEND_PARAM]: 'efi\n',
+          [EFI_QVI_KO]: '',
+          [EFI_QVI_REMAINING]: '5271\n',     // the landing point of a throttled dump
+        },
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    it('unloads efi_qvi even when reading its parameter fails', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: {
+          [PSTORE_BACKEND_PARAM]: 'efi\n',
+          [EFI_QVI_KO]: '',
+          [EFI_QVI_REMAINING]: 'not-a-number\n',
+        },
+      }));
+      expect(execLog.some(c => c === 'sudo rmmod efi_qvi')).to.be.true;
+      expect(probeWrite(execLog)).to.be.a('string'); // unreadable => fall back to the firmware list
+    });
+
+    it('prefers statfs and never loads efi_qvi on 6.x', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: {
+          [PSTORE_BACKEND_PARAM]: 'efi_pstore\n',
+          [EFI_QVI_KO]: '',
+          [EFI_QVI_REMAINING]: '5271\n',     // would say "write" - must not be consulted
+        },
+        efivarsStatfs: '1 131072 70752',
+      }));
+      expect(execLog.some(c => c.startsWith('sudo insmod'))).to.be.false;
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    // Without statfs and without the module the free space is unknowable, so the blind
+    // write is spent only on the firmware measured never to give the space back.
+    it('writes blindly on Gold v1 firmware when statfs reports nothing', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n', [BIOS_VERSION_PATH]: 'FWGOLDA03\n' },
+        efivarsStatfs: '4096 0 0', // simple_statfs before 6.x
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    it('writes nothing on Gold v2 firmware, which reclaims on delete', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n', [BIOS_VERSION_PATH]: 'FWGOLDB04\n' },
+        efivarsStatfs: '4096 0 0',
+      }));
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    it('writes nothing when the BIOS version cannot be read at all', async function () {
+      const { execLog } = await run({
+        dmesgFindOutput: `900.0 ${PSTORE_PATH}/dmesg-a\n`,
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls',
+          [PSTORE_BACKEND_PARAM]: 'efi\n',
+        }, // no bios_version entry => cat rejects
+        efivarsStatfs: '4096 0 0',
+      });
+      expect(probeWrite(execLog)).to.be.undefined;
+    });
+
+    // the firmware list guards only the blind path; where statfs answers, the measurement
+    // decides, so a BIOS we believe to be fine is still covered if it ever starts leaking
+    it('still writes on "good" firmware when statfs says the store is low', async function () {
+      const { execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi_pstore\n', [BIOS_VERSION_PATH]: 'FWGOLDD06\n' },
+        efivarsStatfs: '1 196608 6166',
+      }));
+      expect(probeWrite(execLog)).to.be.a('string');
+    });
+
+    it('logs and moves on when the store is exhausted, always removing the probe', async function () {
+      const { kcm, execLog } = await run(withCrash({
+        fileContents: { [PSTORE_BACKEND_PARAM]: 'efi\n' },
+        failOn: (cmd) => cmd.includes('dd of='), // ENOSPC out of efivarfs
+      }));
+      expect(kcm._logs.error.some(m => m.includes('EFI variable store is exhausted'))).to.be.true;
+      const cleanups = execLog.filter(c => c.startsWith('sudo bash -c') && c.includes('chattr -i'));
+      expect(cleanups.length).to.be.at.least(1); // the finally-block rm still ran
     });
   });
 });
