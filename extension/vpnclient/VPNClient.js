@@ -1311,9 +1311,8 @@ class VPNClient {
       const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
       await Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
 
-      // routed subnets can come from external config (WireGuard peers' allowedIPs, Tailscale subnet routers), so leave enough headroom
-      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 256 });
-      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 256 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 16 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 16 });
 
       const oifIpsetName = VPNClient.getOifIpsetName(uid);
       const oifIpsetName4 = `${oifIpsetName}4`;
