@@ -50,4 +50,13 @@ function tilesLocalDay(period) {
   return Number.isInteger(period) && period > 0 && period <= 86400 && 86400 % period === 0;
 }
 
-module.exports = { localSlotStart, tilesLocalDay };
+function localDayStart(tsSec, tz) {
+  return localSlotStart(tsSec, 86400, tz);
+}
+
+// a local day is 23, 24 or 25h long, so +30h always lands in the next one
+function nextLocalDayStart(dayStart, tz) {
+  return localDayStart(dayStart + 30 * 3600, tz);
+}
+
+module.exports = { localSlotStart, tilesLocalDay, localDayStart, nextLocalDayStart };
