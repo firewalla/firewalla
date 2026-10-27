@@ -1957,9 +1957,11 @@ class BroDetect {
     const fps = obj.cert_chain_fps || [];
     const notBefore = obj.cert_chain_not_valid_before || [];
     const notAfter = obj.cert_chain_not_valid_after || [];
-    // one object per server-sent cert, leaf first; DNs as objects, easier for the app than RFC 2253 strings
-    const chain = obj.cert_chain_issuers.map((dn, i) => ({
-      fp: fps[i], issuer: intelTool.parseDN(dn), not_valid_before: notBefore[i], not_valid_after: notAfter[i]
+    // one object per cert on the verification path, leaf first, ending with the store root when found;
+    // the root has no issuer entry. DNs as objects, easier for the app than RFC 2253 strings
+    const issuers = obj.cert_chain_issuers;
+    const chain = fps.map((fp, i) => ({
+      fp, issuer: issuers[i] != null ? intelTool.parseDN(issuers[i]) : undefined, not_valid_before: notBefore[i], not_valid_after: notAfter[i]
     }));
     const xobj = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
     // the first failed cert is enough to tell which CA broke the chain
