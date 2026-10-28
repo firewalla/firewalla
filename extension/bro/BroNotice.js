@@ -208,9 +208,11 @@ class BroNotice {
       return false;
     }
     if (!_.isEmpty(subject)) alarm["p.dest.ssl.subject"] = subject;
-    // the failure processSslData saved for this server, here so known false positives are dropped before an alarm exists
+    // the conn entry of the failed handshake: the failure saveCertValidationFailure saved, read before an alarm exists
+    // so known false positives are dropped, and the SNI cached at ClientHello, which DestInfoIntel keeps as the dest name
     try {
-      const { issuer, fp } = await intelTool.getCertValidationFailure(broObj.dst);
+      const conn = await conntrack.getConnEntries(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp") || {};
+      const issuer = conn.validation_failed_issuer ? JSON.parse(conn.validation_failed_issuer) : null;
       if (issuer && this.isIgnoredIssuer(issuer)) {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
@@ -220,16 +222,13 @@ class BroNotice {
       // a flat string, so an exception (mute) can match it
       const issuerCN = issuer && [].concat(issuer.CN || [])[0];
       if (issuerCN) alarm["p.dest.ssl.validation_failed_cert_issuer_CN"] = issuerCN;
-      if (fp) alarm["p.dest.ssl.validation_failed_fp"] = fp;
-    } catch (err) {
-      log.warn("Failed to look up the failed issuer for invalid server cert notice", err.message);
-    }
-    // the SNI cached by processSslData at ClientHello, which DestInfoIntel keeps as the dest name
-    try {
-      const host = await conntrack.getConnEntry(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp", Constants.REDIS_HKEY_CONN_HOST);
+      if (conn.validation_failed_fp) alarm["p.dest.ssl.validation_failed_fp"] = conn.validation_failed_fp;
+      if (conn.validation_status) alarm["e.dest.ssl.validation_status"] = conn.validation_status;
+      if (conn.cert_chain) alarm["e.dest.ssl.cert_chain"] = conn.cert_chain;
+      const host = conn[Constants.REDIS_HKEY_CONN_HOST];
       if (host) alarm["p.dest.name"] = host;
     } catch (err) {
-      log.warn("Failed to look up server name for invalid server cert notice", err.message);
+      log.warn("Failed to look up the connection of invalid server cert notice", err.message);
     }
     return true;
   }

@@ -1871,11 +1871,7 @@ class BroDetect {
 
         try {
           const multi = rclient.multi()
-          // delete before hmset in case number of keys is not same in old and new data, but only for a validated record,
-          // a ClientHello record of another connection must not drop the failure saveCertValidationFailure kept.
-          // it has no subject though, so an old one, maybe of another host on this ip, goes
-          if (obj["validation_status"]) multi.unlink(key)
-          else multi.hdel(key, "subject")
+          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
           multi.hmset(key, xobj)
           if (config.ssl.expires) {
             multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
@@ -1950,10 +1946,11 @@ class BroDetect {
     }
   }
 
-  // fields from ssl-cert-chain.zeek, merged into the ssl cert key so the server_name saved at ClientHello stays
+  // fields from ssl-cert-chain.zeek, merged into the conn entry of the failed handshake, next to the SNI cached at
+  // ClientHello. per connection, so another failing site on the same ip can't overwrite it before the notice is read
   async saveCertValidationFailure(obj) {
     if (!obj.cert_chain_issuers) return;
-    const key = intelTool.getSSLCertKey(obj["id.resp_h"]);
+    if (!obj["id.orig_h"] || !obj["id.orig_p"] || !obj["id.resp_h"] || !obj["id.resp_p"]) return;
     const fps = obj.cert_chain_fps || [];
     const notBefore = obj.cert_chain_not_valid_before || [];
     const notAfter = obj.cert_chain_not_valid_after || [];
@@ -1963,21 +1960,14 @@ class BroDetect {
     const chain = fps.map((fp, i) => ({
       fp, issuer: issuers[i] != null ? intelTool.parseDN(issuers[i]) : undefined, not_valid_before: notBefore[i], not_valid_after: notAfter[i]
     }));
-    const xobj = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
+    const data = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
     // the first failed cert is enough to tell which CA broke the chain
     if (obj.validation_failed_certs) {
-      xobj.validation_failed_issuer = JSON.stringify(intelTool.parseDN(obj.validation_failed_issuers[0]));
+      data.validation_failed_issuer = JSON.stringify(intelTool.parseDN(obj.validation_failed_issuers[0]));
       const fp = fps[obj.validation_failed_certs[0]];
-      if (fp) xobj.validation_failed_fp = fp;
+      if (fp) data.validation_failed_fp = fp;
     }
-    const multi = rclient.multi();
-    // a culprit from an earlier failure must not outlive this one, nor fields of the earlier format
-    multi.hdel(key, ["validation_failed_issuer", "validation_failed_fp", "cert_chain_fps", "cert_chain_issuers", "validation_failed_cert"]);
-    multi.hmset(key, xobj);
-    if (config.ssl.expires) {
-      multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
-    }
-    await multi.execAsync();
+    await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
   }
 
   processX509Data(data) {

@@ -35,9 +35,9 @@ const features = {};
 // conntrack host entries keyed as orig_h:orig_p:resp_h:resp_p:proto
 const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
-// failed issuer saved on the ssl cert key, by server ip; an Error is thrown by the lookup
+// failed issuer saved on the conn entry of a connection to the server, by server ip; an Error is thrown by the lookup
 const failedIssuers = {};
-// sha256 of the first failed cert saved on the ssl cert key, by server ip
+// sha256 of the first failed cert saved on the conn entry, by server ip
 const failedFps = {};
 
 let mock;
@@ -56,18 +56,23 @@ function setupMocks() {
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
   mock('../net2/IntelTool.js', class IntelTool {
-    async getCertValidationFailure(ip) {
-      if (failedIssuers[ip] instanceof Error) throw failedIssuers[ip];
-      return { issuer: failedIssuers[ip] || null, fp: failedFps[ip] || null };
-    }
     // enough for the plain DNs used here
     parseDN(dn) { return dn ? Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))) : {}; }
   });
   mock('../net2/Conntrack.js', {
-    getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
-      const host = subKey === 'host' ? connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`] : undefined;
+    getConnEntries: async (src, sport, dst, dport, proto) => {
+      const host = connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`];
       if (host instanceof Error) throw host;
-      return host;
+      if (failedIssuers[dst] instanceof Error) throw failedIssuers[dst];
+      const entries = {};
+      if (host) entries.host = host;
+      if (failedIssuers[dst]) Object.assign(entries, {
+        validation_status: 'unable to get local issuer certificate',
+        cert_chain: JSON.stringify([{ fp: failedFps[dst], issuer: failedIssuers[dst] }]),
+        validation_failed_issuer: JSON.stringify(failedIssuers[dst]),
+      });
+      if (failedFps[dst]) entries.validation_failed_fp = failedFps[dst];
+      return Object.keys(entries).length ? entries : null;
     },
   });
   mock('../net2/HostTool.js', class HostTool {
@@ -330,6 +335,8 @@ describe('BroNotice invalid server certificate', function () {
       expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
       expect(alarm['p.dest.ssl.validation_failed_cert_issuer_CN']).to.equal('emSign ECC Root CA - G3');
       expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
+      expect(alarm['e.dest.ssl.validation_status']).to.equal('unable to get local issuer certificate');
+      expect(JSON.parse(alarm['e.dest.ssl.cert_chain'])).to.deep.equal([{ fp: 'ba105ce02bac', issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } }]);
     });
 
     it('drops an issuer of the default list, whatever the attribute order', async () => {
