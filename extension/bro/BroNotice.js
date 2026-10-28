@@ -217,7 +217,6 @@ class BroNotice {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
       }
-      // same shape as an e.dest.ssl.cert_chain entry
       if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = { issuer };
       // a flat string, so an exception (mute) can match it
       const issuerCN = issuer && [].concat(issuer.CN || [])[0];

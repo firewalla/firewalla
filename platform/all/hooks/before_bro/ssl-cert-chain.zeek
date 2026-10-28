@@ -23,6 +23,9 @@ module SSL;
 
 export {
 	redef record Info += {
+		## Subject DN of each cert on the verification path, same order as
+		## cert_chain_fps.
+		cert_chain_subjects: vector of string &log &optional;
 		## Issuer DN of each cert on the verification path, same order as
 		## cert_chain_fps, without an entry for an appended store root.
 		cert_chain_issuers: vector of string &log &optional;
@@ -172,6 +175,7 @@ hook ssl_finishing(c: connection) &priority=10
 	local path = chain_path(chain);
 	local top = |path| - 1;  # position in path, as are all indexes below
 
+	local subjects: vector of string = vector();
 	local issuers: vector of string = vector();
 	local not_before: vector of int = vector();
 	local not_after: vector of int = vector();
@@ -180,6 +184,7 @@ hook ssl_finishing(c: connection) &priority=10
 	for ( i in path )
 		{
 		local x = chain[path[i]]$x509;
+		subjects[|subjects|] = x$certificate$subject;
 		issuers[|issuers|] = x$certificate$issuer;
 		metas[|metas|] = cert_meta(x$certificate, x509_get_certificate_string(x$handle));
 		}
@@ -187,7 +192,10 @@ hook ssl_finishing(c: connection) &priority=10
 	# Servers rarely send the root, so append it from the trust store by the top cert's issuer.
 	local top_cert = chain[path[top]]$x509$certificate;
 	if ( top_cert$issuer != top_cert$subject && top_cert$issuer in trust_roots )
+		{
+		subjects[|subjects|] = top_cert$issuer;
 		metas[|metas|] = trust_roots[top_cert$issuer];
+		}
 
 	for ( m in metas )
 		{
@@ -196,6 +204,7 @@ hook ssl_finishing(c: connection) &priority=10
 		not_after[|not_after|] = metas[m]$not_after;
 		}
 
+	c$ssl$cert_chain_subjects = subjects;
 	c$ssl$cert_chain_issuers = issuers;
 	c$ssl$cert_chain_not_valid_before = not_before;
 	c$ssl$cert_chain_not_valid_after = not_after;

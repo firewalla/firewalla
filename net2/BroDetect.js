@@ -1954,12 +1954,17 @@ class BroDetect {
     const fps = obj.cert_chain_fps || [];
     const notBefore = obj.cert_chain_not_valid_before || [];
     const notAfter = obj.cert_chain_not_valid_after || [];
-    // one object per cert on the verification path, leaf first, ending with the store root when found;
-    // the root has no issuer entry. DNs as objects, easier for the app than RFC 2253 strings
+    // one object per cert on the verification path, leaf first, ending with the store root when found.
+    // Each cert's issuer is the next one's subject; when the path stops short of a store root, the CA that wasn't
+    // found ends it as a subject-only entry, with no cert data. DNs as objects, easier for the app than RFC 2253 strings
     const issuers = obj.cert_chain_issuers;
+    const subjects = obj.cert_chain_subjects || [];
     const chain = fps.map((fp, i) => ({
-      fp, issuer: issuers[i] != null ? intelTool.parseDN(issuers[i]) : undefined, not_valid_before: notBefore[i], not_valid_after: notAfter[i]
+      fp, subject: subjects[i] != null ? intelTool.parseDN(subjects[i]) : undefined, not_valid_before: notBefore[i], not_valid_after: notAfter[i]
     }));
+    const top = chain.length - 1;
+    if (top >= 0 && top < issuers.length && issuers[top] !== subjects[top])
+      chain.push({ subject: intelTool.parseDN(issuers[top]) });
     // culprit fields are always written, empty when unknown: the merge keeps a field it isn't given, and a reused
     // connection tuple must not carry an earlier failure's culprit
     const data = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain), validation_failed_issuer: "", validation_failed_fp: "" };
