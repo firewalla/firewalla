@@ -38,6 +38,22 @@ source "$FIREWALLA_HOME/platform/platform.sh" || exit 1
 NODE_BIN=$(get_node_bin_path)
 NODE_BIN_DIR=$(dirname "$NODE_BIN")
 NPM_BIN_DIR=$NODE_BIN_DIR
+
+# unpacks only npm, npx and corepack of an assets tarball into $2, the part of the node install the
+# upgraded Node leaves out
+unpack_npm() {
+  local tarball=$1 npm_dir=$2 top
+  top=$(basename "$tarball" .tar.xz)
+  rm -rf "$npm_dir.tmp" && mkdir -p "$npm_dir.tmp" &&
+    tar -xJf "$tarball" -C "$npm_dir.tmp" --strip-components=1 \
+      "$top/bin/npm" "$top/bin/npx" "$top/bin/corepack" "$top/lib/node_modules/npm" "$top/lib/node_modules/corepack" &&
+    rm -rf "$npm_dir" && mv "$npm_dir.tmp" "$npm_dir" || {
+      echo "failed to unpack npm from $tarball" >&2
+      rm -rf "$npm_dir.tmp"
+      return 1
+    }
+}
+
 # the upgraded Node is installed as bin/node only (scripts/install_node.sh); its npm, npx and corepack
 # are unpacked from the same assets tarball next to the test tree, leaving that install untouched
 if [[ $NODE_BIN == $NODE_VERSIONS_DIR/* ]]; then
@@ -49,15 +65,7 @@ if [[ $NODE_BIN == $NODE_VERSIONS_DIR/* ]]; then
       echo "assets tarball of node $NODE_UPGRADE_VERSION not found, cannot install npm" >&2
       exit 1
     fi
-    top=$(basename "$tarball" .tar.xz)
-    rm -rf "$NPM_DIR.tmp" && mkdir -p "$NPM_DIR.tmp" &&
-      tar -xJf "$tarball" -C "$NPM_DIR.tmp" --strip-components=1 \
-        "$top/bin/npm" "$top/bin/npx" "$top/bin/corepack" "$top/lib/node_modules/npm" "$top/lib/node_modules/corepack" &&
-      rm -rf "$NPM_DIR" && mv "$NPM_DIR.tmp" "$NPM_DIR" || {
-        echo "failed to unpack npm from $tarball" >&2
-        rm -rf "$NPM_DIR.tmp"
-        exit 1
-      }
+    unpack_npm "$tarball" "$NPM_DIR" || exit 1
   fi
 fi
 if [[ ! -x "$NPM_BIN_DIR/npm" ]]; then
