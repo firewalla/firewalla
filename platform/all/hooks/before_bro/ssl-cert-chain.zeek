@@ -55,6 +55,9 @@ const ERR_DEPTH_ZERO_SELF_SIGNED_CERT = 18;
 const ERR_SELF_SIGNED_CERT_IN_CHAIN = 19;
 const ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY = 20;
 const ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE = 21;
+# X509_V_ERR_INVALID_CA is 24 in OpenSSL 1.1 but 79 in 3.0, where 24 is another
+# error, so it is matched by its message.
+const INVALID_CA_STATUS = "invalid CA certificate";
 
 type CertMeta: record {
 	fp: string;
@@ -96,6 +99,20 @@ event zeek_init()
 		local rc = x509_parse(x509_from_der(der));
 		trust_roots[rc$subject] = cert_meta(rc, der);
 		}
+	}
+
+# OpenSSL's test for a cert above the leaf that isn't a store root: basicConstraints
+# CA:TRUE, and keyUsage, if present, allows certificate signing.
+function invalid_ca(x: X509::Info): bool
+	{
+	if ( ! x?$basic_constraints || ! x$basic_constraints$ca )
+		return T;
+	for ( e in x$extensions )
+		{
+		if ( x$extensions[e]$oid == "2.5.29.15" && ! ( "Certificate Sign" in x$extensions[e]$value ) )
+			return T;
+		}
+	return F;
 	}
 
 # Indexes of the issuer -> subject path from the leaf through the presented
@@ -206,6 +223,21 @@ hook ssl_finishing(c: connection) &priority=10
 			if ( ( code == ERR_CERT_HAS_EXPIRED && metas[m]$not_after < now ) ||
 			     ( code == ERR_CERT_NOT_YET_VALID && metas[m]$not_before > now ) )
 				failed[|failed|] = m;
+			}
+		}
+
+	# OpenSSL reports the first cert from the leaf up that can't act as a CA;
+	# a self-signed root is held to a looser rule and left unchecked
+	else if ( c$ssl$validation_status == INVALID_CA_STATUS )
+		{
+		for ( p in path )
+			{
+			local ca = chain[path[p]]$x509;
+			if ( p > 0 && ca$certificate$issuer != ca$certificate$subject && invalid_ca(ca) )
+				{
+				failed[0] = p;
+				break;
+				}
 			}
 		}
 
