@@ -19,9 +19,19 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+
+const FlowAggrTool = require('../net2/FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const IdentityManager = require('../net2/IdentityManager.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const ipTool = require('ip');
 const _ = require('lodash');
@@ -77,18 +87,24 @@ class DataMigrationSensor extends Sensor {
   }
 
   async _is_migration_done(codeName) {
+    // value is the epoch seconds when the migration ran (legacy value was "1"); any
+    // non-empty value means done
     const result = await rclient.getAsync("migration:" + codeName);
-    if (result && result === "1") {
-      return true;
-    } else return false;
+    return result ? true : false;
   }
 
   async _set_migration_done(codeName) {
-    await rclient.setAsync("migration:" + codeName, "1");
+    // record the time the migration ran so consumers can reason about it (e.g. LogQuery
+    // waits bro.conn.expires past this before trusting baked flow intel)
+    const ts = Math.floor(Date.now() / 1000);
+    await rclient.setAsync("migration:" + codeName, ts);
+    // let config.js update its in-memory migration state without a redis re-scan
+    await pclient.publishAsync("migration:updated", JSON.stringify({ codeName, ts }));
   }
 
   async _unset_migration_done(codeName) {
     await rclient.delAsync("migration:" + codeName);
+    await pclient.publishAsync("migration:updated", JSON.stringify({ codeName, ts: null }));
   }
 
   async _migrate(codeName) {
@@ -199,9 +215,94 @@ class DataMigrationSensor extends Sensor {
         }
         break;
       }
+      case "flow_inline_intel":
+        // records when inline flow-intel baking became active (see _set_migration_done).
+        // LogQuery uses this timestamp to decide when every stored flow is guaranteed to
+        // carry a baked intel snapshot and query-time enrichment can be skipped.
+        // Backfill the snapshot into pre-upgrade sumflow buckets to minimize aggregation
+        // data loss during the transition, see backfillSumFlowCategory.
+        await this.backfillSumFlowCategory();
+        break;
       default:
         log.warn("Unrecognized code name: " + codeName);
     }
+  }
+
+  // Members written before the flow_inline_intel upgrade don't carry the coded category
+  // (c) while newly written ones do. zunionstore aggregates members by exact string, so
+  // the same destination would split into two entries, each ranking lower and possibly
+  // trimmed off by the sumflow cap (data loss). Backfill c into existing hourly buckets
+  // so old and new members of one destination merge again.
+  // upload/download/ipB/dnsB buckets carry c; local flow and ifB members don't, so they
+  // have a single format and don't split.
+  async backfillSumFlowCategory() {
+    // hourly buckets of the retention window, current (still being written) hour first:
+    // it is where new-format members accumulate alongside old ones, earlier buckets are
+    // immutable
+    const currentHourEnd = Math.ceil(Date.now() / 1000 / 3600) * 3600;
+    const hours = [];
+    for (let end = currentHourEnd; end > currentHourEnd - 86400; end -= 3600)
+      hours.push(end);
+
+    // same target set sumflow buckets are generated on, see sumViews
+    await hostManager.getHostsAsync();
+    const targets = hostManager.getActiveMACs();
+    if (platform.isFireRouterManaged())
+      targets.push(...IdentityManager.getAllIdentitiesGUID());
+    const tags = await hostManager.getActiveTags(['group', 'user']);
+    targets.push(...tags.filter(t => t && !_.isEmpty(t.macs)).map(t => `tag:${t.tag}`));
+    const intfs = hostManager.getActiveIntfs();
+    targets.push(...intfs.filter(i => i && !_.isEmpty(i.macs)).map(i => `intf:${i.intf}`));
+    targets.push('global');
+
+    const dimensions = [
+      { dimension: 'upload' },
+      { dimension: 'download' },
+      { dimension: 'ipB', fd: 'in' },
+      { dimension: 'ipB', fd: 'out' },
+      { dimension: 'dnsB' },
+    ];
+
+    log.info(`Backfilling category into hourly sumflow buckets of ${targets.length} targets ...`);
+    for (const end of hours) {
+      for (const target of targets) {
+        for (const { dimension, fd } of dimensions) {
+          const key = flowAggrTool.getSumFlowKey(target, dimension, end - 3600, end, fd);
+          await this.backfillSumFlowKey(key).catch((err) => {
+            log.error("Failed to backfill sumflow", key, err.message);
+          });
+        }
+      }
+    }
+  }
+
+  async backfillSumFlowKey(key) {
+    const memberScores = await rclient.zrangeAsync(key, 0, -1, "withscores");
+    const transactions = [];
+    for (let i = 0; i < memberScores.length; i += 2) {
+      const member = memberScores[i];
+      const score = Number(memberScores[i + 1]);
+      if (member === "_") continue; // trim counter placeholder
+      let entry;
+      try {
+        entry = JSON.parse(member);
+      } catch (err) {
+        continue;
+      }
+      if (!entry || entry.c || !entry.destIP && !entry.domain)
+        continue;
+      const intel = await intelTool.getIntel(entry.destIP, entry.domain ? [entry.domain] : []);
+      if (!intel || !intel.category)
+        continue; // no intel known for this destination, leave the member as is
+      entry.c = await intelTool.categoryToNumber(intel.category);
+      // getFlowStr keeps the member format canonical so it merges (zincrby) with newly
+      // written members of the same destination
+      const newMember = flowAggrTool.getFlowStr(entry.device, entry);
+      transactions.push(['zincrby', key, score, newMember]);
+      transactions.push(['zrem', key, member]);
+    }
+    if (!_.isEmpty(transactions))
+      await rclient.multi(transactions).execAsync();
   }
 }
 

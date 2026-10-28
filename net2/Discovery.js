@@ -248,7 +248,7 @@ module.exports = class {
             mac: intf.mac_address.toUpperCase(),
             ipv4Addr: intf.ip_address,
             ipv6Addr: intf.ip6_addresses || [],
-            macVendor: "Firewalla",
+            macVendor: "FIREWALLA INC",
             from: "Discovery"
           },
           toProcess: 'FireMain'
