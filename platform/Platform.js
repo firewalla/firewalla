@@ -26,6 +26,7 @@ const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 let kernelCrashMonitor = null;
+let reportUdpTlsDisabled = true;
 
 class Platform {
   getAllNicNames() {
@@ -568,7 +569,10 @@ class Platform {
     }
     const disabled = kernelCrashMonitor.shouldDisableUdpTls();
     if (disabled) {
-      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      if (reportUdpTlsDisabled) {
+        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+        reportUdpTlsDisabled = false;
+      }
       return false;
     }
     return true;
