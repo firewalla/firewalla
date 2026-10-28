@@ -716,12 +716,8 @@
         "expires": 3600
       },
       "action_history":{
-        "expires": 604800,
-        "count": 1000,
-        "limits": {
-          "maxMem": 5242880,
-          "keepCount": 100
-        }
+        "expires": 2592000,
+        "count": 10000
       },
       "cpu_usage": {
         "expires": 86400,
