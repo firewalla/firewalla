@@ -2112,8 +2112,15 @@ class BroDetect {
         });
 
         alarm = await broNotice.processNotice(alarm, obj);
+        if (!alarm) return;
 
-        alarm && am2.enqueueAlarm(alarm);
+        // after processNotice, which may file the alarm under another device; lets a network-scoped rule mute it
+        const deviceIP = alarm["p.device.ip"];
+        const monitorable = await hostManager.getIdentityOrHost(deviceIP).catch(() => null); // the alarm still goes out without it
+        const intf = monitorable && monitorable.getNicUUID() || _.get(sysManager.getInterfaceViaIP(deviceIP), 'uuid');
+        if (intf) alarm["p.intf.id"] = intf;
+
+        am2.enqueueAlarm(alarm);
       }
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);
