@@ -12,9 +12,14 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 # The entry is given directly, so no assets.d list is needed - this works on a
 # factory-fresh or long-offline box before prepare_assets_list.sh has ever run.
 # Arguments are kept as separate values and never fed to the eval below, so
-# paths may contain spaces and cannot inject shell. exec_pre/exec_post are not
-# supported in this mode. With no arguments, every entry under ASSETSD_PATH is
-# processed.
+# paths may contain spaces and cannot inject shell. exec_pre/exec_post/exec_skip
+# are not supported in this mode. The exit status is 0 only when the file is
+# verified: it matches the signed hash or was just downloaded and checked. With no
+# arguments, every entry under ASSETSD_PATH is processed and the status is always 0.
+#
+# assets.lst line: <file_path> <s3_path> <perm> [exec_pre] [exec_post] [exec_skip]
+# exec_skip is optional and runs before any request: when it exits 0 the entry is
+# skipped this round, so an entry can tell it is current without fetching its hash.
 SINGLE_ENTRY=""
 SA_FILE_PATH=""; SA_S3_PATH=""; SA_PERM=""
 if [[ $# -ge 2 ]]; then
@@ -61,6 +66,7 @@ while IFS= read -r line; do
     perm="$SA_PERM"
     exec_pre=""
     exec_post=""
+    exec_skip=""
   else
     line=$(eval 'for param in '$line'; do echo $param; done')
     IFS=$'\n' read -rd '' -a params <<< "$line"
@@ -69,6 +75,7 @@ while IFS= read -r line; do
     perm=${params[2]}
     exec_pre=${params[3]}
     exec_post=${params[4]}
+    exec_skip=${params[5]}
   fi
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
@@ -76,6 +83,11 @@ while IFS= read -r line; do
   lock_file="$(dirname "$file_path")/.$(basename "$file_path").lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
+    [[ -n "$SINGLE_ENTRY" ]] && exit 1
+    continue
+  fi
+  if [[ -n $exec_skip ]] && eval "$exec_skip"; then
+    echo "$file_path is skipped by exec_skip, skip check update"
     continue
   fi
   # retry with backoff: at boot the network (WAN/DNS) may still be settling
@@ -103,6 +115,7 @@ while IFS= read -r line; do
   done
   if [ ${#expected_hash} != 64 ]; then
     echo "Failed to get valid hash of $file_path from $hash_url after retries"
+    [[ -n "$SINGLE_ENTRY" ]] && exit 1
     continue
   fi
 
@@ -112,12 +125,14 @@ while IFS= read -r line; do
     wget -qO "$signature_file" --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
+      [[ -n "$SINGLE_ENTRY" ]] && exit 1
       continue
     fi
     SIGNED_TEXT="$expected_hash,${s3_path}"
     echo -n "$SIGNED_TEXT" | openssl dgst -verify "$ASSETS_PUBLIC_KEY" -keyform PEM -sha256 -signature "$signature_file" > /dev/null
     if [ "$?" != 0 ]; then
       echo "Error signature: ${s3_path}"
+      [[ -n "$SINGLE_ENTRY" ]] && exit 1
       continue
     fi
   fi
@@ -136,6 +151,7 @@ while IFS= read -r line; do
     verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
+      [[ -n "$SINGLE_ENTRY" ]] && exit 1
       continue
     fi
 
@@ -147,7 +163,7 @@ while IFS= read -r line; do
       # fi
     fi
 
-    sudo mv "$temp_file" "$file_path"
+    sudo mv "$temp_file" "$file_path" || [[ -z "$SINGLE_ENTRY" ]] || exit 1
     changed="1"
   else
     echo "Hash of $file_path matches with $hash_url"
@@ -160,6 +176,7 @@ while IFS= read -r line; do
     eval "$exec_post"
   fi
 done
+loop_rc=$?
 
 if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
   $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
@@ -168,3 +185,8 @@ if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets
 fi
 
 logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"
+
+# only the single entry reports its outcome; the entries of a list are independent
+if [[ -n "$SINGLE_ENTRY" ]]; then
+  exit $loop_rc
+fi
