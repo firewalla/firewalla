@@ -19,6 +19,7 @@
 
 'use strict';
 
+const _ = require('lodash');
 const asyncNative = require('../util/asyncNative.js');
 
 const log = require('../net2/logger.js')(__filename);
@@ -27,7 +28,11 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
 const sysManager = require('../net2/SysManager.js');
+const { delay } = require('../util/util.js');
 const { exec: execAsync, execFile } = require('child-process-promise')
+
+// neighbor states that prove the device answered recently
+const ACTIVE_NUD_STATES = ["REACHABLE", "PERMANENT", "NOARP"];
 
 
 class IPv6DiscoverySensor extends Sensor {
@@ -69,6 +74,17 @@ class IPv6DiscoverySensor extends Sensor {
     })
   }
 
+  // Send one unicast packet to every STALE neighbor so the kernel re-verifies it with unicast NS:
+  // online devices become REACHABLE, offline ones become FAILED and are flushed afterwards
+  async probeStaleNeighbors(intf) {
+    const { stdout } = await execAsync(`ip -6 neighbor show dev ${intf} nud stale`).catch((err) => ({ stdout: "" }));
+    const addrs = stdout.split("\n").map(l => l.trim().split(" ")[0]).filter(Boolean);
+    await asyncNative.eachLimit(addrs, 10, async (addr) => {
+      return execFile("ping6", ["-c1", "-W1", "-I", intf, addr], { timeout: 3000 }).catch((err) => { });
+    });
+    return addrs.length;
+  }
+
 
   addV6Host(v6addrs, mac, intf) {
     sem.emitEvent({
@@ -94,6 +110,10 @@ class IPv6DiscoverySensor extends Sensor {
       }
       await this.ping6ForDiscovery(intf.name, intf);
     }
+    const probed = _.sum(await Promise.all(interfaces.map(intf => this.probeStaleNeighbors(intf.name))));
+    // wait for delay_first_probe_time (5s) + unicast probes to settle
+    if (probed > 0)
+      await delay(10000);
     let cmdline = 'ip -6 neighbor show';
     log.verbose("Running commandline: ", cmdline);
     const { stdout } = await execAsync(cmdline)
@@ -106,7 +126,8 @@ class IPv6DiscoverySensor extends Sensor {
         if (parts[2] == intf.name) {
           let v6addr = parts[0];
           let mac = parts[4].toUpperCase();
-          if (mac == "FAILED" || mac.length < 16) {
+          const state = parts[parts.length - 1];
+          if (mac == "FAILED" || mac.length < 16 || !ACTIVE_NUD_STATES.includes(state)) {
             continue
           } else {
             /*
@@ -128,9 +149,10 @@ class IPv6DiscoverySensor extends Sensor {
       for (let mac in macHostMap) {
         this.addV6Host(macHostMap[mac], mac, intf);
       }
-      //Removing learned entries from the ARP cache with ip neighbor flush
+      // Only flush unresolved entries; flushing reachable/stale ones forces multicast
+      // rediscovery that sleeping Wi-Fi clients may miss, dropping their IPv6 traffic
       try {
-        const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name}`
+        const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name} nud failed nud incomplete`
         log.verbose("Running commandline: ", flushCommand);
         await execAsync(flushCommand);
       } catch (e) {
