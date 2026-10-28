@@ -64,7 +64,7 @@ function get_cloud_endpoint {
   fi
 }
 
-NODE_UPGRADE_VERSION=v24.21.0
+NODE_UPGRADE_VERSION=v24.22.1
 : ${NODE_VERSIONS_DIR:=/home/pi/.node_versions}
 # one name for the upgraded Node, so an update overwrites the previous version; firerouter bin/node uses the same path
 NODE_UPGRADE_BIN=$NODE_VERSIONS_DIR/current/bin/node
