@@ -335,6 +335,7 @@ describe('BroNotice invalid server certificate', function () {
       expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
       expect(alarm['p.dest.ssl.validation_failed_cert_issuer_CN']).to.equal('emSign ECC Root CA - G3');
       expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
+      expect(alarm['p.dest.port']).to.equal(443);
       expect(alarm['e.dest.ssl.validation_status']).to.equal('unable to get local issuer certificate');
       expect(JSON.parse(alarm['e.dest.ssl.cert_chain'])).to.deep.equal([{ fp: 'ba105ce02bac', subject: { CN: 'leaf' } }, { subject: { CN: 'emSign ECC Root CA - G3', C: 'IN' } }]);
     });

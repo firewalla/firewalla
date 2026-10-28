@@ -199,6 +199,8 @@ class BroNotice {
       return false;
     }
     alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
+    // the server's port, the orig side being the local client
+    if (broObj["id.resp_p"]) alarm["p.dest.port"] = broObj["id.resp_p"];
     // a CN that is no domain, e.g. "Mijia Cloud", is a private CA's device cert, never meant for public CA validation
     // zeek's sub is the subject of the site's own cert
     const subject = intelTool.parseDN(broObj.sub || "");
