@@ -151,6 +151,7 @@ while IFS= read -r line; do
     verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
+      sudo rm -f "$temp_file"
       [[ -n "$SINGLE_ENTRY" ]] && exit 1
       continue
     fi

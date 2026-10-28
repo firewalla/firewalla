@@ -55,16 +55,21 @@ unpack_npm() {
 }
 
 # the upgraded Node is installed as bin/node only (scripts/install_node.sh); its npm, npx and corepack
-# are unpacked from the same assets tarball next to the test tree, leaving that install untouched
+# are unpacked from the node tarball next to the test tree, leaving that install untouched. The tarball
+# is fetched to /tmp by update_assets.sh, which checks hash and signature and keeps a matching copy;
+# this is dev only, so nothing is cleaned up
 if [[ $NODE_BIN == $NODE_VERSIONS_DIR/* ]]; then
   NPM_DIR=$(dirname "$TEST_MODULES")/node-$NODE_UPGRADE_VERSION
   NPM_BIN_DIR=$NPM_DIR/bin
   if [[ ! -x "$NPM_BIN_DIR/npm" ]]; then
-    tarball=$(ls "${FIREWALLA_HIDDEN:-$HOME/.firewalla}"/run/assets/node-$NODE_UPGRADE_VERSION-linux-*.tar.xz 2>/dev/null | head -n1)
-    if [[ -z $tarball ]]; then
-      echo "assets tarball of node $NODE_UPGRADE_VERSION not found, cannot install npm" >&2
+    # the x64 object on every arch: npm, npx and corepack are plain JS
+    NODE_S3_PATH=/all/node/node-$NODE_UPGRADE_VERSION-linux-x64.tar.xz
+    tarball=/tmp/$(basename "$NODE_S3_PATH")
+    # it exits non-zero unless the tarball is verified, so a stale copy in /tmp is never unpacked
+    "$FIREWALLA_HOME/scripts/update_assets.sh" "$tarball" "$NODE_S3_PATH" || {
+      echo "failed to fetch a verified $NODE_S3_PATH" >&2
       exit 1
-    fi
+    }
     unpack_npm "$tarball" "$NPM_DIR" || exit 1
   fi
 fi
