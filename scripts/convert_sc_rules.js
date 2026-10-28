@@ -5,15 +5,83 @@ const fsp = require('fs').promises;
 const path = process.argv[2];
 const newPath = "./sc_converted.rules";
 
+const observationCategories = ["INFO", "POLICY", "HUNTING", "RETIRED"];
+const disabledSids = [2834935, 2831954, 2019102];
+
+function getCategory(msg) {
+  const words = msg.split(" ");
+  const vendorPrefixes = ["ET", "ETPRO", "GPL"];
+  if (vendorPrefixes.includes(words[0]))
+    return words[1];
+  return words[0];
+}
+
+function isObservationRule(line, msg) {
+  if (observationCategories.includes(getCategory(msg)))
+    return true;
+  return line.includes("signature_severity Informational");
+}
+
+const metadataKeys = ["msg", "reference", "classtype", "sid", "rev", "metadata", "threshold", "target", "priority", "gid", "flow"];
+const domainBuffers = ["dns.query", "dns_query", "tls.sni", "tls_sni", "http.host", "http_host", "quic.sni"];
+const contentModifiers = ["nocase", "endswith", "startswith", "fast_pattern", "depth", "offset", "isdataat", "bsize", "dotprefix"];
+
+function getOptionKeys(line) {
+  const body = line.substring(line.indexOf("(") + 1, line.lastIndexOf(")"));
+  const unquoted = body.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  return unquoted.split(";")
+    .map(option => option.split(":")[0].trim())
+    .filter(key => key.length > 0);
+}
+
+function hasIpAddressInHeader(line) {
+  const header = line.substring(0, line.indexOf("("));
+  return /[\s\[,!]\d+\.\d+\.\d+\.\d+/.test(header);
+}
+
+function isPureIpRule(line, keys) {
+  if (!hasIpAddressInHeader(line))
+    return false;
+  return keys.every(key => metadataKeys.includes(key) || key === "flowbits");
+}
+
+function isPureDomainRule(keys) {
+  if (keys.includes("flowbits"))
+    return false;
+  const detectionKeys = keys.filter(key => !metadataKeys.includes(key) && !contentModifiers.includes(key));
+  return detectionKeys.length === 2 && domainBuffers.includes(detectionKeys[0]) && detectionKeys[1] === "content";
+}
+
+function getSid(line) {
+  const match = line.match(/[;(]\s*sid:\s*(\d+)\s*;/);
+  return match ? Number(match[1]) : 0;
+}
+
 fsp.readFile(path, { encoding: "utf8" }).then(content => {
   const lines = content.trim().split("\n");
   const newLines = [];
+  let observationCount = 0;
+  let disabledCount = 0;
+  let indicatorCount = 0;
   for (const line of lines) {
     if (!line.startsWith("alert "))
       continue;
     const i1 = line.indexOf("msg:\"");
     const i2 = line.indexOf("\";", i1);
     let msg = line.substring(i1 + 5, i2);
+    if (isObservationRule(line, msg)) {
+      observationCount++;
+      continue;
+    }
+    if (disabledSids.includes(getSid(line))) {
+      disabledCount++;
+      continue;
+    }
+    const keys = getOptionKeys(line);
+    if (isPureIpRule(line, keys) || isPureDomainRule(keys)) {
+      indicatorCount++;
+      continue;
+    }
     if (msg.startsWith("ET "))
       msg = msg.substring(3);
     const options = line.substring(i2 + 2).split(";");
@@ -158,6 +226,22 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
               classtypeDesc = "a malware command and control activity";
               break;
             }
+            case "misc-activity": {
+              classtypeDesc = "miscellaneous activity";
+              break;
+            }
+            case "misc-attack": {
+              classtypeDesc = "a miscellaneous attack";
+              break;
+            }
+            case "unknown": {
+              classtypeDesc = "unknown traffic";
+              break;
+            }
+            case "not-suspicious": {
+              classtypeDesc = "non-suspicious traffic";
+              break;
+            }
           }
           break;
         }
@@ -175,5 +259,6 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
     const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
     newLines.push(newRule);
   }
+  console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
   fsp.writeFile(newPath, newLines.join("\n"));
 });
