@@ -67,12 +67,25 @@ type CertMeta: record {
 # commas inside values (e.g. "O=GoDaddy.com\, Inc.").
 global trust_roots: table[string] of CertMeta;
 
-function cert_meta(cert: X509::Certificate, der: string): CertMeta
+# Cert time as whole epoch seconds. Zeek before 8.0 converts the ASN.1 UTC time
+# with mktime(), i.e. as local time, so the local UTC offset at t is added back.
+function cert_epoch(t: time): int
 	{
 	# double_to_int is missing before zeek 4.0; unary + makes the count an int
+	local secs = +double_to_count(floor(time_to_double(t)));
+@if ( Version::number < 80000 )
+	local z = strftime("%z", t);  # e.g. "+0800"
+	local off = +(to_count(z[1:3]) * 3600 + to_count(z[3:5]) * 60);
+	secs += z[0] == "-" ? -off : off;
+@endif
+	return secs;
+	}
+
+function cert_meta(cert: X509::Certificate, der: string): CertMeta
+	{
 	return CertMeta($fp=sha256_hash(der),
-		$not_before=+double_to_count(floor(time_to_double(cert$not_valid_before))),
-		$not_after=+double_to_count(floor(time_to_double(cert$not_valid_after))));
+		$not_before=cert_epoch(cert$not_valid_before),
+		$not_after=cert_epoch(cert$not_valid_after));
 	}
 
 event zeek_init()
@@ -173,7 +186,7 @@ hook ssl_finishing(c: connection) &priority=10
 
 	local code = c$ssl$validation_code;
 	local failed: vector of count = vector();
-	local now = network_time();  # x509_verify's default verify time
+	local now = +double_to_count(floor(time_to_double(network_time())));  # x509_verify's default verify time
 
 	if ( code == ERR_DEPTH_ZERO_SELF_SIGNED_CERT ||
 	     code == ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE )
@@ -189,9 +202,8 @@ hook ssl_finishing(c: connection) &priority=10
 		{
 		for ( p in path )
 			{
-			local pc = chain[path[p]]$x509$certificate;
-			if ( ( code == ERR_CERT_HAS_EXPIRED && pc$not_valid_after < now ) ||
-			     ( code == ERR_CERT_NOT_YET_VALID && pc$not_valid_before > now ) )
+			if ( ( code == ERR_CERT_HAS_EXPIRED && metas[p]$not_after < now ) ||
+			     ( code == ERR_CERT_NOT_YET_VALID && metas[p]$not_before > now ) )
 				failed[|failed|] = p;
 			}
 		}
