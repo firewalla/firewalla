@@ -1960,12 +1960,13 @@ class BroDetect {
     const chain = fps.map((fp, i) => ({
       fp, issuer: issuers[i] != null ? intelTool.parseDN(issuers[i]) : undefined, not_valid_before: notBefore[i], not_valid_after: notAfter[i]
     }));
-    const data = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain) };
+    // culprit fields are always written, empty when unknown: the merge keeps a field it isn't given, and a reused
+    // connection tuple must not carry an earlier failure's culprit
+    const data = { validation_status: obj.validation_status, cert_chain: JSON.stringify(chain), validation_failed_issuer: "", validation_failed_fp: "" };
     // the first failed cert is enough to tell which CA broke the chain
     if (obj.validation_failed_certs) {
       data.validation_failed_issuer = JSON.stringify(intelTool.parseDN(obj.validation_failed_issuers[0]));
-      const fp = fps[obj.validation_failed_certs[0]];
-      if (fp) data.validation_failed_fp = fp;
+      data.validation_failed_fp = fps[obj.validation_failed_certs[0]] || "";
     }
     await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
   }

@@ -200,11 +200,12 @@ hook ssl_finishing(c: connection) &priority=10
 
 	else if ( code == ERR_CERT_HAS_EXPIRED || code == ERR_CERT_NOT_YET_VALID )
 		{
-		for ( p in path )
+		# metas, not path: the appended store root is checked too
+		for ( m in metas )
 			{
-			if ( ( code == ERR_CERT_HAS_EXPIRED && metas[p]$not_after < now ) ||
-			     ( code == ERR_CERT_NOT_YET_VALID && metas[p]$not_before > now ) )
-				failed[|failed|] = p;
+			if ( ( code == ERR_CERT_HAS_EXPIRED && metas[m]$not_after < now ) ||
+			     ( code == ERR_CERT_NOT_YET_VALID && metas[m]$not_before > now ) )
+				failed[|failed|] = m;
 			}
 		}
 
@@ -212,8 +213,9 @@ hook ssl_finishing(c: connection) &priority=10
 		return;
 
 	local failed_issuers: vector of string = vector();
+	# the appended store root has no issuer entry; it is self-signed, named by the top cert's issuer
 	for ( f in failed )
-		failed_issuers[|failed_issuers|] = issuers[failed[f]];
+		failed_issuers[|failed_issuers|] = failed[f] < |issuers| ? issuers[failed[f]] : top_cert$issuer;
 
 	c$ssl$validation_failed_certs = failed;
 	c$ssl$validation_failed_issuers = failed_issuers;
