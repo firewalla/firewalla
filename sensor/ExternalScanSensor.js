@@ -45,6 +45,7 @@ const ERR_NO_PUB_IP = "ERR_NO_PUB_IP";
 
 const OWNER_VPN_SERVER = "vpn_server";
 const OWNER_WIREGUARD = "wireguard";
+const OWNER_AMNEZIAWG = "amneziawg";
 const OWNER_PORT_FORWARD = "port_forward";
 const OWNER_UPNP = "upnp";
 const OWNER_DMZ_HOST = "dmz_host";
@@ -218,7 +219,7 @@ class ExternalScanSensor extends Sensor {
         maps.push(map);
     }
     for (const map of maps) {
-      // deal with dmz in step 5
+      // deal with dmz in step 6
       if (map._type === OWNER_DMZ_HOST || !map.dport)
         continue;
       const [start, end = start] = String(map.dport).split(/[-:]/).map(Number);
@@ -250,7 +251,17 @@ class ExternalScanSensor extends Sensor {
     for (const port of wireguardPorts)
       managedPorts.push({ protocols: ["udp"], start: port, end: port, ipv4Only: false, type: OWNER_WIREGUARD });
 
-    // 5. dmz host
+    // 5. amneziawg
+    if (platform.isFireRouterManaged()) {
+      const networkConfig = await FireRouter.getConfig();
+      const amneziawgPorts = Object.values(_.get(networkConfig, ["interface", "amneziawg"], {}))
+        .filter(intf => intf.enabled && intf.listenPort)
+        .map(intf => Number(intf.listenPort));
+      for (const port of amneziawgPorts)
+        managedPorts.push({ protocols: ["udp"], start: port, end: port, ipv4Only: false, type: OWNER_AMNEZIAWG });
+    }
+
+    // 6. dmz host
     if (maps.some(m => m._type === OWNER_DMZ_HOST)) {
       for (const protocol of BOTH_PROTOCOLS) {
         let start = 1;
