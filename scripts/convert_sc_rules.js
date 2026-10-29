@@ -10,6 +10,9 @@ const disabledSids = [
     2834935,  // nsis
     2831954, // nsis
     2019102, // SSDP (Multicast, dst address 239.255.255.250 is in HOME_NET)
+    2018377, // heartbleed request, only checks the first bytes of any tcp segment, hit by SMB file copies
+    2018378, // heartbleed response, same as above
+    2056423, // apache request smuggling, AirPlay reverse HTTP on port 7000 looks like a request in the body
 ];
 
 function getCategory(msg) {
