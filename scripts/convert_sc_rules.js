@@ -29,6 +29,11 @@ function isObservationRule(line, msg) {
     return line.includes("signature_severity Informational");
 }
 
+function isNoisyRule(line) {
+    // ET is not sure about these, e.g. JA3 hashes shared by Tencent apps and mail clients
+    return line.includes("confidence Low");
+}
+
 const metadataKeys = ["msg", "reference", "classtype", "sid", "rev", "metadata", "threshold", "target", "priority", "gid", "flow"];
 const domainBuffers = ["dns.query", "dns_query", "tls.sni", "tls_sni", "http.host", "http_host", "quic.sni"];
 const contentModifiers = ["nocase", "endswith", "startswith", "fast_pattern", "depth", "offset", "isdataat", "bsize", "dotprefix"];
@@ -70,6 +75,7 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
     let observationCount = 0;
     let disabledCount = 0;
     let indicatorCount = 0;
+    let noisyCount = 0;
     for (const line of lines) {
         if (!line.startsWith("alert "))
             continue;
@@ -82,6 +88,10 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
         }
         if (disabledSids.includes(getSid(line))) {
             disabledCount++;
+            continue;
+        }
+        if (isNoisyRule(line)) {
+            noisyCount++;
             continue;
         }
         const keys = getOptionKeys(line);
@@ -266,6 +276,6 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
         const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
         newLines.push(newRule);
     }
-    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
+    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules, ${noisyCount} noisy rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
     fsp.writeFile(newPath, newLines.join("\n"));
 });
