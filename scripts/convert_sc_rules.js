@@ -31,7 +31,10 @@ function isObservationRule(line, msg) {
 
 function isNoisyRule(line) {
     // ET is not sure about these, e.g. JA3 hashes shared by Tencent apps and mail clients
-    return line.includes("confidence Low");
+    if (line.includes("confidence Low"))
+        return true;
+    // mostly old GPL rules, e.g. any http 403 response
+    return line.includes("signature_severity Unknown");
 }
 
 const metadataKeys = ["msg", "reference", "classtype", "sid", "rev", "metadata", "threshold", "target", "priority", "gid", "flow"];
