@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/06_update_btmp_wtmp_logrotate.sh
