@@ -1401,10 +1401,7 @@ class Host extends Monitorable {
           for (const ipv6Addr of ipv6Addrs)
             await Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 6), ipv6Addr);
         }
-        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
-        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
-        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
-        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
+        await Tag.removeDeviceMember(removedTag, [Host.getIpSetName(this.o.mac, 4), Host.getIpSetName(this.o.mac, 6)]);
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1424,10 +1421,7 @@ class Host extends Monitorable {
           for (const ipv6Addr of ipv6Addrs)
             await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ipv6Addr);
         }
-        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 4));
-        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 6));
-        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 4));
-        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 6));
+        await Tag.addDeviceMember(uid, [Host.getIpSetName(this.o.mac, 4), Host.getIpSetName(this.o.mac, 6)]);
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await dnsmasq.writeConfig(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
