@@ -1720,6 +1720,9 @@ class FwApcAlarm extends Alarm {
   }
 }
 
+// the categories come from the cloud, one without a title in the app would show as a raw key
+const CATEGORY_BLOCK_TITLE_SUBTYPES = new Set(['nrd', 'lookalike_domain']);
+
 // informational, the category rule has already blocked the flow. Never set p.action.block or
 // p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
 class CategoryBlockAlarm extends Alarm {
@@ -1742,6 +1745,12 @@ class CategoryBlockAlarm extends Alarm {
 
   getExpirationTime() {
     return this['p.cooldown'] || super.getExpirationTime();
+  }
+
+  localizedNotificationTitleKey() {
+    const key = super.localizedNotificationTitleKey();
+    const subtype = this['p.noticeType'];
+    return CATEGORY_BLOCK_TITLE_SUBTYPES.has(subtype) ? `${key}.${subtype}` : key;
   }
 
   localizedNotificationContentArray() {

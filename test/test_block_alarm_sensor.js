@@ -148,6 +148,7 @@ describe('test block alarm sensor', function () {
       expect(alarm['p.device.mac']).to.equal(MAC);
       expect(alarm['p.dest.name']).to.equal('new.example.org');
       expect(alarm['p.dest.category']).to.equal('nrd');
+      expect(alarm['p.noticeType']).to.equal('nrd');
       expect(alarm['p.local_is_client']).to.equal('1');
       expect(alarm['p.cooldown']).to.equal(86400);
     });
@@ -380,6 +381,14 @@ describe('test block alarm sensor', function () {
       expect(alarm.localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY_BLOCK');
       expect(alarm.localizedNotificationContentArray()).to.eql(['sim1', 'new.example.org']);
       expect(alarm.localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK');
+    });
+
+    it('suffixes the title key only for a category that has its own title', () => {
+      const withType = type => am2.jsonToAlarm(Object.assign({ type: 'ALARM_CATEGORY_BLOCK' }, data, { 'p.noticeType': type }));
+      expect(withType('nrd').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK.nrd');
+      expect(withType('nrd').localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY_BLOCK');
+      expect(withType('lookalike_domain').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK.lookalike_domain');
+      expect(withType('porn').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK');
     });
 
     describe('auto block', () => {
