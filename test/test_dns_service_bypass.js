@@ -81,7 +81,9 @@ function initPlugin(plugin, featureName) {
   return plugin;
 }
 
-function loadDNSCrypt({ unlinkCalls = [], writeCalls = [], probeHealthy = true, killSwitch = true, featureOn = true } = {}) {
+const DEFAULT_VERIFICATION_DOMAINS = ['firewalla.encipher.io', 'github.com', 'api.firewalla.com'];
+
+function loadDNSCrypt({ unlinkCalls = [], writeCalls = [], probeHealthy = true, killSwitch = true, featureOn = true, healthCalls = [] } = {}) {
   const DNSCryptPlugin = proxyquire('../sensor/DNSCryptPlugin.js', {
     '../net2/logger.js': logger,
     './base/DnsServicePluginBase.js': loadBase({ unlinkCalls, writeCalls, featureOn }),
@@ -93,15 +95,20 @@ function loadDNSCrypt({ unlinkCalls = [], writeCalls = [], probeHealthy = true, 
     'child-process-promise': { exec: async () => ({}) },
     '../util/scheduler': { UpdateJob: class { constructor(fn) { this.fn = fn; } async exec(...args) { return this.fn(...args); } } },
     '../util/DNSUpstreamHealthCheck.js': {
-      probeLocalServer: async () => probeHealthy
-        ? { healthy: true, server: '127.0.0.1#8854', addresses: ['1.1.1.1'] }
-        : { healthy: false, error: 'down', server: '127.0.0.1#8854' }
+      getVerificationDomains: domains => Array.isArray(domains) && domains.length > 0 ? domains : DEFAULT_VERIFICATION_DOMAINS,
+      probeLocalServer: async (host, port, options) => {
+        healthCalls.push({ op: 'probe', domains: options.domains });
+        return probeHealthy
+          ? { healthy: true, server: '127.0.0.1#8854', addresses: ['1.1.1.1'] }
+          : { healthy: false, error: 'down', server: '127.0.0.1#8854' };
+      }
     },
     '../net2/config.js': { isFeatureOn: () => featureOn, disableDynamicFeature: async () => {} },
     '../extension/dnscrypt/dnscrypt': {
       getSettings: async () => ({ killSwitch }),
       getLocalServer: () => '127.0.0.1#8854',
       getLocalPort: () => 8854,
+      flushCache: async (names) => { healthCalls.push({ op: 'flush', domains: names }); },
       stop: async () => {},
       start: async () => {},
       restart: async () => {},
@@ -257,6 +264,22 @@ describe('DNS service bypass behavior', () => {
 
     expect(unlinkCalls).to.have.lengthOf(0);
     expect(writeCalls.map(call => call.content)).to.include('server=127.0.0.1#8854$doh$*wan');
+  });
+
+  it('should flush the DoH probe domains from the dnscrypt cache right before probing them', async () => {
+    for (const healthCheckDomains of [undefined, ['probe.example.com']]) {
+      const healthCalls = [];
+      const plugin = loadDNSCrypt({ healthCalls });
+      plugin.config = { healthCheckDomains };
+
+      await plugin.probeHealth();
+
+      const expected = healthCheckDomains || DEFAULT_VERIFICATION_DOMAINS;
+      expect(healthCalls).to.deep.equal([
+        { op: 'flush', domains: expected },
+        { op: 'probe', domains: expected }
+      ]);
+    }
   });
 
   it('should bypass Unbound in dnsmasq when unhealthy and killSwitch is disabled', async () => {

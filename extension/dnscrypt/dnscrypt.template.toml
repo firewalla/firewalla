@@ -28,6 +28,8 @@ force_tcp = false
 
 timeout = 5000
 
+%DNSCRYPT_CONTROL%
+
 keepalive = 30
 
 cert_refresh_delay = 240
