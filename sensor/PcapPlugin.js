@@ -30,6 +30,7 @@ const extensionManager = require('./ExtensionManager.js');
 const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+const FlowEngine = require('../net2/FlowEngine.js');
 
 class PcapPlugin extends Sensor {
 
@@ -88,6 +89,58 @@ class PcapPlugin extends Sensor {
 
   isEnabled() {
     return this.enabled;
+  }
+
+  // A flow-engine apply in progress holds brofish and suricata for its
+  // transaction: BroControl / SuricataControl refuse to start them while its
+  // marker exists, so a restart now would be dropped and the service left down.
+  // Returns true when that is the case, having scheduled the restart again for
+  // once the apply is over. The wait runs in the background: holding up
+  // restart() would hold up the first globalOn(), before Sensor.hookFeature
+  // has hooked the feature listener.
+  deferWhileApplying() {
+    if (!(FlowEngine.applyHeld() && FlowEngine.applyRunning()))
+      return false;
+    this.retryRestart(() => FlowEngine.waitForApply(), 'once it is done');
+    return true;
+  }
+
+  // BroControl / SuricataControl refused the restart because of the hold. By now
+  // the apply may still run (retry after it), be over (retry now) or have failed
+  // (its hold stays: refuse, as before). True when a retry was scheduled.
+  retryRefusedRestart() {
+    if (this.deferWhileApplying())
+      return true;
+    if (FlowEngine.applyHeld())
+      return false;
+    this.retryRestart(() => Promise.resolve(), 'now that it is over');
+    return true;
+  }
+
+  // Whether a restart about to run is still wanted. A queued or retried restart
+  // can run after the role was switched off, and during the first globalOn()
+  // the feature listener is not hooked yet, so `enabled` alone can miss that:
+  // the feature is read directly too. `enabled` is never set in the API process,
+  // which only runs apiRun().
+  roleOn() {
+    return this.enabled !== false && Config.isFeatureOn(this.getFeatureName());
+  }
+
+  // One retry at a time (and one wait), skipped if the role has been switched
+  // off by then.
+  retryRestart(wait, when) {
+    if (this.retryAfterApply)
+      return;
+    log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} ${when}`);
+    this.retryAfterApply = wait().then(() => {
+      this.retryAfterApply = null;
+      if (!this.roleOn())
+        return;
+      return this.restartJob ? this.restartJob.exec() : this.restart();
+    }).catch((err) => {
+      this.retryAfterApply = null;
+      log.error(`Failed to restart ${this.getFeatureName()} after the flow engine apply`, err.message);
+    });
   }
 
   async globalOn() {

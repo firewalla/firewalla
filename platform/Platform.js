@@ -26,11 +26,17 @@ const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 let kernelCrashMonitor = null;
+let reportUdpTlsDisabled = true;
 
 class Platform {
   getAllNicNames() {
     // for red/blue, there is only one NIC
     return ["eth0"];
+  }
+
+  // the box's own ethernet ports, i.e. getAllNicNames() minus the wlan NICs
+  getEthernetNicNames() {
+    return this.getAllNicNames().filter(nic => /^eth\d+$/.test(nic));
   }
 
   // vendor:product of the devices that belong to the box itself instead of being an accessory,
@@ -563,7 +569,10 @@ class Platform {
     }
     const disabled = kernelCrashMonitor.shouldDisableUdpTls();
     if (disabled) {
-      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      if (reportUdpTlsDisabled) {
+        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+        reportUdpTlsDisabled = false;
+      }
       return false;
     }
     return true;
