@@ -13,6 +13,8 @@ const disabledSids = [
     2018377, // heartbleed request, only checks the first bytes of any tcp segment, hit by SMB file copies
     2018378, // heartbleed response, same as above
     2056423, // apache request smuggling, AirPlay reverse HTTP on port 7000 looks like a request in the body
+    2014376, // dns lookup over udp 53, see isDnsLookupRule
+    2022335, // dns lookup over udp 53, see isDnsLookupRule
 ];
 
 function getCategory(msg) {
@@ -67,6 +69,12 @@ function isPureDomainRule(keys) {
     return detectionKeys.length === 2 && domainBuffers.includes(detectionKeys[0]) && detectionKeys[1] === "content";
 }
 
+function isDnsLookupRule(line) {
+    // the alarm dst is the dns resolver, not the queried domain:
+    // dropped when the box is the resolver, or names the resolver (e.g. dns.google) as the bad site
+    return line.startsWith("alert dns ");
+}
+
 function getSid(line) {
     const match = line.match(/[;(]\s*sid:\s*(\d+)\s*;/);
     return match ? Number(match[1]) : 0;
@@ -79,6 +87,7 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
     let disabledCount = 0;
     let indicatorCount = 0;
     let noisyCount = 0;
+    let dnsCount = 0;
     for (const line of lines) {
         if (!line.startsWith("alert "))
             continue;
@@ -95,6 +104,10 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
         }
         if (isNoisyRule(line)) {
             noisyCount++;
+            continue;
+        }
+        if (isDnsLookupRule(line)) {
+            dnsCount++;
             continue;
         }
         const keys = getOptionKeys(line);
@@ -279,6 +292,6 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
         const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
         newLines.push(newRule);
     }
-    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules, ${noisyCount} noisy rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
+    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules, ${noisyCount} noisy rules, ${dnsCount} dns lookup rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
     fsp.writeFile(newPath, newLines.join("\n"));
 });
