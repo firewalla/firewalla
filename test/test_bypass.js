@@ -489,5 +489,39 @@ describe('Bypass', function () {
       // ip_m1: 2(-N) + 2(RETURN) = 4; ip_m2: 2(-N) + 2(RETURN) = 4
       expect(addRuleCalls).to.have.length(8);
     });
+
+    it('bypass policies on the same scope keep their own rules, and removing one deletes only its rules', async () => {
+      policyMap = { ip_same: makePolicy(), ip_same_glob: makePolicy() };
+      const scoped = {
+        affectedPids: ['ip_same'], tags: ['tag1'], intfs: ['uuid1'], scope: ['00:00:5E:00:53:01'], guids: ['vpn:client1'],
+        targets: [], type: 'category',
+      };
+      const global = { ...scoped, affectedPids: ['ip_same_glob'], tags: [], intfs: [], scope: [], guids: [] };
+      // the RETURN rules one call issues, with the operation each was issued with
+      const returns = async (pid, action, options) => {
+        const start = addRuleCalls.length;
+        await Bypass.bypassIptablesRules({ ...options, pid, action });
+        return addRuleCalls.slice(start).filter(rule => rule.jump === 'RETURN')
+          .map(rule => ({ op: rule.operation, text: rule.essential() }));
+      };
+      for (const options of [scoped, global]) {
+        const bp1 = await returns('bp1', 'enforce', options);
+        const bp2 = await returns('bp2', 'enforce', options);
+        expect(bp1).to.not.be.empty;
+        for (const rule of bp1) expect(rule.text).to.include('--comment "rule_bp1"');
+        for (const rule of bp2) expect(rule.text).to.include('--comment "rule_bp2"');
+        // identical rules would be inserted once, and the delete of either policy would remove both
+        const bp2Texts = bp2.map(rule => rule.text);
+        for (const rule of bp1) expect(bp2Texts).to.not.include(rule.text);
+
+        const removed = await returns('bp1', 'unenforce', options);
+        for (const rule of removed) {
+          expect(rule.op).to.equal('-D');
+          expect(rule.text).to.include('--comment "rule_bp1"');
+        }
+        const removedTexts = removed.map(rule => rule.text);
+        for (const rule of bp1) expect(removedTexts).to.include(rule.text);
+      }
+    });
   });
 });
