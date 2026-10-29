@@ -220,9 +220,11 @@ class BroNotice {
         return false;
       }
       if (issuer) alarm["p.dest.ssl.validation_failed_cert"] = { issuer };
-      // a flat string, so an exception (mute) can match it
-      const issuerCN = issuer && [].concat(issuer.CN || [])[0];
-      if (issuerCN) alarm["p.dest.ssl.validation_failed_cert_issuer_CN"] = issuerCN;
+      // flat strings, so an exception (mute) can match them: the full DN identifies the CA even without a CN,
+      // the name is for display
+      if (conn.validation_failed_issuer_dn) alarm["p.dest.ssl.validation_failed_cert_issuer"] = conn.validation_failed_issuer_dn;
+      const issuerName = issuer && ["CN", "O", "OU"].map(a => [].concat(issuer[a] || [])[0]).find(Boolean);
+      if (issuerName) alarm["p.dest.ssl.validation_failed_cert_issuer_name"] = issuerName;
       if (conn.validation_failed_fp) alarm["p.dest.ssl.validation_failed_fp"] = conn.validation_failed_fp;
       if (conn.validation_status) alarm["e.dest.ssl.validation_status"] = conn.validation_status;
       if (conn.cert_chain) alarm["e.dest.ssl.cert_chain"] = conn.cert_chain;
