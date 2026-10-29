@@ -137,6 +137,7 @@ class BlockAlarmSensor extends Sensor {
       ...deviceFields,
       "p.dest.name": dest,
       "p.dest.category": bTarget,
+      "p.noticeType": bTarget, // the push data carries p.noticeType, not p.dest.category
       "p.local_is_client": fd === 'out' ? "0" : "1", // 'out' is initiated from outside
       "p.cooldown": COOLDOWN_SECS,
       "p.ignoreDestIntel": "1" // the domain is all there is, as in ACLAlarmLogPlugin
