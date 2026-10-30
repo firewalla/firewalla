@@ -206,6 +206,14 @@ class Policy {
       }
     }
 
+    // a rule with expireTs starts at idleTs, so windows with different starts are different rules.
+    // without expireTs idleTs is only a pause and is not compared
+    if (this.expireTs || policy.expireTs) {
+      const start = (ts) => ts === undefined || ts === null || ts === '' ? 0 : Number(ts);
+      if (start(this.idleTs) !== start(policy.idleTs))
+        return false;
+    }
+
     if (
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&

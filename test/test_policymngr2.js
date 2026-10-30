@@ -1145,10 +1145,27 @@ describe('Test one time rule with a future start time', function() {
       expect(a.isEqual(b)).to.equal(false);
     });
 
-    it('ignores idleTs, which has never been a dedup field', () => {
+    it('tells two windows with the same end but different starts apart', () => {
       const a = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
-      const b = new Policy(Object.assign({}, base, { idleTs: 1761105600, expireTs: 1761100200 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761094800, expireTs: 1761100200 }));
+      expect(a.isEqual(b)).to.equal(false);
+      // one side already started (idleTs cleared)
+      const c = new Policy(Object.assign({}, base, { expireTs: 1761100200 }));
+      expect(a.isEqual(c)).to.equal(false);
+    });
+
+    it('compares the start of a window as a number', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: '1761098400', expireTs: '1761100200' }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
       expect(a.isEqual(b)).to.equal(true);
+    });
+
+    it('still ignores idleTs of a paused rule without expireTs', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: 1761098400 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761105600 }));
+      const c = new Policy(Object.assign({}, base));
+      expect(a.isEqual(b)).to.equal(true);
+      expect(a.isEqual(c)).to.equal(true);
     });
 
     it('still matches an identical window', () => {
