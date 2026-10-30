@@ -2173,7 +2173,9 @@ module.exports = class DNSMASQ {
       log.error('Error writing hosts files', err)
     })
 
-    this.scheduleRestartDNSService(true);
+    // reload DNS only when its config changed, because a reload empties the DNS cache of every instance.
+    // cleanUpLeftoverConfig() deletes the config hash when FireMain starts, so the first refresh still reloads
+    this.scheduleRestartDNSService();
     // the only DHCP action for the hosts files written above: a restart if a conf file changed or a lease
     // cleanup is pending, otherwise a reload if only the reservations changed
     if (DHCP_SERVICE_NAME !== SERVICE_NAME)

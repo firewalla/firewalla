@@ -36,7 +36,6 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -244,8 +243,9 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        if (!intfName.startsWith("pppoe")) {
-          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        // only bridge mode reads a WAN's gatewayMac, and bridge mode runs on the dhcp mode key
+        if (!intfName.startsWith("pppoe") && mode === Mode.MODE_DHCP) {
+          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await layer2.getMAC6Async(gateway6, intfName);
         }
         break;
       }
