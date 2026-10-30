@@ -176,6 +176,7 @@ const restartUPnPTask = {};
 let sendLogRunning = false;
 const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
 const SENDLOG_TIMEOUT_SEC = 300;
+const WIFI_SWITCH_ERR_IDS = ["WRONG_KEY", "AUTH_FAILED"];
 
 class netBot extends ControllerBot {
 
@@ -2952,7 +2953,11 @@ class netBot extends ControllerBot {
         } else {
           const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params);
           if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
-            throw { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors }
+            const err = { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors };
+            // firerouter puts wpa_supplicant's reason first when the credentials are rejected
+            if (WIFI_SWITCH_ERR_IDS.includes(resp.errors[0]))
+              err.errID = resp.errors[0];
+            throw err;
           } else {
             return
           }

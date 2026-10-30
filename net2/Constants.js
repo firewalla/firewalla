@@ -93,6 +93,10 @@ module.exports = {
   // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
   // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_BLOCK_ALARM_CLOUD_CONFIG: "block_alarm_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_ALARM_CONFIG: "block_alarm_config",
+  // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
   KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",

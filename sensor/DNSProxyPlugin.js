@@ -49,10 +49,7 @@ const dnsmasq = new DNSMASQ();
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js')
 const am2 = new AlarmManager2();
-const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool()
 const BF_SERVER_MATCH = "bf_server_match"
-const IdentityManager = require('../net2/IdentityManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
 const tm = require('../alarm/TrustManager.js');
@@ -407,40 +404,17 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async _genSecurityAlarm(ip, mac, dn, item) {
-    let macEntry;
-    let realLocal;
-    let guid;
-    if (mac) macEntry = await hostTool.getMACEntry(mac);
-    if (macEntry) {
-      ip = macEntry.ipv4 || macEntry.ipv6 || ip;
-    } else {
-      const identity = ip && IdentityManager.getIdentityByIP(ip);
-      if (identity) {
-        guid = IdentityManager.getGUID(identity);
-        realLocal = IdentityManager.getEndpointByIP(ip);
-      }
-      if (!guid) return;
-      mac = guid;
-    }
-    const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
-      "p.device.ip": ip,
+    const device = await am2.getDeviceAlarmFields({ ip, mac });
+    if (!device) return;
+    const alarm = new Alarm.IntelAlarm(new Date() / 1000, device["p.device.ip"], "major", {
+      ...device,
       "p.dest.name": dn,
       "p.dest.category": "intel",
       "p.security.reason": item.msg,
-      "p.device.mac": mac,
       "p.action.block": true,
       "p.blockby": "fastdns",
       "p.local_is_client": "1"
     });
-    if (realLocal) {
-      alarm["p.device.real.ip"] = realLocal;
-    }
-    if (guid) {
-      const identity = IdentityManager.getIdentityByGUID(guid);
-      if (identity)
-        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
-      alarm["p.device.guid"] = guid;
-    }
     await am2.enrichDeviceInfo(alarm);
     am2.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
   }

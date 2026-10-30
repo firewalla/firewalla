@@ -1161,6 +1161,9 @@
         }
       ]
     },
+    "BlockAlarmSensor": {
+      "blockAlarmSettings": []
+    },
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
