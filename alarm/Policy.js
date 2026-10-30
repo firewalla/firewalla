@@ -125,6 +125,10 @@ class Policy {
       delete this.cronTime;
     }
 
+    if (raw.expireTs === "") {
+      delete this.expireTs;
+    }
+
     if (raw.resolver === "") {
       delete this.resolver;
     }
@@ -165,7 +169,7 @@ class Policy {
   }
 
   isSchedulingPolicy() {
-    return this.expire || this.cronTime;
+    return this.expire || this.expireTs || this.cronTime;
   }
 
   static fieldEqual(val1, val2, name) {
@@ -190,7 +194,7 @@ class Policy {
     if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
-    const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
+    const compareFields = ["type", "target", "expire", "expireTs", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
@@ -200,6 +204,14 @@ class Policy {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
         return false;
       }
+    }
+
+    // a rule with expireTs starts at idleTs, so windows with different starts are different rules.
+    // without expireTs idleTs is only a pause and is not compared
+    if (this.expireTs || policy.expireTs) {
+      const start = (ts) => ts === undefined || ts === null || ts === '' ? 0 : Number(ts);
+      if (start(this.idleTs) !== start(policy.idleTs))
+        return false;
     }
 
     if (
@@ -278,22 +290,23 @@ class Policy {
     }
   }
 
-  isExpired() {
-    const expire = this.expire || NaN
-    const activatedTime = this.activatedTime || this.timestamp
-    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000
-  }
-
-  willExpireSoon() {
-    const expire = this.expire || NaN
-    const activatedTime = this.activatedTime || this.timestamp
-    return parseFloat(activatedTime) + parseFloat(expire) < new Date() / 1000 + POLICY_MIN_EXPIRE_TIME
-  }
-
+  // absolute epoch (in seconds) at which the rule stops taking effect, NaN if it never expires.
+  // expireTs is absolute and is not re-based when the rule is activated, which is what a rule with a
+  // future start time needs. expire stays relative to activatedTime for backward compatibility
   getWhenExpired() {
+    if (this.expireTs)
+      return parseFloat(this.expireTs)
     const expire = this.expire || NaN
     const activatedTime = this.activatedTime || this.timestamp
     return parseFloat(activatedTime) + parseFloat(expire)
+  }
+
+  isExpired() {
+    return this.getWhenExpired() < new Date() / 1000
+  }
+
+  willExpireSoon() {
+    return this.getWhenExpired() < new Date() / 1000 + POLICY_MIN_EXPIRE_TIME
   }
 
   getExpireDiffFromNow() {
@@ -696,6 +709,10 @@ class Policy {
       delete p.cronTime;
     }
 
+    if (p.expireTs === "") {
+      delete p.expireTs;
+    }
+
 
     return flat.flatten(p);
   }
@@ -762,7 +779,8 @@ class Policy {
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod", "lastHitFlow"];
 Policy.NUM_VALUE_KEYS = [
-  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed",
+  'expireTs'
 ]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";

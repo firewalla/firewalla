@@ -1072,3 +1072,155 @@ describe('Test disturb policy bypass plumbing', function() {
   });
 
 });
+
+// A one time only rule that starts in the future carries idleTs (start) and expireTs (end). expireTs
+// is absolute, unlike expire, which is relative to activatedTime and therefore gets re-based to the
+// activation moment by _refreshActivatedTime.
+describe('Test one time rule with a future start time', function() {
+  this.timeout(10000);
+
+  const now = () => Math.floor(Date.now() / 1000);
+
+  describe('expireTs is absolute', () => {
+    it('ignores activatedTime and expire', () => {
+      const end = now() + 1800;
+      const p = new Policy({ type: 'dns', target: 'a.com', expireTs: end, expire: 60,
+        timestamp: now() - 36000, activatedTime: now() - 100 });
+      expect(p.getWhenExpired()).to.equal(end);
+      expect(p.isExpired()).to.equal(false);
+      expect(p.willExpireSoon()).to.equal(false);
+    });
+
+    it('keeps the remaining window when the rule is activated', () => {
+      // created 10h before it starts, 30min window. _enforce refreshes activatedTime to the
+      // activation moment, which must not move the end of the window
+      const end = now() + 1800;
+      const p = new Policy({ type: 'dns', target: 'a.com', expireTs: end, timestamp: now() - 36000 });
+      const before = p.getExpireDiffFromNow();
+      p.activatedTime = now(); // what _refreshActivatedTime does
+      expect(p.getExpireDiffFromNow()).to.be.closeTo(before, 1);
+      expect(p.getExpireDiffFromNow()).to.be.closeTo(1800, 1);
+    });
+
+    it('reports a window that has already ended as expired', () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', expireTs: now() - 10, timestamp: now() - 7200 });
+      expect(p.isExpired()).to.equal(true);
+    });
+
+    it('parses expireTs from redis as a number and drops an empty one', () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', expireTs: '1761100200' });
+      expect(p.expireTs).to.equal(1761100200);
+      expect(new Policy({ type: 'dns', target: 'a.com', expireTs: '' })).to.not.have.property('expireTs');
+      // idleTs is left exactly as it was, getIdleInfo() already coerces it
+      expect(new Policy({ type: 'dns', target: 'a.com', idleTs: '1761098400' }).idleTs).to.equal('1761098400');
+    });
+  });
+
+  describe('relative expire is unchanged', () => {
+    it('still counts from activatedTime', () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', expire: 3600,
+        timestamp: now() - 7200, activatedTime: now() - 60 });
+      expect(p.getWhenExpired()).to.be.closeTo(now() + 3540, 1);
+      expect(p.isExpired()).to.equal(false);
+    });
+
+    it('still falls back to timestamp before activation', () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', expire: 3600, timestamp: now() - 7200 });
+      expect(p.isExpired()).to.equal(true);
+    });
+
+    it('never expires without expire or expireTs', () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', timestamp: now() - 7200 });
+      expect(p.isExpired()).to.equal(false);
+      expect(p.willExpireSoon()).to.equal(false);
+    });
+  });
+
+  describe('isEqual', () => {
+    const base = { type: 'dns', target: 'a.com', timestamp: 1761000000 };
+
+    it('tells two windows apart', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761103800 }));
+      expect(a.isEqual(b)).to.equal(false);
+    });
+
+    it('tells two windows with the same end but different starts apart', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761094800, expireTs: 1761100200 }));
+      expect(a.isEqual(b)).to.equal(false);
+      // one side already started (idleTs cleared)
+      const c = new Policy(Object.assign({}, base, { expireTs: 1761100200 }));
+      expect(a.isEqual(c)).to.equal(false);
+    });
+
+    it('compares the start of a window as a number', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: '1761098400', expireTs: '1761100200' }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
+      expect(a.isEqual(b)).to.equal(true);
+    });
+
+    it('still ignores idleTs of a paused rule without expireTs', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: 1761098400 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761105600 }));
+      const c = new Policy(Object.assign({}, base));
+      expect(a.isEqual(b)).to.equal(true);
+      expect(a.isEqual(c)).to.equal(true);
+    });
+
+    it('still matches an identical window', () => {
+      const a = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
+      const b = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
+      expect(a.isEqual(b)).to.equal(true);
+    });
+  });
+
+  describe('dropIfWindowEnded', () => {
+    const pm2 = new PolicyManager2();
+    let deleted, cleared;
+
+    beforeEach(() => {
+      deleted = [];
+      cleared = [];
+      pm2.deletePolicy = async (pid) => { deleted.push(pid) };
+      pm2.removeBypassChainForPolicy = async () => {};
+      pm2.updatePolicyAsync = async (p) => { cleared.push(p) };
+    });
+
+    afterEach(() => {
+      delete pm2.deletePolicy;
+      delete pm2.removeBypassChainForPolicy;
+      delete pm2.updatePolicyAsync;
+    });
+
+    it('drops a rule whose window ended while the box was off', async () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', pid: '7', timestamp: now() - 7200,
+        idleTs: now() - 3600, expireTs: now() - 1800, autoDeleteWhenExpires: '1', disabled: '1' });
+      expect(await pm2.dropIfWindowEnded(p)).to.equal(true);
+      expect(deleted).to.deep.equal(['7']);
+    });
+
+    it('keeps a rule that is not set to auto delete, but clears its stale start time', async () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', pid: '8', timestamp: now() - 7200,
+        idleTs: now() - 3600, expireTs: now() - 1800, disabled: '1' });
+      expect(await pm2.dropIfWindowEnded(p)).to.equal(true);
+      expect(deleted).to.deep.equal([]);
+      expect(cleared).to.deep.equal([{ pid: '8', idleTs: '' }]);
+    });
+
+    it('lets a rule whose window is still ahead through', async () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', pid: '9', timestamp: now(),
+        idleTs: now() + 1800, expireTs: now() + 3600, autoDeleteWhenExpires: '1', disabled: '1' });
+      expect(await pm2.dropIfWindowEnded(p)).to.equal(false);
+      expect(deleted).to.deep.equal([]);
+    });
+
+    it('never touches a rule with only a relative expire', async () => {
+      const p = new Policy({ type: 'dns', target: 'a.com', pid: '10', timestamp: now() - 7200,
+        expire: 60, autoDeleteWhenExpires: '1', disabled: '1' });
+      expect(p.isExpired()).to.equal(true);
+      expect(await pm2.dropIfWindowEnded(p)).to.equal(false);
+      expect(deleted).to.deep.equal([]);
+    });
+  });
+});

@@ -183,7 +183,7 @@ router.get('/', async (req, res) => {
         log.warn(`Found multiple bypass policies for user ${userId} and apps ${apps.join(',')}, this should not happen`);
         continue;
       }
-      if (bypassPolicy.expire) {
+      if (bypassPolicy.expire || bypassPolicy.expireTs) {
         if (bypassPolicy.isExpired() || bypassPolicy.willExpireSoon()) {
           continue;
         }
