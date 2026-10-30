@@ -20,22 +20,7 @@ const util = require('util');
 
 const { buildDeferred } = require('../util/asyncNative.js')
 const networkTool = require('./NetworkTool.js')();
-const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const LRU = require('lru-cache');
-
-const hitCache = new LRU({maxAge: 600000});
-const missCache = new LRU({maxAge: 60000});
-
-sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, event => {
-  const { ip, mac, fam } = event
-  if (mac && ip && fam == 6) {
-    if (hitCache.peek(ip) == mac)
-      hitCache.del(ip)
-    if (missCache.peek(ip) == mac)
-      missCache.del(ip)
-  }
-})
 
 class Nmap {
   constructor() {
@@ -286,37 +271,6 @@ class Nmap {
     })
     
     return obj
-  }
-
-  async neighborSolicit(ipv6Addr) {
-    let _mac = hitCache.peek(ipv6Addr);
-    if (_mac != null) {
-      return _mac
-    }
-    const notFoundRecently = missCache.peek(ipv6Addr);
-    if (notFoundRecently) {
-      log.verbose(ipv6Addr, 'not found, skip')
-      return null
-    }
-
-    if (!net.isIPv6(ipv6Addr)) return
-
-    const cmd = util.format('sudo timeout 5s nmap -6 -PR -sn -n %s', ipv6Addr);
-
-    const jobID = 'solicit-' + ipv6Addr
-
-    const job = this.createJob({ id: jobID, cmd, })
-    const hosts = await job.deferred.promise
-
-    for (let i in hosts) {
-      const host = hosts[i];
-      if (host.mac) {
-        hitCache.set(ipv6Addr, host.mac)
-        return host.mac
-      }
-    }
-    missCache.set(ipv6Addr, true)
-    return null
   }
 
   /**

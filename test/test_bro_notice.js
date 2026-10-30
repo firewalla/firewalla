@@ -35,9 +35,9 @@ const features = {};
 // conntrack host entries keyed as orig_h:orig_p:resp_h:resp_p:proto
 const connHosts = {};
 const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
-// failed issuer saved on the ssl cert key, by server ip; an Error is thrown by the lookup
+// failed issuer saved on the conn entry of a connection to the server, by server ip; an Error is thrown by the lookup
 const failedIssuers = {};
-// sha256 of the first failed cert saved on the ssl cert key, by server ip
+// sha256 of the first failed cert saved on the conn entry, by server ip
 const failedFps = {};
 
 let mock;
@@ -56,18 +56,24 @@ function setupMocks() {
   });
   mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
   mock('../net2/IntelTool.js', class IntelTool {
-    async getCertValidationFailure(ip) {
-      if (failedIssuers[ip] instanceof Error) throw failedIssuers[ip];
-      return { issuer: failedIssuers[ip] || null, fp: failedFps[ip] || null };
-    }
     // enough for the plain DNs used here
     parseDN(dn) { return dn ? Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))) : {}; }
   });
   mock('../net2/Conntrack.js', {
-    getConnEntry: async (src, sport, dst, dport, proto, subKey) => {
-      const host = subKey === 'host' ? connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`] : undefined;
+    getConnEntries: async (src, sport, dst, dport, proto) => {
+      const host = connHosts[`${src}:${sport}:${dst}:${dport}:${proto}`];
       if (host instanceof Error) throw host;
-      return host;
+      if (failedIssuers[dst] instanceof Error) throw failedIssuers[dst];
+      const entries = {};
+      if (host) entries.host = host;
+      if (failedIssuers[dst]) Object.assign(entries, {
+        validation_status: 'unable to get local issuer certificate',
+        cert_chain: JSON.stringify([{ fp: failedFps[dst], subject: { CN: 'leaf' } }, { subject: failedIssuers[dst] }]),
+        validation_failed_issuer: JSON.stringify(failedIssuers[dst]),
+        validation_failed_issuer_dn: Object.entries(failedIssuers[dst]).map(([k, v]) => `${k}=${v}`).join(','),
+      });
+      if (failedFps[dst]) entries.validation_failed_fp = failedFps[dst];
+      return Object.keys(entries).length ? entries : null;
     },
   });
   mock('../net2/HostTool.js', class HostTool {
@@ -322,14 +328,18 @@ describe('BroNotice invalid server certificate', function () {
       broNotice.setIgnoredIssuers(null);
     });
 
-    it('puts the first failed cert issuer, its CN and fingerprint on the alarm', async () => {
+    it('puts the first failed cert issuer, its DN, name and fingerprint on the alarm', async () => {
       failedIssuers[REMOTE] = { CN: 'emSign ECC Root CA - G3', C: 'IN' };
       failedFps[REMOTE] = 'ba105ce02bac';
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
       expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
-      expect(alarm['p.dest.ssl.validation_failed_cert_issuer_CN']).to.equal('emSign ECC Root CA - G3');
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer']).to.equal('CN=emSign ECC Root CA - G3,C=IN');
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer_name']).to.equal('emSign ECC Root CA - G3');
       expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
+      expect(alarm['p.dest.port']).to.equal(443);
+      expect(alarm['e.dest.ssl.validation_status']).to.equal('unable to get local issuer certificate');
+      expect(JSON.parse(alarm['e.dest.ssl.cert_chain'])).to.deep.equal([{ fp: 'ba105ce02bac', subject: { CN: 'leaf' } }, { subject: { CN: 'emSign ECC Root CA - G3', C: 'IN' } }]);
     });
 
     it('drops an issuer of the default list, whatever the attribute order', async () => {
@@ -349,12 +359,20 @@ describe('BroNotice invalid server certificate', function () {
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     });
 
-    it('leaves the issuer CN out when the issuer has no CN', async () => {
-      failedIssuers[REMOTE] = { C: 'CN', O: 'Some Root' };
+    it('names an issuer without CN by its O, then its OU', async () => {
       const notice = invalidCert(LAN_DEVICE, REMOTE);
-      const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
-      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { C: 'CN', O: 'Some Root' } });
-      expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_CN');
+      failedIssuers[REMOTE] = { C: 'CN', O: 'Some Root', OU: 'Some Unit' };
+      let alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { C: 'CN', O: 'Some Root', OU: 'Some Unit' } });
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer']).to.equal('C=CN,O=Some Root,OU=Some Unit');
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer_name']).to.equal('Some Root');
+      failedIssuers[REMOTE] = { C: 'CN', OU: 'Some Unit' };
+      alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer_name']).to.equal('Some Unit');
+      failedIssuers[REMOTE] = { C: 'CN' };
+      alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer']).to.equal('C=CN');
+      expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_name');
     });
 
     it('still raises the alarm, without the issuer, when none is saved or the lookup fails', async () => {
@@ -365,7 +383,8 @@ describe('BroNotice invalid server certificate', function () {
         expect(alarm).to.not.equal(null);
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert');
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_fp');
-        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_CN');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer');
+        expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_name');
       }
     });
   });

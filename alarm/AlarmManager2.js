@@ -107,6 +107,11 @@ const featureSkipDeviceInfoEnrich = 'alarm_skip_device_info_enrich';
 // box's own interface MACs rarely change, cache OUI lookups to avoid reading OUI file on every alarm
 const selfMacVendorCache = new Map();
 
+// ipv6Addr of a host:mac entry is a JSON array, the last one is the newest
+function ipOfMacEntry(entry) {
+  return entry.ipv4 || entry.ipv4Addr || JSON.parse(entry.ipv6Addr || '[]').pop();
+}
+
 // TODO: Support suppress alarm for a while
 
 class alarmIndexCache {
@@ -898,6 +903,7 @@ module.exports = class {
     }
   }
 
+  // resolves to whether the job was saved, a failure is logged and not thrown
   async enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
@@ -907,6 +913,7 @@ module.exports = class {
       })
       try {
         await job.timeout(60000).save();
+        return true;
       } catch (err) {
         log.error("Failed to create alarm job", err.message);
         if (err.message && err.message.includes("NOSCRIPT")) {
@@ -916,11 +923,12 @@ module.exports = class {
           await this.setupAlarmQueue();
           if (retry) {
             log.info("Retry creating alarm ...", alarm);
-            await this.enqueueAlarm(alarm, false, profile);
+            return await this.enqueueAlarm(alarm, false, profile);
           }
         }
       }
     }
+    return false;
   }
 
   applyConfig(alarm, excludes=[]) {
@@ -1126,7 +1134,7 @@ module.exports = class {
       throw trustErr;
     }
 
-    const arbitrationResult = await bone.arbitration(alarm);
+    const arbitrationResult = alarm.needCloudArbitration() ? await bone.arbitration(alarm) : alarm;
 
     if (!arbitrationResult) {
       throw new Error("invalid alarm, failed to pass cloud verification");
@@ -2191,7 +2199,7 @@ module.exports = class {
     if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
       const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
       if (device) {
-        alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+        alarm["p.device.ip"] = ipOfMacEntry(device) || '';
       }
     }
     if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
@@ -2209,6 +2217,28 @@ module.exports = class {
     const vendor = await WlanVendorInfo.lookupMacVendor(mac);
     selfMacVendorCache.set(mac, { vendor, ts: Date.now() });
     return vendor;
+  }
+
+  // device ip, mac and VPN guid of an alarm from a mac or guid and/or an ip, enrichDeviceInfo fills in the rest.
+  // null when it is neither a known host nor an identity
+  // withIntf adds p.intf.id, which a network-scoped mute matches on. It is opt-in so that the alarms of other callers keep their payload
+  async getDeviceAlarmFields({ ip, mac, withIntf = false }) {
+    const macEntry = mac && await hostTool.getMACEntry(mac);
+    if (macEntry) {
+      // the entry's ipv4 first, then the event's source ip, which beats the entry's address lists (a host can have several)
+      const fields = { "p.device.ip": macEntry.ipv4 || ip || ipOfMacEntry(macEntry), "p.device.mac": mac };
+      if (withIntf && macEntry.intf) fields["p.intf.id"] = macEntry.intf;
+      return fields;
+    }
+    const identity = ip ? IdentityManager.getIdentityByIP(ip) : mac && IdentityManager.getIdentityByGUID(mac);
+    if (!identity) return null;
+    const guid = identity.getGUID();
+    // identity ips may carry a subnet mask
+    const identityIP = (identity.getIPs()[0] || '').split('/')[0];
+    const fields = { "p.device.ip": ip || identityIP || undefined, "p.device.mac": guid, "p.device.guid": guid };
+    const intf = withIntf && identity.getNicUUID();
+    if (intf) fields["p.intf.id"] = intf;
+    return fields;
   }
 
   async enrichDeviceInfo(alarm) {
