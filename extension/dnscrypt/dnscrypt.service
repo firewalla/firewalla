@@ -9,6 +9,9 @@ Restart=always
 CapabilityBoundingSet=CAP_NET_ADMIN
 AmbientCapabilities=CAP_NET_ADMIN
 WorkingDirectory=/home/pi/firewalla/
+# holds the control socket, dnscrypt-proxy's default control_socket
+RuntimeDirectory=dnscrypt
+RuntimeDirectoryMode=0700
 ExecStart=/home/pi/firewalla/extension/dnscrypt/dnscrypt.sh
 RestartSec=3
 
