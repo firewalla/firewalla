@@ -24,7 +24,6 @@ const l2 = require('../util/Layer2.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
-const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
 const fc = require('./config.js');
 
@@ -61,10 +60,6 @@ class HostTool {
           this.macEntryCache.del(mac)
         }
       })
-
-      if (f.isMain()) {
-        this.nmap = require('../net2/Nmap.js');
-      }
     }
     return instance;
   }
@@ -327,10 +322,11 @@ class HostTool {
         return l2.getMACAsync(ip)
       } else if (fam == 6) {
         let mac = await rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac');
-        if (mac || sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+        // probe only an address on a monitored LAN; a link-local one needs an interface, which is not known here
+        if (mac || sysManager.isLinkLocal(ip, 6) || !sysManager.inMySubnet6(ip)) {
           return mac;
         } else {
-          mac = await this.nmap.neighborSolicit(ip)
+          mac = await l2.getMAC6Async(ip)
           if (mac && sysManager.isMyMac(mac))
             // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
             return null;

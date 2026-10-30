@@ -610,6 +610,26 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     expect(commands.some(cmd => cmd.includes('firerouter_dhcp'))).to.equal(false);
   });
 
+  it('rawStart reloads DNS only when the DNS config changed', async function() {
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts: [plainHost(1)],
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async () => false;
+    const dnsRestarts = () => commands.filter(cmd => cmd.includes('systemctl restart firerouter_dns')).length;
+
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+    expect(dnsRestarts()).to.equal(0);
+
+    dnsmasq.checkConfsChange = async () => true;
+    await dnsmasq.rawStart();
+    await runPendingTimers(timers);
+    expect(dnsRestarts()).to.equal(1);
+  });
+
   it('the first rawStart after FireMain starts restarts DHCP once even when the hashes match', async function() {
     const { dnsmasq, commands, timers } = loadDNSMASQ({
       fireRouterManaged: true,

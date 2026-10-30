@@ -317,8 +317,7 @@ class Identity extends Monitorable {
             }
           }
         }
-        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Tag.removeDeviceMember(removedUid, [this.constructor.getEnforcementIPsetName(this.getUniqueId()), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)]);
         await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
@@ -338,8 +337,7 @@ class Identity extends Monitorable {
             }
           }
         }
-        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Tag.addDeviceMember(tagUid, [this.constructor.getEnforcementIPsetName(this.getUniqueId()), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)]);
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
         await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);
