@@ -2424,8 +2424,7 @@ module.exports = class HostManager extends Monitorable {
       for (const mac of await this.getAlwaysVisibleMACs(portforwardConfig, includePinnedHosts))
         visibleMACs.add(mac)
 
-      // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
-      const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
+      const MACs = includeInactiveHosts ? new Set(await hostTool.getMACsByTime(0)) : visibleMACs
       this._totalHosts = MACs.size;
       let multiarray = [];
       for (const mac of MACs) {

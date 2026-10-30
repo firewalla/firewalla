@@ -150,3 +150,34 @@ describe('test ap assets', function(){
     });
 
 });
+
+describe('HostManager.getHostsAsync with inactive hosts', function () {
+  this.timeout(30000);
+  const Constants = require('../net2/Constants.js');
+  const HostTool = require('../net2/HostTool.js');
+  const hostTool = new HostTool();
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const indexed = '00:00:5E:00:53:E4';
+  const unindexed = '00:00:5E:00:53:E5';
+  const inactiveTs = Date.now() / 1000 - 30 * 86400;
+
+  before(async () => {
+    await hostTool.updateMACKey({ mac: indexed, ipv4Addr: '192.0.2.204', lastActiveTimestamp: inactiveTs });
+    await rclient.hmsetAsync(`host:mac:${unindexed}`, { mac: unindexed, ipv4Addr: '192.0.2.205', lastActiveTimestamp: inactiveTs });
+  });
+
+  after(async () => {
+    for (const mac of [indexed, unindexed]) {
+      await rclient.unlinkAsync(`host:mac:${mac}`);
+      await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac);
+      hostTool.invalidateMacEntryCache(mac);
+    }
+  });
+
+  it('should list every MAC in the host index, including ones inactive for longer than host.active', async () => {
+    const hosts = await hostManager.getHostsAsync({ includeInactiveHosts: true, forceReload: true });
+    const macs = hosts.map(host => host.o.mac);
+    expect(macs).to.include(indexed);
+    expect(macs).to.not.include(unindexed);
+  });
+});

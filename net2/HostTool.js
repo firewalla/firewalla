@@ -402,7 +402,8 @@ class HostTool {
   }
 
   async getAllMACEntries() {
-    let macKeys = await this.getAllMACs();
+    // every writer of a host:mac record also indexes it, so this avoids a scan of the whole keyspace
+    let macKeys = await this.getMACsByTime(0);
     let entries = [];
     for (const mac of macKeys) {
       let entry = await this.getMACEntry(mac);
