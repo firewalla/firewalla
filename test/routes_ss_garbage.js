@@ -42,11 +42,24 @@ const expect = chai.expect;
 const CHUNK = 1048576;      // bytes the handler writes per iteration
 const CAP = 1024;           // chunks the handler accepts at most
 const FALLBACK = 100;       // chunks used when ckSize is absent or unusable
+// These mirror the constants in api/routes/ss.js; the handler paces by them.
+const BATCH = 8;            // chunks written per event-loop turn before yielding
+const LIMIT = 4 * 1048576;  // bytes allowed to queue on the socket before pausing
+const MAX_GARBAGE = 8;      // concurrent downloads served before the rest get 503
+
+// Advances once per event-loop turn while the suite runs, so a test can tell how
+// many chunks a response wrote in a single synchronous turn (its burst).
+let tick = 0;
+let ticking = false;
 
 // Per-request observations, keyed by the tid query parameter the tests pass.
-const writes = {};          // number of res.write calls
-const loopMs = {};          // duration of the handler's synchronous write loop
+const writes = {};          // number of res.write calls, recorded when the handler ends
+const loopMs = {};          // duration of the handler's write loop
 const queued = {};          // socket.writableLength once the loop is done
+// A handler that honors backpressure parks on drain and never reaches res.end
+// for a client that stops reading, so its write count and queue have to be read
+// while it is still running. live[tid]() returns them on demand.
+const live = {};
 
 function get(query) {
   return new Promise((resolve, reject) => {
@@ -89,7 +102,9 @@ const CHILD = `
   app.use('/ss', function (req, res, next) {
     var n = 0;
     var end = res.end.bind(res);
-    res.write = function () { n++; return false; };
+    // model an accepting socket (write() true) so the loop runs to the ckSize bound
+    // and the count can be read; a non-terminating bound would still hang the child.
+    res.write = function () { n++; return true; };
     res.end = function () { process.stdout.write('CHUNKS=' + n + '\\n'); return end(); };
     next();
   });
@@ -136,11 +151,19 @@ describe('GET /ss/garbage', function () {
 
   before(function (done) {
     const app = express();
-    // Observe the handler: count its writes, time its synchronous loop, and read
-    // back how much it left queued on the socket. A request carrying stub=1 also
-    // has its writes swallowed, so a chunk count can be asserted without moving
-    // the payload; returning false there mirrors the real socket, which refuses
-    // every 1MiB chunk.
+    // Model the async file-lookup window express.static opens ahead of this router in
+    // the real app (api/app.js): a request carrying slow=1 is deferred, giving a test
+    // time to disconnect before the garbage handler runs.
+    app.use('/ss', function (req, res, next) {
+      if (req.query.slow) return setTimeout(next, 100);
+      next();
+    });
+    // Observe the handler: count its writes, time its loop, and read back how much
+    // it left queued on the socket. A request carrying stub=1 has its writes
+    // swallowed and reported as accepted (write() returns true), so the loop runs to
+    // the ckSize bound and the chunk count can be asserted without moving the
+    // payload. The real refusing socket -- where write() returns false and the loop
+    // must park -- is exercised by the non-stub tests below.
     app.use('/ss', function (req, res, next) {
       const tid = req.query.tid;
       const stub = req.query.stub === '1';
@@ -148,10 +171,16 @@ describe('GET /ss/garbage', function () {
       const end = res.end.bind(res);
       const t0 = process.hrtime();
       let n = 0;
+      let maxBurst = 0;
+      const perTick = {};
       res.write = function (chunk) {
         n++;
-        return stub ? false : write(chunk);
+        const b = (perTick[tick] || 0) + 1;
+        perTick[tick] = b;
+        if (b > maxBurst) maxBurst = b;
+        return stub ? true : write(chunk);
       };
+      if (tid) live[tid] = () => ({ writes: n, queued: res.socket ? res.socket.writableLength : 0, burst: maxBurst });
       res.end = function (...args) {
         const d = process.hrtime(t0);
         if (tid) {
@@ -164,13 +193,41 @@ describe('GET /ss/garbage', function () {
       next();
     });
     app.use('/ss', require('../api/routes/ss.js'));
+    ticking = true;
+    (function hb() { if (!ticking) return; tick++; setImmediate(hb); })();
     server = app.listen(0, '127.0.0.1', done);
   });
 
   after(function (done) {
+    ticking = false;
     rawSockets.forEach(s => s.destroy());
     server.close(done);
   });
+
+  // The concurrency cap counts live downloads, so a test that holds connections open
+  // must release them before the next test, and give the server a moment to free the
+  // slots, or a later test starts with the cap already partly used.
+  afterEach(async function () {
+    rawSockets.forEach(s => s.destroy());
+    rawSockets.length = 0;
+    await new Promise(r => setTimeout(r, 1000));
+  });
+
+  // Open a download over a raw socket and resolve with its HTTP status (read from
+  // the status line, not the body) and the socket, so a test can hold or drop it.
+  function openStatus(query) {
+    return new Promise(resolve => {
+      const s = net.connect(server.address().port, '127.0.0.1', () => {
+        s.write(`GET /ss/garbage?${query} HTTP/1.1\r\nHost: x\r\n\r\n`);
+      });
+      s.once('data', d => {
+        const m = /^HTTP\/1\.1 (\d+)/.exec(d.toString());
+        resolve({ status: m ? Number(m[1]) : 0, sock: s });
+      });
+      s.on('error', () => {});
+      rawSockets.push(s);
+    });
+  }
 
   describe('ckSize bound', function () {
     // Every hostile or unusable value has to land on the fallback, and every
@@ -244,49 +301,212 @@ describe('GET /ss/garbage', function () {
       expect(res.bytes).to.equal(FALLBACK * CHUNK);
     });
 
-    it('finishes its synchronous loop at the cap without blocking the event loop', async function () {
+    it('a client that stops reading parks with the socket queue bounded', async function () {
       this.timeout(30000);
-      // A client that never reads is the worst case: every write is refused and
-      // queues. The loop is synchronous, so its duration is exactly how long the
-      // FireApi event loop is blocked. Measured at 1-18ms on a box; the old code
-      // never left this loop for ckSize=Infinity.
-      const sock = getWithoutReading('tid=noblock&ckSize=1024');
+      // A client that never reads is the worst case. The handler writes until the
+      // socket holds LIMIT bytes, then parks, so the queue stays near LIMIT instead
+      // of growing to the whole ~1GiB response -- and no turn writes more than BATCH.
+      const sock = getWithoutReading('tid=park&ckSize=1024');
       rawSockets.push(sock);
-      await waitFor(() => loopMs['noblock'] !== undefined, 20000);
-      expect(writes['noblock']).to.equal(CAP);
-      expect(loopMs['noblock']).to.be.below(500);
+      // Once parked, the socket queue stops changing; sample until it settles.
+      let prev = -1;
+      await waitFor(() => {
+        const q = live['park'] ? live['park']().queued : 0;
+        const settled = q === prev && q > 0;
+        prev = q;
+        return settled;
+      }, 20000);
+      const o = live['park']();
+      expect(o.queued, 'parked socket queue').to.be.below(LIMIT + 16 * CHUNK);
+      expect(o.burst, 'chunks written in one event-loop turn').to.be.at.most(BATCH);
       sock.destroy();
+    });
+
+    it('no response blocks the event loop when an unread client pipelines requests', async function () {
+      this.timeout(30000);
+      // Pipelining defeated the earlier fixes: with several hundred requests buffered
+      // on one connection, Node resumes the active response synchronously while its
+      // socket is backed up, re-entering the write loop until the whole response goes
+      // out in one turn (observed as a burst of hundreds to ~1024). Pacing with
+      // setImmediate bounds every response to BATCH chunks per turn regardless, and
+      // the concurrency cap bounds how many respond at all. The request count has to
+      // be large: a few dozen do not trigger the synchronous-resume amplification.
+      const N = 300;
+      const sock = net.connect(server.address().port, '127.0.0.1', () => {
+        let buf = '';
+        for (let i = 0; i < N; i++)
+          buf += `GET /ss/garbage?tid=pipe${i}&ckSize=1024 HTTP/1.1\r\nHost: x\r\n\r\n`;
+        sock.write(buf);
+        sock.pause();
+      });
+      sock.on('error', () => {});
+      rawSockets.push(sock);
+      await new Promise(r => setTimeout(r, 2000));
+      let maxBurst = 0, served = 0;
+      for (let i = 0; i < N; i++) {
+        if (!live[`pipe${i}`]) continue;
+        const o = live[`pipe${i}`]();
+        if (o.writes > 0) served++;
+        if (o.burst > maxBurst) maxBurst = o.burst;
+      }
+      expect(maxBurst, 'a response wrote more than BATCH chunks in one event-loop turn').to.be.at.most(BATCH);
+      expect(served, 'more responses ran than the concurrency cap allows').to.be.at.most(MAX_GARBAGE);
+      sock.destroy();
+    });
+
+    it('stops writing when a reading client disconnects mid-download', async function () {
+      this.timeout(30000);
+      // A draining client lets the loop keep resuming, so it would run to the cap.
+      // If the client disconnects partway, the close handler must stop it: the write
+      // count has to freeze below the cap instead of climbing against a dead socket.
+      const sock = net.connect(server.address().port, '127.0.0.1', () => {
+        sock.write(`GET /ss/garbage?tid=close&ckSize=1024 HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+      });
+      sock.on('error', () => {});
+      rawSockets.push(sock);
+      // Read part of the response so the loop makes progress, then cut the link.
+      let got = 0;
+      await new Promise((resolve) => {
+        sock.on('data', d => { got += d.length; if (got >= 8 * CHUNK) { sock.destroy(); resolve(); } });
+      });
+      // After the disconnect the write count must stop climbing.
+      await new Promise(r => setTimeout(r, 300));
+      const a = live['close'] ? live['close']().writes : 0;
+      await new Promise(r => setTimeout(r, 300));
+      const b = live['close']().writes;
+      expect(b - a, 'writes kept climbing after the client left').to.be.at.most(2);
+      expect(b, 'handler ran to the cap despite the disconnect').to.be.below(CAP);
     });
   });
 
   describe('cost of many unread requests', function () {
-    it('does not turn queued chunks into retained memory', async function () {
+    it('keeps the socket queue and memory bounded across many unread connections', async function () {
       this.timeout(60000);
-      // All iterations write the same cached buffer, so the socket queue holds
-      // references rather than copies: 1GiB nominally queued per connection costs
-      // roughly 0.4MiB of bookkeeping. This guards the property, not the exact
-      // number -- writing a fresh or copied buffer per chunk would make these 50
-      // connections retain 50GiB and take the process down.
-      const n = 50;
+      // Below the concurrency cap, every unread connection parks with its socket
+      // queue near LIMIT, so the per-connection queue and process RSS stay bounded
+      // instead of growing with the nominal ~1GiB-per-response size.
+      const n = 20;
       const rssBefore = process.memoryUsage().rss;
       for (let i = 0; i < n; i++) {
         rawSockets.push(getWithoutReading(`tid=mem${i}&ckSize=1024`));
       }
-      await waitFor(() => {
-        for (let i = 0; i < n; i++) if (loopMs[`mem${i}`] === undefined) return false;
-        return true;
-      }, 40000);
+      // Give every connection time to reach its parked state.
+      await new Promise(r => setTimeout(r, 2000));
 
       for (let i = 0; i < n; i++) {
-        expect(writes[`mem${i}`], `connection ${i} chunk count`).to.equal(CAP);
-        // the whole response really is sitting in the socket queue, unsent
-        expect(queued[`mem${i}`], `connection ${i} queued bytes`).to.be.at.least(CAP * CHUNK);
+        const o = live[`mem${i}`]();
+        expect(o.queued, `connection ${i} socket queue`).to.be.below(LIMIT + 16 * CHUNK);
+        expect(o.burst, `connection ${i} burst`).to.be.at.most(BATCH);
       }
       const grownMiB = (process.memoryUsage().rss - rssBefore) / CHUNK;
-      expect(grownMiB, `rss grew ${grownMiB.toFixed(0)}MiB for ${n} unread 1GiB responses`).to.be.below(200);
+      expect(grownMiB, `rss grew ${grownMiB.toFixed(0)}MiB for ${n} unread responses`).to.be.below(200);
+    });
+  });
 
-      rawSockets.forEach(s => s.destroy());
-      rawSockets.length = 0;
+  describe('concurrency cap', function () {
+    it('refuses downloads past the cap with 503', async function () {
+      this.timeout(30000);
+      // One client can open many connections or pipeline many requests. The cap
+      // bounds how many responses buffer at once -- the aggregate, which per-response
+      // backpressure cannot bound -- so the excess must be refused, not queued.
+      const N = MAX_GARBAGE + 10;
+      const statuses = [];
+      for (let i = 0; i < N; i++) {
+        const s = net.connect(server.address().port, '127.0.0.1', () => {
+          s.write(`GET /ss/garbage?ckSize=1024 HTTP/1.1\r\nHost: x\r\n\r\n`);
+        });
+        s.once('data', d => {
+          const m = /^HTTP\/1\.1 (\d+)/.exec(d.toString());
+          if (m) statuses.push(Number(m[1]));
+        });
+        s.on('error', () => {});
+        rawSockets.push(s);
+      }
+      await waitFor(() => statuses.length >= N, 20000);
+      const served = statuses.filter(c => c === 200).length;
+      const refused = statuses.filter(c => c === 503).length;
+      expect(served, 'served more downloads than the cap').to.be.at.most(MAX_GARBAGE);
+      expect(refused, 'excess downloads were not refused').to.be.at.least(N - MAX_GARBAGE);
+    });
+
+    it('frees a slot when a download ends', async function () {
+      this.timeout(30000);
+      // The cap counts live downloads: a dropped download must free its slot, or the
+      // endpoint would refuse everyone once enough connections had churned through.
+      // Fill whatever capacity is free until a download is refused, so the test does
+      // not assume how many slots an earlier test has already released.
+      const held = [];
+      let last;
+      do {
+        last = await openStatus('ckSize=1024');
+        if (last.status === 200) held.push(last);
+      } while (last.status === 200 && held.length <= MAX_GARBAGE + 5);
+      expect(last.status, 'the cap was never reached').to.equal(503);
+      expect(held.length, 'no download was served').to.be.greaterThan(0);
+      // drop one held download; its slot must come back
+      held[0].sock.destroy();
+      await new Promise(r => setTimeout(r, 800));
+      expect((await openStatus('ckSize=1024')).status, 'slot not freed after a download ended').to.equal(200);
+    });
+  });
+
+  describe('slot lifecycle under pipelining and disconnects', function () {
+    // The slot is freed from the connection socket's 'close', not the response's, so
+    // that neither of the two ways a response ends without emitting its own
+    // 'finish'/'close' leaks a slot. Each test drives the whole cap through one such
+    // path, drops it, then asserts the cap is free again -- a leak leaves it stuck at
+    // 503. The guard the first test checks is independent of the Node version; the leak
+    // the second test guards reproduces on the box's Node 12 (verified out of process,
+    // since this suite cannot run under the Node version where it strands slots).
+
+    it('does not take a slot for a request whose client disconnected before the handler ran', async function () {
+      this.timeout(30000);
+      // Codex finding 2. A client can disconnect during the async file lookup
+      // express.static does before this router (modelled by the slow=1 middleware). The
+      // handler then runs after the response has already emitted 'close', so a slot taken
+      // here would never be freed by a later event. The handler must refuse it at entry.
+      for (let i = 0; i < MAX_GARBAGE + 4; i++) {
+        const s = net.connect(server.address().port, '127.0.0.1', () => {
+          s.write(`GET /ss/garbage?slow=1&ckSize=1024 HTTP/1.1\r\nHost: x\r\n\r\n`);
+        });
+        s.on('error', () => {});
+        await new Promise(r => setTimeout(r, 20));
+        s.destroy();   // disconnect during the modelled lookup, before the handler runs
+        await new Promise(r => setTimeout(r, 20));
+      }
+      await new Promise(r => setTimeout(r, 1000));
+      expect((await get('ckSize=1')).status, 'slots leaked for already-disconnected requests').to.equal(200);
+    });
+
+    it('does not leak slots when connections with pipelined downloads drop', async function () {
+      this.timeout(30000);
+      // Pipelining many downloads on one connection and dropping it must not strand
+      // slots. The head response parks at the socket limit and never finishes, so the
+      // ones behind it stay queued with no socket of their own; freeing every admitted
+      // response from the connection's 'close' (not the response's) keeps repeated rounds
+      // from wedging the endpoint at 503. This is the leak that reproduces on Node 12.
+      for (let round = 0; round < 3; round++) {
+        const sock = net.connect(server.address().port, '127.0.0.1', () => {
+          let buf = '';
+          for (let i = 0; i < MAX_GARBAGE + 4; i++)
+            buf += `GET /ss/garbage?ckSize=1024 HTTP/1.1\r\nHost: x\r\n\r\n`;
+          sock.write(buf);
+          sock.pause();
+        });
+        sock.on('error', () => {});
+        await new Promise(r => setTimeout(r, 400));
+        sock.destroy();
+        await new Promise(r => setTimeout(r, 400));
+      }
+      // Every slot must be free again, not just one: open and hold MAX_GARBAGE downloads
+      // and confirm all are served and the next is refused. A single successful request
+      // would still pass if the drops had stranded all but one slot (seven of eight on
+      // Node 12), since it only needs that one.
+      const held = [];
+      for (let i = 0; i < MAX_GARBAGE; i++) held.push(await openStatus('ckSize=1024'));
+      const served = held.filter(h => h.status === 200).length;
+      expect(served, 'not all slots came back after pipelined connections dropped').to.equal(MAX_GARBAGE);
+      expect((await openStatus('ckSize=1024')).status, 'cap not enforced after recovery').to.equal(503);
     });
   });
 });
