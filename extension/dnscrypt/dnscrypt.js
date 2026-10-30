@@ -45,10 +45,8 @@ const settingsKey = "ext.dnscrypt.settings";
 // directly, so dnscrypt-proxy can re-read the mark while it runs. Mirrors
 // the indirection unbound uses via "unbound:markkey".
 const DNSCRYPT_FWMARK_KEY = "dnscrypt:markkey";
-const CONTROL_SOCKET = '/run/dnscrypt/control.sock'; // RuntimeDirectory in dnscrypt.service
-// The armv7l binary predates the control channel, and dnscrypt-proxy refuses
-// to start on a config key it does not know.
-const CONTROL_SUPPORTED = process.arch !== 'arm';
+// dnscrypt-proxy's default control_socket, its directory is RuntimeDirectory in dnscrypt.service
+const CONTROL_SOCKET = '/run/dnscrypt/control.sock';
 const CONTROL_TIMEOUT_MS = 1000;
 
 // A stamp is an "sdns:" or "sdns://" prefix plus a base64url payload.
@@ -121,10 +119,10 @@ class DNSCrypt {
   // Drops names from dnscrypt-proxy's cache through its control channel, so a
   // health probe that follows has to reach the upstream. Without this the probe
   // is answered from the cache - or from a stale entry once the upstream is
-  // gone - and a dead upstream is never noticed. Never throws: a binary without
-  // the control channel just leaves the cache as it is.
+  // gone - and a dead upstream is never noticed. Never throws: without the
+  // socket (a binary that has no control channel, or the proxy not running)
+  // the cache is just left as it is.
   async flushCache(names) {
-    if (!CONTROL_SUPPORTED) return;
     for (const name of names) {
       const reply = await new Promise((resolve) => {
         let data = '';
@@ -133,9 +131,11 @@ class DNSCrypt {
         socket.on('connect', () => socket.end(`flush ${name}\n`));
         socket.on('data', (chunk) => { data += chunk; });
         socket.on('timeout', () => { socket.destroy(); resolve('error timeout'); });
-        socket.on('error', (err) => resolve(`error ${err.message}`));
+        socket.on('error', (err) => resolve(err.code === 'ENOENT' ? 'skip' : `error ${err.message}`));
         socket.on('close', () => resolve(data.trim()));
       });
+      if (reply === 'skip')
+        return;
       // health checks run every minute; report a failure once, not every time
       const failed = !reply.startsWith('ok');
       if (failed && !this._flushFailing)
@@ -252,15 +252,18 @@ class DNSCrypt {
       .replace("%DNSCRYPT_FALLBACK_DNS%", () => config.fallbackDNS || "1.1.1.1")
       .replace(/%DNSCRYPT_LOCAL_PORT%/g, () => config.localPort || 8854)
       .replace("%DNSCRYPT_IPV6%", () => "false")
-      .replace("%DNSCRYPT_CONTROL%", () => CONTROL_SUPPORTED ? `control_socket = '${CONTROL_SOCKET}'` : "")
       // all servers stamps will be added in the toml file
       .replace("%DNSCRYPT_ALL_SERVER_LIST%", () => this.allServersToToml(servers))
       .replace("%DNSCRYPT_SERVER_LIST%", () => JSON.stringify(serverList));
   }
 
+  // x86_64 and aarch64 builds are fireupgrade assets (see dnscrypt.sh), the
+  // armv7l one still ships in the repo
   getBinaryPath() {
     const arch = DNSCRYPT_ARCH_BINARY[process.arch] || process.arch;
-    return `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.${arch}`;
+    if (arch === "armv7l")
+      return `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.${arch}`;
+    return `${f.getRuntimeInfoFolder()}/assets/dnscrypt`;
   }
 
   // Asks dnscrypt-proxy whether it would accept this config, without touching

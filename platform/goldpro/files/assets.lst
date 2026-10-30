@@ -3,3 +3,4 @@
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /all/zeek-dpi.fwsig 644
 /home/pi/.firewalla/run/assets/zssids /goldpro/zssids 755 ":" "sudo /home/pi/firewalla/scripts/zssids-updated.sh"
 /home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64.tar.xz /all/node/node-v24.21.0-linux-x64.tar.xz 644 ':' '/home/pi/firewalla/scripts/install_node.sh /home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64.tar.xz v24.21.0'
+/home/pi/.firewalla/run/assets/dnscrypt /all/dnscrypt/dnscrypt.x86_64 755 "/home/pi/firewalla/scripts/check_service_on_assets_update.sh stop dnscrypt" "/home/pi/firewalla/scripts/check_service_on_assets_update.sh start dnscrypt"
