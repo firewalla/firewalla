@@ -489,7 +489,7 @@ class NseScanPlugin extends Sensor {
     }
     const networkProfile = networkProfileManager.getNetworkProfile(uuid);
     if (networkProfile && networkProfile.policy && networkProfile.policy[policyKeyName]) {
-      return this._checkNetworkNsePolicy(networkProfile.policy, fieldName);
+      return this._checkNsePolicy(networkProfile.policy, fieldName);
     }
     return true;
   }
