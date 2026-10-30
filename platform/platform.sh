@@ -64,19 +64,20 @@ function get_cloud_endpoint {
   fi
 }
 
-NODE_UPGRADE_VERSION=v24.21.0   # must match NODE_UPGRADE_VERSION in firerouter bin/node
+NODE_UPGRADE_VERSION=v24.22.1
 : ${NODE_VERSIONS_DIR:=/home/pi/.node_versions}
+# one name for the upgraded Node, so an update overwrites the previous version; firerouter bin/node uses the same path
+NODE_UPGRADE_BIN=$NODE_VERSIONS_DIR/current/bin/node
 
 # Upgraded Node, installed by scripts/install_node.sh from assets and shared with firerouter.
 # Falls back to $1 (the platform default) when not installed, when config/.node_legacy is empty or
-# holds this version (written by hand for now, the crash guard in start_service.sh is disabled), or when
-# NODE_UPGRADE_OFF is set (test/setup.sh)
+# holds the installed version (written by hand for now, the crash guard in start_service.sh is disabled),
+# or when NODE_UPGRADE_OFF is set (test/setup.sh)
 function node_bin_or_default {
-  local bin=$NODE_VERSIONS_DIR/$NODE_UPGRADE_VERSION/bin/node
   local latch=${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/.node_legacy
   local l=$(head -n1 "$latch" 2>/dev/null)   # local masks the failure, so set -e callers don't exit
-  if [[ -z $NODE_UPGRADE_OFF && -x $bin ]] && ! [[ -e $latch && ( -z $l || $l == $NODE_UPGRADE_VERSION ) ]]; then
-    echo $bin
+  if [[ -z $NODE_UPGRADE_OFF && -x $NODE_UPGRADE_BIN ]] && ! [[ -e $latch && ( -z $l || $l == $("$NODE_UPGRADE_BIN" -v 2>/dev/null) ) ]]; then
+    echo $NODE_UPGRADE_BIN
   else
     echo $1
   fi
