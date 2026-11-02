@@ -352,6 +352,26 @@ let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
+function getWanConnState(intfName) {
+  return intfNameMap[intfName] && intfNameMap[intfName].state && intfNameMap[intfName].state.wanConnState;
+}
+
+// first active WAN, else first inUse WAN, else the fallback
+function pickDefaultWan(candidates, fallback) {
+  return candidates.find(i => _.get(getWanConnState(i), "active") === true)
+    || candidates.find(i => _.get(getWanConnState(i), "inUse") === true)
+    || fallback;
+}
+
+// dualwan_state value of the OK state: expected-active WANs active, all WANs ready
+function okStateValue(activeBitMask, expectedActiveIdx) {
+  return expectedActiveIdx.reduce((mask, idx) => mask & ~(1 << (idx * 2)), activeBitMask);
+}
+
+function vpnRerouteNeeded(type, wanSwitched, currentStatus) {
+  return type === Constants.WAN_TYPE_FAILOVER && !!wanSwitched;
+}
+
 class FireRouter {
   constructor() {
     log.info(`platform is: ${platform.constructor.name}`);
@@ -541,32 +561,16 @@ class FireRouter {
                 primaryWanIntfName = defaultRoutingConfig.viaIntf;
                 viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
               }
-              for (const viaIntf of viaIntfs) {
-                routingWans.push(viaIntf);
-                const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
-                if (state && state.wanConnState && state.wanConnState.active === true) {
-                  defaultWanIntfName = viaIntf;
-                }
-              }
-              if (!defaultWanIntfName) {
-                const inUseIntf = viaIntfs.find(viaIntf => {
-                  const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
-                  return state && state.wanConnState && state.wanConnState.inUse === true;
-                });
-                defaultWanIntfName = inUseIntf || primaryWanIntfName;
-              }
+              routingWans.push(...viaIntfs);
+              defaultWanIntfName = pickDefaultWan(viaIntfs, primaryWanIntfName);
               break;
             }
             case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route: first active WAN in nextHops+intfNameMap, else first inUse WAN
-                for (const nextHop of defaultRoutingConfig.nextHops) {
-                  routingWans.push(nextHop.viaIntf);
-                }
-                const getWanConnState = (viaIntf) => intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState;
-                const firstActive = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.active === true; });
-                const firstInUse = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.inUse === true; });
-                defaultWanIntfName = (firstActive && firstActive.viaIntf) || (firstInUse && firstInUse.viaIntf) || defaultRoutingConfig.nextHops[0].viaIntf;
+                const nextHopIntfs = defaultRoutingConfig.nextHops.map(nextHop => nextHop.viaIntf);
+                routingWans.push(...nextHopIntfs);
+                defaultWanIntfName = pickDefaultWan(nextHopIntfs, nextHopIntfs[0]);
                 primaryWanIntfName = defaultWanIntfName;
               }
               break;
@@ -806,7 +810,7 @@ class FireRouter {
           let pendingTest = false;
           for (const i in routingWans.sort()) {
             const iface = routingWans[i];
-            const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
+            const wanConnState = getWanConnState(iface);
             currentStatus[iface] = {
               ready: wanConnState && wanConnState.ready || false,
               active: wanConnState && wanConnState.active || false,
@@ -1451,17 +1455,17 @@ class FireRouter {
         labels.primaryInterface = primaryInterface;
         if (failback) {
           const primaryIntfIndex = wanIntfs.indexOf(primaryInterface);
-          if (primaryIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (primaryIntfIndex * 2)))
+          if (primaryIntfIndex >= 0 && dualWANStateValue === okStateValue(activeBitMask, [primaryIntfIndex]))
             dualWANStateValue = 0;
         } else {
           const activeIntfIndex = wanIntfs.findIndex(intf => currentStatus[intf].active === true);
-          if (activeIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (activeIntfIndex * 2)))
+          if (activeIntfIndex >= 0 && dualWANStateValue === okStateValue(activeBitMask, [activeIntfIndex]))
             dualWANStateValue = 0;
         }
-        if (wanSwitched) {
-          const VPNClient = require('../extension/vpnclient/VPNClient.js');
-          VPNClient.notifyWanSwitched();
-        }
+      }
+      if (vpnRerouteNeeded(type, wanSwitched, currentStatus)) {
+        const VPNClient = require('../extension/vpnclient/VPNClient.js');
+        VPNClient.notifyWanSwitched();
       }
       log.debug("labels=", labels);
       era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);

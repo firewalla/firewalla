@@ -2679,20 +2679,14 @@ module.exports = class HostManager extends Monitorable {
         let totalDownload = 0;
         const activeWanIntf = sysManager.getDefaultWanInterface();
         const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
-        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
-          if (wanType === Constants.WAN_TYPE_FAILOVER) {
-            if (wanId === activeWanUUID) {
-              totalUpload = parseInt(wanConf.upload) || 0;
-              totalDownload = parseInt(wanConf.download) || 0;
-              break;
-            }
-          } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-            if (wanId === activeWanUUID) {
-              totalUpload = parseInt(wanConf.upload) || 0;
-              totalDownload = parseInt(wanConf.download) || 0;
-              break;
-            }
-          } else if (wanType === Constants.WAN_TYPE_LB) {
+        if (wanType === Constants.WAN_TYPE_FAILOVER || wanType === Constants.WAN_TYPE_SINGLE) {
+          if (_.has(bandwidth.wanConfs, activeWanUUID)) {
+            const wanConf = bandwidth.wanConfs[activeWanUUID];
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+          }
+        } else if (wanType === Constants.WAN_TYPE_LB) {
+          for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
             const intf = sysManager.getInterfaceViaUUID(wanId);
             if (!intf || intf.type !== "wan" || !intf.ready)
               continue;
