@@ -377,8 +377,26 @@ function okStateValue(activeBitMask, expectedActiveIdx) {
   return expectedActiveIdx.reduce((mask, idx) => mask & ~(1 << (idx * 2)), activeBitMask);
 }
 
-function vpnRerouteNeeded(type, wanSwitched, currentStatus) {
+// load_balance re-routes VPN clients from init instead, every nextHop change there is wanSwitched
+function vpnRerouteNeeded(type, wanSwitched) {
   return type === Constants.WAN_TYPE_FAILOVER && !!wanSwitched;
+}
+
+// load_balance backup WAN carrying traffic as of the last FireMain init, undefined before the first one
+let lastLBBackupWanInUse = undefined;
+
+// records the load_balance backup WAN carrying traffic, true when it changed since the last init
+// any other type resets the baseline without notifying, its failover path re-routes on wanSwitched
+function lbBackupWanChanged(type, backupWanInUse) {
+  if (type !== Constants.WAN_TYPE_LB) {
+    lastLBBackupWanInUse = null;
+    return false;
+  }
+  const changed = lastLBBackupWanInUse !== undefined && lastLBBackupWanInUse !== backupWanInUse;
+  if (changed)
+    log.info(`Load balance backup WAN in use changed from ${lastLBBackupWanInUse} to ${backupWanInUse}, re-routing VPN clients`);
+  lastLBBackupWanInUse = backupWanInUse;
+  return changed;
 }
 
 class FireRouter {
@@ -511,6 +529,7 @@ class FireRouter {
       const lastMonitoringIntfNames = monitoringIntfNames;
       const lastRspanIntfNames = rspanIntfNames;
       const routingWans = [];
+      let lbBackupWanInUse = null;
       const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
       this.tcFilterRefreshNeeded = false;
       const pcapRestartNeeded = this.pcapRestartNeeded;
@@ -582,6 +601,9 @@ class FireRouter {
                 routingWans.push(...nextHopIntfs, ...backupIntfs);
                 defaultWanIntfName = pickDefaultWan(nextHopIntfs.concat(backupIntfs), nextHopIntfs[0]);
                 primaryWanIntfName = defaultWanIntfName;
+                // an inUse but unready backup still carries traffic when no WAN is active, so active is not required
+                if (backupIntfs.includes(defaultWanIntfName))
+                  lbBackupWanInUse = defaultWanIntfName;
               }
               break;
             }
@@ -792,6 +814,11 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
+        // init follows every WAN change, so a backup takeover or return is seen here whatever the message order
+        if (lbBackupWanChanged(wanType, lbBackupWanInUse)) {
+          const VPNClient = require('../extension/vpnclient/VPNClient.js');
+          VPNClient.notifyWanSwitched();
+        }
         if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames) || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
         }
@@ -1480,7 +1507,7 @@ class FireRouter {
         if (dualWANStateValue === okStateValue(activeBitMask, expectedActiveIdx))
           dualWANStateValue = 0;
       }
-      if (vpnRerouteNeeded(type, wanSwitched, currentStatus)) {
+      if (vpnRerouteNeeded(type, wanSwitched)) {
         const VPNClient = require('../extension/vpnclient/VPNClient.js');
         VPNClient.notifyWanSwitched();
       }
