@@ -1580,6 +1580,9 @@ class netBot extends ControllerBot {
         return ssh.loadPassword()
       case "sysInfo":
         return SysInfo.getSysInfo()
+      case "features":
+        // effective feature flags, after merging default/user/cloud/msp/dynamic configs
+        return fc.getFeatures()
       case "logFiles":
         return SysInfo.getRecentLogs()
       case "language":
