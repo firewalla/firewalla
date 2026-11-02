@@ -87,11 +87,19 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail:";
 
-// the value of alarm.result for a block or an allow, and the field pointing at the rule or exception
+// the value of alarm.result for a block or an allow, the field pointing at the rule or exception,
+// and how to delete that rule or exception
 const RESULT_KINDS = {
-  block: { ref: 'result_policy' },
-  allow: { ref: 'result_exception' },
+  block: { ref: 'result_policy', remove: id => pm2.disableAndDeletePolicy(id) },
+  allow: { ref: 'result_exception', remove: id => exceptionManager.deleteException(id) },
 };
+
+// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
+const CLEAR_RESULT_LUA = `
+if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1], 'result') == ARGV[3] then
+  return redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+end
+return 0`;
 
 function setAlarmResult(alarm, kind, refId, auto) {
   alarm[RESULT_KINDS[kind].ref] = refId;
@@ -2139,27 +2147,7 @@ module.exports = class {
 
   async unblockFromAlarmAsync(alarmID, info) {
     log.info("Going to unblock alarm " + alarmID);
-
-    let alarmInfo = info.info; // not used by now
-
-    let alarm = await this.getAlarm(alarmID)
-
-    if (!alarm) {
-      log.error("Invalid alarm ID:", alarmID);
-      throw new Error("Invalid alarm ID: " + alarmID);
-    }
-
-    let pid = alarm.result_policy;
-
-    // FIXME: make it transactional
-    // set alarm handle result + add policy
-
-    await pm2.disableAndDeletePolicy(pid)
-
-    alarm.result = "";
-    alarm.result_policy = "";
-    alarm.result_method = "";
-    await this.updateAlarm(alarm)
+    await this.unhandleAlarm(alarmID, 'block');
   }
 
   unallowFromAlarm(alarmID, info, callback) {
@@ -2171,25 +2159,38 @@ module.exports = class {
 
   async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
+    await this.unhandleAlarm(alarmID, 'allow');
+  }
 
-    let alarmInfo = info.info; // not used by now
-
-    let alarm = await this.getAlarm(alarmID)
+  async unhandleAlarm(alarmID, kind) {
+    const alarm = await this.getAlarm(alarmID)
 
     if (!alarm) {
       log.error("Invalid alarm ID:", alarmID);
       throw new Error("Invalid alarm ID: " + alarmID);
     }
 
-    let eid = alarm.result_exception;
+    const { ref, remove } = RESULT_KINDS[kind];
 
     // FIXME: make it transactional
-    // set alarm handle result + add policy
+    await remove(alarm[ref]);
+    await this.clearAlarmResults([alarm], kind);
+  }
 
-    await exceptionManager.deleteException(eid);
-    alarm.result = "";
-    alarm.result_policy = "";
-    await this.updateAlarm(alarm);
+  // HDEL, not '' and updateAlarm: redisfy() drops empty fields and HMSET never removes a field
+  async clearAlarmResults(alarms, kind) {
+    const { ref } = RESULT_KINDS[kind];
+    const withRef = alarms.filter(a => a[ref]);
+    if (withRef.length === 0) return;
+
+    await rclient.pipelineAndLog(withRef.map(a =>
+      ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], kind]));
+
+    for (const a of withRef) {
+      delete a.result;
+      delete a[ref];
+      delete a.result_method;
+    }
   }
 
   async _alignAlarmInfo(alarm) { // alarm object
