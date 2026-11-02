@@ -87,11 +87,17 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail:";
 
-// the value of alarm.result for a block or an allow, the field pointing at the rule or exception,
-// and how to delete that rule or exception
+// per value of alarm.result: the field pointing at the rule or exception, how to delete it, and how
+// to tell it still exists (a stats writer can re-create the hash of a deleted one, so look for the id field)
 const RESULT_KINDS = {
-  block: { ref: 'result_policy', remove: id => pm2.disableAndDeletePolicy(id) },
-  allow: { ref: 'result_exception', remove: id => exceptionManager.deleteException(id) },
+  block: {
+    ref: 'result_policy', key: id => pm2.getPolicyKey(id), idField: 'pid',
+    remove: id => pm2.disableAndDeletePolicy(id)
+  },
+  allow: {
+    ref: 'result_exception', key: id => exceptionManager.getExceptionKey(id), idField: 'eid',
+    remove: id => exceptionManager.deleteException(id)
+  },
 };
 
 // compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
@@ -1416,6 +1422,8 @@ module.exports = class {
 
     const results = await multi.execAsync()
 
+    await this.removeStaleResults(results.slice(0, ids.length))
+
     if (withDetails) {
       for (let i = 0; i < ids.length; i++) {
         if (!results[ids.length + i]) continue;
@@ -1428,6 +1436,37 @@ module.exports = class {
 
     // don't filter result and keep the original id to alarm mapping
     return results.slice(0, ids.length).map(r => this.jsonToAlarm(r))
+  }
+
+  // Runs on the raw hashes, before jsonToAlarm builds the message from the result fields. Fails open:
+  // when the check fails the alarms stay as stored and the next read tries again.
+  async removeStaleResults(hashes) {
+    try {
+      const probes = [];
+      for (const kind of Object.keys(RESULT_KINDS)) {
+        const { ref } = RESULT_KINDS[kind];
+        const byId = _.groupBy(hashes.filter(h => h && h.result === kind && h[ref]), ref);
+        for (const id of Object.keys(byId)) probes.push({ kind, id, alarms: byId[id] });
+      }
+      if (probes.length === 0) return;
+
+      const replies = await rclient.pipelineAndLog(probes.map(({ kind, id }) =>
+        ['hexists', RESULT_KINDS[kind].key(id), RESULT_KINDS[kind].idField]));
+
+      // an Error reply is not 0
+      const stale = probes.filter((p, i) => replies[i] === 0);
+      for (const kind of Object.keys(RESULT_KINDS)) {
+        const { ref } = RESULT_KINDS[kind];
+        const alarms = _.flatMap(stale.filter(p => p.kind === kind), 'alarms');
+        if (alarms.length === 0) continue;
+
+        for (const a of alarms) log.verbose(`Alarm ${a.aid} points to ${ref} ${a[ref]}, which no longer exists`);
+        await this.clearAlarmResults(alarms, kind);
+        log.info(`Cleared the ${kind} result of ${alarms.length} alarm(s) whose ${ref} no longer exists`);
+      }
+    } catch (err) {
+      log.error('Failed to remove stale alarm results', err);
+    }
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -2173,6 +2212,7 @@ module.exports = class {
     const { ref, remove } = RESULT_KINDS[kind];
 
     // FIXME: make it transactional
+    // the rule or exception goes first, so a failed clear is healed by the next read
     await remove(alarm[ref]);
     await this.clearAlarmResults([alarm], kind);
   }
