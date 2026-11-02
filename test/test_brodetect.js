@@ -28,6 +28,8 @@ const intelTool = new IntelTool()
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const Constants = require('../net2/Constants.js');
+const broDetect = require('../net2/BroDetect.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const DomainTrie = require('../util/DomainTrie.js');
@@ -145,4 +147,140 @@ describe('test process conn data', function(){
     await bro.processSignatureData(data);
   });
 
+  describe('_dropLocalSameNetworkFlow', () => {
+    // Same/unknown stpPort: keep the bridge flow, drop zeek's copy (original behavior)
+    it('same stpPort, bridge=false -> drop (zeek copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', 'eth1')).to.equal(true);
+    });
+    it('same stpPort, bridge=true -> keep (AP/switch copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, 'eth1', 'eth1')).to.equal(false);
+    });
+
+    // Different stpPort: router is common ancestor; keep zeek's copy, drop the bridge copy
+    it('different stpPort, bridge=false -> keep (zeek copy)', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', 'eth2')).to.equal(false);
+    });
+    it('different stpPort, bridge=true -> drop (AP duplicate)', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, 'eth1', 'eth2')).to.equal(true);
+    });
+
+    // Unknown stpPort: fall back to original behavior
+    it('srcStpPort unknown, bridge=false -> drop', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, null, 'eth1')).to.equal(true);
+    });
+    it('dstStpPort unknown, bridge=false -> drop', () => {
+      expect(bro._dropLocalSameNetworkFlow(false, 'eth1', null)).to.equal(true);
+    });
+    it('both stpPort unknown, bridge=true -> keep', () => {
+      expect(bro._dropLocalSameNetworkFlow(true, null, null)).to.equal(false);
+    });
+  });
+
+});
+
+// pure function, no redis, no fixtures - kept outside the describe above whose before()
+// runs fireRouter.waitTillReady()/sysManager.updateAsync(), which this doesn't need
+describe('_isBlockedUDPFlow', () => {
+  it('local flow with bpid marker -> blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42' }, undefined, true)).to.equal(true);
+  });
+  it('local flow with no conn entry -> not blocked (40bcfbd33 regression guard)', () => {
+    expect(broDetect._isBlockedUDPFlow(null, undefined, true)).to.equal(false);
+  });
+  it('local flow with unrelated conn entry -> not blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ apid: '7' }, undefined, true)).to.equal(false);
+  });
+  it('bpid sentinel value 0 (number) -> blocked, presence not truthiness', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: 0 }, undefined, true)).to.equal(true);
+  });
+  it('bpid sentinel value "0" (string, as redis returns) -> blocked, presence not truthiness', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '0' }, undefined, true)).to.equal(true);
+  });
+  it('non-local flow with bpid marker overrides a stale oIntf -> blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(true);
+  });
+  it('non-local flow, allowed WAN flow with oIntf -> not blocked', () => {
+    expect(broDetect._isBlockedUDPFlow({ oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(false);
+  });
+  it('non-local flow with no conn entry and no outIntfId -> blocked (legacy fallback)', () => {
+    expect(broDetect._isBlockedUDPFlow(null, undefined, false)).to.equal(true);
+  });
+
+  describe('bpidts aging (stale marker no longer suppresses forever)', () => {
+    it('fresh bpidts within the window -> still blocked', () => {
+      const bpidts = Date.now() / 1000 - 10;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(true);
+    });
+    it('local flow, bpidts older than the max age -> marker is stale, falls back to localFlow=false', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, true)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, oIntf present -> stale marker no longer overrides an allowed flow', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts, oIntf: 'abcd1234' }, 'abcd1234', false)).to.equal(false);
+    });
+    it('non-local flow, bpidts older than the max age, no oIntf -> falls through to the legacy fallback, still blocked', () => {
+      const bpidts = Date.now() / 1000 - 1000;
+      expect(broDetect._isBlockedUDPFlow({ [Constants.REDIS_HKEY_CONN_BPID]: '42', [Constants.REDIS_HKEY_CONN_BPID_TS]: bpidts }, undefined, false)).to.equal(true);
+    });
+  });
+});
+
+describe('processNoticeData port scan device', function () {
+  this.timeout(30000);
+
+  const fc = require('../net2/config.js');
+  const broNotice = require('../extension/bro/BroNotice.js');
+  // documentation addresses, outside every subnet of a box
+  const KNOWN = '2001:db8:6151::10';
+  const UNKNOWN = '2001:db8:6151::20';
+  const TARGET = 'fe80::200:5eff:fe00:5301';
+  let processNotice;
+  let captured;
+
+  function portScan(src, dst) {
+    return JSON.stringify({
+      ts: Date.now() / 1000, note: 'Scan::Port_Scan',
+      msg: `${src} scanned at least 18 unique ports of host ${dst} in 1m6s`,
+      sub: 'remote', src, dst, actions: ['Notice::ACTION_LOG'], suppress_for: 3600.0,
+    });
+  }
+
+  before(async function () {
+    await fireRouter.waitTillReady();
+    await sysManager.updateAsync();
+    if (!fc.isFeatureOn('cyber_security')) this.skip();
+
+    const hosts = await hostManager.getHostsAsync();
+    const host = hosts.find(h => h.o.mac && !sysManager.isMyMac(h.o.mac));
+    if (!host) this.skip();
+    // a device seen on the LAN at an address from a prefix the box no longer has
+    await rclient.hmsetAsync(`host:ip6:${KNOWN}`, { mac: host.o.mac });
+    await rclient.expireAsync(`host:ip6:${KNOWN}`, 120);
+
+    processNotice = broNotice.processNotice;
+    broNotice.processNotice = async (alarm) => { captured = alarm; return null; };
+  });
+
+  after(async function () {
+    if (processNotice) broNotice.processNotice = processNotice;
+    await rclient.unlinkAsync(`host:ip6:${KNOWN}`);
+  });
+
+  beforeEach(() => { captured = null; });
+
+  it('files the alarm under a known device whose address is outside the box subnets', async function () {
+    expect(sysManager.isLocalIP(KNOWN)).to.equal(false);
+    await broDetect.processNoticeData(portScan(KNOWN, TARGET));
+
+    expect(captured['p.device.ip']).to.equal(KNOWN);
+    expect(captured['p.dest.ip']).to.equal(TARGET);
+  });
+
+  it('files the alarm under the target when the scanner is unknown', async function () {
+    await broDetect.processNoticeData(portScan(UNKNOWN, TARGET));
+
+    expect(captured['p.device.ip']).to.equal(TARGET);
+    expect(captured['p.dest.ip']).to.equal(UNKNOWN);
+  });
 });

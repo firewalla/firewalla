@@ -143,8 +143,21 @@ class Alarm {
     return null;
   }
 
+  // the identity (VPN) names the device its own way in a push
+  getDeviceNameInNotification() {
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity)
+        return identity.getDeviceNameInNotificationContent(this);
+    }
+    return this["p.device.name"];
+  }
+
   needPolicyMatch() {
     return false;
+  }
+  needCloudArbitration() {
+    return true;
   }
   isSecurityAlarm() {
     return false;
@@ -233,7 +246,7 @@ class Alarm {
     //   //this.localizedRelativeTime = moment(parseFloat(this.timestamp) * 1000).fromNow();
     //   this.localizedRelativeTime = "%@"; // will be fullfilled @ ios side
 
-    return this.localizedMessage() + this.timestamp ? " %@" : "";
+    return this.localizedMessage() + (this.timestamp ? " %@" : "");
   }
 
   toString() {
@@ -592,13 +605,7 @@ class SuricataNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [ deviceName,  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
     const username = this.getUserName();
     if (username)
@@ -860,12 +867,20 @@ class BroNoticeAlarm extends Alarm {
     if (alarm['p.noticeType'] != alarm2['p.noticeType']) {
       return false;
     }
+    const failedIssuer = _.get(alarm2, ['p.dest.ssl.validation_failed_cert', 'issuer']);
+    // one alarm per device per failing CA, whichever server it was hit through; dest ip when either CA is unknown
+    if (alarm2['p.noticeType'] == 'SSL::Invalid_Server_Cert' && failedIssuer && _.get(alarm, ['p.dest.ssl.validation_failed_cert', 'issuer'])) {
+      // a DN object, parsed back from its JSON string when an earlier alarm is loaded
+      return alarm['p.device.ip'] == alarm2['p.device.ip'] && _.isEqual(alarm['p.dest.ssl.validation_failed_cert'].issuer, failedIssuer);
+    }
     if (alarm['p.dest.ip'] != alarm2['p.dest.ip'] || alarm['p.device.ip'] != alarm2['p.device.ip']) {
       return false;
     }
     return true;
   }
   getExpirationTime() {
+    if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
+      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
   }
 
@@ -927,18 +942,12 @@ class BroNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
     const username = this.getUserName();
     result.push(username);
-    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
-      result.push(this["p.file.type"]);
+    if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"] || "");
     return result;
   }
 }
@@ -1025,7 +1034,7 @@ class IntelAlarm extends Alarm {
   keysToCompareForDedup() {
     const keys = ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
     const url = this["p.dest.url"];
-    if (url) keys.push(url)
+    if (url) keys.push("p.dest.url")
 
     return keys
   }
@@ -1051,13 +1060,7 @@ class IntelAlarm extends Alarm {
     // dest category
     // device port
     // device url
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
 
     const result = [deviceName,
     this.getReadableDestination(),
@@ -1155,7 +1158,7 @@ class OverDataPlanUsageAlarm extends Alarm {
     if (alarm.type !== alarm2.type) {
       return false;
     }
-    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level']) {
+    if (alarm['p.monthly.endts'] != alarm2['p.monthly.endts'] || alarm['p.alarm.level'] != alarm2['p.alarm.level'] || alarm['p.wan.uuid'] != alarm2['p.wan.uuid'] || alarm['p.planUsage'] != alarm2['p.planUsage']) {
       return false;
     }
     return true;
@@ -1223,13 +1226,7 @@ class AbnormalUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [
       deviceName,
       this["p.transfer.outbound.humansize"],
@@ -1286,13 +1283,7 @@ class LargeUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [
       deviceName,
       this["p.transfer.outbound.humansize"],
@@ -1315,13 +1306,7 @@ class VideoAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [deviceName];
     const dest = this.getAppName() || this["p.dest.name"];
     result.push(dest);
@@ -1343,13 +1328,7 @@ class GameAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [deviceName];
     const dest = this.getAppName() || this["p.dest.name"];
     result.push(dest);
@@ -1371,13 +1350,7 @@ class PornAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     const result = [deviceName];
     // although there is no application for porn, but still follow the same logic
     const dest = this.getAppName() || this["p.dest.name"];
@@ -1396,13 +1369,7 @@ class VpnAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
-    let deviceName = this["p.device.name"];
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      if (identity) {
-        deviceName = identity.getDeviceNameInNotificationContent(this);
-      }
-    }
+    const deviceName = this.getDeviceNameInNotification();
     return [deviceName, this["p.dest.name"]];
   }
 }
@@ -1604,7 +1571,7 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === this["p.wan.total"])) {
+      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === Number(this["p.wan.total"]))) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {
@@ -1753,6 +1720,48 @@ class FwApcAlarm extends Alarm {
   }
 }
 
+// the categories come from the cloud, one without a title in the app would show as a raw key
+const CATEGORY_BLOCK_TITLE_SUBTYPES = new Set(['nrd', 'lookalike_domain']);
+
+// informational, the category rule has already blocked the flow. Never set p.action.block or
+// p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
+class CategoryBlockAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_CATEGORY_BLOCK', timestamp, device, info);
+  }
+
+  // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
+  needCloudArbitration() {
+    return false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.device.mac', 'p.dest.name', 'p.dest.category'];
+  }
+
+  requiredKeys() {
+    return this.keysToCompareForDedup();
+  }
+
+  getExpirationTime() {
+    return this['p.cooldown'] || super.getExpirationTime();
+  }
+
+  localizedNotificationTitleKey() {
+    const key = super.localizedNotificationTitleKey();
+    const subtype = this['p.noticeType'];
+    return CATEGORY_BLOCK_TITLE_SUBTYPES.has(subtype) ? `${key}.${subtype}` : key;
+  }
+
+  localizedNotificationContentArray() {
+    const result = [this.getDeviceNameInNotification(), this["p.dest.name"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+}
+
 class NetworkMonitorRTTAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NETWORK_MONITOR_RTT", timestamp, device, info);
@@ -1839,6 +1848,7 @@ const classMapping = {
   ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_FW_APC: FwApcAlarm.prototype,
+  ALARM_CATEGORY_BLOCK: CategoryBlockAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
@@ -1849,6 +1859,7 @@ const classMapping = {
 module.exports = {
   Alarm,
   FwApcAlarm,
+  CategoryBlockAlarm,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,

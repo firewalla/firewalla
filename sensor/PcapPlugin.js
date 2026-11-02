@@ -27,9 +27,10 @@ const sysManager = require('../net2/SysManager.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
 
-const { exec } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+const FlowEngine = require('../net2/FlowEngine.js');
 
 class PcapPlugin extends Sensor {
 
@@ -90,6 +91,58 @@ class PcapPlugin extends Sensor {
     return this.enabled;
   }
 
+  // A flow-engine apply in progress holds brofish and suricata for its
+  // transaction: BroControl / SuricataControl refuse to start them while its
+  // marker exists, so a restart now would be dropped and the service left down.
+  // Returns true when that is the case, having scheduled the restart again for
+  // once the apply is over. The wait runs in the background: holding up
+  // restart() would hold up the first globalOn(), before Sensor.hookFeature
+  // has hooked the feature listener.
+  deferWhileApplying() {
+    if (!(FlowEngine.applyHeld() && FlowEngine.applyRunning()))
+      return false;
+    this.retryRestart(() => FlowEngine.waitForApply(), 'once it is done');
+    return true;
+  }
+
+  // BroControl / SuricataControl refused the restart because of the hold. By now
+  // the apply may still run (retry after it), be over (retry now) or have failed
+  // (its hold stays: refuse, as before). True when a retry was scheduled.
+  retryRefusedRestart() {
+    if (this.deferWhileApplying())
+      return true;
+    if (FlowEngine.applyHeld())
+      return false;
+    this.retryRestart(() => Promise.resolve(), 'now that it is over');
+    return true;
+  }
+
+  // Whether a restart about to run is still wanted. A queued or retried restart
+  // can run after the role was switched off, and during the first globalOn()
+  // the feature listener is not hooked yet, so `enabled` alone can miss that:
+  // the feature is read directly too. `enabled` is never set in the API process,
+  // which only runs apiRun().
+  roleOn() {
+    return this.enabled !== false && Config.isFeatureOn(this.getFeatureName());
+  }
+
+  // One retry at a time (and one wait), skipped if the role has been switched
+  // off by then.
+  retryRestart(wait, when) {
+    if (this.retryAfterApply)
+      return;
+    log.info(`Flow engine apply in progress, restarting ${this.getFeatureName()} ${when}`);
+    this.retryAfterApply = wait().then(() => {
+      this.retryAfterApply = null;
+      if (!this.roleOn())
+        return;
+      return this.restartJob ? this.restartJob.exec() : this.restart();
+    }).catch((err) => {
+      this.retryAfterApply = null;
+      log.error(`Failed to restart ${this.getFeatureName()} after the flow engine apply`, err.message);
+    });
+  }
+
   async globalOn() {
     this.enabled = true;
     log.info(`Pcap plugin ${this.getFeatureName()} is enabled`);
@@ -118,6 +171,7 @@ class PcapPlugin extends Sensor {
     if (platform.isFireRouterManaged()) {
       const intfNameMap = await FireRouter.getInterfaceAll();
       const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : {};
+      const rspanIntfNames = platform.isIFBSupported() ? FireRouter.getRspanIntfNames() : [];
       const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
       const parentIntfOptions = {};
       const monitoringIntfOptions = {}
@@ -154,6 +208,23 @@ class PcapPlugin extends Sensor {
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
+      // RSPAN VLANs are not part of any monitored bridge, so they must be added explicitly to
+      // both option maps before the branch decision so the count comparison accounts for them.
+      // - monitoringIntfOptions gets ifb_pcap_rspan (all RSPAN traffic is redirected there via tc)
+      // - parentIntfOptions gets the physical parent of each RSPAN VLAN (e.g. eth1 for eth1.100)
+      if (!_.isEmpty(rspanIntfNames)) {
+        const rspanBufsize = Math.max(0, ...rspanIntfNames.map(n => this.getPcapBufsize(n.split('.')[0]) || 0)) || undefined;
+        monitoringIntfOptions[Constants.INTF_PCAP_RSPAN] = { pcapBufsize: rspanBufsize };
+        for (const rspanIntf of rspanIntfNames) {
+          const phyIntf = rspanIntf.split('.')[0];
+          const pcapBufsize = this.getPcapBufsize(phyIntf);
+          if (!parentIntfOptions[phyIntf]) {
+            parentIntfOptions[phyIntf] = { pcapBufsize };
+          } else {
+            parentIntfOptions[phyIntf].pcapBufsize = Math.max(parentIntfOptions[phyIntf].pcapBufsize, pcapBufsize);
+          }
+        }
+      }
       log.verbose("parentIntfOptions: ", parentIntfOptions);
       log.verbose("monitoringIntfOptions: ", monitoringIntfOptions);
       if (Object.keys(monitoringIntfOptions).length < Object.keys(parentIntfOptions).length) {
@@ -163,13 +234,13 @@ class PcapPlugin extends Sensor {
       } else {
         // remove "WAN" interface so there's less duplication of internet traffic
         // assuming every bridge has gateway on the same parent interface
-        if (sysManager.isBridgeMode()) {
+        if (await sysManager.isBridgeMode()) {
           let gatewayIntf = null
           for (const intfName of monitoringInterfaces) {
             const intf = intfNameMap[intfName];
             if (intfName.startsWith('br') && Array.isArray(_.get(intf, 'config.intf', null)) && intf.state.gateway) {
               const gatewayMac = await sysManager.myGatewayMac(intfName);
-              const { stdout } = await exec(`bridge fdb show br ${intfName}`);
+              const { stdout } = await execFile("bridge", ["fdb", "show", "br", intfName]);
               const lines = stdout.split('\n');
               for (const line of lines) {
                 const [mac, , intf] = line.split(/\s+/)

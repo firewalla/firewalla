@@ -10,6 +10,8 @@ var dnsTxt = require('dns-txt')
 
 var TLD = '.local'
 var WILDCARD = '_services._dns-sd._udp' + TLD
+// keeps a query well under one ethernet frame, some devices drop fragmented multicast
+var MAX_QUESTIONS_PER_QUERY = 20
 
 module.exports = Browser
 
@@ -36,7 +38,6 @@ function Browser (mdns, opts, onup) {
 
   this._mdns = mdns
   this._onresponse = null
-  this._serviceMap = {}
   this._txt = dnsTxt(opts.txt)
 
   if (!opts || (!opts.type && !opts.protocol)) {
@@ -49,6 +50,12 @@ function Browser (mdns, opts, onup) {
   }
 
   this.services = []
+  // Single source of truth for "is this fqdn known, and which service object
+  // is it" -- keyed by an ASCII-only case-folded fqdn (see normalizeFqdn
+  // below) so lookups agree with dnsEqual()'s comparison semantics exactly,
+  // in O(1) instead of a this.services linear scan calling dnsEqual() per
+  // entry.
+  this._servicesByFqdn = new Map()
 
   if (onup) this.on('up', onup)
 
@@ -63,13 +70,14 @@ Browser.prototype.start = function () {
   // List of names for the browser to listen for. In a normal search this will
   // be the primary name stored on the browser. In case of a wildcard search
   // the names will be determined at runtime as responses come in.
-  var nameMap = {}
+  var nameMap = this._nameMap = {}
   if (!this._wildcard) nameMap[this._name] = true
 
   this._onresponse = function (packet, rinfo) {
     if (self._wildcard) {
       packet.answers.forEach(function (answer) {
-        if (answer.type !== 'PTR' || answer.name !== self._name || answer.name in nameMap) return
+        // a type is queried once here, some devices repeat the type list in every response
+        if (answer.type !== 'PTR' || answer.name !== self._name || answer.data in nameMap) return
         nameMap[answer.data] = true
         self._mdns.query(answer.data, 'PTR')
       })
@@ -84,7 +92,7 @@ Browser.prototype.start = function () {
       if (matches.length === 0) return
 
       matches.forEach(function (service) {
-        if (self._serviceMap[service.fqdn])
+        if (self._servicesByFqdn.has(normalizeFqdn(service.fqdn)))
           self._updateService(service)
         else
           self._addService(service)
@@ -104,7 +112,12 @@ Browser.prototype.stop = function () {
 }
 
 Browser.prototype.update = function () {
-  this._mdns.query(this._name, 'PTR')
+  // a wildcard answer only lists types, so known types are re-queried for their instances
+  var names = [this._name]
+  if (this._wildcard && this._nameMap) names = names.concat(Object.keys(this._nameMap))
+  for (var i = 0; i < names.length; i += MAX_QUESTIONS_PER_QUERY) {
+    this._mdns.query(names.slice(i, i + MAX_QUESTIONS_PER_QUERY).map(function (name) { return { name: name, type: 'PTR' } }))
+  }
 }
 
 function equalTxt(a, b) {
@@ -119,40 +132,49 @@ function equalTxt(a, b) {
   return true
 }
 
+// Folds an fqdn the same way dnsEqual() compares, reusing dnsEqual's own
+// fold rule (dnsEqual.foldCharCode) instead of a second, independently
+// hand-written copy of the same algorithm that could drift out of sync.
+function normalizeFqdn (fqdn) {
+  let out = ''
+  for (let i = 0; i < fqdn.length; i++) {
+    out += String.fromCharCode(dnsEqual.foldCharCode(fqdn.charCodeAt(i)))
+  }
+  return out
+}
+
 Browser.prototype._updateService = function (service) {
-  const sIndex = this.services.findIndex(s => dnsEqual(s.fqdn, service.fqdn))
-  if (sIndex == -1) return
+  const key = normalizeFqdn(service.fqdn)
+  const existing = this._servicesByFqdn.get(key)
+  if (!existing) return
 
   let shouldUpdate = false
-  if (!equalTxt(service.txt, this.services[sIndex].txt))
+  if (!equalTxt(service.txt, existing.txt))
     shouldUpdate = true
-  if (JSON.stringify(service.addresses) != JSON.stringify(service.addresses))
+  if (JSON.stringify(service.addresses) != JSON.stringify(existing.addresses))
     shouldUpdate = true
 
   if (shouldUpdate) {
-    this.services[sIndex] = service
+    const sIndex = this.services.indexOf(existing)
+    if (sIndex != -1) this.services[sIndex] = service
+    this._servicesByFqdn.set(key, service)
     this.emit('up', service);
   }
 }
 
 Browser.prototype._addService = function (service) {
   this.services.push(service)
-  this._serviceMap[service.fqdn] = true
+  this._servicesByFqdn.set(normalizeFqdn(service.fqdn), service)
   this.emit('up', service)
 }
 
 Browser.prototype._removeService = function (fqdn) {
-  var service, index
-  this.services.some(function (s, i) {
-    if (dnsEqual(s.fqdn, fqdn)) {
-      service = s
-      index = i
-      return true
-    }
-  })
+  const key = normalizeFqdn(fqdn)
+  const service = this._servicesByFqdn.get(key)
   if (!service) return
-  this.services.splice(index, 1)
-  delete this._serviceMap[fqdn]
+  const index = this.services.indexOf(service)
+  if (index != -1) this.services.splice(index, 1)
+  this._servicesByFqdn.delete(key)
   this.emit('down', service)
 }
 

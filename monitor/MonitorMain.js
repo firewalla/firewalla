@@ -168,8 +168,6 @@ async function scheduleSingleDetectRequset(options) {
     return;
   }
 
-  cachedSingleDetect[mac] = 1;
-
   if(_status.running) {
     if(options.ttl > 0) {
       options.ttl--;
@@ -181,6 +179,7 @@ async function scheduleSingleDetectRequset(options) {
       log.forceInfo("Schedule TTL timeout for single detect request on mac:", mac);
     }
   } else {
+    cachedSingleDetect[mac] = 1;
     log.info("Got a single request to check mac address:", mac);
     setStatus(_status, {running: true, runBy: 'scheduler'});
     await flowMonitor.run(type, 60, {mac}).catch((err) => {
@@ -246,17 +245,13 @@ function scheduleRunDLP() {
       setStatus(_status, {running: false, runBy: ''});
       gc();
     }).catch(err => {
+      setStatus(_status, {running: false, runBy: ''});
       log.error('DLP failed', err, status[type])
     })
   }, tick * 1000);
 }
 
 function run() {
-  // listen on request to dump heap for this process, used for memory optmiziation
-  // let HeapSensor = require('../sensor/HeapSensor');
-  // heapSensor = new HeapSensor();
-  // heapSensor.run();
-
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");

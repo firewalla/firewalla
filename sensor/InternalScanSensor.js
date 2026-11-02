@@ -29,6 +29,7 @@ const bone = require("../lib/Bone.js");
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
+const { execFile } = require('child-process-promise');
 const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const f = require('../net2/Firewalla.js');
 const Ranges = require('../util/Ranges.js');
@@ -49,12 +50,11 @@ const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const LOCK_APPLY_INTERNAL_SCAN_POLICY = "LOCK_APPLY_INTERNAL_SCAN_POLICY";
 const MAX_CONCURRENT_TASKS = 3;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const moment = require('moment-timezone/moment-timezone.js');
-moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const era = require('../event/EventRequestApi.js');
 const {Address4, Address6} = require('ip-address');
 const crypto = require('crypto');
 
@@ -154,7 +154,7 @@ class InternalScanSensor extends Sensor {
         task.ets = Date.now() / 1000;
       }
     }
-    await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
+    await execFile("sudo", ["cp", "../extension/nmap/scripts/mysql.lua", "/usr/share/nmap/nselib/"]).catch((err) => {});
     setInterval(() => {
       this._cleanTasks();
       this.checkRunningStatus();
@@ -306,12 +306,12 @@ class InternalScanSensor extends Sensor {
 }
 
   async killTask(pid) {
-    const children = await execAsync(`pgrep -P ${pid}`).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
+    const children = await execFile("pgrep", ["-P", String(pid)]).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
     if (!_.isEmpty(children)) {
       for (const child of children)
         await this.killTask(child);
     }
-    await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
+    await execFile("sudo", ["kill", "-SIGINT", String(pid)]).catch((err) => {
       log.error(`Failed to kill task pid ${pid}`, err.message);
     });
   }
@@ -346,6 +346,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async scheduleTask() {
+    const startedTasks = [];
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
       while (Object.keys(this.subTaskRunning).length < MAX_CONCURRENT_TASKS && !_.isEmpty(this.subTaskWaitingQueue)) {
         const hostId = this.subTaskWaitingQueue.shift();
@@ -355,8 +356,12 @@ class InternalScanSensor extends Sensor {
           const subscribers = subTask.subscribers;
           for (const key of Object.keys(subscribers)) {
             const task = this.scheduledScanTasks[key];
-            if (task)
+            if (task) {
+              // a task is considered started on its first transition from queued to scanning
+              if (task.state === STATE_QUEUED)
+                startedTasks.push({key: key, numOfHosts: Object.keys(task.pendingHosts || {}).length});
               task.state = STATE_SCANNING;
+            }
           }
         }
         this.scanHost(hostId).catch((err) => {
@@ -368,6 +373,11 @@ class InternalScanSensor extends Sensor {
         await this._updateRunningStatus(STATE_COMPLETE);
       }
     });
+    for (const startedTask of startedTasks) {
+      const {key, numOfHosts} = startedTask;
+      log.info(`Scan started on ${key} with ${numOfHosts} host(s)`);
+      await this.addScanStartEvent(key, numOfHosts);
+    }
   }
 
   async scanHost(hostId) {
@@ -405,12 +415,12 @@ class InternalScanSensor extends Sensor {
           const results = await this.nmapGuessPassword(ip, config, hostId);
           if (_.isArray(results)) {
             for (const r of results)
-              weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName }));
+              weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName, ip }));
           }
         }
       }
     }
-    const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, result: weakPasswords });
+    const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, ips, result: weakPasswords });
     await this.saveToRedis(hostId, result);
     await this.setLastCompletedScanTs();
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
@@ -425,7 +435,7 @@ class InternalScanSensor extends Sensor {
             if (_.isEmpty(task.pendingHosts)) {
               log.info(`All hosts on ${key} have been scanned, scan complete on ${key}`);
               const ets = Date.now() / 1000;
-              await this.sendNotification(key, ets, task.results);
+              await this.addScanCompleteEvent(key, task, ets);
               task.state = STATE_COMPLETE;
               task.ets = ets;
             }
@@ -437,22 +447,55 @@ class InternalScanSensor extends Sensor {
     });
   }
 
-  async sendNotification(key, ets, results) {
-    const numOfWeakPasswords = results.map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
-    const timezone = sysManager.getTimezone();
-    const time = (timezone ? moment.unix(ets).tz(timezone) : moment.unix(ets)).format("hh:mm A");
+  // scan tasks scheduled by the cron job use "cron_<ts>" as key, others are triggered from app
+  _getTaskTrigger(key) {
+    return _.isString(key) && key.startsWith("cron_") ? "cron" : "manual";
+  }
+
+  _countWeakPasswords(results) {
+    return (results || []).map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
+  }
+
+  /*
+   * Fire an action event of the scan task, notification is composed and sent by netbot in FireApi,
+   * see getNotifEvent() there. Labels carry raw values only, formatting belongs to the notification.
+   * No timestamp in labels, the event itself is already stamped in milliseconds by addActionEvent.
+   */
+  async _emitScanEvent(eventType, labels) {
+    log.info(`Fire ${eventType} event`, labels);
+    await era.addActionEvent(eventType, 1, labels);
     sem.sendEventToFireApi({
-      type: 'FW_NOTIFICATION',
-      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
-      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
-      titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
-      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
-      bodyLocalArgs: [numOfWeakPasswords, time],
-      payload: {
-        weakPasswordCount: numOfWeakPasswords,
-        time
+      type: "Event:NewEvent",
+      message: "A new event is generated",
+      event: {
+        "event_type": "action",
+        "action_type": eventType,
+        "action_value": 1,
+        "labels": labels
       },
-      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
+    });
+  }
+
+  async addScanStartEvent(key, numOfHosts) {
+    await this._emitScanEvent("weak_password_scan_start", {
+      key: key,
+      trigger: this._getTaskTrigger(key),
+      numOfHosts: numOfHosts
+    });
+  }
+
+  async addScanCompleteEvent(key, task, ets) {
+    const results = task && task.results || [];
+    const numOfWeakPasswords = this._countWeakPasswords(results);
+    await this._emitScanEvent("weak_password_scan_complete", {
+      key: key,
+      trigger: this._getTaskTrigger(key),
+      numOfHosts: results.length,
+      numOfWeakPasswords,
+      // 0/1 flag rather than the raw count, so a scan that found nothing and a scan that found
+      // something are two distinct event types to the classifier - see EventClassifier
+      found: numOfWeakPasswords > 0 ? 1 : 0,
+      duration: task && task.ts ? Math.round(ets - task.ts) : 0
     });
   }
 
@@ -806,7 +849,7 @@ class InternalScanSensor extends Sensor {
     const rmFiles = diff.map(file => {return fpath.join(dir, file)});
     log.debug(`rm diff files *${suffix}`, rmFiles);
     for (const filepath of rmFiles) {
-      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+      await execFile("rm", ["-f", filepath]).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
     }
   }
 
@@ -827,7 +870,7 @@ class InternalScanSensor extends Sensor {
     const filenames = await this._list_suffix_files(dir, suffix);
     const rmFiles = filenames.map(file => {return fpath.join(dir, file)});
     for (const filepath of rmFiles) {
-      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+      await execFile("rm", ["-f", filepath]).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
     }
   }
 
@@ -1156,7 +1199,7 @@ class InternalScanSensor extends Sensor {
     } else {
       creds = `${username}/${password}`;
     }
-    await execAsync(`rm -f ${credfile}`); // cleanup credfile in case of dirty data
+    await execFile("rm", ["-f", credfile]); // cleanup credfile in case of dirty data
     await fsp.writeFile(credfile, creds);
     if (! await fsp.access(credfile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
         log.warn('fail to write credfile', ipAddr, port, username, credfile);
@@ -1165,7 +1208,7 @@ class InternalScanSensor extends Sensor {
 
     // check file content, skip to improve performance
     if (process.env.FWDEBUG) {
-      const content = await execAsync(`cat ${credfile}`).then((result) => result.stdout.trim()).catch((err) => err.stderr);
+      const content = await execFile("cat", [credfile]).then((result) => result.stdout.trim()).catch((err) => err.stderr);
       if (content != creds) {
         log.warn(`fail to write credfile, (user/pass=${username}/${password}, file=${content}, path ${credfile}`);
       }
@@ -1185,7 +1228,7 @@ class InternalScanSensor extends Sensor {
       return true;
     }
 
-    await execAsync(`rm -f ${credfile}`); // cleanup credfile after finished
+    await execFile("rm", ["-f", credfile]); // cleanup credfile after finished
     log.info(`[httpbruteCreds] Running command: ${cmd} (user/pass=${username}/${password})`);
     return  result.stdout.trim() == "1"
   }

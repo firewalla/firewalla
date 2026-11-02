@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,12 +15,12 @@
 'use strict';
 
 const fsp = require('fs').promises
+const { spawn } = require('child_process');
 
 const _ = require('lodash');
 const stream = require('stream');
 const moment = require('moment');
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
+const Constants = require('../net2/Constants.js');
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 const validVersionRegex = /^[0-9.]+/
@@ -214,6 +214,55 @@ function isDomainValid(domain) {
   return validDomainRegex.test(domain);
 }
 
+// a rule target or a TLS host, i.e. a domain name that may carry a leading "*." wildcard.
+// the same shape dnsmasq entries and iptables --tls-host arguments are built from
+function isDomainTargetValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return isDomainValid(domain.startsWith("*.") ? domain.substring(2) : domain);
+}
+
+// a category or target list member. unlike a rule target these carry "*" anywhere, not
+// only as a leading label, e.g. "*webapp*.tiktok.com" and "vod-hulu-*.media.dssott.com"
+function isCategoryDomainValid(domain) {
+  if (!domain || !_.isString(domain) || domain.length > 253)
+    return false;
+  return /^[-_a-zA-Z0-9.*]+$/.test(domain);
+}
+
+// Returns true if the policy holds a control character, or an object that could hide one.
+// JSON.stringify is used here as a tree walk. The replacer sees raw values, so a line break is
+// still a line break, unlike in the stringify output where it has become a backslash and an n.
+function objHasControlChar(policy) {
+  let found = false;
+  JSON.stringify(policy, function (key, value) {
+    if (found) return;
+    // stringify calls toJSON before the replacer, so what it returns would be scanned instead of
+    // the real fields. this[key] is the value before that call
+    const original = this[key];
+    if (original && typeof original.toJSON === 'function') {
+      found = true;
+      return;
+    }
+    if (_.isString(value)) {
+      // notes is user input for policy rules and may hold a line break
+      const regex = key === "notes" && this === policy
+        ? Constants.REGEX_CONTROL_CHARS_MULTILINE : Constants.REGEX_CONTROL_CHARS;
+      if (regex.test(value)) found = true;
+      return;
+    }
+    // returning undefined for a leaf drops it from the result, so stringify does not copy or
+    // escape it. the result is discarded either way
+    return value && typeof value === 'object' ? value : undefined;
+  });
+  return found;
+}
+
+function isValidCommonName(cn) {
+  if (!cn || typeof cn !== 'string') return false;
+  return /^[a-zA-Z0-9]{1,32}$/.test(cn);
+}
+
 function generateStrictDateTs(ts) {
   const now = ts ? new Date(ts) : new Date();
   const offset = now.getTimezoneOffset(); // in mins
@@ -229,7 +278,8 @@ function generateStrictDateTs(ts) {
 function isHashDomain(domain) {
   if (!domain || !_.isString(domain))
     return false;
-  return domain.endsWith("=") && domain.length == 44
+  // a sha256 digest in standard base64: 32 bytes always encode to 43 characters plus one pad
+  return /^[A-Za-z0-9+/]{43}=$/.test(domain)
 }
 
 class LineSplitter extends stream.Transform {
@@ -310,15 +360,26 @@ function difference(obj1, obj2) {
   return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
 }
 
+// check if a value is the default value
+function _isDefaultValue(v) {
+  return v === undefined || v === null || v === false || v === "";
+}
+
 function _diff(obj1, obj2) {
   if (!obj1 || !_.isObject(obj1)) {
     return [];
   }
   if (!obj2 || !_.isObject(obj2)) {
-    return Object.keys(obj1);
+    // obj2 has no properties at all; only non-default values count as differences
+    return Object.keys(obj1).filter(key => !_isDefaultValue(obj1[key]));
   }
   return _.reduce(obj1, function(result, value, key) {
-    return _.isEqual(value, obj2[key]) ?
+    const other = _.has(obj2, key) ? obj2[key] : undefined;
+    // both sides are absent/default -> considered equal
+    if (_isDefaultValue(value) && _isDefaultValue(other)) {
+      return result;
+    }
+    return _.isEqual(value, other) ?
         result : result.concat(key);
   }, []);
 }
@@ -371,6 +432,22 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+// run a command whose stdout/stderr is not needed and may be large enough to
+// exceed child_process's maxBuffer if captured (exec/execFile always buffer
+// output in memory); stdio is fully ignored so it's discarded at the OS level
+function spawnQuiet(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      if (code === 0)
+        resolve();
+      else
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}${signal ? `, signal ${signal}` : ''}`));
+    });
+  });
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -383,6 +460,9 @@ module.exports = {
   isSameOrSubDomain,
   formulateHostname,
   isDomainValid,
+  isDomainTargetValid,
+  isCategoryDomainValid,
+  hasControlChar: objHasControlChar,
   generateStrictDateTs,
   isHashDomain,
   LineSplitter,
@@ -393,4 +473,6 @@ module.exports = {
   batchKeyExists,
   waitFor,
   withTimeout,
+  spawnQuiet,
+  isValidCommonName,
 };

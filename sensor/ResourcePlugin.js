@@ -25,7 +25,7 @@ Promise.promisifyAll(fs);
 
 const crypto = require('crypto');
 const path = require('path');
-const execAsync = require('child-process-promise').exec;
+const { exec: execAsync, execFile } = require('child-process-promise');
 const CronJob = require('cron').CronJob;
 const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -188,19 +188,25 @@ class ResourcePlugin extends Sensor {
       }
 
       // Create directory with root permissions
-      await execAsync(`sudo mkdir -p ${RESOURCES_DIR}`);
+      await execFile("sudo", ["mkdir", "-p", RESOURCES_DIR]);
       
       // Change ownership to pi user
-      await execAsync(`sudo chown pi:pi ${RESOURCES_DIR}`);
+      await execFile("sudo", ["chown", "pi:pi", RESOURCES_DIR]);
       
       // Set permissions
-      await execAsync(`sudo chmod 755 ${RESOURCES_DIR}`);
+      await execFile("sudo", ["chmod", "755", RESOURCES_DIR]);
       
       this.initialized = true;
       log.info(`Resources directory created: ${RESOURCES_DIR}`);
     } catch (err) {
       log.error(`Failed to create resources directory: ${err.message}`);
       throw err;
+    }
+  }
+
+  validateResId(resId) {
+    if (!resId || !/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(resId)) {
+      throw new Error(`ERR_INVALID_RESID`);
     }
   }
 
@@ -265,10 +271,7 @@ class ResourcePlugin extends Sensor {
 
   async updateResource(resId, base64) {
     await this.ensureDirectory();
-    
-    if (!resId) {
-      throw new Error('resId is required');
-    }
+    this.validateResId(resId);
 
     const resourcePath = this.getResourcePath(resId);
 
@@ -333,10 +336,7 @@ class ResourcePlugin extends Sensor {
 
   async getResource(resId, withContent = true) {
     await this.ensureDirectory();
-    
-    if (!resId) {
-      throw new Error('resId is required');
-    }
+    this.validateResId(resId);
 
     try {
       const resourcePath = this.getResourcePath(resId);

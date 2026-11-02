@@ -18,7 +18,7 @@
 const log = require('./logger.js')(__filename);
 
 const net = require('net');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -46,6 +46,10 @@ class VirtWanGroup {
     const uuid = o.uuid;
     if (!uuid)
       return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+      log.error(`VirtWanGroup: invalid uuid format: ${uuid}`);
+      return null;
+    }
     if (!instances[uuid]) {
       this.uuid = uuid;
       this.name = o.name;
@@ -64,8 +68,7 @@ class VirtWanGroup {
             await this.processLinkStateEvent(event);
           }
         };
-        sem.on("link_established", this._linkStateEventListener);
-        sem.on("link_broken", this._linkStateEventListener);
+        sem.on("link_state_change", this._linkStateEventListener);
         this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
             await this.refreshRT().catch((err) => {
@@ -98,6 +101,10 @@ class VirtWanGroup {
     return refreshNeeded;
   }
 
+  static hasMember(profileId) {
+    return Object.values(instances).some(group => group.wans.some(wan => wan.profileId === profileId));
+  }
+
   static getRedisKeyName(uuid) {
     return `virt_wan_group:${uuid}`;
   }
@@ -105,6 +112,15 @@ class VirtWanGroup {
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
       return `c_rt_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
+  // PBR ipset, decoupled from the group's strictVPN and members' Internet toggle: hard kept on disconnect
+  // (kill-switch), soft falls back. uid truncated to 9 chars to keep the ipset name within the 31-char limit.
+  static getPBRRouteIpsetName(uid, hard = true) {
+    if (uid) {
+      return `c_rt_vwg_pbr_${hard ? "hard" : "soft"}_${uid.substring(0, 9)}_set`;
     } else
       return null;
   }
@@ -125,12 +141,20 @@ class VirtWanGroup {
       const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
       await ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
 
+      const hardPBRRouteIpsetName = VirtWanGroup.getPBRRouteIpsetName(uid);
+      await ipset.create(hardPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
+
+      const softPBRRouteIpsetName = VirtWanGroup.getPBRRouteIpsetName(uid, false);
+      await ipset.create(softPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
+
       const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
       await iptc.addRule(new Rule('nat').chn(dnsRedirectChain).opr('-N'));
       await iptc.addRule(new Rule('nat').fam(6).chn(dnsRedirectChain).opr('-N'));
 
       await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      await fs.promises.mkdir(VirtWanGroup.getPBRDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.promises.mkdir(VirtWanGroup.getPBRDNSRouteConfDir(uid, "soft")).catch((err) => { });
       envCreatedMap[uid] = 1;
     }).catch((err) => {
       log.error(`Failed to create enforcement env for VWG ${uid}`, err.message);
@@ -139,10 +163,10 @@ class VirtWanGroup {
 
   async refreshRT() {
     await routing.flushRoutingTable(this._getRTName()).catch((err) => { });
-    if (this.strictVPN === true) {
-      await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 4, "unreachable").catch((err) => { });
-      await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 6, "unreachable").catch((err) => { });
-    }
+    // Unreachable default (lowest priority) drops VWG-marked traffic when no member is up. Added regardless of
+    // strictVPN so a hard (Static) PBR rule keeps blocking on disconnect instead of leaking to the default WAN.
+    await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 4, "unreachable").catch((err) => { });
+    await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 6, "unreachable").catch((err) => { });
     let anyWanEnabled = false;
     let anyWanReady = false;
     const routedDnsServers = [];
@@ -334,16 +358,45 @@ class VirtWanGroup {
       await ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid, false));
       await this._disableDNSRoute("soft");
     }
+    // PBR ipsets / DNS routes, decoupled from strictVPN and routeDNS.
+    // hard: always populated, kept on disconnect (Static kill-switch).
+    const hardPBRRouteIpsetName = VirtWanGroup.getPBRRouteIpsetName(this.uuid);
+    await ipset.add(hardPBRRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+    await ipset.add(hardPBRRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+    await this._enablePBRDNSRoute("hard");
+    // soft: populated only while a member is ready, flushed otherwise (Preferred fallback).
+    const softPBRRouteIpsetName = VirtWanGroup.getPBRRouteIpsetName(this.uuid, false);
+    if (anyWanReady) {
+      await ipset.add(softPBRRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await ipset.add(softPBRRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await this._enablePBRDNSRoute("soft");
+    } else {
+      await ipset.flush(softPBRRouteIpsetName);
+      await this._disablePBRDNSRoute("soft");
+    }
+    // Upstream for PBR DNS: a ready member's DNS (reachable through its own tunnel), so it works even with
+    // routeDNS off. Prefer a routeDNS-enabled member to keep device-level behavior unchanged; none ready => blocked.
+    const readyDnsServers = [];
+    for (const wan of Object.values(this.connState)) {
+      if (!wan.ready) {
+        continue;
+      }
+      const client = VPNClient.getInstance(wan.profileId);
+      if (client) {
+        Array.prototype.push.apply(readyDnsServers, await client._getDNSServers() || []);
+      }
+    }
+    const markDnsServer = (!_.isEmpty(routedDnsServers) && routedDnsServers[0]) || (!_.isEmpty(readyDnsServers) && readyDnsServers[0]);
     const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    if (!_.isEmpty(routedDnsServers)) {
-      await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), [
-        `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`,
-        `server=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`
-      ]).catch((err) => { });
+    // mark=/server= bridge always written so PBR DNS routes tagged queries through the VWG; block when no upstream.
+    const dnsmasqEntries = [`mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
+    if (markDnsServer) {
+      dnsmasqEntries.push(`server=${markDnsServer}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     } else {
-      await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
+      dnsmasqEntries.push(`server=//$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     }
+    await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     await this._updateDNSRedirectChain(routedDnsServers);
   }
@@ -373,44 +426,83 @@ class VirtWanGroup {
     }
   }
 
+  _hasValidDefaultForDev(routeOutput, intf) {
+    const lines = routeOutput.trim().split('\n');
+    let inDefaultRoute = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('default ')) {
+        inDefaultRoute = !trimmed.includes(' unreachable ');
+        if (inDefaultRoute && trimmed.includes(` dev ${intf}`))
+          return true;
+      } else if (inDefaultRoute) {
+        if (trimmed.includes(` dev ${intf}`))
+          return true;
+        // non-indented line ends a multipath default block
+        if (trimmed && line === trimmed)
+          inDefaultRoute = false;
+      }
+    }
+    return false;
+  }
+
+  async _memberRoutesMissing(profileId) {
+    const c = VPNClient.getInstance(profileId);
+    if (!c || !c.isStarted())
+      return false;
+    // Only check shortly after (re)start just happened.
+    if (c._lastStartTime && Date.now() - c._lastStartTime > 120000)
+      return false;
+    const intf = c.getInterfaceName();
+    if (!intf)
+      return false;
+    const tableName = this._getRTName();
+    try {
+      for (const af of [4, 6]) {
+        const { stdout } = await execFile("ip", [`-${af}`, "route", "show", "table", tableName]);
+        if (!stdout || !stdout.trim())
+          continue;
+        if (this._hasValidDefaultForDev(stdout, intf))
+          return false;
+      }
+      return true;
+    } catch (err) {
+      log.error(`Failed to check routing table of virtual wan group ${this.uuid} for ${profileId}`, err.message);
+      return false;
+    }
+  }
+
   async processLinkStateEvent(e) {
     let refreshRTNeeded = false;
     let generateAlarmNeeded = false;
     let wanSwitched = false;
     await lock.acquire(`${LOCK_REFRESH}_${this.uuid}`, async () => {
       const profileId = e.profileId;
-      switch (e.type) {
-        case "link_established": {
-          if (this.connState[profileId] && this.connState[profileId].ready !== true) {
-            if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
-              || this.type === "load_balance"
-              || this.connState[profileId].enabled === false) {
-              wanSwitched = true;
-              refreshRTNeeded = true;
-            }
-            if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
-              generateAlarmNeeded = true;
-            this.connState[profileId].ready = true;
-          }
-          // routeUpdated will be set if link_established event is trigger by route update message from underlying vpn client
-          // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
-          // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
-          if (e.routeUpdated === true)
+      // a member is ready when its tunnel is up and the internet works behind it
+      if (e.link === true && e.internet === true) {
+        if (this.connState[profileId] && this.connState[profileId].ready !== true) {
+          if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
+            || this.type === "load_balance"
+            || this.connState[profileId].enabled === false) {
+            wanSwitched = true;
             refreshRTNeeded = true;
-          break;
-        }
-        case "link_broken": {
-          if (this.connState[profileId] && this.connState[profileId].ready !== false) {
-            if (this.connState[profileId].active === true && this.type !== "single") {
-              wanSwitched = true;
-              refreshRTNeeded = true;
-            }
-            this.connState[profileId].ready = false;
-            generateAlarmNeeded = true;
           }
-          break;
+          if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
+            generateAlarmNeeded = true;
+          this.connState[profileId].ready = true;
         }
-        default:
+        // routeUpdated will be set if the event is trigger by route update message from underlying vpn client
+        // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
+        // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
+        if (e.routeUpdated === true || await this._memberRoutesMissing(profileId))
+          refreshRTNeeded = true;
+      } else if (this.connState[profileId] && this.connState[profileId].ready !== false) {
+        if (this.connState[profileId].active === true && this.type !== "single") {
+          wanSwitched = true;
+          refreshRTNeeded = true;
+        }
+        this.connState[profileId].ready = false;
+        generateAlarmNeeded = true;
       }
       if (refreshRTNeeded) {
         await this.refreshRT().catch((err) => {
@@ -487,8 +579,16 @@ class VirtWanGroup {
     return `${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}_${routeType}.conf`;
   }
 
+  _getDnsmasqPBRRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vwg_pbr_${this.uuid}_${routeType}.conf`;
+  }
+
   static getDNSRouteConfDir(uuid, routeType = "hard") {
     return `${f.getUserConfigFolder()}/dnsmasq/VWG:${uuid}_${routeType}`;
+  }
+
+  static getPBRDNSRouteConfDir(uuid, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VWG_PBR:${uuid}_${routeType}`;
   }
 
   async _enableDNSRoute(routeType = "hard") {
@@ -502,6 +602,20 @@ class VirtWanGroup {
     const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     await fs.promises.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _enablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await dnsmasq.writeConfig(this._getDnsmasqPBRRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getPBRDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.promises.unlink(this._getDnsmasqPBRRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -565,6 +679,8 @@ class VirtWanGroup {
     // flush ipset with skbmark
     await ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid));
     await ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid, false));
+    await ipset.flush(VirtWanGroup.getPBRRouteIpsetName(this.uuid));
+    await ipset.flush(VirtWanGroup.getPBRRouteIpsetName(this.uuid, false));
     // remove ip rule
     await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => { });
     await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => { });
@@ -574,21 +690,29 @@ class VirtWanGroup {
     await routing.removeCustomizedRoutingTable(this._getRTName());
     // remove event listener
     if (this._linkStateEventListener) {
-      sem.removeListener("link_established", this._linkStateEventListener);
-      sem.removeListener("link_broken", this._linkStateEventListener);
+      sem.removeListener("link_state_change", this._linkStateEventListener);
       this._linkStateEventListener = null;
     }
     if (this._refreshRTListener) {
+      sem.removeListener("VPNClient:Started", this._refreshRTListener);
       sem.removeListener("VPNClient:Stopped", this._refreshRTListener);
       sem.removeListener("VPNClient:SettingsChanged", this._refreshRTListener);
       this._refreshRTListener = null;
     }
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await this._disablePBRDNSRoute("hard");
+    await this._disablePBRDNSRoute("soft");
     await this._resetRouteMarkInRedis();
     await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => { });
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")]).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")]).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getPBRDNSRouteConfDir(this.uuid, "hard")]).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getPBRDNSRouteConfDir(this.uuid, "soft")]).catch((err) => { });
+    if (instances[this.uuid] === this) {
+      delete envCreatedMap[this.uuid];
+      delete instances[this.uuid];
+    }
   }
 
   async toJson() {

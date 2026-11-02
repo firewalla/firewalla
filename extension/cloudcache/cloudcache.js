@@ -27,14 +27,23 @@ const f = require('../../net2/Firewalla.js');
 const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
 const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const config = require('../../net2/config.js').getConfig();
 const crypto = require('crypto');
+const uuid = require('uuid');
 
 const expirationDays = (config.cloudcache && config.cloudcache.expirationDays) || 30;
 const _ = require('lodash');
 
+const LOCK_TTL_SEC = 5;
+const LOCK_RETRY_COUNT = 5;
+
 let instance = null;
+
+function getDownloadLockKey(name) {
+  return `cloudcache:lock:${name}`;
+}
 
 class CloudCacheItem {
   constructor(name) {
@@ -77,8 +86,55 @@ class CloudCacheItem {
     }
   }
 
+  async tryAcquireDownloadLock() {
+    const lockKey = getDownloadLockKey(this.name);
+    const token = uuid.v4();
+    let acquired = await this.setDownloadLock(lockKey, token);
+
+    for (let i = 0; i < LOCK_RETRY_COUNT && !acquired; i++) {
+      await Promise.delay(1000);
+      acquired = await this.setDownloadLock(lockKey, token);
+    }
+
+    if (!acquired) {
+      log.warn(`Force releasing stale cloudcache lock for ${this.name}`);
+      await rclient.delAsync(lockKey);
+      acquired = await this.setDownloadLock(lockKey, token);
+    }
+
+    return { acquired, token, lockKey };
+  }
+
+  async setDownloadLock(lockKey, token) {
+    const result = await rclient.setAsync(lockKey, token, 'NX', 'EX', LOCK_TTL_SEC);
+    return result === 'OK';
+  }
+
+  async releaseDownloadLock(lockKey, token) {
+    // await rclient.delAsync(lockKey);
+    const releaseLockLua = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    try {
+      await rclient.evalAsync(releaseLockLua, 1, lockKey, token);
+    } catch (err) {
+      log.warn(`Not released cloudcache lock ${lockKey}:`, err.message);
+    }
+  }
+
   async writeLocalCacheContent(data) {
-    return fs.writeFileAsync(this.localCachePath, data);
+    const tmpPath = `${this.localCachePath}.tmp.${process.pid}`;
+    try {
+      await fs.writeFileAsync(tmpPath, data);
+      await fs.renameAsync(tmpPath, this.localCachePath);
+    } catch (err) {
+      await fs.unlinkAsync(tmpPath).catch(() => undefined);
+      throw err;
+    }
   }
 
   async writeLocalMetadata(metadata) {
@@ -127,6 +183,20 @@ class CloudCacheItem {
   }
 
   async download(alwaysOnUpdate = false) {
+    const { acquired, token, lockKey } = await this.tryAcquireDownloadLock();
+    if (!acquired) {
+      log.warn(`Failed to acquire cloudcache lock for ${this.name}, skip download`);
+      return true;
+    }
+
+    try {
+      return await this._downloadWithLock(alwaysOnUpdate);
+    } finally {
+      await this.releaseDownloadLock(lockKey, token);
+    }
+  }
+
+  async _downloadWithLock(alwaysOnUpdate = false) {
     // return true if cache is supported on this key
     // return false if cache is not supported on this key
 

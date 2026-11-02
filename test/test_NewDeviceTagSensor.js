@@ -20,9 +20,11 @@ const { expect, assert } = require('chai');
 const { set } = require('lodash');
 let mock;
 let sensorInstance;
+let cacheSnapshot;
 
 function setupMocks() {
   mock = require('mock-require');
+  cacheSnapshot = new Set(Object.keys(require.cache));
   mock('../net2/logger.js', () => ({
     info: () => {},
     warn: () => {},
@@ -69,8 +71,12 @@ function setupMocks() {
 
 function restoreMocks() {
   mock.stopAll();
+  // Only drop modules loaded while the mocks were active. Modules already cached
+  // before setupMocks() belong to other test files, and evicting them forces those
+  // files' lazy require()s to reload the whole dependency tree mid-run, which blows
+  // up in redis_manager.js (bluebird promisifyAll on an already-promisified prototype).
   for (const id of Object.keys(require.cache)) {
-    if (id.includes('/net2/') || id.includes('/sensor/') || id.includes('/alarm/') || id.includes('/util/')) {
+    if (!cacheSnapshot.has(id)) {
       delete require.cache[id];
     }
   }

@@ -72,6 +72,48 @@ describe('Test dedup keys', () => {
     }))
     expect(alarm1.isDup(alarm3)).to.be.false;
   })
+
+  it('test intel alarm dedup on url', async() => {
+    const urlA = new Alarm.IntelAlarm(Date.now()/1000, 'MacBook Air', 'major', Object.assign({}, data, {
+      'p.dest.url': 'http://www.nintendo.co.jp/a',
+    }));
+    const urlB = new Alarm.IntelAlarm(Date.now()/1000, 'MacBook Air', 'major', Object.assign({}, data, {
+      'p.dest.url': 'http://www.nintendo.co.jp/b',
+    }));
+    expect(urlA.keysToCompareForDedup()).to.be.eql(["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.utag.ids", "p.dest.url"]);
+    // same device, host and port, different url
+    expect(urlA.isDup(urlB)).to.be.false;
+    expect(urlB.isDup(urlA)).to.be.false;
+
+    const urlAAgain = new Alarm.IntelAlarm(Date.now()/1000, 'MacBook Air', 'major', Object.assign({}, data, {
+      'p.dest.url': 'http://www.nintendo.co.jp/a',
+    }));
+    expect(urlAAgain.isDup(urlA)).to.be.true;
+  })
+
+  it('test per-wan data plan dedup', async() => {
+    const planData = {'p.monthly.endts': 1790784000, 'p.alarm.level': 8};
+    const wan1 = new Alarm.OverDataPlanUsageAlarm(Date.now()/1000, null, Object.assign({}, planData, {
+      'p.wan.uuid': '7d61d250-0000-0000-0000-000000000000',
+    }));
+    const wan2 = new Alarm.OverDataPlanUsageAlarm(Date.now()/1000, null, Object.assign({}, planData, {
+      'p.wan.uuid': '1e0f364c-0000-0000-0000-000000000000',
+    }));
+    expect(wan1.isDup(wan2)).to.be.false;
+
+    const wan1Again = new Alarm.OverDataPlanUsageAlarm(Date.now()/1000, null, Object.assign({}, planData, {
+      'p.wan.uuid': '7d61d250-0000-0000-0000-000000000000',
+    }));
+    expect(wan1.isDup(wan1Again)).to.be.true;
+
+    // system-wide plan alarms carry no wan and still dedup against each other
+    const sys1 = new Alarm.OverDataPlanUsageAlarm(Date.now()/1000, null, Object.assign({}, planData));
+    const sys2 = new Alarm.OverDataPlanUsageAlarm(Date.now()/1000, null, Object.assign({}, planData));
+    expect(sys1.isDup(sys2)).to.be.true;
+    // both directions: dedup runs as new.isDup(existing), so either side may be the one without a wan
+    expect(sys1.isDup(wan1)).to.be.false;
+    expect(wan1.isDup(sys1)).to.be.false;
+  })
 });
 
 describe('Test generation', () => {
