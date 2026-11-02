@@ -297,6 +297,8 @@ async function generateNetworkInfo() {
       redisIntf.ready = intf.state.wanConnState.ready || false;
       redisIntf.active = intf.state.wanConnState.active || false;
       redisIntf.pendingTest = intf.state.wanConnState.pendingTest || false;
+      if (intf.state.wanConnState.backup === true)
+        redisIntf.backup = true;
     }
 
     if (intf.state && intf.state.hasOwnProperty("essid")) {
@@ -361,6 +363,13 @@ function pickDefaultWan(candidates, fallback) {
   return candidates.find(i => _.get(getWanConnState(i), "active") === true)
     || candidates.find(i => _.get(getWanConnState(i), "inUse") === true)
     || fallback;
+}
+
+// bakIntfs that firerouter runs as load_balance backups, older firerouter flags none
+function getLBBackupWans(defaultRoutingConfig) {
+  return _.isArray(defaultRoutingConfig.bakIntfs)
+    ? _.uniq(defaultRoutingConfig.bakIntfs).filter(i => _.get(getWanConnState(i), "backup") === true)
+    : [];
 }
 
 // dualwan_state value of the OK state: expected-active WANs active, all WANs ready
@@ -567,10 +576,11 @@ class FireRouter {
             }
             case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-                // load balance default route: first active WAN in nextHops+intfNameMap, else first inUse WAN
+                // load balance default route: first active WAN in nextHops then flagged backups (state from intfNameMap), else first inUse WAN
                 const nextHopIntfs = defaultRoutingConfig.nextHops.map(nextHop => nextHop.viaIntf);
-                routingWans.push(...nextHopIntfs);
-                defaultWanIntfName = pickDefaultWan(nextHopIntfs, nextHopIntfs[0]);
+                const backupIntfs = getLBBackupWans(defaultRoutingConfig);
+                routingWans.push(...nextHopIntfs, ...backupIntfs);
+                defaultWanIntfName = pickDefaultWan(nextHopIntfs.concat(backupIntfs), nextHopIntfs[0]);
                 primaryWanIntfName = defaultWanIntfName;
               }
               break;
@@ -817,6 +827,8 @@ class FireRouter {
               wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
               wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
             };
+            if (wanConnState && wanConnState.backup === true)
+              currentStatus[iface].backup = true;
             if (currentStatus[iface].ready !== true)
               stateVal += (1 << i);
             if (wanConnState && wanConnState.pendingTest)
@@ -1462,6 +1474,11 @@ class FireRouter {
           if (activeIntfIndex >= 0 && dualWANStateValue === okStateValue(activeBitMask, [activeIntfIndex]))
             dualWANStateValue = 0;
         }
+      } else if (type === Constants.WAN_TYPE_LB) {
+        // a ready backup is expected to stay inactive while load-balanced WANs are up
+        const expectedActiveIdx = wanIntfs.map((wanIntf, i) => currentStatus[wanIntf].backup === true ? -1 : i).filter(i => i >= 0);
+        if (dualWANStateValue === okStateValue(activeBitMask, expectedActiveIdx))
+          dualWANStateValue = 0;
       }
       if (vpnRerouteNeeded(type, wanSwitched, currentStatus)) {
         const VPNClient = require('../extension/vpnclient/VPNClient.js');
