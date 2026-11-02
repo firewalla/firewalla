@@ -1,0 +1,69 @@
+{
+  "name": "requestretry",
+  "description": "request-retry wrap nodejs request to retry http(s) requests in case of error",
+  "version": "4.1.2",
+  "author": {
+    "name": "Francois-Guillaume Ribreau",
+    "email": "npm@fgribreau.com",
+    "url": "http://fgribreau.com"
+  },
+  "contributors": [
+    {
+      "name": "juliendangers",
+      "email": "dev@juliencrestin.com"
+    },
+    {
+      "name": "Osbert Orr",
+      "email": "dev@osbert.net"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/FGRibreau/node-request-retry"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -t 2000 -R spec $(find test -name '*.test.js')",
+    "test-watch": "mocha -t 100000 -R min -w $(find test -name '*.test.js')",
+    "test-coverage": "nyc --all --statements=100 --lines=100 --functions=100 --branches=100 --check-coverage --reporter=lcov --reporter=cobertura --report-dir=coverage -- mocha -R spec -t 100000  $(find test -name '*.test.js')",
+    "send-coverage": "cat ./coverage/lcov.info | coveralls",
+    "update": "updtr",
+    "release-after-pr": "git pull --rebase && npm run test-coverage && npm-release patch",
+    "changelog": "conventional-changelog -i CHANGELOG.md -s -r 0",
+    "changelog-git": "npm run changelog && git add CHANGELOG.md && git commit -m 'docs(changelog): updated' && git push origin master",
+    "postpublish": "npm run --silent changelog-git"
+  },
+  "license": "MIT",
+  "nyc": {
+    "exclude": [
+      "node_modules",
+      "dist",
+      "coverage",
+      "webpack.config.js",
+      "test"
+    ]
+  },
+  "dependencies": {
+    "extend": "^3.0.2",
+    "lodash": "^4.17.15",
+    "when": "^3.7.7"
+  },
+  "peerDependencies": {
+    "request": "2.*.*"
+  },
+  "devDependencies": {
+    "bluebird": "^3.5.1",
+    "chai": "^4.2.0",
+    "conventional-changelog": "^2.0.1",
+    "conventional-changelog-cli": "^2.0.11",
+    "coveralls": "^2.13.1",
+    "kew": "~0.7.0",
+    "mocha": "^5.2.0",
+    "npm-release": "^1.0.0",
+    "nyc": "^12.0.2",
+    "q": "^1.5.1",
+    "request": "^2.88.0",
+    "rsvp": "^4.8.4",
+    "sinon": "^6.1.4",
+    "updtr": "^3.1.0"
+  }
+}

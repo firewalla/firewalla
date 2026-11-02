@@ -217,6 +217,9 @@ class FreeRadiusSensor extends Sensor {
   async refreshDeviceTags(options = {}) {
     log.debug("refresh device tags");
     if (!this.featureOn) return
+    await this.refreshMabDeviceTags().catch((err) => {
+      log.error(`Failed to refresh mab device tags`, err.message);
+    });
     const staStatus = await fwapc.getAllSTAStatus(true).catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
@@ -233,11 +236,45 @@ class FreeRadiusSensor extends Sensor {
     }
   }
 
+  // MAB auth is sent once, retry candidates of devices unknown at auth time
+  async refreshMabDeviceTags() {
+    const keys = await rclient.scanResults(`${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}*`);
+    for (const key of keys) {
+      const mac = key.substring(Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE.length);
+      const autoGroup = await hostTool.getWirelessAutoGroup(mac);
+      if (!autoGroup)
+        continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(autoGroup);
+      } catch (err) {
+        continue;
+      }
+      if (!parsed || parsed.auth !== "mab" || !parsed.tag)
+        continue;
+      if (!await hostManager.getHostAsync(mac))
+        continue;
+      const { tag, ssid, ts, ...options } = parsed;
+      log.info(`retry set mab device tag ${mac} to ${tag}`);
+      await this.setDeviceTagByUid(mac, tag, ssid, options);
+    }
+  }
+
   async setDeviceTag(mac, username, ssid, options = {}) {
-    const monitorable = await hostManager.getHostAsync(mac);
     const userTag = tagManager.getTagByRadiusUser(username);
+    await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+  }
+
+  // MAB: Filter-Id is the tag uid
+  async setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
+    const userTag = tagManager.getTagByUid(String(tagUid));
+    await this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
+  }
+
+  async _applyDeviceTag(mac, userTag, ssid, options, desc) {
+    const monitorable = await hostManager.getHostAsync(mac);
     if (!userTag) {
-      log.info(`skip set device tag ${mac} with username ${username}, user tag not found`);
+      log.info(`skip set device tag ${mac} with ${desc}, user tag not found`);
       if (monitorable) {
         await monitorable.resetAutoGroupAsync();
       }
@@ -250,7 +287,7 @@ class FreeRadiusSensor extends Sensor {
     }
 
     if (!tagId) {
-      log.info(`skip set device tag ${mac} with username ${username}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
+      log.info(`skip set device tag ${mac} with ${desc}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
       if (monitorable) {
         await monitorable.resetAutoGroupAsync();
       }
@@ -282,7 +319,7 @@ class FreeRadiusSensor extends Sensor {
     await monitorable.setAutoGroupAsync(tagId, ssid, options);
 
     if (_.isEqual(origPolicy[policyKey], [tagId])) {
-      log.debug(`${mac} already has tag ${username} ${tagId}`);
+      log.debug(`${mac} already has tag ${tagId} (${desc})`);
       return;
     }
 
@@ -290,14 +327,53 @@ class FreeRadiusSensor extends Sensor {
     await monitorable.setPolicyAsync(policyKey, [tagId], true);
   }
 
+  _normalizeMac(mac) {
+    if (!_.isString(mac))
+      return null;
+    const hex = mac.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+    if (hex.length != 12)
+      return null;
+    return hex.match(/.{2}/g).join(':');
+  }
+
+  // auth_method mab, or user_name is the mac
+  _isMabEvent(msg, mac) {
+    if (msg.auth_method)
+      return msg.auth_method === "mab";
+    return this._normalizeMac(msg.user_name) === mac;
+  }
+
+  // supports both post-auth publish and json authlog fields
   async processAuthEvent(message) {
-    message = "{" + message + "}"
+    message = message.trim();
+    if (!message.startsWith("{"))
+      message = "{" + message + "}"
     log.info("radius auth event", freeradius.mask(message));
     try {
       const msg = JSON.parse(message);
       if (msg) {
-        const mac = msg.mac.replace(/-/g, ':').toUpperCase();
-        await this.setDeviceTag(mac, msg.user_name, msg.ssid, { auth: "dot1x" });
+        const mac = this._normalizeMac(msg.mac || msg.calling_station_id);
+        if (!mac) {
+          log.warn("skip radius auth event, invalid mac", freeradius.mask(message));
+          return;
+        }
+        const ssid = msg.ssid || msg.called_station_ssid;
+        if (this._isMabEvent(msg, mac)) {
+          if (msg.result && msg.result !== "Access-Accept")
+            return;
+          const tagUid = msg.tag || msg.filter_id;
+          const options = { auth: "mab" };
+          const vlan = msg.vlan || msg.vlan_id;
+          if (vlan)
+            options.dvlanId = String(vlan);
+          if (!tagUid) {
+            log.info(`skip set device tag ${mac}, no tag in mab auth event`);
+            return;
+          }
+          await this.setDeviceTagByUid(mac, tagUid, ssid, options);
+          return;
+        }
+        await this.setDeviceTag(mac, msg.user_name, ssid, { auth: "dot1x" });
       }
     } catch (err) {
       log.error("parse radius_auth_event message error", err.message, message);

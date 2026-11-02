@@ -18,6 +18,7 @@
 
 const net = require('net')
 const _ = require('lodash');
+const validator = require('validator');
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -170,6 +171,12 @@ const crypto = require('crypto')
 const LRU = require('lru-cache')
 
 const restartUPnPTask = {};
+
+// one sendlog per box: every controller instance shares the same temp files
+let sendLogRunning = false;
+const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
+const SENDLOG_TIMEOUT_SEC = 300;
+const WIFI_SWITCH_ERR_IDS = ["WRONG_KEY", "AUTH_FAILED"];
 
 class netBot extends ControllerBot {
 
@@ -462,24 +469,50 @@ class netBot extends ControllerBot {
   }
 
   async _sendLog() {
-    let password = require('../extension/common/key.js').randomPassword(10)
-    let filename = this.primarygid + ".tar.gz.gpg";
-    const url = await util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
-    if (url == null || url.url == null) {
-      throw "Unable to get storage"
-    } else {
-      const path = URL.parse(url.url).pathname;
-      const homePath = f.getFirewallaHome();
-      let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-      await execAsync(cmdline).catch(err => {
-        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);
-      })
-      return { password: password, filename: path }
+    if (sendLogRunning)
+      throw { code: 409, msg: "sendlog already in progress" }
+    sendLogRunning = true
+    let url, path
+    try {
+      url = await asyncNative.timeout(
+        util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0),
+        SENDLOG_STORAGE_TIMEOUT_SEC
+      )
+      if (url == null || url.url == null)
+        throw "Unable to get storage"
+      path = URL.parse(url.url).pathname;
+    } catch (err) {
+      sendLogRunning = false
+      throw err
     }
+    const password = require('../extension/common/key.js').randomPassword(10)
+    const filename = this.primarygid + ".tar.gz.gpg";
+    const script = `${f.getFirewallaHome()}/scripts/encrypt-upload-s3.sh`;
+    // reply before the upload: building the bundle outlasts the API request timeout.
+    // timeout stops the job's process group; a nested timeout in techsupport may outlive it by 40s
+    const job = execFile('timeout', ['-k', '30', String(SENDLOG_TIMEOUT_SEC), script, filename, password, url.url])
+    job
+      .then(() => {
+        log.info("sendLog: uploaded", path)
+      })
+      .catch(err => {
+        // not err.message: it carries the command line with the password and presigned url
+        const stderrTail = String(err.stderr || '').split('\n').filter(l => l.trim()).slice(-5).join('\n')
+        log.error("sendLog: encrypt-upload failed, code", err.code, "signal", job.childProcess.signalCode, stderrTail)
+      })
+      .finally(() => {
+        sendLogRunning = false
+      })
+    return { password: password, filename: path }
   }
 
   async _portforward(target, msg) {
     log.info("_portforward", msg);
+    // reject an invalid schedule here, the message bus gives no feedback to the app
+    const PortForward = require('../extension/portforward/portforward.js');
+    const err = PortForward.validateSchedule(msg);
+    if (err)
+      throw { code: 400, msg: err };
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
@@ -2843,7 +2876,7 @@ class netBot extends ControllerBot {
               });
               await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
               await pm2.deletePoliciesData(pAudit)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`])
 
               // always recreate inbound firewall and active protect
               if (await mode.isRouterModeOn()) {
@@ -2859,7 +2892,7 @@ class netBot extends ControllerBot {
               log.info('Reseting qos policies', pQos.length)
               await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
               await pm2.deletePoliciesData(pQos)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing qos policies', pQos.length)
@@ -2871,7 +2904,7 @@ class netBot extends ControllerBot {
               log.info('Reseting route policies', pRoute.length)
               await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
               await pm2.deletePoliciesData(pRoute)
-              await execFile(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`, [])
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_route.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing route policies', pRoute.length)
@@ -2906,9 +2939,6 @@ class netBot extends ControllerBot {
         }
         return data
       }
-      case "policy:setDisableAll":
-        await pm2.setDisableAll(value.flag, value.expireMinute);
-        return
       case "acl:check": {
         const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
         return { matchedRule: matchedRule }
@@ -2923,7 +2953,11 @@ class netBot extends ControllerBot {
         } else {
           const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params);
           if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
-            throw { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors }
+            const err = { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors };
+            // firerouter puts wpa_supplicant's reason first when the credentials are rejected
+            if (WIFI_SWITCH_ERR_IDS.includes(resp.errors[0]))
+              err.errID = resp.errors[0];
+            throw err;
           } else {
             return
           }
@@ -3509,6 +3543,9 @@ class netBot extends ControllerBot {
       case "saveOvpnProfile": {
         const profileId = value.profileId;
         const settings = value.settings || {};
+        // the domain is queried by the client's DNS test, which runs it in a root shell line
+        if (settings.dnsTestDomain && !(_.isString(settings.dnsTestDomain) && validator.isFQDN(settings.dnsTestDomain)))
+          throw { code: 400, msg: "'dnsTestDomain' should be a domain name" };
         const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
@@ -4284,19 +4321,11 @@ class netBot extends ControllerBot {
             }
           }
 
-          // check whitelist, empty set allows all, only for dev
-          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" &&
-            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web" && aplt != "msp";
-          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
-            log.warn('deny access from eid', eid, "with", msg.data.item);
-            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
-          }
-
-          // check blacklist, only for dev
-          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" &&
-            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web" && aplt != "msp";
+          // check blacklist, deny set/cmd from readonly eids, e.g. msp readonly access
+          const forbid = (await rclient.typeAsync(Constants.REDIS_KEY_EID_BLACKLIST)) == "set" &&
+            await rclient.sismemberAsync(Constants.REDIS_KEY_EID_BLACKLIST, eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
-            log.warn('deny access from eid', eid);
+            log.warn('deny access from eid', eid, msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 

@@ -92,6 +92,13 @@ module.exports = class {
   }
 
   async discoverMac(mac) {
+    // the ARP table already knows any device that has talked to the box, so scan only when it does not
+    const knownArp = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    if (knownArp[mac]) {
+      log.info("discoverMac:found via ARP", knownArp[mac]);
+      return knownArp[mac];
+    }
+
     const list = sysManager.getMonitoringInterfaces();
     let found = null;
     for (const intf of list) {
@@ -152,7 +159,8 @@ module.exports = class {
         for (i = 0; i < lines.length; i++) {
           if (i === 0) continue;
           cols = lines[i].replace(/ [ ]*/g, ' ').split(' ');
-          if ((cols.length > 3) && (cols[0].length !== 0) && (cols[3].length !== 0)) {
+          // flags 0x0 is an incomplete or failed entry, which can still carry the MAC of a device that has since changed IP
+          if ((cols.length > 3) && (cols[0].length !== 0) && (cols[3].length !== 0) && cols[2] !== '0x0' && cols[3] !== '00:00:00:00:00:00') {
             let now = Date.now() / 1000;
             let mac = cols[3].toUpperCase();
             let ipv4 = cols[0];

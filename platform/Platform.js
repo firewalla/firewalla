@@ -39,6 +39,10 @@ class Platform {
     return this.getAllNicNames().filter(nic => /^eth\d+$/.test(nic));
   }
 
+  getSfpNicNames() {
+    return [];
+  }
+
   // vendor:product of the devices that belong to the box itself instead of being an accessory,
   // so that they are not reported as a plugged in USB device
   getNativeUsbDeviceIds() {
@@ -747,6 +751,11 @@ class Platform {
 
   async isSuricataFromAssetsSupported() {
     return false;
+  }
+
+  // asset path of the suricata tarball, used where isSuricataFromAssetsSupported() holds
+  getSuricataAssetPath() {
+    return null;
   }
 
   hasIntegratedFWAPC() {

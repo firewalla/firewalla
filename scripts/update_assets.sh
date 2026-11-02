@@ -73,7 +73,7 @@ while IFS= read -r line; do
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
   signature_url="${bin_url}.sig"
-  lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
+  lock_file="$(dirname "$file_path")/.$(basename "$file_path").lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
     continue
@@ -124,16 +124,16 @@ while IFS= read -r line; do
 
   current_hash=""
   if [[ -f $file_path ]]; then
-    current_hash=$(sha256sum $file_path | awk '{print $1}')
+    current_hash=$(sha256sum "$file_path" | awk '{print $1}')
   fi
   changed=""
   if [[ $expected_hash != $current_hash ]]; then
     echo "Hash of $file_path mismatches with $hash_url, will fetch latest file from $bin_url"
 
-    sudo mkdir -p $(dirname "${file_path}")
+    sudo mkdir -p "$(dirname "$file_path")"
     temp_file="$file_path".download
     sudo wget --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$bin_url" -O "$temp_file"
-    verify_hash=$(sha256sum $temp_file | awk '{print $1}')
+    verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
       continue
@@ -153,8 +153,8 @@ while IFS= read -r line; do
     echo "Hash of $file_path matches with $hash_url"
   fi
   if [[ -f $file_path ]]; then
-    sudo chown pi:pi $file_path
-    sudo chmod $perm $file_path
+    sudo chown pi:pi "$file_path"
+    sudo chmod "$perm" "$file_path"
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
     eval "$exec_post"
@@ -163,6 +163,8 @@ done
 
 if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
   $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+  # check and retry the ca installation here to address any previous installation failures.
+  $FIREWALLA_HOME/scripts/update_ca_certificates.sh
 fi
 
 logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"

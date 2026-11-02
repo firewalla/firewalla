@@ -415,12 +415,12 @@ class InternalScanSensor extends Sensor {
           const results = await this.nmapGuessPassword(ip, config, hostId);
           if (_.isArray(results)) {
             for (const r of results)
-              weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName }));
+              weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName, ip }));
           }
         }
       }
     }
-    const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, result: weakPasswords });
+    const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, ips, result: weakPasswords });
     await this.saveToRedis(hostId, result);
     await this.setLastCompletedScanTs();
     await lock.acquire(LOCK_TASK_QUEUE, async () => {

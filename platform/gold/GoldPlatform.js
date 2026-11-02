@@ -295,6 +295,9 @@ class GoldPlatform extends Platform {
     return false;
   }
 
+  getSuricataAssetPath() {
+    return "/gold/assets/u22/6.5.0-25-generic/suricata.tar.gz";
+  }
 
 }
 

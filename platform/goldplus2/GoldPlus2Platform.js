@@ -47,6 +47,10 @@ class GoldPlus2Platform extends Platform {
     return ["eth0", "eth1", "eth2", "eth3", "eth4", "wlan0", "wlan1"];
   }
 
+  getSfpNicNames() {
+    return ["eth4"];
+  }
+
   getNtpServiceName() {
     return "chrony";
   }

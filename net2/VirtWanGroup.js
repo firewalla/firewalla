@@ -68,8 +68,7 @@ class VirtWanGroup {
             await this.processLinkStateEvent(event);
           }
         };
-        sem.on("link_established", this._linkStateEventListener);
-        sem.on("link_broken", this._linkStateEventListener);
+        sem.on("link_state_change", this._linkStateEventListener);
         this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
             await this.refreshRT().catch((err) => {
@@ -100,6 +99,10 @@ class VirtWanGroup {
       delete this.failback;
     this.applyConfig();
     return refreshNeeded;
+  }
+
+  static hasMember(profileId) {
+    return Object.values(instances).some(group => group.wans.some(wan => wan.profileId === profileId));
   }
 
   static getRedisKeyName(uuid) {
@@ -475,38 +478,31 @@ class VirtWanGroup {
     let wanSwitched = false;
     await lock.acquire(`${LOCK_REFRESH}_${this.uuid}`, async () => {
       const profileId = e.profileId;
-      switch (e.type) {
-        case "link_established": {
-          if (this.connState[profileId] && this.connState[profileId].ready !== true) {
-            if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
-              || this.type === "load_balance"
-              || this.connState[profileId].enabled === false) {
-              wanSwitched = true;
-              refreshRTNeeded = true;
-            }
-            if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
-              generateAlarmNeeded = true;
-            this.connState[profileId].ready = true;
-          }
-          // routeUpdated will be set if link_established event is trigger by route update message from underlying vpn client
-          // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
-          // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
-          if (e.routeUpdated === true || await this._memberRoutesMissing(profileId))
+      // a member is ready when its tunnel is up and the internet works behind it
+      if (e.link === true && e.internet === true) {
+        if (this.connState[profileId] && this.connState[profileId].ready !== true) {
+          if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
+            || this.type === "load_balance"
+            || this.connState[profileId].enabled === false) {
+            wanSwitched = true;
             refreshRTNeeded = true;
-          break;
-        }
-        case "link_broken": {
-          if (this.connState[profileId] && this.connState[profileId].ready !== false) {
-            if (this.connState[profileId].active === true && this.type !== "single") {
-              wanSwitched = true;
-              refreshRTNeeded = true;
-            }
-            this.connState[profileId].ready = false;
-            generateAlarmNeeded = true;
           }
-          break;
+          if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
+            generateAlarmNeeded = true;
+          this.connState[profileId].ready = true;
         }
-        default:
+        // routeUpdated will be set if the event is trigger by route update message from underlying vpn client
+        // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
+        // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
+        if (e.routeUpdated === true || await this._memberRoutesMissing(profileId))
+          refreshRTNeeded = true;
+      } else if (this.connState[profileId] && this.connState[profileId].ready !== false) {
+        if (this.connState[profileId].active === true && this.type !== "single") {
+          wanSwitched = true;
+          refreshRTNeeded = true;
+        }
+        this.connState[profileId].ready = false;
+        generateAlarmNeeded = true;
       }
       if (refreshRTNeeded) {
         await this.refreshRT().catch((err) => {
@@ -694,8 +690,7 @@ class VirtWanGroup {
     await routing.removeCustomizedRoutingTable(this._getRTName());
     // remove event listener
     if (this._linkStateEventListener) {
-      sem.removeListener("link_established", this._linkStateEventListener);
-      sem.removeListener("link_broken", this._linkStateEventListener);
+      sem.removeListener("link_state_change", this._linkStateEventListener);
       this._linkStateEventListener = null;
     }
     if (this._refreshRTListener) {

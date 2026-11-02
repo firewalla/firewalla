@@ -17,7 +17,7 @@
 let ursa = null
 const crypto = require('crypto');
 const fs = require('fs');
-const request = require('requestretry');
+const request = require('../../vendor_lib/requestretry');
 const uuid = require("uuid");
 const io2 = require('socket.io-client');
 

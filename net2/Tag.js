@@ -141,6 +141,24 @@ class Tag extends Monitorable {
     return `c_tag_${uid}_dev_set`;
   }
 
+  // what a sub-group adds to its parent groups
+  static getDeviceMemberSets(uid) {
+    return [Tag.getTagDeviceMacSetName(uid), Tag.getTagDeviceIPSetName(uid, 4), Tag.getTagDeviceIPSetName(uid, 6)];
+  }
+
+  // a device-like member (device, identity or sub-group) belongs to both the tag set and the tag device set
+  static async addDeviceMember(uid, memberSets) {
+    for (const setName of [Tag.getTagDeviceSetName(uid), Tag.getTagSetName(uid)])
+      for (const memberSet of memberSets)
+        await Ipset.add(setName, memberSet);
+  }
+
+  static async removeDeviceMember(uid, memberSets) {
+    for (const setName of [Tag.getTagDeviceSetName(uid), Tag.getTagSetName(uid)])
+      for (const memberSet of memberSets)
+        await Ipset.del(setName, memberSet);
+  }
+
   static async ensureCreateEnforcementEnv(uid) {
     if (envCreatedMap[uid])
       return;
@@ -200,11 +218,7 @@ class Tag extends Monitorable {
       const policyKey = Constants.TAG_TYPE_MAP[type].policyKey;
       const parentUids = (this.policy && this.policy[policyKey]) || [];
       for (const parentUid of parentUids) {
-        for (const setName of [Tag.getTagDeviceSetName(parentUid), Tag.getTagSetName(parentUid)]) {
-          await Ipset.del(setName, Tag.getTagDeviceMacSetName(this.o.uid));
-          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
-          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
-        }
+        await Tag.removeDeviceMember(parentUid, Tag.getDeviceMemberSets(this.o.uid));
       }
     }
 
@@ -293,11 +307,7 @@ class Tag extends Monitorable {
       const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
-        for (const setName of [Tag.getTagDeviceSetName(removedTag), Tag.getTagSetName(removedTag)]) {
-          await Ipset.del(setName, Tag.getTagDeviceMacSetName(this.o.uid));
-          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
-          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
-        }
+        await Tag.removeDeviceMember(removedTag, Tag.getDeviceMemberSets(this.o.uid));
       }
     }
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf`).catch((err) => {});
@@ -307,11 +317,7 @@ class Tag extends Monitorable {
       const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
-        for (const setName of [Tag.getTagDeviceSetName(uid), Tag.getTagSetName(uid)]) {
-          await Ipset.add(setName, Tag.getTagDeviceMacSetName(this.o.uid));
-          await Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
-          await Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
-        }
+        await Tag.addDeviceMember(uid, Tag.getDeviceMemberSets(this.o.uid));
         updatedTags.push(uid);
       }
     }

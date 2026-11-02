@@ -200,7 +200,14 @@ FW_SERVER="${config.server}"`;
   async _prepareFile(config = {}, key, filename) {
     log.info(`Preparing file ${filename} for ${this.profileId}...`);
     const dst = `${this._getDockerConfigDirectory()}/${filename}`;
-    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
+    const data = config[key];
+    if (data === undefined || data === null) {
+      // key removed from the profile: drop a certificate left by a previous config
+      log.error("Missing data for key", key);
+      await fs.unlinkAsync(dst).catch(err => {});
+      return;
+    }
+    await fs.writeFileAsync(dst, data, {encoding: 'utf8'});
   }
 
   async getStatistics() {

@@ -73,6 +73,7 @@ let threadInfo = {};
 let diskInfo = null;
 
 let ethInfo = {};
+let sfpInfo = {};
 let wlanInfo = {}
 let slabInfo = {};
 
@@ -174,6 +175,7 @@ async function update() {
         .then(getMaxPid)
         .then(getActiveContainers)
         .then(getEthernetInfo)
+        .then(getSfpDeviceInfo)
         .then(getWlanInfo)
         .then(getSlabInfo)
         .then(getDiskUsage)
@@ -604,6 +606,7 @@ async function getSysInfo() {
     autoupgrade,
     maxPid: maxPid,
     ethInfo,
+    sfpInfo,
     wlanInfo,
     usbInfo: usbInfoVal,
     slabInfo,
@@ -683,12 +686,6 @@ async function getPerfStats() {
   }
 }
 
-function getHeapDump(file, callback) {
-  callback(null);
-  // let heapdump = require('heapdump');
-  // heapdump.writeSnapshot(file, callback);
-}
-
 // returns the non-zero error counters of a NIC from `ethtool -S`, keyed as <nic>_<counter>,
 // null if ethtool fails, e.g. the driver does not support statistics.
 // counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
@@ -746,38 +743,94 @@ async function getEthernetInfo() {
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
+const SFP_FIELDS = {
+  "Connector": "connector",
+  "Transceiver type": "transceiverType",
+  "Encoding": "encoding",
+  "Vendor name": "vendorName",
+  "Vendor OUI": "vendorOUI",
+  "Vendor PN": "vendorPN",
+  "Vendor rev": "vendorRev",
+  "Vendor SN": "vendorSN",
+  "Date code": "dateCode",
+};
+
+async function getSfpInfo(nic) {
+  const output = await execFile("sudo", ["ethtool", "-m", nic]).then((result) => result.stdout).catch((err) => null);
+  if (!output)
+    return null;
+  const info = {};
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(\S.*?)\s*:\s(.*)$/);
+    if (!match)
+      continue;
+    const key = SFP_FIELDS[match[1]];
+    if (!key)
+      continue;
+    const parenMatch = match[2].match(/^0x[0-9a-fA-F]+\s*\((.*)\)\s*$/);
+    const value = parenMatch ? parenMatch[1].trim() : match[2].trim();
+    if (key in info)
+      info[key] += "; " + value;
+    else
+      info[key] = value;
+  }
+  return Object.keys(info).length ? info : null;
+}
+
+async function getSfpDeviceInfo() {
+  const localSfpInfo = {};
+  for (const nic of platform.getSfpNicNames()) {
+    const info = await getSfpInfo(nic);
+    if (info)
+      localSfpInfo[nic] = info;
+  }
+  sfpInfo = localSfpInfo;
+}
+
 async function getWlanInfo() {
+  const localWlanInfo = {};
+
   for (const intf of platform.getAllNicNames()) try {
     const res = await exec(`iwconfig ${intf} | grep Quality`).catch(() => null)
     if (!res || !res.stdout || !res.stdout.length) {
       log.debug('[getWlanInfo] skipping', intf, 'no output')
       continue
     }
-
-    const segments = res.stdout.split('=')
     // unconnected interface might be
     // Link Quality:0  Signal level:0  Noise level:0
-    if (segments.length == 1) {
-      log.debug('[getWlanInfo] not connected', intf, segments)
-      wlanInfo[intf] = {};
+    if (!res.stdout.includes('=')) {
+      log.debug('[getWlanInfo] not connected', intf, res.stdout)
+      localWlanInfo[intf] = {};
       continue
     }
-
-    // Link Quality=80/100  Signal level=53/100  Noise level=0/100
-    for (const i in segments) {
-      segments[i] = segments[i].split('/')
+    // Realtek out-of-tree drivers: Link Quality=80/100  Signal level=53/100  Noise level=0/100
+    // cfg80211/mac80211 drivers:   Link Quality=62/70  Signal level=-48 dBm  (noise may be absent)
+    // parse by field name, the number of fields varies between drivers
+    const fields = {
+      quality: /Link Quality=\s*(-?\d+)/,
+      signal: /Signal level=\s*(-?\d+)/,
+      noise: /Noise level=\s*(-?\d+)/,
     }
-    log.debug('[getWlanInfo]', segments)
-    if (!wlanInfo[intf]) wlanInfo[intf] = {}
-    const wlan = wlanInfo[intf]
-    wlan.quality = segments[1][0]
-    wlan.signal = segments[2][0]
-    wlan.noise = segments[3][0]
+    log.debug('[getWlanInfo]', res.stdout)
+    if (!localWlanInfo[intf]) localWlanInfo[intf] = {}
+    const wlan = localWlanInfo[intf]
+    for (const key in fields) {
+      const m = res.stdout.match(fields[key])
+      if (m) wlan[key] = m[1]
+    }
   } catch(err) {
     log.error('Failed to parse wlan info for', intf, err)
   }
 
-  wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  try {
+    localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  } catch (err) {
+    log.error('Failed to get WLAN kernel reload state', err)
+    if (Object.prototype.hasOwnProperty.call(wlanInfo, 'kernelReload'))
+      localWlanInfo.kernelReload = wlanInfo.kernelReload
+  }
+  wlanInfo = localWlanInfo;
+
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
 }
@@ -1103,14 +1156,15 @@ async function getReleaseInfo() {
 
 module.exports = {
   getSysInfo: getSysInfo,
+  getWlanInfo: getWlanInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump,
   getAutoUpgrade,
   getDiskWriteStats,
   getEthErrorStats,
+  getSfpInfo,
   getUsbInfo,
 };

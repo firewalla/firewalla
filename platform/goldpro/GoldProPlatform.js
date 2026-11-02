@@ -298,6 +298,19 @@ class GoldProPlatform extends Platform {
   }
 
   isDNSFlowSupported() { return true }
+
+  async isSuricataFromAssetsSupported() {
+    // the suricata asset is built against the Ubuntu 22.04 image (glibc, /opt/pfring)
+    const codename = await execFile("lsb_release", ["-cs"]).then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get codename of OS distribution", err.message);
+      return null;
+    });
+    return codename === "jammy";
+  }
+
+  getSuricataAssetPath() {
+    return "/goldpro/assets/u22/suricata.tar.gz";
+  }
 }
 
 module.exports = GoldProPlatform;

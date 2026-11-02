@@ -171,6 +171,8 @@ class Policy {
   static fieldEqual(val1, val2, name) {
     if (name == 'seq')
       return (val1 || Constants.RULE_SEQ_REG) == (val2 || Constants.RULE_SEQ_REG)
+    if (name == 'domainExactMatch')
+      return ["1", "true"].includes(String(val1)) == ["1", "true"].includes(String(val2))
     if (val1 === val2) return true;
     // undefined and "" should be consider as equal for compatible purpose
     // "" will be undefined when get it from redis
@@ -192,7 +194,7 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {

@@ -176,9 +176,9 @@ do
     while IFS=$'\t' read -r ssid ap_mac bssid channel band tx_power maxrate intf
     do
         test -n "$ssid" || continue
-        sta_count=$(printf '%s\n' "$ssid_sta_bssid" | jq -Rr --arg ssid "$ssid" --arg bssid "$bssid" '
-          select(length > 0) | split("\t") | select(.[0] == $ssid and .[2] == $bssid)
-        ' | wc -l)
+        sta_count=$(printf '%s\n' "$ssid_sta_bssid" | jq -Rn --arg ssid "$ssid" --arg bssid "$bssid" '
+          [inputs | select(length > 0) | split("\t") | select(.[0] == $ssid and .[2] == $bssid)] | length
+        ')
         timeit sta_count
         for ssidcp in $SSID_COLS
         do

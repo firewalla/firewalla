@@ -18,8 +18,10 @@ mv /home/pi/tmp/support.tar.gz.gpg /home/pi/tmp/$1
 
 if [ -z "$4" ]
    then 
-       curl --upload /home/pi/tmp/$1 $3 
+       curl -sS --fail --upload /home/pi/tmp/$1 $3 
    else 
-       curl --upload /home/pi/tmp/$1 -H 'x-amz-acl: bucket-owner-full-control' $3
+       curl -sS --fail --upload /home/pi/tmp/$1 -H 'x-amz-acl: bucket-owner-full-control' $3
 fi
-rm /home/pi/tmp/$1
+rc=$?
+rm -f /home/pi/tmp/$1
+exit $rc

@@ -1192,6 +1192,22 @@ describe('test netbot input validation', function() {
     }
   });
 
+  describe('dnsTestDomain', function() {
+
+    // the domain goes into a root shell line of test_wan.sh, so a value that is not a domain is refused before the client is looked up
+    const badDomain = ['a b', 'a;id', 'a$(id)', 'nodot', 'a.b;id', 42, {}, ['example.com']];
+
+    for (const dnsTestDomain of badDomain) {
+      it(`saveOvpnProfile rejects ${JSON.stringify(dnsTestDomain)}`, async () => {
+        await shouldReject(() => cmd('saveOvpnProfile', {type: 'openvpn', profileId: 'vpn_1', settings: {dnsTestDomain}}), 400, /^'dnsTestDomain' should be a domain name$/);
+      });
+    }
+
+    it('saveOvpnProfile accepts a domain name', async () => {
+      await shouldReject(() => cmd('saveOvpnProfile', {type: 'no_such_type', profileId: 'vpn_1', settings: {dnsTestDomain: 'github.com'}}), 400, /^Unsupported VPN client type/);
+    });
+  });
+
   describe('category domain', function() {
 
     // the old regex was neither anchored nor greedy, so it only ever looked at the first character

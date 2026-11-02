@@ -64,7 +64,7 @@ echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
 # only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
-test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
+test -z $NO_FIREKICK_RESTART && $FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
 
 timeout 15 $FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
@@ -262,6 +262,7 @@ fi
 function create_bootstrap_scripts_folder() {
     logger "MAIN-START create_bootstrap_scripts_folder"
     mkdir -p $PI_HOME/scripts
+    [[ -O $PI_HOME/scripts ]] || sudo chown -R pi:pi $PI_HOME/scripts
 
     CHECKSUM_FILE=$FIREWALLA_HOME/scripts/bootstrap.sha256sum
 
@@ -279,6 +280,7 @@ function create_bootstrap_scripts_folder() {
 
     [ -s /home/pi/firewalla/scripts/network_settings.sh ] && cp /home/pi/firewalla/scripts/network_settings.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fire-time.sh ] && cp /home/pi/firewalla/scripts/fire-time.sh $PI_HOME/scripts/.
+    [ -s /home/pi/firewalla/scripts/sync_clock.sh ] && cp /home/pi/firewalla/scripts/sync_clock.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/fireupgrade.sh ] && cp /home/pi/firewalla/scripts/fireupgrade.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_reset.sh ] && cp /home/pi/firewalla/scripts/check_reset.sh $PI_HOME/scripts/.
     [ -s /home/pi/firewalla/scripts/check_fix_network.sh ] && cp /home/pi/firewalla/scripts/check_fix_network.sh $PI_HOME/scripts/.

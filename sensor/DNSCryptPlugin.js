@@ -64,18 +64,28 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin:{
-        servers: await dc.getServers(),
-        killSwitch: (await dc.getSettings()).killSwitch
-      }})} catch(err) {};
+      try {
+        // Settings first: a computed field must not be shadowed by a stray
+        // key of the same name that a client persisted through the passthrough.
+        await extensionManager._precedeRecord(msg.id, {origin: Object.assign(
+          await dc.getSettings(),
+          { servers: await dc.getServers() }
+        )})
+      } catch(err) {};
 
       if (data) {
-        if (Array.isArray(data.servers)) {
-          await dc.setServers(data.servers, false);
+        // The server list lives under its own key; everything else is a
+        // setting and is passed through as-is, so a new one does not need to
+        // be threaded through here. Each setting is validated where it is
+        // used, not here.
+        const { servers, ...settings } = data;
+        if (Array.isArray(servers)) {
+          await dc.setServers(servers, false);
         }
-        if (Object.prototype.hasOwnProperty.call(data, 'killSwitch') && typeof data.killSwitch === 'boolean') {
-          await dc.updateSettings({ killSwitch: data.killSwitch });
-        }
+        if ('killSwitch' in settings && typeof settings.killSwitch !== 'boolean')
+          delete settings.killSwitch;
+        if (Object.keys(settings).length)
+          await dc.updateSettings(settings);
         sem.sendEventToFireMain({ type: 'DOH_REFRESH' });
       }
     });
@@ -92,15 +102,13 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
       const selectedServers = await dc.getServers();
       const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
-      const settings = await dc.getSettings();
-      return { selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch };
+      return Object.assign(await dc.getSettings(), { selectedServers, allServers, customizedServers });
     });
 
     extensionManager.onCmd("dohReset", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin: {
+      try {await extensionManager._precedeRecord(msg.id, {origin: Object.assign(await dc.getSettings(), {
         servers: await dc.getServers(), customizedServers: await dc.getCustomizedServers(), allServers: await dc.getAllServerNames(),
-        killSwitch: (await dc.getSettings()).killSwitch,
-        enabled: fc.isFeatureOn(featureName)}})
+        enabled: fc.isFeatureOn(featureName)})})
       } catch(err) {};
       sem.sendEventToFireMain({ type: 'DOH_RESET' });
     });

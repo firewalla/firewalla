@@ -17,6 +17,7 @@ cp $CUR_DIR/well-known-server-ports/* /home/pi/.firewalla/run/zeek/scripts/well-
 cp $CUR_DIR/dns-mac-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/http-fast-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/ssl-alpn-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
+cp $CUR_DIR/ssl-cert-chain.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/vlan-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 cp $CUR_DIR/conn-worker-id.zeek /home/pi/.firewalla/run/zeek/scripts/
 
@@ -29,5 +30,9 @@ if [ -f "${TMP_FILE}" ]; then
 else
   [[ -e $PLATFORM_HOOK_DIR/local.bro ]] && sudo bash -c "cat $PLATFORM_HOOK_DIR/local.bro ${ADDITIONAL_FILE} > /usr/local/$BRO_PROC_NAME/share/$BRO_PROC_NAME/site/local.$BRO_PROC_NAME"
 fi
+
+# the CA list bundled with zeek is outdated, replace it with one generated from the system bundle
+ZEEK_CA_LIST=/usr/local/zeek/share/zeek/base/protocols/ssl/mozilla-ca-list.zeek
+[[ -e $ZEEK_CA_LIST ]] && sudo cp $CUR_DIR/mozilla-ca-list.zeek $ZEEK_CA_LIST
 
 sync

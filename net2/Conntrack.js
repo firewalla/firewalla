@@ -197,7 +197,7 @@ class Conntrack {
           if (kv[1] === "127.0.0.1" || kv[1] === "::1")
               return;
           if (kv[1].includes(":")) {
-            if (kv[1].startsWith("ff:")) // ff00::/8 is IPv6 multicast address range
+            if (/^ff[0-9a-f]{2}:/i.test(kv[1])) // ff00::/8 is IPv6 multicast address range
               return;
             kv[1] = new Address6(kv[1]).correctForm()
           } else {
@@ -300,6 +300,16 @@ class Conntrack {
 
   getKey(src, sport, dst, dport, protocol) {
     return `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+  }
+
+  // src of a client's dns entries: its MAC, or its identity GUID when it has none (VPN),
+  // the same id flows and audit records carry
+  getDNSClientKey(mac, ip) {
+    if (mac)
+      return mac.toUpperCase();
+    const IdentityManager = require('./IdentityManager.js');
+    const identity = IdentityManager.getIdentityByIP(ip);
+    return identity ? IdentityManager.getGUID(identity) : ip;
   }
 
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the

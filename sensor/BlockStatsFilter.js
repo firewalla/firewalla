@@ -26,6 +26,15 @@ function matchFilter(node, obj) {
   return false;
 }
 
+// whether matchFilter can walk the tree without throwing, an empty and/or, or a leaf without a field
+// name or a value, would match everything
+function isValidFilter(node) {
+  if (!node || typeof node !== 'object') return false;
+  if (Array.isArray(node.and)) return node.and.length > 0 && node.and.every(isValidFilter);
+  if (Array.isArray(node.or)) return node.or.length > 0 && node.or.every(isValidFilter);
+  return typeof node.field === 'string' && node.field.length > 0 && 'value' in node;
+}
+
 // with device in destKeys, the same dest hit from two devices counts once
 function countUniqueDests(dests) {
   return new Set(dests.map(d => d.dest)).size;
@@ -45,4 +54,4 @@ function countUniqueDestFields(dests) {
   return counts;
 }
 
-module.exports = { matchFilter, countUniqueDests, countUniqueDestFields };
+module.exports = { matchFilter, isValidFilter, countUniqueDests, countUniqueDestFields };

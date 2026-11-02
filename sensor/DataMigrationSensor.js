@@ -26,6 +26,8 @@ const hostTool = new HostTool();
 
 const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 const IntelTool = require('../net2/IntelTool.js');
 const intelTool = new IntelTool();
 const HostManager = require('../net2/HostManager.js');
@@ -222,6 +224,9 @@ class DataMigrationSensor extends Sensor {
         // Backfill the snapshot into pre-upgrade sumflow buckets to minimize aggregation
         // data loss during the transition, see backfillSumFlowCategory.
         await this.backfillSumFlowCategory();
+        break;
+      case "subdomains_zset": // legacy subdomains:<suffix> set is replaced by subdomains2:<suffix> zset
+        await dnsTool.migrateLegacySubDomains();
         break;
       default:
         log.warn("Unrecognized code name: " + codeName);

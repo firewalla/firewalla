@@ -98,7 +98,9 @@ if [[ $MANAGED_BY_FIREROUTER == "no" ]]; then
   await_ip_assigned || restore_values
 fi
 
-[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
+export FW_CLOCK_RESTART_NTP=true
+[ -s $SCRIPTS_DIR/sync_clock.sh ] && $SCRIPTS_DIR/sync_clock.sh || $FIREWALLA_HOME/scripts/sync_clock.sh
+unset FW_CLOCK_RESTART_NTP
 
 GITHUB_STATUS_API=https://api.github.com
 

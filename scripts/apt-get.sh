@@ -18,6 +18,7 @@
 exec > >(sudo tee -a /home/pi/logs/apt-get.log) 2>&1
 
 source ${FIREWALLA_HOME}/platform/platform.sh
+source ${FIREWALLA_HOME}/scripts/apt_utils.sh
 
 usage() {
     echo "Usage: apt-get.sh [options] <apt-get-arguments>"
@@ -90,7 +91,7 @@ fi
 
 if [ "$NOUPDATE" != 1 ]; then
   logger "$TAG:APT_UPDATE:START"
-  sudo timeout 60 /usr/bin/apt-get update \
+  sudo timeout 60 /usr/bin/apt-get $APT_UPDATE_OPTS update \
     || { logger "$TAG:ERROR:APT_UPDATE_FAILED code $?"; exit 1; }
 fi
 

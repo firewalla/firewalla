@@ -686,7 +686,7 @@ class NetworkProfile extends Monitorable {
     const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
     const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
-    const inputRule6Sec = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRuleSec.clone().fam(6);
     const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
 

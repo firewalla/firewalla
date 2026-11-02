@@ -2,3 +2,4 @@
 /home/pi/.firewalla/run/intelproxy/intelproxy /goldpro/intelproxy 755 "sudo systemctl stop intelproxy" "sudo systemctl start intelproxy"
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /all/zeek-dpi.fwsig 644
 /home/pi/.firewalla/run/assets/zssids /goldpro/zssids 755 ":" "sudo /home/pi/firewalla/scripts/zssids-updated.sh"
+/home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64.tar.xz /all/node/node-v24.21.0-linux-x64.tar.xz 644 ':' '/home/pi/firewalla/scripts/install_node.sh /home/pi/.firewalla/run/assets/node-v24.21.0-linux-x64.tar.xz v24.21.0'

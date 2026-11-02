@@ -179,7 +179,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
     await fsp.writeFile(file, addresses.join('\n') + '\n');
     const countFile = file + '.count'
-    await fsp.writeFile(countFile, addresses.length);
+    await fsp.writeFile(countFile, String(addresses.length));
   }
 
   async updatePersistentIPSets(category, ip6 = false, options) {

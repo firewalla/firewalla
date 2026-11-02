@@ -58,6 +58,7 @@ class FreeRadius {
       this.config = config || {};
       this.running = false;
       this.watcher = null;
+      this.watching = false;
       this.pid = null;
       this.featureOn = false;
       this.pullBackoff = null; // in-memory backoff, survives redis/disk failure within this process
@@ -109,6 +110,19 @@ class FreeRadius {
   }
 
   async _watch(container = false) {
+    if (this.watching) {
+      log.debug("previous freeradius watch still running, skip this round");
+      return;
+    }
+    this.watching = true;
+    try {
+      await this._doWatch(container);
+    } finally {
+      this.watching = false;
+    }
+  }
+
+  async _doWatch(container = false) {
     await this._watchStatus();
     if (this.running && container) {
       await sleep(1000);
@@ -139,12 +153,14 @@ class FreeRadius {
   async watchContainer(interval, force = false) {
     if (this.watcher) {
       clearInterval(this.watcher);
+      this.watcher = null;
     }
-
+    this.watcher = setInterval(() => {
+      this._watch(force).catch((err) => {
+        log.warn("freeradius watch failed", err.message);
+      });
+    }, interval * 1000 || 60000);
     await this._watch(force);
-    this.watcher = setInterval(async () => {
-      await this._watch(force);
-    }, interval * 1000 || 60000); // every 60s by default
   }
 
   async startDockerDaemon(options = {}) {

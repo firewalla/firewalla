@@ -93,6 +93,10 @@ module.exports = {
   // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
   // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_BLOCK_ALARM_CLOUD_CONFIG: "block_alarm_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_ALARM_CONFIG: "block_alarm_config",
+  // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
   KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
@@ -104,6 +108,10 @@ module.exports = {
   REDIS_KEY_EVENT_CLASSIFIER_CLOUD_CONFIG: "event_classifier_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
   KEY_EVENT_CLASSIFIER_CONFIG: "event_classifier_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG: "invalid_cert_ignored_issuers_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync, a JSON array of DN strings
+  KEY_INVALID_CERT_IGNORED_ISSUERS: "invalid_cert_ignored_issuers",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
@@ -111,6 +119,7 @@ module.exports = {
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+  REDIS_KEY_EID_BLACKLIST: "sys:eid:blacklist",
 
   REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
 
@@ -120,6 +129,8 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+  REDIS_HKEY_CONN_BPID: "bpid", // block rule id; presence flags the 5-tuple as blocked
+  REDIS_HKEY_CONN_BPID_TS: "bpidts", // epoch seconds bpid was last (re)written; ages the marker off its own write time
 
   NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
   NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,

@@ -12,9 +12,17 @@ BLUE_HOLE_IP="198.51.100.100"
 : "${FW_QOS_PROBABILITY:=0.999}"
 : "${WAN_INPUT_DROP_RATE_LIMIT:=10}"
 
-sudo which ipset &>/dev/null || sudo apt-get install -y ipset
+# callers run these scripts under sudo, so no command below is prefixed with sudo
+if [[ $EUID -ne 0 ]]; then
+  echo "$(basename "$0") must run as root" >&2
+  exit 1
+fi
+
+which ipset &>/dev/null || apt-get install -y ipset
 
 mkdir -p "${FIREWALLA_HIDDEN}"/run/iptables
+# FireMain writes its own restore files here as pi
+chown pi:pi "${FIREWALLA_HIDDEN}"/run/iptables
 
 ipset4_file=${FIREWALLA_HIDDEN}/run/iptables/ipset4
 ipset_file=${FIREWALLA_HIDDEN}/run/iptables/ipset.script
@@ -159,7 +167,7 @@ EOF
 } > "$ipset_file"
 
 if [[ "${DRY_RUN:-false}" == "false" ]]; then
-  sudo ipset restore -! --file "$ipset_file"
+  ipset restore -! --file "$ipset_file"
 else
   echo "Would restore ipset from: $ipset_file"
 fi
@@ -172,12 +180,12 @@ reset_ip_rules() {
       grep -vE "^(499|500|501|1001|2001|3000|3001|4001|5001|5002|5999|6001|7001|8001|9001|10001):" |
       cut -d: -f2- |
       while IFS= read -r line; do
-        sudo ip $fam rule del $line
+        ip $fam rule del $line
       done
 
-    sudo ip $fam rule add pref 0 from all lookup local
-    sudo ip $fam rule add pref 32766 from all lookup main
-    sudo ip $fam rule add pref 32767 from all lookup default
+    ip $fam rule add pref 0 from all lookup local
+    ip $fam rule add pref 32766 from all lookup main
+    ip $fam rule add pref 32767 from all lookup default
   done
 }
 
@@ -841,40 +849,40 @@ echo ""
 create_tc_rules() {
   # ifb module is for QoS
   if [[ $IFB_SUPPORTED == "yes" ]]; then
-    sudo modprobe ifb &> /dev/null || true
+    modprobe ifb &> /dev/null || true
     # Kernel 6.6+ loads ifb but no longer auto-creates ifb0/ifb1; create them explicitly.
     if ! ip link show dev ifb0 &>/dev/null; then
-      sudo ip link add ifb0 type ifb &>/dev/null || true
+      ip link add ifb0 type ifb &>/dev/null || true
     fi
     if ! ip link show dev ifb1 &>/dev/null; then
-      sudo ip link add ifb1 type ifb &>/dev/null || true
+      ip link add ifb1 type ifb &>/dev/null || true
     fi
-    sudo ip link set ifb0 up &>/dev/null || true
-    sudo ip link set ifb1 up &>/dev/null || true
+    ip link set ifb0 up &>/dev/null || true
+    ip link set ifb1 up &>/dev/null || true
   else
-    sudo rmmod ifb &> /dev/null || true
+    rmmod ifb &> /dev/null || true
   fi
 
   if ip link show dev ifb0; then
-    sudo tc filter delete dev ifb0 &> /dev/null || true
-    sudo tc qdisc delete dev ifb0 root &> /dev/null || true
-    sudo ip link set ifb0 up
-    sudo tc qdisc add dev ifb0 root handle 1: htb default 0x1002
-    sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # default to 10G will be replaced later
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1001 htb prio 2 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for high priority no rate limit rules
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1002 htb prio 4 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for default priority no rate limit rules
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1003 htb prio 6 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for low priority no rate limit rules
+    tc filter delete dev ifb0 &> /dev/null || true
+    tc qdisc delete dev ifb0 root &> /dev/null || true
+    ip link set ifb0 up
+    tc qdisc add dev ifb0 root handle 1: htb default 0x1002
+    tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # default to 10G will be replaced later
+    tc class add dev ifb0 parent 1:1 classid 1:0x1001 htb prio 2 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for high priority no rate limit rules
+    tc class add dev ifb0 parent 1:1 classid 1:0x1002 htb prio 4 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for default priority no rate limit rules
+    tc class add dev ifb0 parent 1:1 classid 1:0x1003 htb prio 6 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for low priority no rate limit rules
   fi
 
   if ip link show dev ifb1; then
-    sudo tc filter delete dev ifb1 &> /dev/null || true
-    sudo tc qdisc delete dev ifb1 root &> /dev/null || true
-    sudo ip link set ifb1 up
-    sudo tc qdisc add dev ifb1 root handle 1: htb default 0x1002
-    sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # default to 10G will be replaced later
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1001 htb prio 2 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for high priority no rate limit rules
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for default priority no rate limit rules
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for low priority no rate limit rules
+    tc filter delete dev ifb1 &> /dev/null || true
+    tc qdisc delete dev ifb1 root &> /dev/null || true
+    ip link set ifb1 up
+    tc qdisc add dev ifb1 root handle 1: htb default 0x1002
+    tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # default to 10G will be replaced later
+    tc class add dev ifb1 parent 1:1 classid 1:0x1001 htb prio 2 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for high priority no rate limit rules
+    tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for default priority no rate limit rules
+    tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for low priority no rate limit rules
   fi
 }
 
@@ -904,7 +912,7 @@ fw_hook_lines() {
   local ipt=$1 table=$2 parent=$3 op=$4; shift 4
   local rules current chain
 
-  rules=$(sudo "$ipt" -w -t "$table" -S "$parent" | tail -n +2)
+  rules=$("$ipt" -w -t "$table" -S "$parent" | tail -n +2)
   current=$(echo "$rules" | sed -n "s/^-A $parent -j \(FW_[A-Za-z0-9_]*\)$/\1/p" |
     grep -xF -- "$(printf '%s\n' "$@")" | tr '\n' ' ')
 
@@ -926,7 +934,7 @@ install_fw_hooks() {
     for spec in "${FW_HOOKS[@]}"; do
       read -r table parent op chains <<< "$spec"
       for chain in $chains; do
-        sudo "$ipt" -w -t "$table" -N "$chain" &>/dev/null || true
+        "$ipt" -w -t "$table" -N "$chain" &>/dev/null || true
       done
     done
 
@@ -939,7 +947,7 @@ install_fw_hooks() {
     done > "$file"
 
     if [[ -s $file ]]; then
-      sudo "$ipt"-restore --noflush "$file" || echo "failed to install $ipt hooks, see $file"
+      "$ipt"-restore --noflush "$file" || echo "failed to install $ipt hooks, see $file"
     fi
   done
 }
