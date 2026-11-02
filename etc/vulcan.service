@@ -1,0 +1,19 @@
+[Unit]
+Description=Firewalla Vulcan CVE mitigations
+After=network.target redis-server.service
+Wants=redis-server.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# needs CAP_NET_ADMIN for iptables
+User=root
+ExecStart=/home/pi/.firewalla/run/assets/vulcan run --log-file /home/pi/.forever/vulcan.log
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+# stderr (journald) is used only if the log file cannot be opened
+SyslogIdentifier=vulcan
+
+[Install]
+WantedBy=multi-user.target
