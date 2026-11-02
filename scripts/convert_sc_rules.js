@@ -15,6 +15,13 @@ const disabledSids = [
     2056423, // apache request smuggling, AirPlay reverse HTTP on port 7000 looks like a request in the body
     2014376, // dns lookup over udp 53, see isDnsLookupRule
     2022335, // dns lookup over udp 53, see isDnsLookupRule
+    2016016, // dns amplification inbound, HOME_NET has the vpn subnets, hit by ANY queries from TikTok/Douyin to the box
+    2849885, // android trojan checkin, only a 2-byte prefix on any port >= 1024, hit by p2p/cdn traffic
+    2031297, // gorat build id string on any tcp stream, hit by smb copies of files that contain the rule text
+    2829589, // lady.g connectivity check, Go client fetching v4.ident.me, hit by firewalla boxes
+    2010677, // "My Session" user agent, hit by 10jqka
+    2803418, // "MERONG" user agent, hit by 10jqka
+    2832142, // marap beacon, POST .php with param=<base64>, hit by 10jqka my_stock.php
 ];
 
 function getCategory(msg) {
