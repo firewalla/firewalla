@@ -18,6 +18,7 @@
 
 const net = require('net')
 const _ = require('lodash');
+const validator = require('validator');
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -29,6 +30,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
+// event types whose notification is on until the app explicitly turns it off, same as alarms
+const DEFAULT_ON_EVENT_TYPES = ["phone_paired", "weak_password_scan_start", "weak_password_scan_complete"];
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -42,6 +45,9 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
+const networkTool = require('../net2/NetworkTool.js')();
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
@@ -71,7 +77,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const { exec: execAsync, execFile } = require('child-process-promise');
+const { exec: execAsync, execFile, spawn } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -143,7 +149,8 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -151,6 +158,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
@@ -163,6 +171,12 @@ const crypto = require('crypto')
 const LRU = require('lru-cache')
 
 const restartUPnPTask = {};
+
+// one sendlog per box: every controller instance shares the same temp files
+let sendLogRunning = false;
+const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
+const SENDLOG_TIMEOUT_SEC = 300;
+const WIFI_SWITCH_ERR_IDS = ["WRONG_KEY", "AUTH_FAILED"];
 
 class netBot extends ControllerBot {
 
@@ -304,7 +318,11 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
-  // by default, all event-based notifications are disabled (alarms by default enabled)
+  /*
+   * By default, event-based notifications are disabled and have to be turned on per event type,
+   * except the types in DEFAULT_ON_EVENT_TYPES, which are on unless the app explicitly turns them
+   * off. The global switch always wins, an unset one is still taken as off.
+   */
   _checkEventNotifyPolicy(policy, event_type) {
     if (!policy || !policy["notify"]) {
       log.info("host notification policy not set, skip notification");
@@ -316,7 +334,16 @@ class netBot extends ControllerBot {
       return false;
     }
 
-    if (!policy["notify"][event_type]) {
+    const state = policy["notify"][event_type];
+    if (state === undefined || state === null) {
+      if (!DEFAULT_ON_EVENT_TYPES.includes(event_type)) {
+        log.info("host event notification not set for event type", event_type);
+        return false;
+      }
+      return true;
+    }
+
+    if (!state) {
       log.info("host event notification disable for event type", event_type);
       return false;
     }
@@ -353,7 +380,7 @@ class netBot extends ControllerBot {
     }
 
     let notifEvent = await this.getNotifEvent(event_type, event_value, event.labels);
-    if (notifEvent.msg == "") {
+    if (!notifEvent || !notifEvent.msg) {
       log.info(`event ${event_type} not supported for notification`);
       return;
     }
@@ -362,55 +389,130 @@ class netBot extends ControllerBot {
       message: notifEvent.msg,
       titleKey: 'NOTIF_EVENT_TITLE',
       bodyKey: 'NOTIF_EVENT_BODY',
-      titleLocalKey: `NEW_EVENT_TITLE_${event_type}`,
-      bodyLocalKey: `NEW_EVENT_BODY_${event_type}`,
-      bodyLocalArgs: [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
-      bodyLocalMsg: notifEvent.msg,
+      // an event type may keep its own notification key namespace, fall back to the generic one
+      titleLocalKey: notifEvent.titleLocalKey || `NEW_EVENT_TITLE_${event_type}`,
+      bodyLocalKey: notifEvent.bodyLocalKey || `NEW_EVENT_BODY_${event_type}`,
+      bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
+        : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
+      // no bodyLocalMsg, body_loc_msg is not supported by Android notification
       payload: notifEvent.args,
+      category: notifEvent.category,
     }
   }
 
+  // time of the day of a timestamp in seconds, in the timezone of the box, defaults to now
+  _localizedTimeOfDay(ts = Date.now() / 1000) {
+    return this._localizedTime(ts * 1000);
+  }
+
+  // localized short time of a timestamp in milliseconds, e.g. 3:00 AM, same format as the one used
+  // by alarms, e.g. ALARM_VPN_RESTORE. Returns "" if the timestamp is unknown
+  _localizedTime(ts) {
+    if (!ts) return "";
+    const timezone = sysManager.getTimezone();
+    return (timezone ? moment(ts).tz(timezone) : moment(ts)).format("LT");
+  }
+
+  // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
   async getNotifEvent(event_type, event_value, event_labels) {
-    let payload = {msg: '', args: {}};
+    let payload = {msg: '', args: {}, localArgs: []};
+    if (!event_labels) return payload;
     switch (event_type) {
-      case "phone_paired":
+      case "phone_paired": {
         const eid = event_labels.eid;
-        const deviceName = event_labels.deviceName;
-        if (eid == "") return;
-        payload.msg = `A new phone ${deviceName ? "("+deviceName+") " : ""}is paired with your Firewalla box.`;
+        // dName comes from the appInfo of the paired app, deviceName is the label of legacy events
+        const dName = event_labels.dName || event_labels.deviceName || "";
+        const name = event_labels.name || ""; // account of the paired app
+        const ts = event_labels.ts || 0;
+        if (!eid) break;
+        payload.msg = `A new phone ${dName ? "("+dName+") " : ""}is paired with your Firewalla box.`;
         payload.args.eid = eid;
-        payload.args.deviceName = deviceName || "";
-        // find latest event ts
-        let results = await ea.getLatestEventsByType(event_type);
-        results = results.filter(i => i.labels && i.labels.eid == eid);
-        if (results.length > 0) {
-          payload.args.ts = results[0].ts
-        }
+        payload.args.dName = dName;
+        payload.args.deviceName = dName; // legacy key, kept for apps that do not read dName yet
+        payload.args.name = name;
+        payload.args.ts = ts;
+        // loc-args/body_loc_args carry the localized time of the box instead of the raw timestamp
+        payload.localArgs = [eid, dName, this._localizedTime(ts), name];
+        payload.category = Constants.NOTIF_CATEGORY_PHONE_PAIRED;
         break;
+      }
+      case "weak_password_scan_start": {
+        const numOfHosts = event_labels.numOfHosts || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = `System vulnerability scan started at ${time} on ${numOfHosts} device(s).`;
+        payload.args.deviceCount = numOfHosts;
+        payload.args.time = time;
+        payload.localArgs = [numOfHosts, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.bodyLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
+        break;
+      }
+      case "weak_password_scan_complete": {
+        const count = event_labels.numOfWeakPasswords || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = count === 0
+          ? `System vulnerability scan completed at ${time}. No vulnerabilities were found.`
+          : `Firewalla found ${count} vulnerabilities on your devices at ${time}.`;
+        payload.args.weakPasswordCount = count;
+        payload.args.time = time;
+        payload.localArgs = [count, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_COMPLETE';
+        // NOTE: the triple-S typo below is the key already shipped in the app, do NOT "fix" it
+        payload.bodyLocalKey = `WEAK_PASSSWORD_SCAN_COMPLETE_${count === 0 ? "NOT_" : count > 1 ? "MULTI_" : "SINGLE_"}FOUND`;
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
+        break;
+      }
       default:
     }
     return payload
   }
 
   async _sendLog() {
-    let password = require('../extension/common/key.js').randomPassword(10)
-    let filename = this.primarygid + ".tar.gz.gpg";
-    const url = await util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
-    if (url == null || url.url == null) {
-      throw "Unable to get storage"
-    } else {
-      const path = URL.parse(url.url).pathname;
-      const homePath = f.getFirewallaHome();
-      let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-      await execAsync(cmdline).catch(err => {
-        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);
-      })
-      return { password: password, filename: path }
+    if (sendLogRunning)
+      throw { code: 409, msg: "sendlog already in progress" }
+    sendLogRunning = true
+    let url, path
+    try {
+      url = await asyncNative.timeout(
+        util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0),
+        SENDLOG_STORAGE_TIMEOUT_SEC
+      )
+      if (url == null || url.url == null)
+        throw "Unable to get storage"
+      path = URL.parse(url.url).pathname;
+    } catch (err) {
+      sendLogRunning = false
+      throw err
     }
+    const password = require('../extension/common/key.js').randomPassword(10)
+    const filename = this.primarygid + ".tar.gz.gpg";
+    const script = `${f.getFirewallaHome()}/scripts/encrypt-upload-s3.sh`;
+    // reply before the upload: building the bundle outlasts the API request timeout.
+    // timeout stops the job's process group; a nested timeout in techsupport may outlive it by 40s
+    const job = execFile('timeout', ['-k', '30', String(SENDLOG_TIMEOUT_SEC), script, filename, password, url.url])
+    job
+      .then(() => {
+        log.info("sendLog: uploaded", path)
+      })
+      .catch(err => {
+        // not err.message: it carries the command line with the password and presigned url
+        const stderrTail = String(err.stderr || '').split('\n').filter(l => l.trim()).slice(-5).join('\n')
+        log.error("sendLog: encrypt-upload failed, code", err.code, "signal", job.childProcess.signalCode, stderrTail)
+      })
+      .finally(() => {
+        sendLogRunning = false
+      })
+    return { password: password, filename: path }
   }
 
   async _portforward(target, msg) {
     log.info("_portforward", msg);
+    // reject an invalid schedule here, the message bus gives no feedback to the app
+    const PortForward = require('../extension/portforward/portforward.js');
+    const err = PortForward.validateSchedule(msg);
+    if (err)
+      throw { code: 400, msg: err };
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
@@ -731,6 +833,9 @@ class netBot extends ControllerBot {
             "action_value": 1,
             "labels": { "version": fc.getSimpleVersion() }
           }
+          // NOTE: this writes event:log directly and thus bypasses EventRequestHandler.sendEvent,
+          // so it does NOT fan out Message.MSG_EVENT_GENERATED. That is fine here - netbot runs in
+          // FireApi, where the consumers of that message don't exist.
           await ea.addEvent(eventRequest, eventRequest.ts);
         } catch (err) {
           log.error("failed to add action event on firewalla_upgrade:", err);
@@ -853,8 +958,22 @@ class netBot extends ControllerBot {
         exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
-        });
+        // command cannot leave scripts/, execFile keeps it away from a shell.
+        let script, args;
+        if (msg.args) {
+          script = String(msg.command || '').trim();
+          args = _.isArray(msg.args) ? msg.args.map(String) : null;
+        } else {
+          args = String(msg.command || '').trim().split(/\s+/);
+          script = args.shift();
+        }
+        if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
+          log.debug("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+        } else {
+          log.debug("FIREWALLA CLOUD SCRIPT", script, args);
+          execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
+            .catch((err) => log.debug("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+        }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
         // RAW commands will never / ever be ran on production
@@ -1222,23 +1341,18 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
-             // notify phone_pair events
-            sem.sendEventToFireApi({
-              type: `Event:NewEvent`,
-              message: "A new event is generated",
-              event: {
-                  "event_type": "action",
-                  "action_type": "phone_paired",
-                  "action_value": 1,
-                  "labels": {"eid": appInfo.eid, "deviceName": appInfo.deviceName}
-              },
-            });
           }
         }
       } catch (err) {
         log.info("error when record paired device history info", err)
       }
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
+
+      // fire the phone_paired event of a freshly paired app, this is the first time its device name
+      // is known. Nothing happens if there is no pending record, i.e. the app is not newly paired
+      await pairedAppEventTool.claimPending(appInfo.eid, appInfo.deviceName).catch((err) => {
+        log.error("Failed to fire phone_paired event of", appInfo.eid, err.message)
+      })
 
       const keyName2 = "sys:ept:member:lastvisit"
       await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(Date.now() / 1000))
@@ -1395,6 +1509,32 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
+      case "blockStatsAggr": {
+        //  value.begin/value.end: time range in seconds used to query block stats time slots,
+        //  begin included, end excluded, end defaults to now if not given
+        const value = msg.data.value || {};
+        const { begin } = value;
+        const end = value.end == null ? Math.floor(Date.now() / 1000) : value.end;
+        if (begin == null || isNaN(begin) || isNaN(end)) {
+          throw new Error('Invalid begin/end');
+        }
+        const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
+        return { blockStats };
+      }
+      case "dailyInboundBlockStats": {
+        //  value.ts: any time in the local day to return, within the last 7 days
+        const value = msg.data.value || {};
+        if (value.ts == null || isNaN(value.ts)) {
+          throw new Error('Invalid ts');
+        }
+        const dayStart = localDayStart(Number(value.ts), sysManager.getTimezone());
+        const json = {};
+        await Promise.all([
+          netBotTool.prepareTopFlows(json, 'ipB', 'out', {dayStart, limit: 400}),
+          netBotTool.prepareTopFlows(json, 'ifB', 'out', {dayStart, limit: 400}),
+        ]);
+        return { ts: dayStart, flows: json.flows };
+      }
       case "neighbors":
       case "neighborsLocal": {
         if (!msg.target) {
@@ -1520,6 +1660,10 @@ class netBot extends ControllerBot {
         const rc = require("../diagnostic/rulecheck.js");
         return rc.checkIpOrDomain(ipOrDomain);
       }
+      case "portCheck": {
+        const pc = require("../diagnostic/portcheck.js");
+        return pc.checkPort(value.port);
+      }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
@@ -1532,9 +1676,11 @@ class netBot extends ControllerBot {
       case "pendingAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
         const pendingAlarms = await am2.loadPendingAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: pendingAlarms,
@@ -1544,10 +1690,12 @@ class netBot extends ControllerBot {
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
 
         const archivedAlarms = await am2.loadArchivedAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: archivedAlarms,
@@ -1726,24 +1874,11 @@ class netBot extends ControllerBot {
       }
       case "vpnProfile":
       case "ovpnProfile": {
-        const type = (value && value.type) || "openvpn";
-        const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
-        let vpnClient = VPNClient.getInstance(profileId);
-        if (!vpnClient) {
-          const exists = await c.profileExists(profileId);
-          if (!exists) {
-            throw { code: 404, msg: "Specified profileId is not found." }
-          }
-          vpnClient = new c({ profileId });
-        }
+        const vpnClient = await netBotTool.getVPNClient({ 
+          type: (value && value.type) || "openvpn",
+          profileId: value.profileId,
+          mustExist: true
+        });
         return vpnClient.getAttributes(true);
       }
       case "vpnProfiles":
@@ -2320,13 +2455,13 @@ class netBot extends ControllerBot {
         sysTool.restartFireKickService();
         return
       case "restartFirereset":
-        await execAsync("sudo systemctl restart firereset");
+        await execFile("sudo", ["systemctl", "restart", "firereset"]);
         return
       case "restartFirestatus":
-        await execAsync("sudo systemctl restart firestatus");
+        await execFile("sudo", ["systemctl", "restart", "firestatus"]);
         return
       case "restartBluetoothRTKService":
-        await execAsync("sudo systemctl restart rtk_hciuart");
+        await execFile("sudo", ["systemctl", "restart", "rtk_hciuart"]);
         return
       case "cleanIntel":
         await sysTool.cleanIntel();
@@ -2741,7 +2876,7 @@ class netBot extends ControllerBot {
               });
               await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
               await pm2.deletePoliciesData(pAudit)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`])
 
               // always recreate inbound firewall and active protect
               if (await mode.isRouterModeOn()) {
@@ -2757,7 +2892,7 @@ class netBot extends ControllerBot {
               log.info('Reseting qos policies', pQos.length)
               await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
               await pm2.deletePoliciesData(pQos)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing qos policies', pQos.length)
@@ -2769,7 +2904,7 @@ class netBot extends ControllerBot {
               log.info('Reseting route policies', pRoute.length)
               await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
               await pm2.deletePoliciesData(pRoute)
-              await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+              await execFile("sudo", [`${f.getFirewallaHome()}/control/reset_iptables_route.sh`])
 
             } else if (value.audit) {
               log.info('Reenforcing route policies', pRoute.length)
@@ -2804,9 +2939,6 @@ class netBot extends ControllerBot {
         }
         return data
       }
-      case "policy:setDisableAll":
-        await pm2.setDisableAll(value.flag, value.expireMinute);
-        return
       case "acl:check": {
         const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
         return { matchedRule: matchedRule }
@@ -2821,7 +2953,11 @@ class netBot extends ControllerBot {
         } else {
           const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params);
           if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
-            throw { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors }
+            const err = { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors };
+            // firerouter puts wpa_supplicant's reason first when the credentials are rejected
+            if (WIFI_SWITCH_ERR_IDS.includes(resp.errors[0]))
+              err.errID = resp.errors[0];
+            throw err;
           } else {
             return
           }
@@ -3025,6 +3161,17 @@ class netBot extends ControllerBot {
       case "resetBootingComplete":
         await f.resetBootingComplete()
         return
+      case "resetPort": {
+        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
+          throw { code: 400, msg: "'ports' should be a non-empty array" };
+        const ports = _.uniq(value.ports);
+        const legal = platform.getEthernetNicNames();
+        const illegal = ports.filter(p => !legal.includes(p));
+        if (!_.isEmpty(illegal))
+          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        log.info("Resetting link on ethernet ports", ports);
+        return await networkTool.resetEthernetPorts(ports);
+      }
       case "joinBeta":
         await this.switchBranch("beta")
         return
@@ -3105,8 +3252,7 @@ class netBot extends ControllerBot {
       case "addIncludeDomain": {
         const category = value.category
         let domain = value.domain
-        const regex = /^[-a-zA-Z0-9.*]+?/;
-        if (!regex.test(domain)) {
+        if (!isCategoryDomainValid(domain)) {
           throw { code: 400, msg: "Invalid domain." }
         }
 
@@ -3130,6 +3276,9 @@ class netBot extends ControllerBot {
       case "removeIncludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3149,6 +3298,9 @@ class netBot extends ControllerBot {
       case "addExcludeDomain": {
         const category = value.category
         let domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         domain = domain.toLowerCase();
         await categoryUpdater.addExcludedDomain(category, domain)
         const event = {
@@ -3169,6 +3321,9 @@ class netBot extends ControllerBot {
       case "removeExcludeDomain": {
         const category = value.category
         const domain = value.domain
+        if (!isCategoryDomainValid(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
         await categoryUpdater.removeExcludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3188,6 +3343,11 @@ class netBot extends ControllerBot {
       case "updateIncludedElements": {
         const category = value.category;
         const elements = value.elements;
+        // elements end up in a dnsmasq config file parsed by root, a valid element (domain, address,
+        // port or regex) is printable ASCII without whitespace. anything but an array is refused
+        if (!_.isArray(elements) || elements.some(e => !_.isString(e) || e.length === 0 || e.length > 1024 || !/^[\x21-\x7e]+$/.test(e))) {
+          throw { code: 400, msg: "Invalid elements." }
+        }
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
@@ -3200,11 +3360,19 @@ class netBot extends ControllerBot {
       case "createOrUpdateCustomizedCategory": {
         const category = value.category;
         const obj = value.obj;
+        // category becomes a dnsmasq config file name and an ipset name, a new one is a generated uuid
+        if (category && (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category))) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
         return c
       }
       case "removeCustomizedCategory": {
         const category = value.category;
+        // category becomes a dnsmasq config file name and an ipset name
+        if (!_.isString(category) || category.length > 64 || !/^[A-Za-z0-9_-]+$/.test(category)) {
+          throw { code: 400, msg: "Invalid category." }
+        }
         await categoryUpdater.removeCustomizedCategory(category);
         return
       }
@@ -3344,18 +3512,8 @@ class netBot extends ControllerBot {
       }
       case "startVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         await vpnClient.setup()
         const { result, errMsg } = await vpnClient.start().catch(err => {
           log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
@@ -3371,18 +3529,8 @@ class netBot extends ControllerBot {
       }
       case "stopVpnClient": {
         const type = value.type;
-        if (!type) {
-          throw { code: 400, msg: "'type' is not specified." }
-        }
         const profileId = value.profileId;
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' is not specified." }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         // error in setup should not interrupt stop vpn client
         await vpnClient.setup().catch((err) => {
           log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
@@ -3393,21 +3541,12 @@ class netBot extends ControllerBot {
       }
       case "saveVpnProfile":
       case "saveOvpnProfile": {
-        let type = value.type || "openvpn";
         const profileId = value.profileId;
         const settings = value.settings || {};
-        if (!profileId) {
-          throw { code: 400, msg: "'profileId' should be specified" }
-        }
-        const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-        if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        // the domain is queried by the client's DNS test, which runs it in a root shell line
+        if (settings.dnsTestDomain && !(_.isString(settings.dnsTestDomain) && validator.isFQDN(settings.dnsTestDomain)))
+          throw { code: 400, msg: "'dnsTestDomain' should be a domain name" };
+        const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
           await vpnClient.saveSettings(settings);
@@ -3419,14 +3558,7 @@ class netBot extends ControllerBot {
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         const profileId = value.profileId;
-        if (!profileId || profileId === "") {
-          throw { code: 400, msg: "'profileId' is not specified" }
-        }
-        const c = VPNClient.getClass(type);
-        if (!c) {
-          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
-        }
-        const vpnClient = new c({profileId});
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         const status = await vpnClient.status();
         if (status) {
           throw { code: 400, msg: `${type} VPN client ${profileId} is still running` }
@@ -3952,19 +4084,27 @@ class netBot extends ControllerBot {
         return result
       }
       case "apt-get": {
-        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-        if (value.noUpdate) cmd = cmd + ' -nu';
-        if (value.noReboot) cmd = cmd + ' -nr';
-        if (value.forceReboot) cmd = cmd + ' -fr';
+        if (!value.action || !_.isString(value.action)) throw new Error('Missing parameter "action"')
 
-        if (!value.action) throw new Error('Missing parameter "action"')
+        const VALID_ACTIONS = ['install', 'remove', 'purge', 'autoremove', 'upgrade', 'dist-upgrade', 'full-upgrade'];
+        // apt-get.sh passes the action string to apt-get unquoted, so only an action plus package
+        // names is accepted here. option-looking tokens stay out on purpose: apt options such as
+        // -o DPkg::Pre-Invoke run arbitrary commands
+        const VALID_PKG_NAME = /^[a-zA-Z0-9][a-zA-Z0-9.+:~-]*$/;
+        const tokens = value.action.trim().split(/\s+/);
+        if (!VALID_ACTIONS.includes(tokens[0])) throw new Error(`Unsupported apt-get action: ${tokens[0]}`)
+        for (const token of tokens.slice(1))
+          if (!VALID_PKG_NAME.test(token)) throw new Error(`Invalid package name: ${token}`)
 
-        cmd = `${cmd} ${value.action}`;
+        // -pre/-pst are no longer accepted, they took a command to run as root
+        const args = [];
+        if (value.noUpdate) args.push('-nu');
+        if (value.noReboot) args.push('-nr');
+        if (value.forceReboot) args.push('-fr');
+        args.push(...tokens);
 
-        log.info('Running apt-get', cmd)
-        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        log.info('Running apt-get', args)
+        await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args)
         return
       }
       case "ble:control":
@@ -4032,7 +4172,7 @@ class netBot extends ControllerBot {
     }
     log.info("Going to switch to branch", targetBranch);
     try {
-      await execAsync(`${f.getFirewallaHome()}/scripts/switch_branch.sh ${targetBranch}`)
+      await execFile(`${f.getFirewallaHome()}/scripts/switch_branch.sh`, [targetBranch])
       if (platform.isFireRouterManaged()) {
         // firerouter switch branch will trigger fireboot and restart firewalla services
         await FireRouter.switchBranch(target);
@@ -4181,19 +4321,11 @@ class netBot extends ControllerBot {
             }
           }
 
-          // check whitelist, empty set allows all, only for dev
-          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" &&
-            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web" && aplt != "msp";
-          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
-            log.warn('deny access from eid', eid, "with", msg.data.item);
-            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
-          }
-
-          // check blacklist, only for dev
-          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" &&
-            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web" && aplt != "msp";
+          // check blacklist, deny set/cmd from readonly eids, e.g. msp readonly access
+          const forbid = (await rclient.typeAsync(Constants.REDIS_KEY_EID_BLACKLIST)) == "set" &&
+            await rclient.sismemberAsync(Constants.REDIS_KEY_EID_BLACKLIST, eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
-            log.warn('deny access from eid', eid);
+            log.warn('deny access from eid', eid, msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
@@ -4228,6 +4360,10 @@ class netBot extends ControllerBot {
                 options.includeAppTimeIntervals = data.includeAppTimeIntervals;
               if (data.timeUsageApps)
                 options.timeUsageApps = data.timeUsageApps;
+              options.blockStatsAggrFilter = data.blockStatsAggrFilter;
+              // { include: [<state_type>] } or { exclude: [<state_type>] } for the latest state events
+              if (data.stateEventTypeFilter)
+                options.stateEventTypeFilter = data.stateEventTypeFilter;
 
               if (!data.apiVer || data.apiVer <= 2) {
                 options.legacyLocalBlock = true;
@@ -4448,7 +4584,7 @@ class netBot extends ControllerBot {
     if (restartUPnPTask[intfName])
       clearTimeout(restartUPnPTask[intfName]);
     restartUPnPTask[intfName] = setTimeout(() => {
-      execAsync(`sudo systemctl restart firerouter_upnpd@${intfName}`).catch((err) => { });
+      execFile("sudo", ["systemctl", "restart", `firerouter_upnpd@${intfName}`]).catch((err) => { });
     }, 3000);
   }
 
@@ -4536,7 +4672,7 @@ class netBot extends ControllerBot {
             break;
           }
         }
-        await execAsync("sync");
+        await execFile("sync", []);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }

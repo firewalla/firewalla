@@ -13,10 +13,10 @@ fi
 reset_ipset
 
 if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
-  sudo iptables -w -F FORWARD
-  sudo iptables -w -t nat -F PREROUTING
-  sudo ip6tables -w -F FORWARD
-  sudo ip6tables -w -t nat -F PREROUTING
+  iptables -w -F FORWARD
+  iptables -w -t nat -F PREROUTING
+  ip6tables -w -F FORWARD
+  ip6tables -w -t nat -F PREROUTING
 fi
 
 
@@ -179,10 +179,10 @@ cat << EOF
 EOF
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  if sudo iptables -w -t nat -L FR_WIREGUARD -n &>/dev/null; then
+  if iptables -w -t nat -L FR_WIREGUARD -n &>/dev/null; then
     echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
   fi
-  if sudo iptables -w -t nat -L FR_AMNEZIA_WG -n &>/dev/null; then
+  if iptables -w -t nat -L FR_AMNEZIA_WG -n &>/dev/null; then
     echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
   fi
 fi
@@ -393,14 +393,14 @@ if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
 
   if [[ ${#modules_to_reload[@]} -gt 0 ]]; then
     # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
-    sudo iptables-save > "$iptables_file.orig"
-    sudo ip6tables-save > "$ip6tables_file.orig"
+    iptables-save > "$iptables_file.orig"
+    ip6tables-save > "$ip6tables_file.orig"
 
-    grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
-    grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
+    grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | iptables-restore
+    grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | ip6tables-restore
     for module_name in "${modules_to_reload[@]}"; do
       if lsmod | grep -w "xt_${module_name}"; then
-        sudo rmmod "xt_${module_name}"
+        rmmod "xt_${module_name}"
         if [[ $? -eq 0 ]]; then
           installTLSModule "xt_${module_name}"
         fi
@@ -409,8 +409,8 @@ if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
       fi
     done
 
-    sudo iptables-restore "$iptables_file.orig"
-    sudo ip6tables-restore "$ip6tables_file.orig"
+    iptables-restore "$iptables_file.orig"
+    ip6tables-restore "$ip6tables_file.orig"
   fi
 fi
 
@@ -426,8 +426,8 @@ install_fw_hooks
 if [[ "$DRY_RUN" == "false" ]]; then
   # --noflush: the skeleton only declares FW_ chains now, a flush would drop every
   # rule owned by firerouter, docker and upnp
-  sudo iptables-restore --noflush "$iptables_file"
-  sudo ip6tables-restore --noflush "$ip6tables_file"
+  iptables-restore --noflush "$iptables_file"
+  ip6tables-restore --noflush "$ip6tables_file"
 else
   echo "Skipping iptables-restore in dry-run mode"
   echo "Would restore IPv4 rules from: $iptables_file"
@@ -437,38 +437,38 @@ fi
 
 # as allow rules are removed, we remove registered upnp services as well.
 # firerouter_upnp@* services are always running, restart is fine
-sudo rm /var/run/upnp.*.leases
-sudo systemctl restart firerouter_upnp*
+rm /var/run/upnp.*.leases
+systemctl restart firerouter_upnp*
 redis-cli hdel sys:scan:nat upnp
 
 
 {
   # This will remove all customized ip sets that are not referred in iptables after initialization
-  for set in $(sudo ipset list -name | grep "^c_"); do
+  for set in $(ipset list -name | grep "^c_"); do
     echo "flush -! $set"
   done
   # flush before destory, some ipsets may be referred in other ipsets and cannot be destroyed at the first run
-  for set in $(sudo ipset list -name | grep "^c_"); do
+  for set in $(ipset list -name | grep "^c_"); do
     echo "destroy -! $set"
   done
 } > "${ipset_destroy_file}"
 
 if [[ "$DRY_RUN" == "false" ]]; then
-  sudo ipset restore -! --file "${ipset_destroy_file}"
+  ipset restore -! --file "${ipset_destroy_file}"
 else
   echo "Skipping ipset restore in dry-run mode"
   echo "Would restore ipset from: ${ipset_destroy_file}"
 fi
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  sudo iptables -w -N DOCKER-USER &>/dev/null
-  sudo iptables -w -F DOCKER-USER
-  sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-  sudo iptables -w -A DOCKER-USER -j RETURN
+  iptables -w -N DOCKER-USER &>/dev/null
+  iptables -w -F DOCKER-USER
+  iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  iptables -w -A DOCKER-USER -j RETURN
 fi
 
 create_tc_rules
 
-sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null
-sudo ebtables -t nat --concurrent -F FW_PREROUTING
-sudo ebtables -t nat --concurrent -Lx PREROUTING | grep "^-j FW_PREROUTING" || sudo ebtables -t nat --concurrent -A PREROUTING -j FW_PREROUTING
+ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null
+ebtables -t nat --concurrent -F FW_PREROUTING
+ebtables -t nat --concurrent -Lx PREROUTING | grep "^-j FW_PREROUTING" || ebtables -t nat --concurrent -A PREROUTING -j FW_PREROUTING

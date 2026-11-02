@@ -57,7 +57,7 @@ class AuditTool extends LogQuery {
       if (macs[0] === 'system')
         feedsArray.push(this.expendFeeds({macs, block: true, local: true }))
       else
-        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: this.localCopyExclude(macs) }))
     }
 
     return [].concat(... feedsArray)
@@ -126,6 +126,15 @@ class AuditTool extends LogQuery {
 
     if (entry.pid) {
       f.pid = entry.pid
+    }
+    if (entry.bType) {
+      f.bType = entry.bType
+    }
+    if (entry.bTarget) {
+      f.bTarget = entry.bTarget
+    }
+    if (entry.purpose) {
+      f.purpose = entry.purpose
     }
     if (entry.reason) {
       f.reason = entry.reason

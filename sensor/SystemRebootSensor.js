@@ -22,7 +22,7 @@ const os = require('os');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const era = require('../event/EventRequestApi.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const f = require('../net2/Firewalla.js');
 const HB_FILE = `${f.getRuntimeInfoFolder()}/heartbeat`;
 
@@ -40,8 +40,8 @@ class SystemRebootSensor extends Sensor {
       }
     }
     // use sudo to generate file in /dev/shm, IPC objects of system users will not be removed even if RemoveIPC=yes in /etc/systemd/logind.conf
-    await exec(`sudo rm -f ${REBOOT_FLAG_FILE}`).catch((err) => {}); // regenerate the file to make sure it is owned by root
-    await exec(`sudo touch ${REBOOT_FLAG_FILE}`).catch((err) => {
+    await execFile("sudo", ["rm", "-f", REBOOT_FLAG_FILE]).catch((err) => {}); // regenerate the file to make sure it is owned by root
+    await execFile("sudo", ["touch", REBOOT_FLAG_FILE]).catch((err) => {
       log.error(`Failed to touch ${REBOOT_FLAG_FILE}`, err.message);
     });
   }

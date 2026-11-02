@@ -21,7 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const ipset = require('./Ipset.js');
 const _ = require('lodash');
@@ -35,6 +35,7 @@ const platform = platformLoader.getPlatform();
 
 const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowAggrTool = require('./FlowAggrTool');
@@ -51,6 +52,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
+const { countUniqueDests, countUniqueDestFields } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -105,7 +107,20 @@ const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+// matches EventSummarySensor's RETENTION_SECS (7 days), but counted in local calendar days
+const EVENT_SUMMARY_RETENTION_DAYS = 7;
+const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
+// block stats inlined in every init response, per entry
+const BLOCK_STATS_INIT_MAX_IDENTITIES = 5;
+const BLOCK_STATS_INIT_MAX_DESTS = 5;
+// daily inbound block records inlined in every init response, per day
+const DAILY_INBOUND_BLOCK_INIT_RECORDS = 10;
+
+// the n records with the highest cnt, without reordering the input
+function topByCnt(records, n) {
+  return records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, n);
+}
 
 let instance = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -116,6 +131,8 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
+const ethCounters = require('./EthCounters.js');
+const TAG_RULE_PREFIXES = Object.values(Constants.TAG_TYPE_MAP).map(t => t.ruleTagPrefix);
 const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
@@ -179,9 +196,7 @@ module.exports = class HostManager extends Monitorable {
           if (!host) return
         }
 
-        if (host.ipv4Addr) {
-          this.hostsdb[`host:ip4:${obj.ipv4Addr}`] = host
-        }
+        this.syncV4DB(host, obj && obj.ipv4Addr)
         this.syncV6DB(host)
       })
 
@@ -434,6 +449,10 @@ module.exports = class HostManager extends Monitorable {
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
     json.kernelVersion = sysInfo.kernelVersion;
+    if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
+      json.usbInfo = sysInfo.usbInfo;
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0)
+      json.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -760,11 +779,6 @@ module.exports = class HostManager extends Monitorable {
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
     }
 
-    const sysInfo = await SysInfo.getSysInfo();
-    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
-      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
-    }
-
     json.extension = extdata;
   }
 
@@ -773,8 +787,7 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    const settings = await dc.getSettings();
-    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
+    json.dohConfig = Object.assign(await dc.getSettings(), {selectedServers, allServers, customizedServers});
   }
 
   async unboundConfigDataForInit(json) {
@@ -799,8 +812,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newAlarmDataForInit(json) {
-    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
-    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+    // alarms of the last 30 days, begin time is aligned to calendar date, same as MSP
+    const beginTs = alarmManager2.getAlarmWindowBeginTs();
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount(beginTs);
+    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync({ ts2: beginTs });
   }
 
   async pendingAlarmNumberForInit(json) {
@@ -989,20 +1004,20 @@ module.exports = class HostManager extends Monitorable {
     json.internetSpeedtestResults = results;
   }
 
-  async listLatestAllStateEvents(json) {
+  async listLatestAllStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest all state events");
-      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true);
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true, stateEventTypeFilter);
       if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
     } catch (err) {
       log.error("failed to get latest all state events:",err);
     }
   }
 
-  async listLatestErrorStateEvents(json) {
+  async listLatestErrorStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest error state events");
-      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true);
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true, stateEventTypeFilter);
       if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
     } catch (err) {
       log.error("failed to get latest error state events:",err);
@@ -1041,6 +1056,19 @@ module.exports = class HostManager extends Monitorable {
     json.networkMonitorEvents = networkMonitorEvents;
   }
 
+  /*
+   * The classified events that last happened BEFORE the networkMonitorEvents window.
+   *
+   * networkMonitorEventsForInit() above covers the last 24 hours. A type whose most recent event is
+   * older than that is invisible there, so the app cannot tell "this has not happened in a day"
+   * from "this has never happened". These entries fill that in: one per classified type, each the
+   * whole event including last_ts, so the app can render how long a type has been quiet.
+   */
+  async previousEventsByTypeForInit(json) {
+    const begin = Date.now() - 86400 * 1000; // same 24 hour window as networkMonitorEventsForInit
+    json.previousEventsByType = await eventApi.listLastEventsBefore(begin);
+  }
+
   async policyRuleNumberForInit(json) {
       const count = await policyManager2.countActivePolicyNumber()
       json.policyRuleNumber = count
@@ -1056,7 +1084,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else if (rule.action != "bypass") {
+      } else {
         policyRules.push(rule)
       }
     }
@@ -1196,11 +1224,6 @@ module.exports = class HostManager extends Monitorable {
     json.boxMetrics = result;
   }
 
-  async getSysInfo(json) {
-    const result = await sysManager.getSysInfoAsync();
-    json.sysInfo = result;
-  }
-
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -1227,7 +1250,6 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json),
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
@@ -1294,12 +1316,34 @@ module.exports = class HostManager extends Monitorable {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
       }
+      json.stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
+    // after the assignment on purpose: asyncBasicDataForInit runs under Promise.allSettled, so a
+    // throw here would otherwise drop nicStates from init data entirely. It fills the same object
+    await this.nicCountersForInit(nicStates);
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
     json.customizedCategories = customizedCategories;
+  }
+
+  // the driver counters NicStateSensor collects every minute, taken from redis instead of the
+  // NIC so that building init data costs no ethtool call. A counter reads -1 on a NIC whose
+  // driver cannot count it, e.g. atlantic reports no PAUSE frames at all, which is not the same
+  // as a 0 from a port that has seen none. It is absent only before the first round has run
+  async nicCountersForInit(nicStates) {
+    const ethInfo = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO).catch(() => null);
+    if (!ethInfo) return;
+    for (const intf in nicStates) {
+      for (const metric in ethCounters.ETH_COUNTERS) {
+        if (!ethCounters.ETH_COUNTERS[metric].nicStates)
+          continue;
+        const value = ethInfo[`${intf}_${ethCounters.ETH_COUNTERS[metric].key}`];
+        if (value !== undefined && !isNaN(value))
+          nicStates[intf][metric] = Number(value);
+      }
+    }
   }
 
   async getGuessedRouters(json) {
@@ -1689,12 +1733,13 @@ module.exports = class HostManager extends Monitorable {
       this.ruleGroupsForInit(json),
       this.virtWanGroupsForInit(json),
       this.getLatestConnStates(json),
-      this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json),
+      this.listLatestAllStateEvents(json, options.stateEventTypeFilter),
+      this.listLatestErrorStateEvents(json, options.stateEventTypeFilter),
       this.loadDDNSForInit(json),
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
+      this.previousEventsByTypeForInit(json),
       // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
@@ -1703,11 +1748,15 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
-      exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
+      this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
+      this.eventSummaryForInit(json),
+      execFile("sudo", ["systemctl", "is-active", "firekick"]).then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
     if (options.legacySystemFlows)
       requiredPromises.push(this.loadStats(json))
+    if (platform.isAuditLogSupported())
+      requiredPromises.push(this.dailyInboundBlockStatsForInit(json))
 
     for (const i in requiredPromises) {
       requiredPromises[i] = (async() => {
@@ -1762,6 +1811,207 @@ module.exports = class HostManager extends Monitorable {
         json.extraTimeRequests = [];
       }
     }
+  }
+
+  // the readable name of a block stats identity or device, null when it no longer exists
+  _getBlockStatsName(id) {
+    const tagPrefix = TAG_RULE_PREFIXES.find(p => id.startsWith(p));
+    if (tagPrefix) {
+      const tag = TagManager.getTagByUid(id.substring(tagPrefix.length));
+      return tag ? tag.getReadableName() : null;
+    }
+    const monitorable = this.getHostFastByMAC(id) || IdentityManager.getIdentityByGUID(id);
+    return monitorable ? monitorable.getReadableName() : null;
+  }
+
+  // the init filter for block stats from the init option blockStatsAggrFilter. A non-empty
+  // includedKeys keeps only those keys, otherwise excludedKeys drops its keys. keyCaps sets the
+  // caps per key, each falling back to the default when it isn't a positive integer
+  _getBlockStatsInitFilter(filter) {
+    if (!_.isPlainObject(filter)) filter = {};
+    const included = !_.isEmpty(filter.includedKeys) && Array.isArray(filter.includedKeys) ? new Set(filter.includedKeys) : null;
+    const excluded = Array.isArray(filter.excludedKeys) ? new Set(filter.excludedKeys) : new Set();
+    const keyCaps = _.isPlainObject(filter.keyCaps) ? filter.keyCaps : {};
+    const isValid = v => Number.isInteger(v) && v > 0;
+    return {
+      includes: key => included ? included.has(key) : !excluded.has(key),
+      capOf: key => {
+        const cap = _.has(keyCaps, key) && _.isPlainObject(keyCaps[key]) ? keyCaps[key] : {};
+        return {
+          identitiesCap: isValid(cap.identitiesCap) ? cap.identitiesCap : BLOCK_STATS_INIT_MAX_IDENTITIES,
+          destsCap: isValid(cap.destsCap) ? cap.destsCap : BLOCK_STATS_INIT_MAX_DESTS
+        };
+      }
+    };
+  }
+
+  // drops records of identities and devices that no longer exist and resolves their names. For
+  // init (initCap set), which inlines every entry, devices are left out and identities and dests
+  // are capped. The entry counts unique values of each dest field across records, e.g. deviceCnt, destCnt
+  resolveBlockStatsEntry(entry, initCap) {
+    const records = [];
+    const destLists = []; // before the init cap, for the entry level counts
+    for (const r of entry.records || []) {
+      const name = this._getBlockStatsName(r.identity);
+      if (name === null) continue;
+      const deviceNames = new Map();
+      const getDeviceName = mac => {
+        if (!deviceNames.has(mac)) deviceNames.set(mac, this._getBlockStatsName(mac));
+        return deviceNames.get(mac);
+      };
+      const devices = r.devices.filter(d => getDeviceName(d.mac) !== null)
+        .map(d => ({ mac: d.mac, name: getDeviceName(d.mac) }));
+      // a removed device's dests go with it. Dests have no device when it isn't in the setting's destKeys
+      const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null)
+        .sort((a, b) => b.cnt - a.cnt);
+      destLists.push(dests);
+      const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
+      if (initCap) {
+        delete record.devices;
+        record.dests = dests.slice(0, initCap.destsCap);
+      }
+      records.push(record);
+    }
+    const topRecords = initCap ? topByCnt(records, initCap.identitiesCap) : records;
+    return Object.assign({}, entry, {
+      records: topRecords.map(r => _.omit(r, 'name')),
+      identities: topRecords.map(r => ({ id: r.identity, name: r.name })),
+      identityCnt: records.length,
+      ...countUniqueDestFields(_.flatten(destLists))
+    });
+  }
+
+  // reads raw persisted block stats bucket payloads for index entries with score in
+  // [minScore, maxScore] (redis score syntax - prefix a bound with "(" for exclusive),
+  // newest bucket first. Reads the index rather than guessing bucket timestamps from the
+  // current slotSecs config, since slotSecs may have changed since older buckets were written
+  async _getBlockStatsBuckets(minScore, maxScore) {
+    let bucketTimestamps;
+    try {
+      // ZREVRANGEBYSCORE takes max before min
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_INDEX, maxScore, minScore);
+    } catch (err) {
+      log.error(`Failed to load block stats index: ${err.message}`);
+      return [];
+    }
+    if (_.isEmpty(bucketTimestamps)) return [];
+    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_AGGR_PREFIX}${ts}`);
+    const buckets = [];
+    try {
+      const values = await rclient.mgetAsync(keys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          buckets.push(JSON.parse(v));
+        } catch (err) {
+          log.error(`Failed to parse block stats bucket ${bucketTimestamps[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load block stats buckets: ${err.message}`);
+    }
+    return buckets;
+  }
+
+  async recentBlockStatsForInit(json, blockStatsAggrFilter) {
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
+    const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
+    const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
+    json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
+  }
+
+  // inbound blocks of today and the previous local days, newest first; the counts cover every
+  // stored member, records only the top ones
+  async dailyInboundBlockStatsForInit(json) {
+    const tz = sysManager.getTimezone();
+    const dayStarts = [localDayStart(Date.now() / 1000, tz)];
+    while (dayStarts.length < FlowAggrTool.DAILY_SUMFLOW_DAYS)
+      dayStarts.push(localDayStart(dayStarts[dayStarts.length - 1] - 1, tz));
+
+    json.dailyInboundBlockStats = await Promise.all(dayStarts.map(async ts => {
+      const [ipB, ifB] = await Promise.all(['ipB', 'ifB'].map(dimension =>
+        flowAggrTool.getTopSumFlowByKey(flowAggrTool.getDailySumFlowKey('global', dimension, 'out', ts), 400)
+      ));
+      // by country only, so blocks spread over several WANs or devices add up to one region
+      const records = new Map();
+      for (const flow of ipB.concat(ifB)) {
+        const c = country.getCountry(flow.ip) || '';
+        if (!records.has(c))
+          records.set(c, c ? {country: c, cnt: 0} : {cnt: 0});
+        records.get(c).cnt += Number(flow.count);
+      }
+      return {
+        ts,
+        records: topByCnt(Array.from(records.values()), DAILY_INBOUND_BLOCK_INIT_RECORDS),
+        deviceCnt: new Set(ipB.map(f => f.device)).size,
+        intfCnt: new Set(ifB.map(f => f.device)).size,
+        countryCnt: records.size - (records.has('') ? 1 : 0),
+      };
+    }));
+  }
+
+  // block stats buckets whose ts falls in [begin, end), newest first, with every identity and
+  // device that still exists
+  async getBlockStatsInRange(begin, end) {
+    const buckets = await this._getBlockStatsBuckets(begin, `(${end}`);
+    return this._resolveBlockStatsBuckets(buckets, null);
+  }
+
+  // initFilter (from _getBlockStatsInitFilter) is set for init only
+  _resolveBlockStatsBuckets(buckets, initFilter) {
+    return buckets.map(payload => Object.assign(payload, {
+      blockStats: payload.blockStats
+        .filter(entry => !initFilter || initFilter.includes(entry.key))
+        .map(entry => this.resolveBlockStatsEntry(entry, initFilter && initFilter.capOf(entry.key)))
+    }));
+  }
+
+  // strips the sensor's internal bookkeeping fields (record group key, first/last event ts) and
+  // caps the record count to the busiest ones - MAX_RECORDS_PER_KEY x buckets x settings would
+  // otherwise be inlined in every init response, the same concern resolveBlockStatsEntry
+  // addresses by truncating identities and dests
+  summarizeEventSummaryBucket(payload) {
+    const records = topByCnt(payload.records || [], EVENT_SUMMARY_MAX_RECORDS)
+      .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
+    return { ts: payload.ts, du: payload.du, key: payload.key, records };
+  }
+
+  async eventSummaryForInit(json) {
+    // align the cutoff to local midnight so this is the last 7 CALENDAR days, "now - 604800" would
+    // yield 7 days plus a partial 8th. Same shape as AlarmManager2.getAlarmWindowBeginTs
+    const tz = sysManager.getTimezone();
+    const now = tz && moment.tz.zone(tz) ? moment().tz(tz) : moment();
+    const cutoff = now.subtract(EVENT_SUMMARY_RETENTION_DAYS - 1, 'days').startOf('day').unix();
+
+    let redisKeys;
+    try {
+      // ZREVRANGEBYSCORE takes max before min. Members are full key strings, so the bucket
+      // boundaries never have to be reconstructed from the (possibly since-changed) config
+      redisKeys = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_EVENT_SUMMARY_INDEX, '+inf', cutoff);
+    } catch (err) {
+      log.error(`Failed to load event summary index: ${err.message}`);
+      json.eventSummary = [];
+      return;
+    }
+    if (_.isEmpty(redisKeys)) {
+      json.eventSummary = [];
+      return;
+    }
+    const buckets = [];
+    try {
+      const values = await rclient.mgetAsync(redisKeys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          buckets.push(this.summarizeEventSummaryBucket(JSON.parse(v)));
+        } catch (err) {
+          log.error(`Failed to parse event summary bucket ${redisKeys[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load event summary buckets: ${err.message}`);
+    }
+    json.eventSummary = buckets;
   }
 
   async miscForInit(json) {
@@ -1896,6 +2146,18 @@ module.exports = class HostManager extends Monitorable {
 
     this.syncV6DB(host)
     return host
+  }
+
+  // maps ipv4 to host in hostsdb. host.o may already hold the new address when this runs
+  // (Host.onUpdate), so the previous one is found in hostsdb instead of on the host
+  syncV4DB(host, ipv4) {
+    if (!host || !ipv4) return
+    const key = `host:ip4:${ipv4}`
+    for (const k of Object.keys(this.hostsdb)) {
+      if (k !== key && k.startsWith('host:ip4:') && this.hostsdb[k] === host)
+        delete this.hostsdb[k]
+    }
+    this.hostsdb[key] = host
   }
 
   syncV6DB(host) {
@@ -2260,36 +2522,44 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      const wanConfs = _.isObject(policy) && policy.wanConfs || {};
-      const wanType = sysManager.getWanType();
-      const primaryWanIntf = sysManager.getPrimaryWanInterface();
-      const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-      if (platform.isFireRouterManaged()) {
-        for (const wanIntf of sysManager.getWanInterfaces()) {
-          const uuid = wanIntf.uuid;
-          if (_.has(wanConfs, uuid))
-            await this.qos(wanConfs[uuid], uuid);
-          else {
-            // use global config as a fallback for primary WAN or all wans in load balance mode
-            if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
-              await this.qos(policy, uuid)
+      // FW_QOS_GLOBAL_FALLBACK is rebuilt as flush-then-append with awaits in between, so two
+      // concurrent runs interleave into flush/flush/append/append and duplicate every rule. The
+      // callers are not serialized with each other (one firerouter reload emits
+      // MSG_SYS_NETWORK_INFO_RELOADED twice, and PolicyManager applies policies in parallel), so
+      // this has to be guarded here rather than at any single call site. Only the global branch
+      // takes the lock, the per-wan branch above is re-entered below while it's still held.
+      await lock.acquire("LOCK_QOS_GLOBAL", async () => {
+        await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+        const wanConfs = _.isObject(policy) && policy.wanConfs || {};
+        const wanType = sysManager.getWanType();
+        const primaryWanIntf = sysManager.getPrimaryWanInterface();
+        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
+        if (platform.isFireRouterManaged()) {
+          for (const wanIntf of sysManager.getWanInterfaces()) {
+            const uuid = wanIntf.uuid;
+            if (_.has(wanConfs, uuid))
+              await this.qos(wanConfs[uuid], uuid);
+            else {
+              // use global config as a fallback for primary WAN or all wans in load balance mode
+              if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
+                await this.qos(policy, uuid)
+            }
           }
         }
-      }
-      
-      if (!state) {
-        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      } else {
-        const appConfs = await this.getAppConfs();
-        this.app(appConfs).catch((err) => {
-          log.error(`Failed to set app qos bandwidth`, err.message);
-        });
-      }
-      await this.setupDefaultQosAutoRules();
-      await this.setupDscpOverride();
-      await platform.switchQoS(state, qdisc);
+
+        if (!state) {
+          await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        } else {
+          const appConfs = await this.getAppConfs();
+          this.app(appConfs).catch((err) => {
+            log.error(`Failed to set app qos bandwidth`, err.message);
+          });
+        }
+        await this.setupDefaultQosAutoRules();
+        await this.setupDscpOverride();
+        await platform.switchQoS(state, qdisc);
+      });
     } 
   }
 
@@ -2382,56 +2652,61 @@ module.exports = class HostManager extends Monitorable {
     if (!policy) {
       return;
     }
-    //following part should be executed when app conf changes or WAN changes
-    //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
+    // serialize with concurrent callers: app() is reached from the policy apply path, from the
+    // MSG_SYS_NETWORK_INFO_RELOADED handler and from qos() itself, and overlapping runs race on
+    // setQoSBandwidth, leaving whichever happens to finish last in effect.
+    await lock.acquire("LOCK_QOS_APP", async () => {
+      //following part should be executed when app conf changes or WAN changes
+      //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
 
-    // get current qos mode
-    const qosConfs = await this.getQosConfs();
-    if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
-      log.info("Set app Qos to max speed since qos is not in adaptive mode");
-      await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
-      return;
-    }
-
-    // for load balance mode, set the speed rate limit to sum of all WANs
-    // for failover mode, set the speed to primary WAN only
-    // const appConfs = await this.getAppConfs();
-    const wanType = sysManager.getWanType();
-    const bandwidth = policy && policy.bandwidth || {};
-    let uploadSpeed = parseInt(bandwidth.upload) || 0;
-    let downloadSpeed = parseInt(bandwidth.download) || 0;
-    if (bandwidth.wanConfs) {
-      let totalUpload = 0;
-      let totalDownload = 0;
-      const activeWanIntf = sysManager.getDefaultWanInterface();
-      const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
-      for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
-        if (wanType === Constants.WAN_TYPE_FAILOVER) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-          if (wanId === activeWanUUID) {
-            totalUpload = parseInt(wanConf.upload) || 0;
-            totalDownload = parseInt(wanConf.download) || 0;
-            break;
-          }
-        } else if (wanType === Constants.WAN_TYPE_LB) {
-          const intf = sysManager.getInterfaceViaUUID(wanId);
-          if (!intf || intf.type !== "wan" || !intf.ready)
-            continue;
-          totalUpload += parseInt(wanConf.upload) || 0;
-          totalDownload += parseInt(wanConf.download) || 0;
-        }
+      // get current qos mode
+      const qosConfs = await this.getQosConfs();
+      if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
+        log.info("Set app Qos to max speed since qos is not in adaptive mode");
+        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+        return;
       }
-      uploadSpeed = totalUpload;
-      downloadSpeed = totalDownload;
-    }
-    log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
 
-    await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+      // for load balance mode, set the speed rate limit to sum of all WANs
+      // for failover mode, set the speed to primary WAN only
+      // const appConfs = await this.getAppConfs();
+      const wanType = sysManager.getWanType();
+      const bandwidth = policy && policy.bandwidth || {};
+      let uploadSpeed = parseInt(bandwidth.upload) || 0;
+      let downloadSpeed = parseInt(bandwidth.download) || 0;
+      if (bandwidth.wanConfs) {
+        let totalUpload = 0;
+        let totalDownload = 0;
+        const activeWanIntf = sysManager.getDefaultWanInterface();
+        const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
+        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+          if (wanType === Constants.WAN_TYPE_FAILOVER) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_SINGLE) {
+            if (wanId === activeWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_LB) {
+            const intf = sysManager.getInterfaceViaUUID(wanId);
+            if (!intf || intf.type !== "wan" || !intf.ready)
+              continue;
+            totalUpload += parseInt(wanConf.upload) || 0;
+            totalDownload += parseInt(wanConf.download) || 0;
+          }
+        }
+        uploadSpeed = totalUpload;
+        downloadSpeed = totalDownload;
+      }
+      log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
+
+      await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
+    });
   }
 
   async aclTimer(policy = {}) {
@@ -2464,7 +2739,7 @@ module.exports = class HostManager extends Monitorable {
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
       } catch(err) {
-        await exec(`touch ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("touch", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       }
     } else {
@@ -2475,7 +2750,7 @@ module.exports = class HostManager extends Monitorable {
       // remove dev flag file if it exists and restart bitbridge
       try {
         await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
-        await exec(`rm ${f.getFirewallaHome()}/bin/dev`)
+        await execFile("rm", [`${f.getFirewallaHome()}/bin/dev`])
         sm.scheduleReload();
       } catch(err) {}
     }
@@ -2584,6 +2859,25 @@ module.exports = class HostManager extends Monitorable {
       log.error(err.message)
       return false
     }
+  }
+
+  /// return a list of profile id of every enabled VPN client, kill switch or not. Route rules with
+  /// routeType=hard block on disconnect regardless of strictVPN, so OSI matches them against this.
+  getAllActiveVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        if (!client.state)
+          continue;
+        const type = client.type;
+        const profileId = client[type] && client[type].profileId;
+        if (profileId)
+          list.push(profileId);
+      }
+    }
+
+    return list;
   }
 
   /// return a list of profile id

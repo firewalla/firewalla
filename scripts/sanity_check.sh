@@ -7,18 +7,27 @@ shopt -s lastpipe
 
 UNAME=$(uname -m)
 ROUTER_MANAGED='yes'
+# BOARD is the label in /etc/firewalla-release, PLATFORM the platform/ directory name,
+# so the boards whose two spellings differ are mapped below. Reading the board on x86_64
+# as well keeps gold pro and crystal apart from gold.
+BOARD=$( [[ -e /etc/firewalla-release ]] && { . /etc/firewalla-release 2>/dev/null && echo "$BOARD" || cat /etc/firewalla-release; } )
 case "$UNAME" in
   "x86_64")
-    PLATFORM='gold'
+    case "$BOARD" in
+      'gold-pro') PLATFORM='goldpro' ;;
+      'crystal') PLATFORM='crystal' ;;
+      *) PLATFORM='gold' ;;
+    esac
     ;;
   "aarch64")
-    if [[ -e /etc/firewalla-release ]]; then
-      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-      if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
-        ROUTER_MANAGED='no'
-      fi
-    else
-      PLATFORM='unknown'
+    case "$BOARD" in
+      'gold-se') PLATFORM='gse' ;;
+      'purple-se') PLATFORM='pse' ;;
+      '') PLATFORM='unknown' ;;
+      *) PLATFORM="$BOARD" ;;
+    esac
+    if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
+      ROUTER_MANAGED='no'
     fi
     ;;
   "armv7l")
@@ -33,6 +42,14 @@ esac
 # no idea what version of column were used before, but -n tells it not to ommit empty cells
 # while it's for something totally different in offical build now
 echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
+
+JQ_VERSION=$(jq --version 2>/dev/null | sed 's/^jq-//')
+# strflocaltime() is only available since jq 1.6
+if [[ -n "$JQ_VERSION" ]] && [[ $(printf '%s\n1.6\n' "$JQ_VERSION" | sort -V | head -n 1) == '1.6' ]]; then
+  JQ_HAS_LOCALTIME='yes'
+else
+  JQ_HAS_LOCALTIME='no'
+fi
 
 # reads redis hash with key $2 into associative array $1
 read_hash() {
@@ -620,9 +637,6 @@ check_tc_classes() {
         local DISABLED=$(redis-cli hget policy:${RULE_ID} disabled)
         local parent_classid=1
         echo "PID: ${RULE_ID}, traffic direction: ${TRAFFIC_DIRECTION}, rate limit: ${RATE_LIMIT}, priority: ${PRIORITY}, disabled: ${DISABLED}"
-        if [[ $PLATFORM == "gold" ]]; then
-          parent_classid=10
-        fi
         if [[ $TRAFFIC_DIRECTION == "upload" ]]; then
           tc class show dev ifb0 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         else
@@ -1033,7 +1047,7 @@ check_hosts() {
         elif [ $FLOWINCOUNT -gt 5000 ] || [ $FLOWOUTCOUNT -gt 100 ]; then
             FC="\e[33m" #yellow
         fi
-        if [[ ${NAME,,} == "circle"* || ${MAC_VENDOR,,} == "circle"* ]]; then
+        if [[ ${MAC_VENDOR,,} == "circle"* ]]; then
             BGC="\e[41m"
         fi
 
@@ -1556,6 +1570,27 @@ check_docker() {
   echo ""
 }
 
+check_customized_scripts() {
+  echo "---------------------- Customized Scripts ----------------------"
+  local POST_MAIN_DIR="$HOME/.firewalla/config/post_main.d"
+  local USER_CRONTAB="$HOME/.firewalla/config/user_crontab"
+  echo "post main scripts ($POST_MAIN_DIR):"
+  if [[ -d "$POST_MAIN_DIR" ]] && [[ -n "$(ls -A "$POST_MAIN_DIR" 2>/dev/null)" ]]; then
+    ls -l "$POST_MAIN_DIR" | tail -n +2
+  else
+    echo "  none"
+  fi
+  echo ""
+  echo "user crontab ($USER_CRONTAB):"
+  if [[ -s "$USER_CRONTAB" ]]; then
+    grep -v '^\s*\(#\|$\)' "$USER_CRONTAB"
+  else
+    echo "  none"
+  fi
+  echo ""
+  echo ""
+}
+
 run_ifconfig() {
   echo "---------------------- ifconfig ----------------------"
   ifconfig
@@ -1584,23 +1619,35 @@ check_iptables() {
 }
 
 check_eth_count() {
-  ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
+  ports=$(find /sys/class/net/ | grep -c "\\eth[0-9]\\+$")
 
-  if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
-    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
-    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
-      printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
-    else
-      echo "all good: $ports eth interfaces"
+  if [[ "$PLATFORM" == 'crystal' ]]; then
+    # runs on hardware we don't make, so there is no expected port count
+    echo "$ports eth interfaces"
+  elif [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'goldpro' || "$PLATFORM" == 'gse') && $ports -ne 4 ||
+    "$PLATFORM" == 'goldplus2' && $ports -ne 5 ||
+    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'pse' || "$PLATFORM" == 'orange') && $ports -ne 2 ||
+    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]];
+  then
+    printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
+  else
+    echo "all good: $ports eth interfaces"
   fi
   echo ""
   echo ""
 }
 
 check_events() {
-  redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
+  local TIME_FUNC='strflocaltime'
+  # fall back to UTC if asked for explicitly or if jq is too old for strflocaltime()
+  if [[ "$1" == 'utc' || "$JQ_HAS_LOCALTIME" != 'yes' ]]; then
+    TIME_FUNC='strftime'
+  fi
+  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | (if .last_ts then .last_ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) else . end) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
   # hint on stderr so won't impact stuff being piped
-  >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
+  if [[ "$TIME_FUNC" == 'strftime' ]]; then
+    >&2 echo -e "\e[43m\e[30m  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<\e[0m"
+  fi
 }
 
 check_connection() {
@@ -1635,12 +1682,13 @@ usage() {
     echo "  -d  | --dhcp"
     echo "  -re | --redis"
     echo "        --docker"
+    echo "        --custom"
     echo "  -n  | --network"
     echo "  --ap"
     echo "  -p  | --port"
     echo "  -t  | --tag"
     echo "  -f  | --fast | --host"
-    echo "  -e  | --events"
+    echo "  -e  | --events [-u|--utc]"
     echo "  -c  | --connection"
     echo "        --iptables"
     echo "  -h  | --help"
@@ -1716,6 +1764,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    --custom)
+        shift
+        FAST=true
+        check_customized_scripts
+        ;;
     -c | --connection)
         shift
         FAST=true
@@ -1729,7 +1782,12 @@ while [ "$1" != "" ]; do
     -e | --events)
         shift
         FAST=true
-        check_events
+        if [[ "$1" == '-u' || "$1" == '--utc' ]]; then
+            shift
+            check_events utc
+        else
+            check_events
+        fi
         ;;
     -h | --help)
         usage
@@ -1764,6 +1822,7 @@ if [ "$FAST" == false ]; then
     check_tag
     check_hosts
     check_docker
+    check_customized_scripts
     run_lsusb
     check_eth_count
     check_iptables

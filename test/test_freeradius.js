@@ -313,3 +313,32 @@ describe('Test freeradius image pull backoff', function () {
     expect(await freeradius._inPullBackoff()).to.be.true;
   });
 });
+
+describe('Test freeradius auth event', function () {
+  const plugin = new FreeRadiusSensor({});
+  let calls = [];
+
+  beforeEach(() => {
+    calls = [];
+    plugin.setDeviceTagByUid = async (...args) => { calls.push(["mab", ...args]) };
+    plugin.setDeviceTag = async (...args) => { calls.push(["dot1x", ...args]) };
+  });
+
+  it('should set device tag by mab auth event', async () => {
+    const message = "\"auth_method\":\"mab\",\"ts\":\"1792653653\",\"result\":\"Access-Accept\",\"user_name\":\"aabbccddeeff\",\"mac\":\"AA:BB:CC:DD:EE:FF\",\"nas_ip\":\"10.237.68.93\",\"ssid\":\"Test_ixhs3k_9\",\"vlan\":\"100\",\"tag\":\"30\"";
+    await plugin.processAuthEvent(message);
+    expect(calls).to.be.deep.equal([["mab", "AA:BB:CC:DD:EE:FF", "30", "Test_ixhs3k_9", { auth: "mab", dvlanId: "100" }]]);
+  });
+
+  it('should skip rejected mab auth event', async () => {
+    const message = "\"auth_method\":\"mab\",\"ts\":\"1792653653\",\"result\":\"Access-Reject\",\"user_name\":\"aabbccddeeff\",\"mac\":\"AA:BB:CC:DD:EE:FF\",\"nas_ip\":\"10.237.68.93\",\"ssid\":\"Test_ixhs3k_9\",\"vlan\":\"\",\"tag\":\"\"";
+    await plugin.processAuthEvent(message);
+    expect(calls).to.be.empty;
+  });
+
+  it('should set device tag by dot1x auth event', async () => {
+    const message = "\"ts\":\"1792653653\",\"result\":\"Access-Accept\",\"user_name\":\"johndoe\",\"mac\":\"11-22-33-44-55-66\",\"nas_ip\":\"10.237.68.93\",\"ssid\":\"Test_ixhs3k_9\",\"vlan\":\"\"";
+    await plugin.processAuthEvent(message);
+    expect(calls).to.be.deep.equal([["dot1x", "11:22:33:44:55:66", "johndoe", "Test_ixhs3k_9", { auth: "dot1x" }]]);
+  });
+});

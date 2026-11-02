@@ -26,7 +26,8 @@ const bone = require("../lib/Bone.js");
 
 const util = require('util');
 
-const moment = require('moment');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const fc = require('../net2/config.js')
 
@@ -51,6 +52,13 @@ let instance = null;
 const alarmPendingKey = "alarm_pending";
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
+// alarms of the last 30 calendar days are kept on box, today included, same as MSP, i.e. the
+// window begins at midnight of (today - 29 days)
+const ALARM_WINDOW_DAYS = 30;
+// on the day the clock falls back, the window spans one DST offset more than 30 x 24h, alarm
+// keys have to outlive that, otherwise a counted alarm would have no data behind it. 2 hours is
+// the largest DST offset in the timezone database
+const ALARM_EXPIRE_SLACK = 2 * 60 * 60;
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
@@ -91,9 +99,18 @@ const { extractIP } = require('../net2/FlowUtil.js')
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
 const sysManager = require('../net2/SysManager.js');
+const net = require('net');
 
 const featureName = 'msp_sync_alarm';
 const featureSkipDeviceInfoEnrich = 'alarm_skip_device_info_enrich';
+
+// box's own interface MACs rarely change, cache OUI lookups to avoid reading OUI file on every alarm
+const selfMacVendorCache = new Map();
+
+// ipv6Addr of a host:mac entry is a JSON array, the last one is the newest
+function ipOfMacEntry(entry) {
+  return entry.ipv4 || entry.ipv4Addr || JSON.parse(entry.ipv6Addr || '[]').pop();
+}
 
 // TODO: Support suppress alarm for a while
 
@@ -760,7 +777,7 @@ module.exports = class {
 
     await rclient.hmsetAsync(alarmKey, basic)
 
-    let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * 30;  // a month
+    let expiring = (fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * ALARM_WINDOW_DAYS) + ALARM_EXPIRE_SLACK;  // a month
     await rclient.expireatAsync(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
     // add extended info, extended info are optional
@@ -886,6 +903,7 @@ module.exports = class {
     }
   }
 
+  // resolves to whether the job was saved, a failure is logged and not thrown
   async enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
@@ -895,6 +913,7 @@ module.exports = class {
       })
       try {
         await job.timeout(60000).save();
+        return true;
       } catch (err) {
         log.error("Failed to create alarm job", err.message);
         if (err.message && err.message.includes("NOSCRIPT")) {
@@ -904,11 +923,12 @@ module.exports = class {
           await this.setupAlarmQueue();
           if (retry) {
             log.info("Retry creating alarm ...", alarm);
-            await this.enqueueAlarm(alarm, false, profile);
+            return await this.enqueueAlarm(alarm, false, profile);
           }
         }
       }
     }
+    return false;
   }
 
   applyConfig(alarm, excludes=[]) {
@@ -1083,9 +1103,17 @@ module.exports = class {
     }
 
     const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
+    const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+    const networkPolicy = _.get(alarm['p.intf.id'] && NetworkProfileManager.getNetworkProfile(alarm['p.intf.id']), 'policy', {})
+    const HostManager = require('../net2/HostManager.js');
+    const systemPolicy = new HostManager().policy || {}
 
     // don't do policy match for emergency access and customized alarm
+    // emergency access on the device, its network or the whole box bypasses rule enforcement, so a rule must not mute the alarm;
+    // each test mirrors the acl() of that level: Host/Identity/NetworkProfile enforce only on true, HostManager bypasses on == false
     if ((!devicePolicy.hasOwnProperty('acl') || devicePolicy.acl === true)
+      && (!networkPolicy.hasOwnProperty('acl') || networkPolicy.acl === true)
+      && systemPolicy.acl != false
       && alarm.type !== "ALARM_CUSTOMIZED"
     ) {
       const policyMatch = await pm2.match(alarm)
@@ -1106,7 +1134,7 @@ module.exports = class {
       throw trustErr;
     }
 
-    const arbitrationResult = await bone.arbitration(alarm);
+    const arbitrationResult = alarm.needCloudArbitration() ? await bone.arbitration(alarm) : alarm;
 
     if (!arbitrationResult) {
       throw new Error("invalid alarm, failed to pass cloud verification");
@@ -1471,8 +1499,11 @@ module.exports = class {
   async loadPendingAlarms(options) {
     const offset = options && options.offset || 0 // default starts from 0
     const limit = options && options.limit || 50 // default load 50 alarms
+    // default to the begin of the last 30 days in calendar date, same as MSP
+    const beginTs = options && !_.isNil(options.beginTs) && !isNaN(options.beginTs)
+      ? Number(options.beginTs) : this.getAlarmWindowBeginTs()
     let alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey,
-        "+inf", "-inf", "limit", offset, limit);
+        "+inf", beginTs, "limit", offset, limit);
     let alarms = await this.idsToAlarmsAsync(alarmIDs);
     return alarms.filter((a) => a != null)
   }
@@ -1482,11 +1513,14 @@ module.exports = class {
 
     const offset = options.offset || 0 // default starts from 0
     const limit = options.limit || 50 // default load 50 alarms
+    // default to the begin of the last 30 days in calendar date, same as MSP
+    const beginTs = !_.isNil(options.beginTs) && !isNaN(options.beginTs)
+      ? Number(options.beginTs) : this.getAlarmWindowBeginTs()
 
     let alarmIDs = await rclient.
       zrevrangebyscoreAsync(alarmArchiveKey,
         "+inf",
-        "-inf",
+        beginTs,
         "limit",
         offset,
         limit);
@@ -1549,17 +1583,30 @@ module.exports = class {
     });
   }
 
-  async numberOfArchivedAlarms() {
-    const count = await rclient.zcountAsync(alarmArchiveKey, "-inf", "+inf");
+  // begin timestamp of the last <days> days in calendar date, today included, in box's timezone,
+  // i.e. midnight of (today - 29 days) for a 30 days window. same as MSP, which queries alarms
+  // of the last 30 days within [today - 29 days 00:00, now]
+  // nowTs is the moment the window is evaluated at, defaults to now, pass it in to get a
+  // deterministic result
+  getAlarmWindowBeginTs(days = ALARM_WINDOW_DAYS, nowTs = Date.now() / 1000) {
+    const tz = sysManager.getTimezone();
+    const now = tz && moment.tz.zone(tz) ? moment.unix(nowTs).tz(tz) : moment.unix(nowTs);
+    // subtract before startOf, in timezones where midnight does not exist on a DST start day,
+    // startOf('day') gives the first valid moment of the day instead
+    return now.subtract(days - 1, 'days').startOf('day').unix();
+  }
+
+  async numberOfArchivedAlarms(beginTs = this.getAlarmWindowBeginTs()) {
+    const count = await rclient.zcountAsync(alarmArchiveKey, beginTs, "+inf");
     return count;
   }
 
-  async getActiveAlarmCount() {
-    return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
+  async getActiveAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
+    return rclient.zcountAsync(alarmActiveKey, beginTs, '+inf');
   }
 
-  async getPendingAlarmCount() {
-    return await rclient.zcountAsync(alarmPendingKey, '-inf', '+inf');
+  async getPendingAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
+    return await rclient.zcountAsync(alarmPendingKey, beginTs, '+inf');
   }
 
   async loadAlarmIDs() {
@@ -1576,6 +1623,9 @@ module.exports = class {
   // options:
   //  count: number of alarms returned, default 50
   //  ts: timestamp used to query alarms, default to now
+  //  ts2: the other end of the query window, i.e. the begin timestamp of the query, or the end
+  //       timestamp if asc is true. default to the begin of the last 30 days in calendar date
+  //       (+inf if asc is true)
   //  asc: return results in ascending order, default to false
   loadActiveAlarms(options, callback) {
     if (_.isFunction(options)) {
@@ -1603,14 +1653,14 @@ module.exports = class {
     }
   }
 
-  _queryCachedAlarmIds(count, ts, asc, type, filters) {
+  _queryCachedAlarmIds(count, ts, asc, type, filters, ts2) {
     let ids = [];
     if (filters && filters.types && _.isArray(filters.types)) {
       for (const atype of filters.types) {
         if (!this.indexCache.has(atype)) continue;
         const entries = Object.values(this.indexCache.get(atype));
         if (entries.length == 0) continue;
-        let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts; return i.ts < ts});
+        let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts && i.ts <= ts2; return i.ts < ts && i.ts >= ts2});
         if (asc) tmp = tmp.reverse();
         ids = ids.concat(tmp.map( (i) => {return {aid: i.aid, ts: i.ts}}));
       }
@@ -1620,24 +1670,29 @@ module.exports = class {
   }
 
   async loadActiveAlarmsAsync(options = {}) {
-    let count, ts, asc, type, filters, withDetails;
+    let count, ts, ts2, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
       options = { count: options };
     }
 
-    ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
+    ({ count = 50, ts = Date.now() / 1000, ts2, asc = false, type = 'active', filters, withDetails = false } = options);
+
+    // ts2 is the other end of the query window, default to the begin of the last 30 days in
+    // calendar date, so that alarms returned are consistent with alarm counts in init data
+    ts2 = !_.isNil(ts2) && !isNaN(ts2) ? Number(ts2) : (asc ? Infinity : this.getAlarmWindowBeginTs());
+    const scoreBound = _.isFinite(ts2) ? ts2 : (asc ? '+inf' : '-inf');
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
       log.debug("query from cache, cached keys", this.indexCache.keys());
-      ids = this._queryCachedAlarmIds(count, ts, asc, type, filters);
+      ids = this._queryCachedAlarmIds(count, ts, asc, type, filters, ts2);
     } else {
       log.debug(`query from redis, cache fallback ${this.indexCache.keys()} disabled ${this.indexCache._disabled}` );
       let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
       let query = asc ?
-        rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-        rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+        rclient.zrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count) :
+        rclient.zrevrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count);
       ids = await query;
     }
 
@@ -2144,13 +2199,46 @@ module.exports = class {
     if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
       const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
       if (device) {
-        alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+        alarm["p.device.ip"] = ipOfMacEntry(device) || '';
       }
     }
     if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
       alarm["p.dest.name"] = await dnsTool.getDns(alarm["p.dest.ip"]);
     }
     return alarm
+  }
+
+  async getSelfMacVendor(mac) {
+    const cached = selfMacVendorCache.get(mac);
+    // retry miss after a while, OUI file may not be ready yet
+    if (cached && (cached.vendor || Date.now() - cached.ts < 3600 * 1000))
+      return cached.vendor;
+    const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+    const vendor = await WlanVendorInfo.lookupMacVendor(mac);
+    selfMacVendorCache.set(mac, { vendor, ts: Date.now() });
+    return vendor;
+  }
+
+  // device ip, mac and VPN guid of an alarm from a mac or guid and/or an ip, enrichDeviceInfo fills in the rest.
+  // null when it is neither a known host nor an identity
+  // withIntf adds p.intf.id, which a network-scoped mute matches on. It is opt-in so that the alarms of other callers keep their payload
+  async getDeviceAlarmFields({ ip, mac, withIntf = false }) {
+    const macEntry = mac && await hostTool.getMACEntry(mac);
+    if (macEntry) {
+      // the entry's ipv4 first, then the event's source ip, which beats the entry's address lists (a host can have several)
+      const fields = { "p.device.ip": macEntry.ipv4 || ip || ipOfMacEntry(macEntry), "p.device.mac": mac };
+      if (withIntf && macEntry.intf) fields["p.intf.id"] = macEntry.intf;
+      return fields;
+    }
+    const identity = ip ? IdentityManager.getIdentityByIP(ip) : mac && IdentityManager.getIdentityByGUID(mac);
+    if (!identity) return null;
+    const guid = identity.getGUID();
+    // identity ips may carry a subnet mask
+    const identityIP = (identity.getIPs()[0] || '').split('/')[0];
+    const fields = { "p.device.ip": ip || identityIP || undefined, "p.device.mac": guid, "p.device.guid": guid };
+    const intf = withIntf && identity.getNicUUID();
+    if (intf) fields["p.intf.id"] = intf;
+    return fields;
   }
 
   async enrichDeviceInfo(alarm) {
@@ -2174,7 +2262,17 @@ module.exports = class {
     }
 
     if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
-      // device is the router itself, do nothing
+      // device is the router itself, fill in from interface info directly,
+      // host:* records of the box itself may be missing or polluted by other devices
+      const mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      alarm["p.device.name"] = "Firewalla";
+      if (mac) {
+        Object.assign(alarm, {
+          "p.device.id": mac,
+          "p.device.mac": mac,
+          "p.device.macVendor": await this.getSelfMacVendor(mac) || "Unknown",
+        });
+      }
       return alarm;
     }
 

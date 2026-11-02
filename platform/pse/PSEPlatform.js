@@ -17,7 +17,7 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const rp = require('request-promise');
 
@@ -44,6 +44,14 @@ class PSEPlatform extends Platform {
   // reserved wlan interfaces in case it supports USB wifi in future
   getAllNicNames() {
     return ["eth0", "eth1", "wlan0", "wlan1"];
+  }
+
+  // devices of the box itself that sit on the USB bus. eth0 is a RTL8153, it is also recognized
+  // by its interface name, listing it here covers the case that r8152 did not come up. the
+  // CSR8510 is the built-in bluetooth, the very same chip is an accessory on gold, which is why
+  // this is excluded per platform instead of globally
+  getNativeUsbDeviceIds() {
+    return ["0bda:8153", "0a12:0001"];
   }
 
   async readPermanentMac(nic) {
@@ -107,6 +115,10 @@ class PSEPlatform extends Platform {
       log.error("Failed to get cpu temperature, use 0 as default, err:", err);
       return 0;
     }
+  }
+
+  async getWpaCliBinPath() {
+    return 'wpa_cli';
   }
 
   getDefaultWlanIntfName() {
@@ -187,7 +199,7 @@ class PSEPlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }

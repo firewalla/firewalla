@@ -107,7 +107,7 @@ module.exports = class {
       }
 
       // locate hostname
-      let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +([^ ]+)");
+      let match2 = line.match("OPTION:.{1,9}12.{1,9}Host name +(\\S(?:.*\\S)?)\\s*$");
       if (match2) {
         obj.name = match2[1]
       }

@@ -38,6 +38,7 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+const sem = require('./SensorEventManager.js').getInstance();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
@@ -48,11 +49,12 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
-const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
-const execAsync = require('child-process-promise').exec;
+const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS, REDIS_KEY_EID_BLACKLIST } = require('../net2/Constants.js');
+const { execFile } = require('child-process-promise');
 
 const RECONNECT_DELAY_MAX = 5 * 60 * 1000; // socket.io defaults to 5s, way too aggressive for a server that is gone for good
 const SESSION_TTL = 24 * 60 * 60 * 1000; // idle lifetime of a non-msp (my.firewalla) session
+const READONLY_ACCESS_PROFILE = "readonly_access"; // msp mobileAccess profile denied set/cmd via the eid blacklist
 
 module.exports = class {
   constructor(name, config = {}, daemon = true) {
@@ -144,11 +146,12 @@ module.exports = class {
       await this.reset();
       return;
     }
-    // fallback to check with cloud when msp is inactivated
+    // fallback to check with cloud when msp is inactivated, or when the box token expired while the
+    // box was offline after being removed (checkLicense then only ever returns 401)
     const cloudResult = await this.checkBoxWithCloud();
     log.info("Check box msp relationship with cloud result", cloudResult);
     if (!cloudResult) return;
-    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
+    if (mspResult.check_license_failed === true && (cloudResult.status === 'inactive' || cloudResult.is_member === false)) {
       await this.reset();
     }
   }
@@ -267,7 +270,27 @@ module.exports = class {
   }
 
   async setMspData(data = {}) {
-    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
+    const result = await rclient.setAsync(this.mspDataKey, JSON.stringify(data));
+    await this.syncEidBlacklist(data).catch(err => log.error("Failed to sync eid blacklist from msp data", err.message));
+    return result;
+  }
+
+  getReadonlyEids(data) {
+    const mobileAccess = _.get(data, "mobileAccess");
+    if (!_.isPlainObject(mobileAccess)) return [];
+    return Object.keys(mobileAccess).filter(eid => _.get(mobileAccess[eid], "profileId") == READONLY_ACCESS_PROFILE);
+  }
+
+  // eid blacklist is managed by msp, replace it with readonly_access eids in msp mobileAccess
+  async syncEidBlacklist(data) {
+    if (!_.isPlainObject(_.get(data, "mobileAccess"))) return; // keep the blacklist as is if msp doesn't send mobileAccess
+    const readonlyEids = this.getReadonlyEids(data);
+    const multi = rclient.multi();
+    multi.unlink(REDIS_KEY_EID_BLACKLIST);
+    if (readonlyEids.length)
+      multi.sadd(REDIS_KEY_EID_BLACKLIST, readonlyEids);
+    await multi.execAsync();
+    log.info("Sync eid blacklist with readonly eids in msp mobileAccess", readonlyEids);
   }
 
   async getMspData() {
@@ -551,6 +574,12 @@ module.exports = class {
       if (mspRelatedEids.length) {
         log.info("Remove msp exceptions", mspRelatedEids);
         await exceptionManager.deleteExceptions(mspRelatedEids);
+        // same notification netbot sends on exception:delete, otherwise FireMain keeps a stale
+        // CategoryMatcher for the removed exception and can re-activate its target list
+        sem.sendEventToOthers({
+          type: "ExceptionChange",
+          message: "msp exceptions removed"
+        });
       }
 
       // reset no_auto_upgrade flags
@@ -612,6 +641,8 @@ module.exports = class {
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
     await rclient.unlinkAsync(this.configActiveTsKey);
+    if (this.name != "support")
+      await rclient.unlinkAsync(REDIS_KEY_EID_BLACKLIST); // msp no longer manages the box, release its readonly eids
     await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
@@ -668,7 +699,7 @@ module.exports = class {
             break;
           }
         }
-        await execAsync("sync");
+        await execFile("sync", []);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }

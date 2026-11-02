@@ -73,8 +73,12 @@ async function run0() {
     log.info("Firewalla initialization complete");
 
     const kernelCrashMonitor = require('../../net2/KernelCrashMonitor.js');
-    const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
-    await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
+    // checkPstoreAndUpdateRedis(modName, koPath) - passing the path alone left koPath
+    // undefined whenever FireApi won the startup race, which silently disabled the
+    // "ignore crashes that predate the current module" guard (getModuleFileMtimeSec got
+    // undefined) and dropped the .ko build id from the recorded version.
+    const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => null);
+    await kernelCrashMonitor.checkPstoreAndUpdateRedis('xt_udp_tls', udpTlsKoPath);
     
     run();
   } else {

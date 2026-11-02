@@ -31,6 +31,15 @@ check() { # check <desc> <expected-rc> <actual-rc>
   if [[ $2 -eq $3 ]]; then ok "$1"; else bad "$1 (expected rc=$2 got rc=$3)"; fi
 }
 
+# Isolate from a real box before sourcing, because the UV_ defaults are bound at
+# source time. On a box the stock FIREWALLA_HOME holds an executable
+# update_assets.sh (which uv_ensure_release_key would run, reaching the network)
+# and the default asset path holds the real release keyring, which then wins the
+# precedence check and makes the bootstrap-key cases fail. Neither exists on a
+# dev machine, so this only shows up on the hardware.
+export FIREWALLA_HOME=$T/no-fw-home
+export UV_RELEASE_KEYRING_ASSET=$T/no-asset
+
 source $FW_HOME/scripts/upgrade_verify.sh
 
 # --- unit: version compare ---
@@ -63,7 +72,9 @@ GNUPGHOME=$GNUPGHOME_SIGN gpg --batch --passphrase '' --quick-generate-key "Test
 FPR=$(GNUPGHOME=$GNUPGHOME_SIGN gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
 [[ -n "$FPR" ]] && ok "test key generated ($FPR)" || bad "keygen"
 
-git init -q -b rel $T/origin
+# `git init -b` needs git >= 2.28; the boxes ship older, so name the branch by hand
+git init -q $T/origin
+git -C $T/origin symbolic-ref HEAD refs/heads/rel
 GITC="git -C $T/origin -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false"
 echo one > $T/origin/f; $GITC add f; $GITC commit -qm c1
 GNUPGHOME=$GNUPGHOME_SIGN $GITC -c user.signingkey=$FPR tag -s goldse-alph-v1.983.001 -m rel1
@@ -73,10 +84,9 @@ git clone -q $T/origin $T/box 2>/dev/null
 cd $T/box
 git config user.email t@t; git config user.name t; git config commit.gpgsign false
 
-# box-side keyring: import public key only (test keyring, remote is non-official file://)
-UV_TEST_GNUPGHOME=$T/box-test-gnupg
-mkdir -p -m700 $UV_TEST_GNUPGHOME
-GNUPGHOME=$GNUPGHOME_SIGN gpg --armor --export $FPR 2>/dev/null | GNUPGHOME=$UV_TEST_GNUPGHOME gpg --batch --quiet --import 2>/dev/null
+# box-side keyring: plain binary keyring file for gpgv (remote is non-official file://)
+UV_TEST_KEYRING=$T/test-keyring.gpg
+GNUPGHOME=$GNUPGHOME_SIGN gpg --export $FPR 2>/dev/null > $UV_TEST_KEYRING
 UV_FLOOR_FILE=$T/floor
 UV_LOGGER=true
 
@@ -105,10 +115,19 @@ GNUPGHOME=$GNUPGHOME_EVIL $GITC -c user.signingkey=$EFPR tag -s goldse-alph-v1.9
 git fetch -q origin rel
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "commit with wrong-key signature rejected" 1 $?
 
+# --- e2e: a lightweight and an unsigned tag are both rejected ---
+$GITC tag goldse-alph-v1.983.004                                  # lightweight: no tag object
+$GITC tag -a goldse-alph-v1.983.005 -m unsigned                   # annotated, never signed
+git fetch -q origin "+refs/tags/*:refs/tags/*"
+git fetch -q origin rel      # the tag fetch above rewrote FETCH_HEAD; put the branch tip back
+uv_gpgv_verify_tag goldse-alph-v1.983.004 "$UV_TEST_KEYRING"; check "lightweight tag rejected" 1 $?
+uv_gpgv_verify_tag goldse-alph-v1.983.005 "$UV_TEST_KEYRING"; check "unsigned annotated tag rejected" 1 $?
+uv_gpgv_verify_tag goldse-alph-v1.983.001 "$UV_TEST_KEYRING"; check "good signed tag accepted" 0 $?
+
 # --- e2e: no test key on non-official remote -> skip (accept) ---
-UV_TEST_GNUPGHOME=$T/nonexistent
+UV_TEST_KEYRING=$T/nonexistent
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "non-official remote without test key skips" 0 $?
-UV_TEST_GNUPGHOME=$T/box-test-gnupg
+UV_TEST_KEYRING=$T/test-keyring.gpg
 
 # --- e2e: gate rejects unverified ---
 uv_verify_release_commit FETCH_HEAD >/dev/null; check "gate rejects unverified commit" 1 $?
@@ -132,19 +151,36 @@ uv_update_version_floor >/dev/null
 [[ $(cat $UV_FLOOR_FILE 2>/dev/null) == 1.984.000 ]]; check "malformed asset ignored" 0 $?
 
 # --- e2e: release key import gated on official remote ---
-UV_RELEASE_GNUPGHOME=$T/release-gnupg
-UV_RELEASE_PUBKEY=$T/release_pub.key
-GNUPGHOME=$GNUPGHOME_SIGN gpg --armor --export $FPR 2>/dev/null > $UV_RELEASE_PUBKEY
+UV_RELEASE_KEYRING=$T/keys/release.gpg
+UV_RELEASE_PUBKEY=$T/release_pub.gpg
+GNUPGHOME=$GNUPGHOME_SIGN gpg --export $FPR 2>/dev/null > $UV_RELEASE_PUBKEY
 uv_ensure_release_key >/dev/null 2>&1
-[[ ! -d $UV_RELEASE_GNUPGHOME ]]; check "non-official remote: release keyring not created" 0 $?
+[[ ! -e $UV_RELEASE_KEYRING ]]; check "non-official remote: release keyring not created" 0 $?
 SAVED_URL=$(git remote get-url origin)
 git remote set-url origin https://github.com/firewalla/firewalla.git
 uv_ensure_release_key >/dev/null 2>&1
-[[ -s $UV_RELEASE_GNUPGHOME/pubring.kbx || -s $UV_RELEASE_GNUPGHOME/pubring.gpg ]]; check "official remote: release key imported" 0 $?
+[[ -s $UV_RELEASE_KEYRING ]] && cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "official remote: release keyring installed from repo (bootstrap)" 0 $?
+
+# assets-delivered keyring must take precedence over the in-repo bootstrap copy
+UV_RELEASE_KEYRING_ASSET=$T/asset_release.gpg
+GNUPGHOME=$GNUPGHOME_EVIL gpg --export $EFPR 2>/dev/null > $UV_RELEASE_KEYRING_ASSET   # distinct key
+uv_ensure_release_key >/dev/null 2>&1
+cmp -s $UV_RELEASE_KEYRING_ASSET $UV_RELEASE_KEYRING; check "asset keyring overrides in-repo bootstrap key" 0 $?
+
+# stale in-repo key must NOT clobber an already-rotated keyring when the asset
+# is temporarily missing (e.g. S3 unreachable)
+UV_RELEASE_KEYRING_ASSET=$T/nonexistent
+uv_ensure_release_key >/dev/null 2>&1
+cmp -s $T/asset_release.gpg $UV_RELEASE_KEYRING; check "asset missing: existing keyring kept, not downgraded to repo key" 0 $?
+
+# with no keyring at all, the in-repo key still bootstraps
+rm -f $UV_RELEASE_KEYRING; uv_ensure_release_key >/dev/null 2>&1
+cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "no asset, no keyring: falls back to in-repo bootstrap key" 0 $?
 git remote set-url origin "$SAVED_URL"
 
 # --- e2e: strict node modules pin sync ---
-git init -q -b rel $T/nm-origin
+git init -q $T/nm-origin
+git -C $T/nm-origin symbolic-ref HEAD refs/heads/rel
 NMGIT="git -C $T/nm-origin -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false"
 echo m1 > $T/nm-origin/m; $NMGIT add m; $NMGIT commit -qm nm1
 PIN=$($NMGIT rev-parse HEAD)
@@ -206,6 +242,26 @@ git -C $T/origin reset -q --hard 'goldse-alph-v1.983.001^{commit}'
 git fetch -q origin rel
 uv_is_enforced() { return 0; }
 uv_gate FETCH_HEAD rel >/dev/null; check "enforced: passing verify proceeds" 0 $?
+
+# --- every dispatched platform has a node_modules pin ---
+# A platform added without one is not an error at runtime: switch_branch.sh skips
+# uv_sync_node_modules and checks node_modules out at the branch tip unpinned, so
+# the pin silently stops applying for that platform. Catch it here instead.
+# The list comes from platform.sh's own dispatch, so a new platform is covered the
+# moment it is added there. 'unknown' is the no-match fallback, not a platform.
+for plat in $(grep -oE 'export FIREWALLA_PLATFORM=[a-z0-9_]+' $FW_HOME/platform/platform.sh |
+              sed 's/.*=//' | grep -vx unknown | sort -u); do
+  # run through the real resolver, in a subshell so the overrides do not leak
+  pin=$(FIREWALLA_PLATFORM=$plat FIREWALLA_HOME=$FW_HOME uv_node_modules_pin_file)
+  if [[ ! -s $pin ]]; then
+    # -s follows symlinks, so this also catches a link pointing at nothing
+    bad "node modules pin for platform $plat (missing or dangling: ${pin##*/})"
+  elif [[ ! $(tr -d '[:space:]' < $pin) =~ ^[0-9a-f]{40}$ ]]; then
+    bad "node modules pin for platform $plat is not a 40-hex revision"
+  else
+    ok "node modules pin for platform $plat"
+  fi
+done
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

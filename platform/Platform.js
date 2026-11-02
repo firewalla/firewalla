@@ -26,11 +26,27 @@ const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 let kernelCrashMonitor = null;
+let reportUdpTlsDisabled = true;
 
 class Platform {
   getAllNicNames() {
     // for red/blue, there is only one NIC
     return ["eth0"];
+  }
+
+  // the box's own ethernet ports, i.e. getAllNicNames() minus the wlan NICs
+  getEthernetNicNames() {
+    return this.getAllNicNames().filter(nic => /^eth\d+$/.test(nic));
+  }
+
+  getSfpNicNames() {
+    return [];
+  }
+
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
   }
 
   async getNicStates() {
@@ -117,7 +133,9 @@ class Platform {
       try {
         const mac = cp.execSync("cat /sys/class/net/eth0/address", {encoding: 'utf8'});
         this.signatureMac = mac && mac.trim().toUpperCase();
-      } catch (err) {}
+      } catch (err) {
+        log.error(`Failed to read signature MAC from eth0: ${err.message}`);
+      }
     }
     return this.signatureMac;
   }
@@ -206,7 +224,7 @@ class Platform {
       await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
       await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    const supported = await execFile("modinfo", [`sch_${qdisc}`]).then(() => true).catch((err) => false);
     if (!supported) {
       log.error(`qdisc ${qdisc} is not supported`);
       return;
@@ -214,10 +232,10 @@ class Platform {
     // replace the default tc filter
     const QoS = require('../control/QoS.js');
     const classid = 1;
-    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", "ifb0", "parent", `${classid}:`, "handle", "800::0x1", "prio", "1", "u32", "match", "mark", "0x800000", `0x${QoS.QOS_UPLOAD_MASK.toString(16)}`, "flowid", `${classid}:0x1002`]).catch((err) => {
       log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", "ifb1", "parent", `${classid}:`, "handle", "800::0x1", "prio", "1", "u32", "match", "mark", "0x10000", `0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`, "flowid", `${classid}:0x1002`]).catch((err) => {
       log.error(`Failed to update tc filter on ifb1`, err.message);
     });
 
@@ -463,7 +481,7 @@ class Platform {
     }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
-    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
+    const codename = await execFile("lsb_release", ["-cs"]).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get codename of OS distribution", err.message);
       return null;
     });
@@ -472,16 +490,16 @@ class Platform {
     const koPath = `${await this.getTlsKoPath(module_name)}`
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (koExists) {
-      await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+      await execFile("sudo", ["insmod", koPath, "max_host_sets=1024", `hostset_uid=${process.getuid()}`, `hostset_gid=${process.getgid()}`]).catch((err) => {
         log.error(`Failed to install tls.ko`, err.message);
       });
     } else {
-      await exec(`sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+      await execFile("sudo", ["modprobe", module_name, "max_host_sets=1024", `hostset_uid=${process.getuid()}`, `hostset_gid=${process.getgid()}`]).catch((err) => {
         log.error(`Failed to install ${module_name}.ko`, err.message);
       });
     }
 
-    const arch = await exec(`uname -m`).then((result) => result.stdout.trim()).catch((err) => {
+    const arch = await execFile("uname", ["-m"]).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get architecture of OS", err.message);
       return null;
     });
@@ -492,13 +510,13 @@ class Platform {
     const soPathAlt = `/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so`;
     const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (soExists) {
-      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+      await execFile("sudo", ["install", "-D", "-v", "-m", "644", soPath, `/usr/lib/${arch}-linux-gnu/xtables`]).catch((err) => {
         log.error(`Failed to install lib${module_name}.so`, err.message);
       });
     } else {
       const soExistsAlt = await fsp.access(soPathAlt, fs.constants.F_OK).then(() => true).catch((err) => false);
       if (soExistsAlt) {
-        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+        await execFile("sudo", ["install", "-D", "-v", "-m", "644", soPathAlt, `/usr/lib/${arch}-linux-gnu/xtables`]).catch((err) => {
           log.error(`Failed to install lib${module_name}.so`, err.message);
         });
       } else {
@@ -555,19 +573,22 @@ class Platform {
     }
     const disabled = kernelCrashMonitor.shouldDisableUdpTls();
     if (disabled) {
-      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      if (reportUdpTlsDisabled) {
+        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+        reportUdpTlsDisabled = false;
+      }
       return false;
     }
     return true;
   }
 
   async getKernelModulesPath() {
-    const kernelRelease = await exec("uname -r").then(result => result.stdout.trim());
+    const kernelRelease = await execFile("uname", ["-r"]).then(result => result.stdout.trim());
     return `${this.getPlatformFilesPath()}/kernel_modules/${kernelRelease}`;
   }
 
   async getSharedObjectsPath() {
-    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim());
+    const codename = await execFile("lsb_release", ["-cs"]).then((result) => result.stdout.trim());
     return `${this.__dirname}/files/shared_objects/${codename}`;
   }
 
@@ -590,6 +611,9 @@ class Platform {
   getDnsproxySOPath() { }
 
   getPlatformFilesPath() { return `${this.__dirname}/files` }
+
+  // platforms whose image ships iftop can override this to use the system one
+  getIftopPath() { return `${this.getPlatformFilesPath()}/iftop` }
 
   getZeekPcapBufsize() {
     return {
@@ -619,6 +643,10 @@ class Platform {
 
   getSpeedtestCliBinPath() {
     
+  }
+
+  async getWpaCliBinPath() {
+    return null;
   }
 
   async getWlanVendor() {
@@ -682,8 +710,8 @@ class Platform {
       try {
         const loaded = await exec(`sudo lsmod | grep act_mirred`).then(() => true).catch(() => false);
         if (loaded)
-          await exec(`sudo rmmod act_mirred`);
-        await exec(`sudo insmod ${koPath}`);
+          await execFile("sudo", ["rmmod", "act_mirred"]);
+        await execFile("sudo", ["insmod", koPath]);
       } catch (err) {
         log.error("Failed to reload act_mirred.ko", err.message);
       }
@@ -723,6 +751,11 @@ class Platform {
 
   async isSuricataFromAssetsSupported() {
     return false;
+  }
+
+  // asset path of the suricata tarball, used where isSuricataFromAssetsSupported() holds
+  getSuricataAssetPath() {
+    return null;
   }
 
   hasIntegratedFWAPC() {

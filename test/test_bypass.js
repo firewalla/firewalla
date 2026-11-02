@@ -51,6 +51,7 @@ describe('Bypass', function () {
   let restartDNSCalled;
   const savedOriginals = {};
   let policyMap;
+  let derivedAppTargetMap;
 
   before(() => {
     savedOriginals.addRule = iptc.addRule;
@@ -81,6 +82,7 @@ describe('Bypass', function () {
     IdentityManager.getNSAndUID = () => ({ ns: 'vpn', uid: 'test_uid' });
 
     savedOriginals.pm2GetPolicy = PolicyManager2.prototype.getPolicy;
+    savedOriginals.pm2GetDerived = PolicyManager2.prototype._getDerivedAppTargetsForCategory;
     savedOriginals.dnsAddFilter = DNSMASQ.prototype.addPolicyFilterEntry;
     savedOriginals.dnsRemoveFilter = DNSMASQ.prototype.removePolicyFilterEntry;
     savedOriginals.dnsAddCatFilter = DNSMASQ.prototype.addPolicyCategoryFilterEntry;
@@ -105,6 +107,7 @@ describe('Bypass', function () {
     IdentityManager.getNSAndUID = savedOriginals.idGetNS;
 
     PolicyManager2.prototype.getPolicy = savedOriginals.pm2GetPolicy;
+    PolicyManager2.prototype._getDerivedAppTargetsForCategory = savedOriginals.pm2GetDerived;
     DNSMASQ.prototype.addPolicyFilterEntry = savedOriginals.dnsAddFilter;
     DNSMASQ.prototype.removePolicyFilterEntry = savedOriginals.dnsRemoveFilter;
     DNSMASQ.prototype.addPolicyCategoryFilterEntry = savedOriginals.dnsAddCatFilter;
@@ -123,6 +126,8 @@ describe('Bypass', function () {
     // bypassDNSRules / bypassIptablesRules both create `new PolicyManager2()` internally,
     // so patch the prototype rather than a single instance.
     PolicyManager2.prototype.getPolicy = async pid => policyMap[pid] || null;
+    derivedAppTargetMap = {};
+    PolicyManager2.prototype._getDerivedAppTargetsForCategory = async cat => derivedAppTargetMap[cat] || [];
     iptc.addRule = rule => { addRuleCalls.push(rule); };
     DNSMASQ.prototype.addPolicyFilterEntry = async (targets, opts) => { addFilterEntryCalls.push({ targets, opts }); };
     DNSMASQ.prototype.removePolicyFilterEntry = async (targets, opts) => { removeFilterEntryCalls.push({ targets, opts }); };
@@ -258,6 +263,87 @@ describe('Bypass', function () {
       });
       expect(addCategoryFilterEntryCalls[0].append).to.equal(false);
       expect(addCategoryFilterEntryCalls[1].append).to.equal(true);
+    });
+
+    it('enforce category with useBf: bypasses the category in addition to its BF variant', async () => {
+      policyMap = {
+        d13: makePolicy({ target: 'porn', useBf: true, seq: Constants.RULE_SEQ_REG }),
+      };
+      await Bypass.bypassDNSRules({
+        pid: 'bp20', affectedPids: ['d13'],
+        tags: [], intfs: [], scope: ['E6:89:0B:69:5C:64'], guids: [],
+        action: 'enforce', targets: ['porn'], type: 'category',
+      });
+      const cats = addCategoryFilterEntryCalls.map(c => c.categories[0]);
+      // the block side emits both $porn_block and $porn_bf_block, so both must be negated
+      expect(cats).to.have.members(['porn', 'porn_bf']);
+      for (const call of addCategoryFilterEntryCalls) {
+        expect(call.action).to.equal('bypass');
+        expect(call.pid).to.equal('bp20');
+        expect(call.scope).to.deep.equal(['E6:89:0B:69:5C:64']);
+      }
+      // only the first write truncates the conf, the BF entry is appended to it
+      expect(addCategoryFilterEntryCalls[0].append).to.equal(false);
+      expect(addCategoryFilterEntryCalls[1].append).to.equal(true);
+    });
+
+    it('enforce category without useBf: no BF variant is bypassed', async () => {
+      policyMap = { d14: makePolicy({ target: 'porn', useBf: false }) };
+      await Bypass.bypassDNSRules({
+        pid: 'bp21', affectedPids: ['d14'],
+        tags: [], intfs: [], scope: [], guids: [],
+        action: 'enforce', targets: ['porn'], type: 'category',
+      });
+      expect(addCategoryFilterEntryCalls.map(c => c.categories[0])).to.deep.equal(['porn']);
+    });
+
+    it('enforce category: derived app targets of the affected policy are bypassed too', async () => {
+      derivedAppTargetMap = { social: ['TLX-fw-tiktok', 'TLX-fw-facebook'] };
+      policyMap = { d15: makePolicy({ target: 'social', useBf: true }) };
+      await Bypass.bypassDNSRules({
+        pid: 'bp22', affectedPids: ['d15'],
+        tags: ['173'], intfs: [], scope: [], guids: [],
+        action: 'enforce', targets: ['social'], type: 'category',
+      });
+      const cats = addCategoryFilterEntryCalls.map(c => c.categories[0]);
+      // TLX-* targets are small extended lists, the block side gives them no BF variant either
+      expect(cats).to.have.members(['social', 'TLX-fw-tiktok', 'TLX-fw-facebook', 'social_bf']);
+      expect(cats).to.not.include('TLX-fw-tiktok_bf');
+    });
+
+    it('enforce category: app_block policies still get derived app targets', async () => {
+      // _enforce() normalizes app_block to block before deriving, the bypass side has to match
+      derivedAppTargetMap = { social: ['TLX-fw-tiktok'] };
+      policyMap = { d18: makePolicy({ target: 'social', action: 'app_block' }) };
+      await Bypass.bypassDNSRules({
+        pid: 'bp25', affectedPids: ['d18'],
+        tags: [], intfs: [], scope: ['AA:BB:CC:DD:EE:FF'], guids: [],
+        action: 'enforce', targets: ['social'], type: 'category',
+      });
+      expect(addCategoryFilterEntryCalls.map(c => c.categories[0])).to.have.members(['social', 'TLX-fw-tiktok']);
+    });
+
+    it('enforce category: allow policies get no derived app targets', async () => {
+      derivedAppTargetMap = { social: ['TLX-fw-tiktok'] };
+      policyMap = { d16: makePolicy({ target: 'social', action: 'allow' }) };
+      await Bypass.bypassDNSRules({
+        pid: 'bp23', affectedPids: ['d16'],
+        tags: [], intfs: [], scope: [], guids: [],
+        action: 'enforce', targets: ['social'], type: 'category',
+      });
+      expect(addCategoryFilterEntryCalls.map(c => c.categories[0])).to.deep.equal(['social']);
+    });
+
+    it('enforce category: hi-seq is carried over to the BF entry', async () => {
+      policyMap = { d17: makePolicy({ target: 'porn', useBf: true, seq: Constants.RULE_SEQ_HI }) };
+      await Bypass.bypassDNSRules({
+        pid: 'bp24', affectedPids: ['d17'],
+        tags: [], intfs: [], scope: [], guids: [],
+        action: 'enforce', targets: ['porn'], type: 'category',
+      });
+      expect(addCategoryFilterEntryCalls).to.have.length(2);
+      for (const call of addCategoryFilterEntryCalls)
+        expect(call.seq).to.equal(Constants.RULE_SEQ_HI);
     });
 
     it('unenforce category: calls removePolicyCategoryFilterEntry with correct args', async () => {

@@ -23,9 +23,9 @@ const netTop = require('./test_data/net_top.json');
 describe('me.findPathByMac', () => {
   const tree = netTop.info.tree;
 
-  describe('resolve path for 192.168.203.249', () => {
-    // 192.168.203.249 => iPhone, mac 0A:3D:FB:40:E7:CB
-    const targetMac = '0A:3D:FB:40:E7:CB';
+  describe('resolve path for 203.0.113.2', () => {
+    // 203.0.113.2 => Tablet-03, mac 02:00:00:03:00:03
+    const targetMac = '02:00:00:03:00:03';
 
     it('returns the full path from root box to the target device', () => {
       const path = findPathByMac(tree, targetMac);
@@ -34,9 +34,9 @@ describe('me.findPathByMac', () => {
 
       const macs = path.map(n => n.mac);
       expect(macs).to.deep.equal([
-        '20:6D:31:51:00:08', // box
-        '20:6D:31:63:30:C4', // Charlie AP (direct wired child of box)
-        '0A:3D:FB:40:E7:CB',  // iPhone (target, wirelessly associated to Charlie AP)
+        '02:00:00:00:00:01', // box
+        '02:00:00:02:00:01', // AP-01 (direct wired child of box)
+        '02:00:00:03:00:03', // Tablet-03 (target, wirelessly associated to AP-01)
       ]);
     });
 
@@ -44,14 +44,14 @@ describe('me.findPathByMac', () => {
       const path = findPathByMac(tree, targetMac);
       const last = path[path.length - 1];
       expect(last.mac).to.equal(targetMac);
-      expect(last.ip).to.equal('192.168.203.249');
+      expect(last.ip).to.equal('203.0.113.2');
       expect(last.type).to.equal('device');
     });
 
     it('starts the path at the root box', () => {
       const path = findPathByMac(tree, targetMac);
       expect(path[0].type).to.equal('box');
-      expect(path[0].mac).to.equal('20:6D:31:51:00:08');
+      expect(path[0].mac).to.equal('02:00:00:00:00:01');
     });
 
     it('reports the expected hop types in order', () => {
@@ -60,9 +60,9 @@ describe('me.findPathByMac', () => {
     });
   });
 
-  describe('resolve path for 192.168.201.82', () => {
-    // 192.168.201.82 => iPhone behind the switch chain, mac 7A:23:62:47:F8:BD
-    const targetMac = '7A:23:62:47:F8:BD';
+  describe('resolve path for 192.0.2.19', () => {
+    // 192.0.2.19 => Camera-36 behind the switch chain, mac 02:00:00:03:00:24
+    const targetMac = '02:00:00:03:00:24';
 
     it('returns the full multi-hop path through the switch chain to the mesh AP', () => {
       const path = findPathByMac(tree, targetMac);
@@ -70,12 +70,12 @@ describe('me.findPathByMac', () => {
 
       const macs = path.map(n => n.mac);
       expect(macs).to.deep.equal([
-        '20:6D:31:51:00:08', // box
-        '20:6D:31:A0:01:04', // Switch X 4
-        '20:6D:31:A6:02:26', // SwitchSE
-        '20:6D:31:71:01:14', // Sun Flower AP
-        '20:6D:31:71:01:98', // Turtle AP (wireless mesh backhaul)
-        '7A:23:62:47:F8:BD',  // iPhone (target, wirelessly associated to Turtle AP)
+        '02:00:00:00:00:01', // box
+        '02:00:00:01:00:01', // Switch-01
+        '02:00:00:01:00:02', // Switch-02
+        '02:00:00:02:00:02', // AP-02
+        '02:00:00:02:00:03', // AP-03 (wireless mesh backhaul)
+        '02:00:00:03:00:24', // Camera-36 (target, wirelessly associated to AP-03)
       ]);
     });
 
@@ -83,7 +83,7 @@ describe('me.findPathByMac', () => {
       const path = findPathByMac(tree, targetMac);
       const last = path[path.length - 1];
       expect(last.mac).to.equal(targetMac);
-      expect(last.ip).to.equal('192.168.201.82');
+      expect(last.ip).to.equal('192.0.2.19');
       expect(last.type).to.equal('device');
     });
 
@@ -95,9 +95,9 @@ describe('me.findPathByMac', () => {
 
   describe('matching behavior', () => {
     it('matches case-insensitively', () => {
-      const path = findPathByMac(tree, '0a:3d:fb:40:e7:cb');
+      const path = findPathByMac(tree, '02:00:00:03:00:0c');
       expect(path).to.be.an('array');
-      expect(path[path.length - 1].mac).to.equal('0A:3D:FB:40:E7:CB');
+      expect(path[path.length - 1].mac).to.equal('02:00:00:03:00:0C');
     });
 
     it('returns null when the mac is not present', () => {
@@ -105,8 +105,8 @@ describe('me.findPathByMac', () => {
     });
 
     it('returns null for empty / missing input', () => {
-      expect(findPathByMac(null, '0A:3D:FB:40:E7:CB')).to.be.null;
-      expect(findPathByMac([], '0A:3D:FB:40:E7:CB')).to.be.null;
+      expect(findPathByMac(null, '02:00:00:03:00:03')).to.be.null;
+      expect(findPathByMac([], '02:00:00:03:00:03')).to.be.null;
     });
   });
 });

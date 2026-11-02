@@ -33,7 +33,7 @@ const sysManager = require('./SysManager.js');
 const Message = require('./Message.js');
 const Constants = require("./Constants.js");
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const {fileExist, fileRemove} = require('../util/util.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -249,7 +249,7 @@ class FWAPC {
         log.error(`Failed to invoke update_assets.sh`, err.message);
       });
     }
-    await exec(`sudo systemctl start fwapc`).catch((err) => {
+    await execFile("sudo", ["systemctl", "start", "fwapc"]).catch((err) => {
       log.error(`Failed to start fwapc.service`, err.message);
     });
     await this.addCronJobs();
@@ -259,7 +259,7 @@ class FWAPC {
     const assetsLstPath = `${f.getUserConfigFolder()}/assets.fwapc/01_assets_fwapc.lst`;
     if (await fileExist(assetsLstPath))
       await fileRemove(assetsLstPath);
-    await exec(`sudo systemctl stop fwapc`).catch((err) => {
+    await execFile("sudo", ["systemctl", "stop", "fwapc"]).catch((err) => {
       log.error(`Failed to start fwapc.service`, err.message);
     });
     await this.removeCronJobs();
@@ -269,7 +269,7 @@ class FWAPC {
     log.info("Adding fwapc update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
     await fsp.symlink(`${f.getFirewallaHome()}/etc/crontab.fwapc`, `${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
     });
   }
@@ -277,7 +277,7 @@ class FWAPC {
   async removeCronJobs() {
     log.info("Removing fwapc update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
@@ -308,7 +308,32 @@ class FWAPC {
   }
 
   async getAssetsStatus() {
-    return localGet("/status/ap", 1).then(resp => resp.info);
+    try {
+      const resp = await localGet("/status/ap", 1);
+      return resp && resp.info != null ? resp.info : null;
+    } catch (err) {
+      log.error("Failed to get assets status from fwapc", err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Live stats for one AP asset. GET /status/ap/:uid/live_stats
+   * @param {string} uid - AP MAC / asset uid
+   * @returns {Promise<object|null>}
+   */
+  async getAssetLiveStats(uid) {
+    if (!uid) {
+      log.warn("uid is required to get asset live stats");
+      return null;
+    }
+    try {
+      const resp = await localGet(`/status/ap/${encodeURIComponent(uid)}/live_stats`, 1);
+      return resp && resp.info != null ? resp.info : null;
+    } catch (err) {
+      log.error("Failed to get asset live stats from fwapc", uid, err.message);
+      return null;
+    }
   }
 
   async getWiredStationTree() {

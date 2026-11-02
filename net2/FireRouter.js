@@ -36,7 +36,6 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -58,7 +57,7 @@ const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
 const _ = require('lodash');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require("./Constants.js");
@@ -244,8 +243,9 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        if (!intfName.startsWith("pppoe")) {
-          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        // only bridge mode reads a WAN's gatewayMac, and bridge mode runs on the dhcp mode key
+        if (!intfName.startsWith("pppoe") && mode === Mode.MODE_DHCP) {
+          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await layer2.getMAC6Async(gateway6, intfName);
         }
         break;
       }
@@ -584,7 +584,7 @@ class FireRouter {
 
         log.info("adopting firerouter network change according to mode", mode)
         if (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br")) {
-          await exec(`sudo modprobe br_netfilter`).catch((err) => { });
+          await execFile("sudo", ["modprobe", "br_netfilter"]).catch((err) => { });
         }
 
         switch (mode) {
@@ -854,18 +854,18 @@ class FireRouter {
     }
     for (const intf of Object.keys(pcapTapIntfs)) {
       // clear previous tc filters
-      await exec(`sudo tc qdisc del dev ${intf} root`).catch(() => {});
-      await exec(`sudo tc qdisc del dev ${intf} parent ffff:`).catch(() => {});
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "root"]).catch(() => {});
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "parent", "ffff:"]).catch(() => {});
       if (!pcapTapIntfs[intf])
         continue;
       // add tc filters to redirect traffic to the pcap tap ifb
-      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", intf, "clsact"]).catch((err) => {
         log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "ingress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_TAP]).catch((err) => {
         log.error(`Failed to add pcap tap tc ingress redirect filter for ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} egress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "egress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_TAP]).catch((err) => {
         log.error(`Failed to add pcap tap tc egress redirect filter for ${intf}`, err.message);
       });
     }
@@ -890,7 +890,7 @@ class FireRouter {
     const prevRspanIntfNames = this._rspanIntfNames || [];
     for (const intf of prevRspanIntfNames) {
       if (!rspanIntfNames.includes(intf)) {
-        await exec(`sudo tc qdisc del dev ${intf} clsact`).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", intf, "clsact"]).catch(() => {});
       }
     }
     this._rspanIntfNames = rspanIntfNames.slice();
@@ -899,10 +899,10 @@ class FireRouter {
     }
     for (const intf of rspanIntfNames) {
       // add tc filter to redirect ingress traffic to the rspan ifb (RSPAN is receive-only, no egress redirect)
-      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", intf, "clsact"]).catch((err) => {
         log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
       });
-      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_RSPAN}`).catch((err) => {
+      await execFile("sudo", ["tc", "filter", "add", "dev", intf, "ingress", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", Constants.INTF_PCAP_RSPAN]).catch((err) => {
         log.error(`Failed to add rspan tc ingress redirect filter for ${intf}`, err.message);
       });
     }
@@ -917,31 +917,31 @@ class FireRouter {
     if (this._qosIfaces) {
       log.info("Clearing tc filters ...", this._qosIfaces);
       for (const iface of this._qosIfaces) {
-        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => {});
-        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => {});
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => {});
       }
     } else {
       log.info("No existing tc filters, clear both lan and wan interfaces");
       for (const iface of lanIntfs.concat(wanIntfs)) {
-        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
-        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => { });
+        await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => { });
       }
     }
     const ifaces = qosNetworkType === 'lan' ? lanIntfs : wanIntfs;
     log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
-      await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
-      await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "root"]).catch(() => { });
+      await execFile("sudo", ["tc", "qdisc", "del", "dev", iface, "ingress"]).catch(() => { });
     }
 
     await platform.reloadActMirredKernelModule();
 
     for (const iface of ifaces) {
-      await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "add", "dev", iface, "ingress"]).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
         ret = false;
       });
-      await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
+      await execFile("sudo", ["tc", "qdisc", "replace", "dev", iface, "root", "handle", "1:", "htb", "default", "1"]).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
         ret = false;
       })
@@ -1027,6 +1027,20 @@ class FireRouter {
       return getInterface(intf);
     else
       return JSON.parse(JSON.stringify(intfNameMap[intf]));
+  }
+
+  // Live STP role/state for the box's own bridged LAN ports, flattened across all bridges,
+  // e.g. { eth0: {role: "designated", state: "forwarding"}, eth1: {role: "backup", state: "discarding"} }.
+  // Empty for single-port bridges / VLAN sub-bridges / stp:false bridges (firerouter reports no stpPorts there).
+  async getBridgeStpStatus() {
+    const bridgeNames = Object.keys(_.get(await this.getConfig(), "interface.bridge", {}));
+    const result = {};
+    await Promise.all(bridgeNames.map(async (name) => {
+      const intf = await this.getSingleInterface(name, true).catch(() => null);
+      const stpPorts = _.get(intf, "state.stpPorts");
+      if (stpPorts) Object.assign(result, stpPorts);
+    }));
+    return result;
   }
 
   getLogicIntfNames() {
@@ -1155,7 +1169,9 @@ class FireRouter {
 
   scheduleRestartFireBoot(delay = 10) {
     setTimeout(() => {
-      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => exec(`sudo systemctl restart fireboot`));
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset || true")
+        .then(() => execFile("sudo", ["systemctl", "restart", "fireboot"]))
+        .catch((err) => log.error("Failed to restart fireboot", err.message));
     }, delay * 1000);
   }
 

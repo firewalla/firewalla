@@ -20,7 +20,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const { Rule } = require('./Iptables.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -111,12 +111,34 @@ class Identity extends Monitorable {
     }
   }
 
+  async removeIPsFromTagIPSets() {
+    if (!_.isArray(this._ips) || this._ips.length === 0)
+      return;
+    const tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const typeTags = await this.getTags(type) || [];
+      Array.prototype.push.apply(tags, typeTags);
+    }
+    for (const ip of this._ips) {
+      const family = new Address4(ip).isValid() ? 4 : (new Address6(ip).isValid() ? 6 : null);
+      if (!family)
+        continue;
+      for (const uid of tags)
+        await Ipset.del(Tag.getTagDeviceIPSetName(uid, family), ip).catch((err) => {
+          log.warn(`Failed to remove ${ip} from tag ${uid} device ip set of identity ${this.getUniqueId()}`, err.message);
+        });
+    }
+  }
+
   async destroyEnv() {
+    await this.removeIPsFromTagIPSets().catch((err) => {
+      log.error(`Failed to remove IPs of identity ${this.getUniqueId()} from tag device ip sets`, err.message);
+    });
     await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId()));
     await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
-    await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
+    await execFile("sudo", ["rm", "-f", `${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`]).catch((err) => { });
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
@@ -295,8 +317,7 @@ class Identity extends Monitorable {
             }
           }
         }
-        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Tag.removeDeviceMember(removedUid, [this.constructor.getEnforcementIPsetName(this.getUniqueId()), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)]);
         await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
@@ -316,8 +337,7 @@ class Identity extends Monitorable {
             }
           }
         }
-        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Tag.addDeviceMember(tagUid, [this.constructor.getEnforcementIPsetName(this.getUniqueId()), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)]);
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
         await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);

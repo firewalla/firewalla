@@ -20,7 +20,7 @@ const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
 const Ipset = require('./Ipset.js');
 const iptc = require('../control/IptablesControl.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 const _ = require('lodash');
@@ -405,7 +405,7 @@ class NetworkProfile extends Monitorable {
 
       // ensure existence of dnsmasq per-network config directory
       if (uuid) {
-        await exec(`mkdir -p ${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`).catch((err) => {
+        await execFile("mkdir", ["-p", `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`]).catch((err) => {
           log.error(`Failed to create dnsmasq config directory for ${uuid}`);
         });
       }
@@ -686,7 +686,7 @@ class NetworkProfile extends Monitorable {
     const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
     const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
-    const inputRule6Sec = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRuleSec.clone().fam(6);
     const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
 

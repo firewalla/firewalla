@@ -76,6 +76,11 @@ class FlowAggrTool {
       + ((begin && end) ? `:${begin}:${end}` : '');
   }
 
+  // dailysyssumflow:ipB:out:<local day start>
+  getDailySumFlowKey(target, dimension, fd, dayStart) {
+    return 'daily' + this.getSumFlowKey(target, dimension, null, null, fd) + ':' + dayStart;
+  }
+
   // aggrflow:<device_mac>:download:10m:<ts>
   async flowExists(mac, dimension, interval, ts) {
     let key = this.getFlowKey(mac, dimension, interval, ts);
@@ -250,6 +255,21 @@ class FlowAggrTool {
     }
   }
 
+  // kept apart from addSumFlow: hours are listed by their start, so each one lands in the local
+  // day it begins in, and no '_' placeholder or last pointer is written
+  async addDailySumFlow(target, dimension, fd, dayStart, dayEnd, options) {
+    const dailyKey = this.getDailySumFlowKey(target, dimension, fd, dayStart);
+    const hourKeys = [];
+    for (let h = Math.ceil(dayStart / 3600) * 3600; h < dayEnd; h += 3600)
+      hourKeys.push(this.getSumFlowKey(target, dimension, h, h + 3600, fd));
+
+    await rclient.multi()
+      .zunionstore([dailyKey, hourKeys.length, ...hourKeys])
+      .zremrangebyrank(dailyKey, 0, -((options.max_flow || MAX_FLOW_PER_SUM) + 1))
+      .expire(dailyKey, options.expireTime)
+      .execAsync();
+  }
+
   async setLastSumFlow(target, dimension, fd, keyName) {
     const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     await rclient.setAsync(key, keyName);
@@ -289,6 +309,12 @@ class FlowAggrTool {
               results[dest].count += count
             } else {
               results[dest] = { count }
+            }
+
+            // domain is baked into the sumflow member at write time, use it as the host of
+            // the destination IP so callers don't need a separate intel lookup
+            if(json.destIP && json.domain && !results[dest].host) {
+              results[dest].host = json.domain
             }
 
             if(ports) {
@@ -504,5 +530,7 @@ class FlowAggrTool {
   }
 }
 
+// number of local days a daily sumflow is kept
+FlowAggrTool.DAILY_SUMFLOW_DAYS = 7;
 
 module.exports = FlowAggrTool;

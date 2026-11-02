@@ -19,8 +19,15 @@ const log = require('../net2/logger.js')(__filename)
 const util = require('util')
 
 const Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+// promisifyAll is not idempotent, a second pass over the same prototype throws
+// "Cannot promisify an API that has normal methods with 'Async'-suffix". Tests that evict
+// this module from require.cache (proxyquire noPreserveCache, mock-require) reload it while
+// the redis package keeps the prototypes promisified by the first load, so promisify once.
+if (!redis.__fwPromisified) {
+  Promise.promisifyAll(redis.RedisClient.prototype);
+  Promise.promisifyAll(redis.Multi.prototype);
+  redis.__fwPromisified = true;
+}
 const _ = require('lodash');
 const LRU = require('lru-cache');
 
@@ -194,10 +201,14 @@ class RedisManager {
         const snapshot = this.mclientHincrbyBuffer;
         this.mclientHincrbyBuffer = new Map();
         for (const {key, hkey, incr, expr} of snapshot.values()) {
-          await this.mclient.hincrbyAsync(key, hkey, incr);
-          if (expireAtChanged(key, expr)) {
-            await this.mclient.expireatAsync(key, expr);
-            rememberExpireAt(key, expr);
+          try {
+            await this.mclient.hincrbyAsync(key, hkey, incr);
+            if (expireAtChanged(key, expr)) {
+              await this.mclient.expireatAsync(key, expr);
+              rememberExpireAt(key, expr);
+            }
+          } catch (err) {
+            log.error('Error flushing metrics counter', key, hkey, err);
           }
         }
       }, 60000);

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,6 +30,7 @@ const _ = require('lodash');
 const flat = require('flat');
 const iptool = require('ip');
 const Constants = require('../net2/Constants.js');
+const { hasControlChar } = require('../util/util.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -83,6 +84,19 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
 
+    // ipOnly defaults to true in enforcement, only rules that explicitly opt out carry it.
+    // keep it undefined when absent so old rules are not treated as changed
+    if (raw.ipOnly === undefined || raw.ipOnly === "") {
+      delete this.ipOnly;
+    } else {
+      try {
+        this.ipOnly = !!JSON.parse(raw.ipOnly);
+      } catch (e) {
+        log.error("Failed to parse policy ipOnly:", raw.ipOnly, e);
+        delete this.ipOnly;
+      }
+    }
+
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
@@ -125,6 +139,14 @@ class Policy {
       delete this['i.target'];
     }
 
+    // rule fields are written into dnsmasq config files that root parses, into the ipset restore
+    // stream and onto iptables command lines, all of which are line oriented, so a control
+    // character in any field can start a directive or a command of its own. notes is free text and
+    // may hold a line break. this runs after the array and object fields are parsed so that nested
+    // values are checked too
+    if (hasControlChar(this))
+      throw new Error(`Invalid control character in policy id: ${this.pid}`);
+
     if (this.target && this.type) {
       switch (this.type) {
         case "mac":
@@ -149,6 +171,8 @@ class Policy {
   static fieldEqual(val1, val2, name) {
     if (name == 'seq')
       return (val1 || Constants.RULE_SEQ_REG) == (val2 || Constants.RULE_SEQ_REG)
+    if (name == 'domainExactMatch')
+      return ["1", "true"].includes(String(val1)) == ["1", "true"].includes(String(val2))
     if (val1 === val2) return true;
     // undefined and "" should be consider as equal for compatible purpose
     // "" will be undefined when get it from redis
@@ -169,8 +193,8 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -276,6 +300,10 @@ class Policy {
     return this.getWhenExpired() - new Date() / 1000
   }
 
+  isAutoBlockPolicy() {
+    return this.method == 'auto' && this.category == 'intel';
+  }
+
   isSecurityBlockPolicy() {
     if (this.action !== 'block') {
       return false;
@@ -284,8 +312,7 @@ class Policy {
     const alarm_type = this.alarm_type;
 
     const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
-    const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
-    return isSecurityPolicy || isAutoBlockPolicy;
+    return isSecurityPolicy || this.isAutoBlockPolicy();
   }
 
   // x is the rule being checked

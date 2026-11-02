@@ -19,7 +19,7 @@ const features = require('./features.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const spawn = require('child_process').spawn;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 
 const readline = require('readline');
 
@@ -82,7 +82,7 @@ class Conntrack {
           const subnets = mIntf.ip4_subnets || [];
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+              const lines = await execFile("sudo", ["conntrack", "-L", "-s", subnet, "--reply-dst", wanIP, "-f", "ipv4", "-p", protocol], {maxBuffer: 4 * 1024 * 1024})
                 .then(result => result.stdout.trim().split('\n').filter(Boolean));
               if (lines.length)
                 log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
@@ -94,7 +94,7 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+          const lines = await execFile("sudo", ["conntrack", "-L", "-d", wanIP, "-f", "ipv4", "-p", protocol], {maxBuffer: 4 * 1024 * 1024})
             .then(result => result.stdout.trim().split('\n').filter(Boolean));
           if (lines.length)
             log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
@@ -121,7 +121,7 @@ class Conntrack {
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
               // use both vpn IP and connmark to match VPN interface in case multiple VPN clients have same IPs
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+              const lines = await execFile("sudo", ["conntrack", "-L", "-s", subnet, "--reply-dst", localIP, "-f", "ipv4", "-p", protocol, "-m", `0x${rtIdHex}/0xffff`], {maxBuffer: 4 * 1024 * 1024})
                 .then(result => result.stdout.trim().split('\n').filter(Boolean));
               if (lines.length)
                 log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
@@ -133,7 +133,7 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+          const lines = await execFile("sudo", ["conntrack", "-L", "-d", localIP, "-f", "ipv4", "-p", protocol, "-m", `0x${rtIdHex}/0xffff`], {maxBuffer: 4 * 1024 * 1024})
             .then(result => result.stdout.trim().split('\n').filter(Boolean));
           if (lines.length)
             log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);
@@ -197,7 +197,7 @@ class Conntrack {
           if (kv[1] === "127.0.0.1" || kv[1] === "::1")
               return;
           if (kv[1].includes(":")) {
-            if (kv[1].startsWith("ff:")) // ff00::/8 is IPv6 multicast address range
+            if (/^ff[0-9a-f]{2}:/i.test(kv[1])) // ff00::/8 is IPv6 multicast address range
               return;
             kv[1] = new Address6(kv[1]).correctForm()
           } else {
@@ -302,6 +302,16 @@ class Conntrack {
     return `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
   }
 
+  // src of a client's dns entries: its MAC, or its identity GUID when it has none (VPN),
+  // the same id flows and audit records carry
+  getDNSClientKey(mac, ip) {
+    if (mac)
+      return mac.toUpperCase();
+    const IdentityManager = require('./IdentityManager.js');
+    const identity = IdentityManager.getIdentityByIP(ip);
+    return identity ? IdentityManager.getGUID(identity) : ip;
+  }
+
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
   // refresh into connExpirePending so _drainConnTTL still issues it within one period.
   tryRefreshConnTTL(key, expr) {
@@ -322,12 +332,19 @@ class Conntrack {
     const pending = this.connExpirePending;
     this.connExpirePending = new Map();
     const now = Date.now();
-    const multi = rclient.multi();
-    for (const [key, expr] of pending) {
-      multi.expire(key, expr);
+    for (const key of pending.keys()) {
       this.connExpireTs.set(key, now);
     }
-    await multi.execAsync().catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    if (pending.size === 1) {
+      const [key, expr] = pending.entries().next().value;
+      await rclient.expireAsync(key, expr).catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    } else {
+      const multi = rclient.multi();
+      for (const [key, expr] of pending) {
+        multi.expire(key, expr);
+      }
+      await multi.execAsync().catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+    }
   }
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
@@ -338,11 +355,12 @@ class Conntrack {
     entries[subKey] = value;
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
-    const multi = rclient.multi().hset(key, subKey, value);
-    if (this.tryRefreshConnTTL(key, expr))
-      multi.expire(key, expr);
-    const results = await multi.execAsync()
-    return results && results[0]
+    if (this.tryRefreshConnTTL(key, expr)) {
+      const results = await rclient.multi().hset(key, subKey, value).expire(key, expr).execAsync()
+      return results && results[0]
+    } else {
+      return rclient.hsetAsync(key, subKey, value)
+    }
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
@@ -353,11 +371,13 @@ class Conntrack {
     Object.assign(entries, obj);
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
-    if (!_.isEmpty(obj)) {
-      const multi = rclient.multi().hmset(key, obj);
-      if (this.tryRefreshConnTTL(key, expr))
-        multi.expire(key, expr);
-      await multi.execAsync()
+    if (_.isEmpty(obj)) {
+      return;
+    }
+    if (this.tryRefreshConnTTL(key, expr)) {
+      await rclient.multi().hmset(key, obj).expire(key, expr).execAsync()
+    } else {
+      await rclient.hmsetAsync(key, obj)
     }
   }
 

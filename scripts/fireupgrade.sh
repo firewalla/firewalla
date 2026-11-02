@@ -98,7 +98,9 @@ if [[ $MANAGED_BY_FIREROUTER == "no" ]]; then
   await_ip_assigned || restore_values
 fi
 
-[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
+export FW_CLOCK_RESTART_NTP=true
+[ -s $SCRIPTS_DIR/sync_clock.sh ] && $SCRIPTS_DIR/sync_clock.sh || $FIREWALLA_HOME/scripts/sync_clock.sh
+unset FW_CLOCK_RESTART_NTP
 
 GITHUB_STATUS_API=https://api.github.com
 
@@ -207,6 +209,15 @@ function map_target_branch {
     "goldplus2:beta_7_0")
       echo "beta_23_0"
       ;;
+    "crystal:release_6_0")
+      echo "release_15_0"
+      ;;
+    "crystal:beta_6_0")
+      echo "beta_24_0"
+      ;;
+    "crystal:beta_7_0")
+      echo "beta_25_0"
+      ;;
     "*:master")
       echo "master"
       ;;
@@ -257,6 +268,7 @@ fi
 
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+git config "branch.$branch.remote" origin
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
 GIT_FETCH="(sudo -u pi $MGIT fetch origin $remote_branch)"
 if eval $GIT_FETCH ||
