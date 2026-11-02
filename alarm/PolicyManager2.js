@@ -18,6 +18,7 @@
 const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const Bone = require('../lib/Bone.js');
 
@@ -1264,6 +1265,18 @@ class PolicyManager2 {
 
     // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
     await blockControl.finishInitialization();
+
+    // the queued rules and ipsets are in the kernel now; processes outside firewalla
+    // (e.g. vulcan) re-check their own chains on this. A plain channel rather than a
+    // sem event, which would also fire listeners in the other firewalla processes.
+    // The key is set first, so a subscriber that reads it after subscribing can't miss it
+    try {
+      const ts = Date.now();
+      await rclient.setAsync('iptables:rebuilt_ts', ts);
+      await pclient.publishAsync('iptables:rebuilt', String(ts));
+    } catch (err) {
+      log.error('Failed to publish iptables:rebuilt', err);
+    }
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
