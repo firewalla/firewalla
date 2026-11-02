@@ -1549,19 +1549,22 @@ class FireRouter {
       const Alarm = require('../alarm/Alarm.js');
       const AM2 = require('../alarm/AlarmManager2.js');
       const am2 = new AM2();
-      let alarm = new Alarm.DualWanAlarm(
-        Date.now() / 1000,
-        ifaceName,
-        {
-          "p.iface.name":ifaceName,
-          "p.active.wans":activeWans,
-          "p.wan.switched": wanSwitched,
-          "p.wan.type": type,
-          "p.ready": ready,
-          "p.failures": failures,
-          "p.message": msg
-        }
-      );
+      const payload = {
+        "p.iface.name":ifaceName,
+        "p.active.wans":activeWans,
+        "p.wan.switched": wanSwitched,
+        "p.wan.type": type,
+        "p.ready": ready,
+        "p.failures": failures,
+        "p.message": msg
+      };
+      if (type === Constants.WAN_TYPE_LB) {
+        // an active backup means not every nextHop is up, so the alarm must not report restore.all
+        payload["p.wan.total"] = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].backup !== true).length;
+        if (Object.keys(currentStatus).some(i => currentStatus[i] && currentStatus[i].backup === true && currentStatus[i].active))
+          payload["p.wan.backup.active"] = "true";
+      }
+      let alarm = new Alarm.DualWanAlarm(Date.now() / 1000, ifaceName, payload);
       am2.enqueueAlarm(alarm);
     }
   }
