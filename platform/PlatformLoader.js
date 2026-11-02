@@ -92,6 +92,11 @@ class PlatformLoader {
             this.platform = new OrangePlatform();
             break;
           }
+          case "goldplus2": {
+            const GoldPlus2Platform = require('./goldplus2/GoldPlus2Platform.js');
+            this.platform = new GoldPlus2Platform();
+            break;
+          }
           default: {
             const BluePlatform = require('./blue/BluePlatform.js');
             this.platform = new BluePlatform();
@@ -111,6 +116,11 @@ class PlatformLoader {
           case "gold-pro": {
             const GoldProPlatform = require('./goldpro/GoldProPlatform.js');
             this.platform = new GoldProPlatform();
+            break;
+          }
+          case "crystal": {
+            const crystalPlatform = require('./crystal/CrystalPlatform');
+            this.platform = new crystalPlatform();
             break;
           }
           default: {

@@ -62,6 +62,12 @@ function get_suricata_service {
   echo "${CURRENT_DIR}/files/suricata.service"
 }
 
+# GoldProPlatform.isSuricataFromAssetsSupported: the suricata asset is built
+# against the Ubuntu 22.04 image
+function suricata_from_assets_supported {
+  [[ $(lsb_release -cs 2>/dev/null) == jammy ]]
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }
@@ -71,7 +77,7 @@ function get_dynamic_assets_list {
 }
 
 function get_node_bin_path {
-  echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
+  node_bin_or_default /home/pi/.nvm/versions/node/v12.14.0/bin/node
 }
 
 function map_target_branch {

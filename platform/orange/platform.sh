@@ -59,7 +59,7 @@ function get_dynamic_assets_list {
 }
 
 function get_node_bin_path {
-  echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
+  node_bin_or_default /home/pi/.nvm/versions/node/v12.18.3/bin/node
 }
 
 function map_target_branch {
@@ -80,12 +80,12 @@ function map_target_branch {
 }
 
 function fw_blink {
-  sudo pkill -9 ethtool
+  sudo pkill -9 -x ethtool
   sudo timeout 3600s ethtool -p $1 &
 }
 
 function fw_unblink {
-  sudo pkill -9 ethtool
+  sudo pkill -9 -x ethtool
 }
 
 function hook_server_route_up {

@@ -17,7 +17,7 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
 const rp = require('request-promise');
@@ -45,6 +45,19 @@ class PurplePlatform extends Platform {
 
   getAllNicNames() {
     return ["eth0", "eth1", 'wlan0', 'wlan1'];
+  }
+
+  async readPermanentMac(nic) {
+    const slot = {eth0: 0, eth1: 1, wlan0: 2, wlan1: 3}[nic];
+    if (slot === undefined)
+      return super.readPermanentMac(nic);
+
+    return exec(`seq 0 5 | xargs -I ZZZ -n 1 sudo i2cget -y 1 0x50 0x${slot}ZZZ | cut -d 'x' -f 2 | paste -sd ':'`)
+      .then(result => result.stdout.trim().toUpperCase())
+      .catch((err) => {
+        log.error(`Failed to read EEPROM MAC of ${nic}`, err.message);
+        return "";
+      });
   }
 
   getDNSServiceName() {
@@ -106,10 +119,6 @@ class PurplePlatform extends Platform {
   }
 
   isTLSBlockSupport() {
-    return true;
-  }
-
-  isUdpTLSBlockSupport() {
     return true;
   }
 
@@ -176,7 +185,7 @@ class PurplePlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }
@@ -435,6 +444,10 @@ class PurplePlatform extends Platform {
     return this.variant;
   }
 
+  async getWpaCliBinPath() {
+    return `${f.getFireRouterHome()}/platform/purple/bin/wpa_cli`;
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0'
   }
@@ -473,7 +486,7 @@ class PurplePlatform extends Platform {
 
   async _isOldBoard() {
     if (!_.isNumber(this._oldBoardIndicator))
-      this._oldBoardIndicator = Number(await exec(`sudo i2cget -y 1 0x50 0x90`).then(result => result.stdout.trim()).catch((err) => 0xff)); // return 0xff on error will disable calibration
+      this._oldBoardIndicator = Number(await execFile("sudo", ["i2cget", "-y", "1", "0x50", "0x90"]).then(result => result.stdout.trim()).catch((err) => 0xff)); // return 0xff on error will disable calibration
     return this._oldBoardIndicator == 0xff;
   }
 
@@ -488,7 +501,7 @@ class PurplePlatform extends Platform {
 
   async getNicCalibrationHWParams() {
     if (!_.isNumber(this._nicCalibHWVal))
-      this._nicCalibHWVal = Number(await exec(`sudo i2cget -y 1 0x50 0xa1`).then(result => result.stdout.trim()).catch((err) => null));
+      this._nicCalibHWVal = Number(await execFile("sudo", ["i2cget", "-y", "1", "0x50", "0xa1"]).then(result => result.stdout.trim()).catch((err) => null));
     return this._nicCalibHWVal;
   }
 

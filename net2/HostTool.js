@@ -24,7 +24,6 @@ const l2 = require('../util/Layer2.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
-const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
 const fc = require('./config.js');
 
@@ -61,10 +60,6 @@ class HostTool {
           this.macEntryCache.del(mac)
         }
       })
-
-      if (f.isMain()) {
-        this.nmap = require('../net2/Nmap.js');
-      }
     }
     return instance;
   }
@@ -327,10 +322,11 @@ class HostTool {
         return l2.getMACAsync(ip)
       } else if (fam == 6) {
         let mac = await rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac');
-        if (mac || sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+        // probe only an address on a monitored LAN; a link-local one needs an interface, which is not known here
+        if (mac || sysManager.isLinkLocal(ip, 6) || !sysManager.inMySubnet6(ip)) {
           return mac;
         } else {
-          mac = await this.nmap.neighborSolicit(ip)
+          mac = await l2.getMAC6Async(ip)
           if (mac && sysManager.isMyMac(mac))
             // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
             return null;
@@ -366,6 +362,16 @@ class HostTool {
   async getMacEntryByIP(ip) {
     const mac = await this.getMacByIP(ip)
     return this.getMACEntry(mac)
+  }
+
+  // resolves only through host:ip4/host:ip6 records, with no ARP or neighbor probe, so an address
+  // outside the box's subnets (e.g. one left over from an old prefix) maps to the device it was seen on
+  async getMacEntryByIPRecord(ip) {
+    const fam = net.isIP(ip)
+    if (!fam) return null
+    const entry = fam == 4 ? await this.getIPv4Entry(ip) : await this.getIPv6Entry(ip)
+    if (!entry || !entry.mac) return null
+    return this.getMACEntry(entry.mac)
   }
 
   async getAllMACs() {
@@ -725,6 +731,29 @@ class HostTool {
     } else {
       return null;
     }
+  }
+
+  async getWirelessAutoGroup(mac) {
+    if (_.isEmpty(mac))
+      return null;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    return rclient.getAsync(key);
+  }
+
+  async setWirelessAutoGroup(mac, tagUid, ssid, options = {}) {
+    if (_.isEmpty(mac))
+      return;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    let val = JSON.stringify({tag: tagUid, ssid: ssid, ts: Date.now(), ...options})
+    await rclient.setAsync(key, val);
+    await rclient.expireAsync(key, 2592000); // expire in 30 days
+  }
+
+  async resetWirelessAutoGroup(mac) {
+    if (_.isEmpty(mac))
+      return;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    await rclient.delAsync(key);
   }
 
   async setWirelessDeviceTagCandidate(mac, tagUid) {

@@ -15,7 +15,9 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 const https = require('https');
-const requestretry = require('requestretry');
+const net = require('net');
+// vendored 4.1.2: 4.0.2 deep clones options incl. the pooled agent and its queued requests on every response
+const requestretry = require('../vendor_lib/requestretry');
 const zlib = require('zlib');
 const util = require('util');
 const LRU = require('lru-cache');
@@ -105,6 +107,9 @@ async function rrWithErrHandling(options, usePool = false, compress = false, thr
     }
   }
 
+  if (options.localAddress && !options.family)
+    options.family = net.isIPv6(options.localAddress) ? 6 : 4;
+
   let response
   try {
     if (usePool === true) {
@@ -134,6 +139,9 @@ async function rrWithErrHandling(options, usePool = false, compress = false, thr
     const error = new Error(msg + `\n` + respSummary)
     error.statusCode = response.statusCode
     error.body = response.body
+    // seconds form only, so callers that back off on their own can honour it
+    const retryAfter = Number(response.headers && response.headers['retry-after'])
+    if (retryAfter > 0) error.retryAfter = retryAfter
 
     log.verbose(uid, msg)
     log.debug(JSON.stringify(options.body || options.json))

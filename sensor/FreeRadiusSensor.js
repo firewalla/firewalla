@@ -19,7 +19,7 @@ let freeradius = require("../extension/freeradius/freeradius.js");
 const fc = require('../net2/config.js')
 const f = require('../net2/Firewalla.js');
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const log = require('../net2/logger.js')(__filename);
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -140,6 +140,26 @@ class FreeRadiusSensor extends Sensor {
         policy: (JSON.parse(freeradius.mask(JSON.stringify(policy)))),
       };
     });
+
+    extensionManager.onGet("getFreeRadiusCerts", async (msg, data) => {
+      const result = await freeradius.getCerts().then(r => r || { ok: false, error: "Failed to get certs" }).catch((e) => { return { ok: false, error: e.message } });
+      const resp = {
+        success: result.ok ? true : false,
+        certs: result.certs,
+        customCerts: result.customCerts,
+      };
+      if (result.error) { resp.error = result.error; }
+      return resp;
+    });
+
+    extensionManager.onCmd("saveFreeRadiusCerts", async (msg, data) => {
+      const result = await freeradius.saveCerts(data).then(r => r || { ok: false, error: "Failed to save certs" }).catch((e) => { return { ok: false, error: e.message } });
+      const resp = {
+        success: result.ok ? true : false,
+      };
+      if (result.error) { resp.error = result.error; }
+      return resp;
+    });
   }
 
   async run() {
@@ -197,6 +217,9 @@ class FreeRadiusSensor extends Sensor {
   async refreshDeviceTags(options = {}) {
     log.debug("refresh device tags");
     if (!this.featureOn) return
+    await this.refreshMabDeviceTags().catch((err) => {
+      log.error(`Failed to refresh mab device tags`, err.message);
+    });
     const staStatus = await fwapc.getAllSTAStatus(true).catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
@@ -205,15 +228,56 @@ class FreeRadiusSensor extends Sensor {
       return;
     for (const [mac, staInfo] of Object.entries(staStatus)) {
       if (staInfo.dot1xUserName) {
-        await this.setDeviceTag(mac, staInfo.dot1xUserName);
+        const options = { wpax: staInfo.wpax, auth: "dot1x" };
+        if (staInfo.dvlanVlanId != null)
+          options.dvlanId = String(staInfo.dvlanVlanId);
+        await this.setDeviceTag(mac, staInfo.dot1xUserName, staInfo.ssid, options);
       }
     }
   }
 
-  async setDeviceTag(mac, username) {
+  // MAB auth is sent once, retry candidates of devices unknown at auth time
+  async refreshMabDeviceTags() {
+    const keys = await rclient.scanResults(`${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}*`);
+    for (const key of keys) {
+      const mac = key.substring(Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE.length);
+      const autoGroup = await hostTool.getWirelessAutoGroup(mac);
+      if (!autoGroup)
+        continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(autoGroup);
+      } catch (err) {
+        continue;
+      }
+      if (!parsed || parsed.auth !== "mab" || !parsed.tag)
+        continue;
+      if (!await hostManager.getHostAsync(mac))
+        continue;
+      const { tag, ssid, ts, ...options } = parsed;
+      log.info(`retry set mab device tag ${mac} to ${tag}`);
+      await this.setDeviceTagByUid(mac, tag, ssid, options);
+    }
+  }
+
+  async setDeviceTag(mac, username, ssid, options = {}) {
     const userTag = tagManager.getTagByRadiusUser(username);
+    await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+  }
+
+  // MAB: Filter-Id is the tag uid
+  async setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
+    const userTag = tagManager.getTagByUid(String(tagUid));
+    await this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
+  }
+
+  async _applyDeviceTag(mac, userTag, ssid, options, desc) {
+    const monitorable = await hostManager.getHostAsync(mac);
     if (!userTag) {
-      log.info(`skip set device tag ${mac} with username ${username}, user tag not found`);
+      log.info(`skip set device tag ${mac} with ${desc}, user tag not found`);
+      if (monitorable) {
+        await monitorable.resetAutoGroupAsync();
+      }
       return;
     }
 
@@ -223,14 +287,17 @@ class FreeRadiusSensor extends Sensor {
     }
 
     if (!tagId) {
-      log.info(`skip set device tag ${mac} with username ${username}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
+      log.info(`skip set device tag ${mac} with ${desc}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
+      if (monitorable) {
+        await monitorable.resetAutoGroupAsync();
+      }
       return;
     }
 
-    let monitorable = await hostManager.getHostAsync(mac);
     if (!monitorable) {
       log.info(`New device ${mac} set candidate tag to ${tagId}`);
       await hostTool.setWirelessDeviceTagCandidate(mac, String(tagId));
+      await hostTool.setWirelessAutoGroup(mac, String(tagId), ssid, options);
       return;
     }
 
@@ -241,14 +308,18 @@ class FreeRadiusSensor extends Sensor {
     const wifiAutoGroup = monitorable.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
     if (_.get(wifiAutoGroup, "state") === false) {
       log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${mac}`);
+      if (monitorable)
+        await monitorable.resetAutoGroupAsync();
       return;
     }
 
     const origPolicy = await monitorable.loadPolicyAsync();
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]);
 
+    await monitorable.setAutoGroupAsync(tagId, ssid, options);
+
     if (_.isEqual(origPolicy[policyKey], [tagId])) {
-      log.debug(`${mac} already has tag ${username} ${tagId}`);
+      log.debug(`${mac} already has tag ${tagId} (${desc})`);
       return;
     }
 
@@ -256,14 +327,53 @@ class FreeRadiusSensor extends Sensor {
     await monitorable.setPolicyAsync(policyKey, [tagId], true);
   }
 
+  _normalizeMac(mac) {
+    if (!_.isString(mac))
+      return null;
+    const hex = mac.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+    if (hex.length != 12)
+      return null;
+    return hex.match(/.{2}/g).join(':');
+  }
+
+  // auth_method mab, or user_name is the mac
+  _isMabEvent(msg, mac) {
+    if (msg.auth_method)
+      return msg.auth_method === "mab";
+    return this._normalizeMac(msg.user_name) === mac;
+  }
+
+  // supports both post-auth publish and json authlog fields
   async processAuthEvent(message) {
-    message = "{" + message + "}"
+    message = message.trim();
+    if (!message.startsWith("{"))
+      message = "{" + message + "}"
     log.info("radius auth event", freeradius.mask(message));
     try {
       const msg = JSON.parse(message);
       if (msg) {
-        const mac = msg.mac.replace(/-/g, ':').toUpperCase();
-        await this.setDeviceTag(mac, msg.user_name);
+        const mac = this._normalizeMac(msg.mac || msg.calling_station_id);
+        if (!mac) {
+          log.warn("skip radius auth event, invalid mac", freeradius.mask(message));
+          return;
+        }
+        const ssid = msg.ssid || msg.called_station_ssid;
+        if (this._isMabEvent(msg, mac)) {
+          if (msg.result && msg.result !== "Access-Accept")
+            return;
+          const tagUid = msg.tag || msg.filter_id;
+          const options = { auth: "mab" };
+          const vlan = msg.vlan || msg.vlan_id;
+          if (vlan)
+            options.dvlanId = String(vlan);
+          if (!tagUid) {
+            log.info(`skip set device tag ${mac}, no tag in mab auth event`);
+            return;
+          }
+          await this.setDeviceTagByUid(mac, tagUid, ssid, options);
+          return;
+        }
+        await this.setDeviceTag(mac, msg.user_name, ssid, { auth: "dot1x" });
       }
     } catch (err) {
       log.error("parse radius_auth_event message error", err.message, message);
@@ -298,7 +408,11 @@ class FreeRadiusSensor extends Sensor {
   async loadOptionsAsync() {
     try {
       const policyOpts = this._policy && this._policy["0.0.0.0"] && this._policy["0.0.0.0"].options || {};
-      return Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
+      const options = Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
+      if (!policyOpts.image_tag) {
+        delete options.image_tag;
+      }
+      return options;
     } catch (err) {
       log.error("failed to load options", err.message);
       return {};
@@ -342,9 +456,10 @@ class FreeRadiusSensor extends Sensor {
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
     log.debug("freeradius options", freeradius.mask(JSON.stringify(this._options)));
     await freeradius.prepare(this._options); // prepare in background
+    await freeradius.recoverImageMismatch(this._options); // restart if container branch not matching image tag
     // check if need to start server
     if (this.policyReady() && await freeradius.ready() && !await freeradius.isListening()) {
-      await freeradius.startServer();
+      await freeradius.startServer(this._options);
     }
   }
 
@@ -352,7 +467,7 @@ class FreeRadiusSensor extends Sensor {
     log.info("Adding freeradius image update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
     await fsp.symlink(`${f.getFirewallaHome()}/etc/crontab.freeradius`, `${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
     });
   }
@@ -360,7 +475,7 @@ class FreeRadiusSensor extends Sensor {
   async removeCronJobs() {
     log.info("Removing freeradius image update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
@@ -472,6 +587,9 @@ class FreeRadiusSensor extends Sensor {
 
       const { radius } = policy;
       const options = Object.assign({}, await this.loadOptionsAsync(), policy.options || {});
+      if (target === "0.0.0.0" && !(policy.options && policy.options.image_tag)) {
+        delete options.image_tag;
+      }
 
       // 1. apply to radius-server
       log.info("start to apply freeradius policy", freeradius.mask(JSON.stringify(radius)), options);
@@ -482,6 +600,11 @@ class FreeRadiusSensor extends Sensor {
 
       // 2. if radius-server fails, reset to previous policy
       if (!success || !await freeradius.isListening() && this._policy[target]) {
+        // if the image couldn't be pulled (disk issue / backoff), skip revert
+        if (!await freeradius.isImageReady(options)) {
+          log.warn("freeradius image not ready (pull failed or backed off), skip reconfigure without reverting policy.");
+          return;
+        }
         return { err: 'failed to reconfigure freeradius server.' };
       }
 
@@ -511,8 +634,25 @@ class FreeRadiusSensor extends Sensor {
     }
   }
 
+  async checkPolicy() {
+    const policy = await this.loadPolicyAsync();
+    try {
+      JSON.stringify(policy);
+    } catch (e) {
+      log.warn("freeradius policy is not JSON-serializable", e.message);
+      return false;
+    }
+    return true;
+  }
+
   async revertPolicy(target = "0.0.0.0") {
     if (!this.featureOn) return;
+
+    // check if current policy is valid, skip revert policy
+    if (await this.checkPolicy()) {
+      log.warn("current policy is valid, will not revert policy");
+      return;
+    }
 
     if (target == "0.0.0.0") {
       // revert to system-level policy

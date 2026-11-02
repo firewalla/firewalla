@@ -22,14 +22,31 @@ const fs = require('fs');
 const fsp = fs.promises
 const cp = require('child_process');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+let kernelCrashMonitor = null;
+let reportUdpTlsDisabled = true;
 
 class Platform {
   getAllNicNames() {
     // for red/blue, there is only one NIC
     return ["eth0"];
+  }
+
+  // the box's own ethernet ports, i.e. getAllNicNames() minus the wlan NICs
+  getEthernetNicNames() {
+    return this.getAllNicNames().filter(nic => /^eth\d+$/.test(nic));
+  }
+
+  getSfpNicNames() {
+    return [];
+  }
+
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
   }
 
   async getNicStates() {
@@ -40,6 +57,7 @@ class Platform {
       if (!dirExists)
         return
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const permAddress = await this.getPermanentMac(nic) || address;
       let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       let duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
@@ -47,15 +65,55 @@ class Platform {
         duplex = "unknown";
         speed = "-1";
       }
-      result[nic] = {address, speed, carrier, duplex};
+      result[nic] = {address, permAddress, speed, carrier, duplex};
     }))
     return result;
   }
 
+  // Read the hardware permanent MAC of a NIC. Returns "" if unavailable.
+  // Cached per-nic keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same nic name (udev pins name to port); ifindex changes when that happens.
+  async getPermanentMac(nic) {
+    if (!this._permanentMacCache)
+      this._permanentMacCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${nic}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._permanentMacCache[nic];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.mac;
+
+    const mac = await this.readPermanentMac(nic);
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac) || mac === "00:00:00:00:00:00" || mac === "FF:FF:FF:FF:FF:FF")
+      return "";
+
+    if (ifindex !== null)
+      this._permanentMacCache[nic] = {mac, ifindex};
+    return mac;
+  }
+
+  async readPermanentMac(nic) {
+    return execFile('ethtool', ['-P', nic]).then(result => {
+      const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
+      return match ? match[1].trim().toUpperCase() : "";
+    }).catch(() => "");
+  }
+
+  // Cached per-iface keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same iface name (udev pins name to port); ifindex changes when that happens.
   async getMaxLinkSpeed(iface) {
+    if (!this._maxLinkSpeedCache)
+      this._maxLinkSpeedCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${iface}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._maxLinkSpeedCache[iface];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.max;
+
     let max = 0;
-    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
-      const modes = result.stdout.split(' ');
+    await execFile('ethtool', [iface]).then((result) => {
+      const flat = result.stdout.replace(/\n/g, '');
+      const match = flat.match(/Supported link modes:\s*(.*?)\s*Supported pause.*/);
+      const modes = (match ? match[1] : '').split(/\s+/).filter(Boolean);
       for (const mode of modes) {
         const speed = Number(mode.split("base")[0]);
         if (speed > max)
@@ -64,6 +122,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
+
+    if (max > 0 && ifindex !== null)
+      this._maxLinkSpeedCache[iface] = {max, ifindex};
     return max;
   }
 
@@ -72,14 +133,16 @@ class Platform {
       try {
         const mac = cp.execSync("cat /sys/class/net/eth0/address", {encoding: 'utf8'});
         this.signatureMac = mac && mac.trim().toUpperCase();
-      } catch (err) {}
+      } catch (err) {
+        log.error(`Failed to read signature MAC from eth0: ${err.message}`);
+      }
     }
     return this.signatureMac;
   }
 
   async getNetworkSpeed() {
     try {
-      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
+      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames()[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)
@@ -161,7 +224,7 @@ class Platform {
       await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
       await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    const supported = await execFile("modinfo", [`sch_${qdisc}`]).then(() => true).catch((err) => false);
     if (!supported) {
       log.error(`qdisc ${qdisc} is not supported`);
       return;
@@ -169,10 +232,10 @@ class Platform {
     // replace the default tc filter
     const QoS = require('../control/QoS.js');
     const classid = 1;
-    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", "ifb0", "parent", `${classid}:`, "handle", "800::0x1", "prio", "1", "u32", "match", "mark", "0x800000", `0x${QoS.QOS_UPLOAD_MASK.toString(16)}`, "flowid", `${classid}:0x1002`]).catch((err) => {
       log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+    await execFile("sudo", ["tc", "filter", "replace", "dev", "ifb1", "parent", `${classid}:`, "handle", "800::0x1", "prio", "1", "u32", "match", "mark", "0x10000", `0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`, "flowid", `${classid}:0x1002`]).catch((err) => {
       log.error(`Failed to update tc filter on ifb1`, err.message);
     });
 
@@ -261,6 +324,10 @@ class Platform {
       }
       await Promise.all(executes);
     }
+  }
+
+  getNtpServiceName() {
+    return "ntp";
   }
 
   getDNSServiceName() {
@@ -414,7 +481,7 @@ class Platform {
     }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
-    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
+    const codename = await execFile("lsb_release", ["-cs"]).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get codename of OS distribution", err.message);
       return null;
     });
@@ -423,16 +490,16 @@ class Platform {
     const koPath = `${await this.getTlsKoPath(module_name)}`
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (koExists) {
-      await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+      await execFile("sudo", ["insmod", koPath, "max_host_sets=1024", `hostset_uid=${process.getuid()}`, `hostset_gid=${process.getgid()}`]).catch((err) => {
         log.error(`Failed to install tls.ko`, err.message);
       });
     } else {
-      await exec(`sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+      await execFile("sudo", ["modprobe", module_name, "max_host_sets=1024", `hostset_uid=${process.getuid()}`, `hostset_gid=${process.getgid()}`]).catch((err) => {
         log.error(`Failed to install ${module_name}.ko`, err.message);
       });
     }
 
-    const arch = await exec(`uname -m`).then((result) => result.stdout.trim()).catch((err) => {
+    const arch = await execFile("uname", ["-m"]).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get architecture of OS", err.message);
       return null;
     });
@@ -443,13 +510,13 @@ class Platform {
     const soPathAlt = `/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so`;
     const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (soExists) {
-      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+      await execFile("sudo", ["install", "-D", "-v", "-m", "644", soPath, `/usr/lib/${arch}-linux-gnu/xtables`]).catch((err) => {
         log.error(`Failed to install lib${module_name}.so`, err.message);
       });
     } else {
       const soExistsAlt = await fsp.access(soPathAlt, fs.constants.F_OK).then(() => true).catch((err) => false);
       if (soExistsAlt) {
-        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+        await execFile("sudo", ["install", "-D", "-v", "-m", "644", soPathAlt, `/usr/lib/${arch}-linux-gnu/xtables`]).catch((err) => {
           log.error(`Failed to install lib${module_name}.so`, err.message);
         });
       } else {
@@ -462,6 +529,12 @@ class Platform {
       return;
     }
     this.installedModules[module_name] = true;
+    if (module_name == "xt_udp_tls") {
+      if (!kernelCrashMonitor) {
+        kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      }
+      await kernelCrashMonitor.onUdpTlsModuleLoaded('xt_udp_tls', koExists ? koPath : null);
+    }
   }
   async installTLSModules() {
     await this.installTLSModule("xt_tls");
@@ -495,19 +568,27 @@ class Platform {
   }
 
   isUdpTLSBlockSupport() {
-    if (this.isDevMode()) {
-      return true;
+    if (!kernelCrashMonitor) {
+      kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
     }
-    return false;
+    const disabled = kernelCrashMonitor.shouldDisableUdpTls();
+    if (disabled) {
+      if (reportUdpTlsDisabled) {
+        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+        reportUdpTlsDisabled = false;
+      }
+      return false;
+    }
+    return true;
   }
 
   async getKernelModulesPath() {
-    const kernelRelease = await exec("uname -r").then(result => result.stdout.trim());
+    const kernelRelease = await execFile("uname", ["-r"]).then(result => result.stdout.trim());
     return `${this.getPlatformFilesPath()}/kernel_modules/${kernelRelease}`;
   }
 
   async getSharedObjectsPath() {
-    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim());
+    const codename = await execFile("lsb_release", ["-cs"]).then((result) => result.stdout.trim());
     return `${this.__dirname}/files/shared_objects/${codename}`;
   }
 
@@ -530,6 +611,9 @@ class Platform {
   getDnsproxySOPath() { }
 
   getPlatformFilesPath() { return `${this.__dirname}/files` }
+
+  // platforms whose image ships iftop can override this to use the system one
+  getIftopPath() { return `${this.getPlatformFilesPath()}/iftop` }
 
   getZeekPcapBufsize() {
     return {
@@ -559,6 +643,10 @@ class Platform {
 
   getSpeedtestCliBinPath() {
     
+  }
+
+  async getWpaCliBinPath() {
+    return null;
   }
 
   async getWlanVendor() {
@@ -622,8 +710,8 @@ class Platform {
       try {
         const loaded = await exec(`sudo lsmod | grep act_mirred`).then(() => true).catch(() => false);
         if (loaded)
-          await exec(`sudo rmmod act_mirred`);
-        await exec(`sudo insmod ${koPath}`);
+          await execFile("sudo", ["rmmod", "act_mirred"]);
+        await execFile("sudo", ["insmod", koPath]);
       } catch (err) {
         log.error("Failed to reload act_mirred.ko", err.message);
       }
@@ -663,6 +751,11 @@ class Platform {
 
   async isSuricataFromAssetsSupported() {
     return false;
+  }
+
+  // asset path of the suricata tarball, used where isSuricataFromAssetsSupported() holds
+  getSuricataAssetPath() {
+    return null;
   }
 
   hasIntegratedFWAPC() {

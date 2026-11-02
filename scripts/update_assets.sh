@@ -8,9 +8,23 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 : ${ASSETSD_PATH:=${FIREWALLA_HIDDEN}/config/assets.d/}
 
-logger "FIREWALLA:UPDATE_ASSETS:START,ASSETSD_PATH=$ASSETSD_PATH"
+# Single-asset mode: update_assets.sh <local_path> <s3_path> [perm]
+# The entry is given directly, so no assets.d list is needed - this works on a
+# factory-fresh or long-offline box before prepare_assets_list.sh has ever run.
+# Arguments are kept as separate values and never fed to the eval below, so
+# paths may contain spaces and cannot inject shell. exec_pre/exec_post are not
+# supported in this mode. With no arguments, every entry under ASSETSD_PATH is
+# processed.
+SINGLE_ENTRY=""
+SA_FILE_PATH=""; SA_S3_PATH=""; SA_PERM=""
+if [[ $# -ge 2 ]]; then
+  SINGLE_ENTRY="yes"
+  SA_FILE_PATH="$1"; SA_S3_PATH="$2"; SA_PERM="${3:-644}"
+fi
 
-if [[ ! -d $ASSETSD_PATH ]]; then
+logger "FIREWALLA:UPDATE_ASSETS:START,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"
+
+if [[ -z "$SINGLE_ENTRY" && ! -d $ASSETSD_PATH ]]; then
   echo "assets.d folder doesn't exist, exit"
   exit 0
 fi
@@ -28,44 +42,74 @@ ASSETS_PUBLIC_KEY=/home/pi/firewalla/etc/keys/assets.key
 TEMP_DIR=$(mktemp -d)
 trap 'rm -fr "$TEMP_DIR"' EXIT
 
-cd $ASSETSD_PATH
 # unify lists under assets.d/, keeps one entry for each file only
 # list with lower prefix number got fetched earlier but list with bigger prefix number has higher priority
 #
 # use awk instead of cat to prevent bug when any file doesn't end with newline
 # if using cat, the file not ending with newline will be concatenated with the next file
 # so two lines becomes one line
-awk '{print $0}' * |
+{ if [[ -n "$SINGLE_ENTRY" ]]; then
+    echo single
+  else
+    cd $ASSETSD_PATH && awk '{print $0}' *
+  fi
+} |
 while IFS= read -r line; do
-  line=$(eval 'for param in '$line'; do echo $param; done')
-  IFS=$'\n' read -rd '' -a params <<< "$line"
-  file_path=${params[0]}
-  s3_path=${params[1]}
+  if [[ -n "$SINGLE_ENTRY" ]]; then
+    file_path="$SA_FILE_PATH"
+    s3_path="$SA_S3_PATH"
+    perm="$SA_PERM"
+    exec_pre=""
+    exec_post=""
+  else
+    line=$(eval 'for param in '$line'; do echo $param; done')
+    IFS=$'\n' read -rd '' -a params <<< "$line"
+    file_path=${params[0]}
+    s3_path=${params[1]}
+    perm=${params[2]}
+    exec_pre=${params[3]}
+    exec_post=${params[4]}
+  fi
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
   signature_url="${bin_url}.sig"
-  perm=${params[2]}
-  exec_pre=${params[3]}
-  exec_post=${params[4]}
-  lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
+  lock_file="$(dirname "$file_path")/.$(basename "$file_path").lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
     continue
   fi
-  expected_hash=$(curl $hash_url -s)
-  if [[ $? -ne 0 ]]; then
-    echo "Failed to get hash of $file_path from $hash_url"
-    continue
-  fi
+  # retry with backoff: at boot the network (WAN/DNS) may still be settling
+  expected_hash=""
+  for attempt in 1 2 3 4 5; do
+    expected_hash=$(curl -sf --connect-timeout 10 -m 30 "$hash_url")
+    curl_rc=$?
+    if [ "$curl_rc" = 0 ] && [ ${#expected_hash} = 64 ]; then
+      break
+    fi
+    if [ "$curl_rc" = 22 ]; then
+      echo "Attempt $attempt: $hash_url returned an HTTP error, not retrying"
+      break
+    fi
+    if [ "$curl_rc" = 0 ]; then
+      echo "Attempt $attempt: $hash_url returned ${#expected_hash} bytes, expecting 64, not retrying"
+      break
+    fi
+    if [ "$attempt" = 5 ]; then
+      echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc)"
+      break
+    fi
+    echo "Attempt $attempt: failed to reach $hash_url (curl exit $curl_rc), retry in $((attempt*5))s"
+    sleep $((attempt * 5))
+  done
   if [ ${#expected_hash} != 64 ]; then
-    echo "Invalid hash from $hash_url"
+    echo "Failed to get valid hash of $file_path from $hash_url after retries"
     continue
   fi
 
   # verify signature
   if [ "$VERIFY_SIGNATURE" = "true" ]; then
     signature_file="$TEMP_DIR"/$(cat /dev/urandom | tr -dc '[:alpha:]' |  head -c 20)
-    wget -qO "$signature_file" "$signature_url"
+    wget -qO "$signature_file" --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
       continue
@@ -80,16 +124,16 @@ while IFS= read -r line; do
 
   current_hash=""
   if [[ -f $file_path ]]; then
-    current_hash=$(sha256sum $file_path | awk '{print $1}')
+    current_hash=$(sha256sum "$file_path" | awk '{print $1}')
   fi
   changed=""
   if [[ $expected_hash != $current_hash ]]; then
     echo "Hash of $file_path mismatches with $hash_url, will fetch latest file from $bin_url"
 
-    sudo mkdir -p $(dirname "${file_path}")
+    sudo mkdir -p "$(dirname "$file_path")"
     temp_file="$file_path".download
-    sudo wget "$bin_url" -O "$temp_file"
-    verify_hash=$(sha256sum $temp_file | awk '{print $1}')
+    sudo wget --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$bin_url" -O "$temp_file"
+    verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
       continue
@@ -109,16 +153,18 @@ while IFS= read -r line; do
     echo "Hash of $file_path matches with $hash_url"
   fi
   if [[ -f $file_path ]]; then
-    sudo chown pi:pi $file_path
-    sudo chmod $perm $file_path
+    sudo chown pi:pi "$file_path"
+    sudo chmod "$perm" "$file_path"
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
     eval "$exec_post"
   fi
 done
 
-if [[ "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
+if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
   $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+  # check and retry the ca installation here to address any previous installation failures.
+  $FIREWALLA_HOME/scripts/update_ca_certificates.sh
 fi
 
-logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=$ASSETSD_PATH"
+logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"

@@ -19,7 +19,7 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const _ = require('lodash');
@@ -55,7 +55,7 @@ const yamlJson = {
 class ZTDockerClient extends DockerBaseVPNClient {
 
   async checkAndSaveProfile(value) {
-    await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
+    await execFile("mkdir", ["-p", this._getDockerConfigDirectory()]);
     const config = value && value.config;
     const networkId = config && config.networkId;
     if (!networkId)
@@ -100,7 +100,7 @@ class ZTDockerClient extends DockerBaseVPNClient {
     });
     if (!config)
       return false;
-    const resultJson = await exec(`sudo docker exec ${this.getContainerName()} zerotier-cli listnetworks -j`).then(result => JSON.parse(result.stdout.trim())).catch((err) => {
+    const resultJson = await execFile("sudo", ["docker", "exec", this.getContainerName(), "zerotier-cli", "listnetworks", "-j"]).then(result => JSON.parse(result.stdout.trim())).catch((err) => {
       log.error(`Failed to run zerotier-cli listnetworks inside container of ${this.profileId}`, err.message);
       return null;
     });

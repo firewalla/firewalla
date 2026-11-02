@@ -25,7 +25,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const { fileExist, fileTouch, fileRemove } = require('../util/util.js');
 
 const _ = require('lodash')
-const { exec } = require('child-process-promise')
+const { exec, execFile } = require('child-process-promise')
 
 const NOAUTO_FLAG_PATH_FW = f.getUserConfigFolder() + '/.no_auto_upgrade'
 const NOAUTO_FLAG_PATH_FR = f.getFireRouterConfigFolder() + '/.no_auto_upgrade'
@@ -66,7 +66,7 @@ async function getUpgradeInfo() {
 }
 
 async function getCommitTS(hash) {
-  const cmd = await exec(`git show -s --format=%ct ${hash}`)
+  const cmd = await execFile("git", ["show", "-s", "--format=%ct", hash])
   return Number(cmd.stdout.trim())
 }
 
@@ -88,8 +88,8 @@ async function getHashAndVersion() {
     let remoteVersion = localVersion
     let remoteVersionStr = localVersionStr
     if (localHash != remoteHash) {
-      await exec(`timeout 20s git fetch origin ${remoteHash}`)
-      const cmd = await exec(`git show ${remoteHash}:net2/config.json`)
+      await execFile("timeout", ["20s", "git", "fetch", "origin", remoteHash])
+      const cmd = await execFile("git", ["show", `${remoteHash}:net2/config.json`])
       remoteVersion = JSON.parse(cmd.stdout).version
       if (_.isNumber(remoteVersion)) {
         let exp = 0;
@@ -186,7 +186,7 @@ async function setAutoUpgradeState(state) {
 }
 
 async function checkAndUpgrade(force) {
-  return exec(`sudo systemctl start fireupgrade_cond@${force ? 'force' : 'check'}`)
+  return execFile("sudo", ["systemctl", "start", `fireupgrade_cond@${force ? 'force' : 'check'}`])
 }
 
 module.exports = {

@@ -19,7 +19,7 @@ module.exports = {
   },
   plugins: [
     new webpack.IgnorePlugin({
-      resourceRegExp: /^(geoip-lite|vertx|hiredis|uws|utf-8-validate|bufferutil|supports-color|mongodb-client-encryption|uuid\/v4|colors\/safe|dns-equal|multicast-dns|dns-txt|multicast-dns-service-types|ursa|bleno|yamlparser|heapdump)$/,
+      resourceRegExp: /^(geoip-lite|vertx|hiredis|uws|utf-8-validate|bufferutil|supports-color|mongodb-client-encryption|uuid\/v4|colors\/safe|dns-equal|multicast-dns|dns-txt|multicast-dns-service-types|ursa|bleno|yamlparser)$/,
     })
   ]
 }

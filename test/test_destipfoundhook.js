@@ -66,3 +66,68 @@ describe.skip('DestIPFoundHook', () => {
   });
 
 });
+
+describe('DestIPFoundHook.processIP cloud lookup result', () => {
+  const IntelTool = require('../net2/IntelTool');
+  const intelTool = new IntelTool(); // singleton, the same instance the hook uses
+  const stubbed = ['getIntel', 'getDomainIntelAll', 'getCustomIntel', 'checkIntelFromCloud', 'removeIntel', 'addIntel'];
+  const flow = { ip: '203.0.113.10', host: 'video.example.com', fd: 'in' };
+  let written;
+
+  before(() => {
+    intelTool.getIntel = async () => null;
+    intelTool.getCustomIntel = async () => null;
+    intelTool.removeIntel = async (ip) => { written.push(['remove', ip]) };
+    intelTool.addIntel = async (ip) => { written.push(['add', ip]) };
+  });
+
+  after(() => {
+    for (const name of stubbed) delete intelTool[name];
+  });
+
+  beforeEach(() => {
+    written = [];
+    intelTool.getDomainIntelAll = async () => [];
+  });
+
+  it('should not cache intel when the cloud lookup fails', async () => {
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.true;
+    expect(intel.host).to.equal(flow.host);
+    expect(written).to.be.empty;
+  });
+
+  it('should apply custom domain intel when the cloud lookup fails', async () => {
+    intelTool.getDomainIntelAll = async (domain, custom) =>
+      custom ? [{ originIP: flow.host, category: 'games', app: 'example_app' }] : [];
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.true;
+    expect(intel.category).to.equal('games');
+    expect(intel.app).to.equal('example_app');
+    expect(written).to.be.empty;
+  });
+
+  it('should return no intel when the cloud lookup fails with noUpdateOnError', async () => {
+    intelTool.checkIntelFromCloud = async () => { throw new Error('HTTP failed') };
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow), { noUpdateOnError: true });
+
+    expect(intel).to.be.null;
+    expect(written).to.be.empty;
+  });
+
+  it('should cache intel when the cloud answers with no intel', async () => {
+    intelTool.checkIntelFromCloud = async () => [];
+
+    const intel = await destIPFoundHook.processIP(Object.assign({}, flow));
+
+    expect(intel.cloudFailed).to.be.undefined;
+    expect(written).to.eql([['remove', flow.ip], ['add', flow.ip]]);
+  });
+});

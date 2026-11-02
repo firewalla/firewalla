@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,7 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const Identity = require('../net2/Identity.js')
+const IdentityManager = require('../net2/IdentityManager.js')
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const flowTool = require('../net2/FlowTool');
@@ -258,7 +259,7 @@ class DataUsageSensor extends Sensor {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
-            "p.device.ip": host.o.ipv4Addr,
+            "p.device.ip": host instanceof Identity ? (host.getIPs()[0] || '').split('/')[0] || undefined : host.o.ipv4Addr,
             "p.intf.id": intfId,
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
@@ -270,37 +271,47 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
-        if (host instanceof Identity) alarm['p.device.guid'] = mac
-        alarmManager2.enqueueAlarm(alarm);
-    }
-    async getSumFlows(mac, begin, end) {
-        const rawFlows = [].concat(await flowTool.queryFlows(mac, "out", begin, end), await flowTool.queryFlows(mac, "in", begin, end))
-        let flows = [];
-        for (const rawFlow of rawFlows) {
-            flows.push({
-                count: rawFlow.ob + rawFlow.rb,
-                ip: flowTool.getDestIP(rawFlow),
-                device: mac
-            })
-        }
-        flows = await flowTool.enrichWithIntel(flows, true);
-        let flowsCache = {};
-        for (const flow of flows) {
-            const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
-            if (flowsCache[destHost]) {
-                flowsCache[destHost].count += flow.count
-            } else {
-                flowsCache[destHost] = flow
+        if (host instanceof Identity) {
+            alarm['p.device.guid'] = mac;
+            const tunnelIp = (host.getIPs()[0] || '').split('/')[0];
+            if (tunnelIp) {
+                const endpoint = IdentityManager.getEndpointByIP(tunnelIp);
+                if (endpoint) alarm['p.device.real.ip'] = endpoint;
             }
         }
-        let flowsGroupByDestHost = [];
-        for (const destHost in flowsCache) {
-            flowsCache[destHost].aggregationHost = destHost;
-            flowsGroupByDestHost.push(flowsCache[destHost]);
-        }
-        return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
-          .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
+        alarmManager2.enqueueAlarm(alarm);
     }
+
+    async getSumFlows(mac, begin, end) {
+      const baseOptions = { mac, ts: begin, ets: end, count: 5000, asc: true };
+      const flows = [].concat(
+        await flowTool.getDeviceLogs(Object.assign({}, baseOptions, { direction: "in" })),
+        await flowTool.getDeviceLogs(Object.assign({}, baseOptions, { direction: "out" }))
+      );
+
+      const flowsCache = {};
+      for (const flow of flows) {
+        const count = (flow.upload || 0) + (flow.download || 0);
+        const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
+        if (flowsCache[destHost]) {
+          flowsCache[destHost].count += count;
+        } else {
+          flowsCache[destHost] = Object.assign(
+            { count },
+            _.pick(flow, ['device', 'ip', 'host', 'category', 'app', 'country'])
+          );
+        }
+      }
+
+      let flowsGroupByDestHost = [];
+      for (const destHost in flowsCache) {
+        flowsCache[destHost].aggregationHost = destHost;
+        flowsGroupByDestHost.push(flowsCache[destHost]);
+      }
+      return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
+        .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
+    }
+
     async checkMonthlyDataUsage(date, total, wanUUID) {
         log.info(`Start check monthly data usage ${wanUUID ? `on wan ${wanUUID}` : ""}`);
         const { totalDownload, totalUpload, monthlyBeginTs,

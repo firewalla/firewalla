@@ -111,6 +111,10 @@ case "$UNAME" in
         export FIREWALLA_PLATFORM=goldpro
         export MANAGED_BY_FIREROUTER=yes
         ;;
+      crystal)
+        export FIREWALLA_PLATFORM=crystal
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
     esac
     ;;
   "aarch64")
@@ -146,6 +150,10 @@ case "$UNAME" in
         ;;
       orange)
         export FIREWALLA_PLATFORM=orange
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+      goldplus2)
+        export FIREWALLA_PLATFORM=goldplus2
         export MANAGED_BY_FIREROUTER=yes
         ;;
       *)
