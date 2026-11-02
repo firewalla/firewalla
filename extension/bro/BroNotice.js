@@ -69,16 +69,27 @@ class BroNotice {
     if (instance === null) {
       instance = this;
       this.ignoredIssuers = new IssuerList(DEFAULT_IGNORED_ISSUERS);
+      // an invalid issuer alarm is raised only for these issuers; a config layer over config.json may drop or retype it
+      const blacklist = fc.getConfig().invalidCertIssuerBlacklist;
+      this.issuerBlacklist = new IssuerList(Array.isArray(blacklist) ? blacklist : []);
     }
   }
 
   startIssuerListLoaders() {
-    return this._startIssuerListLoader(this.ignoredIssuers, {
-      cacheKey: Constants.REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG,
-      hashsetName: Constants.KEY_INVALID_CERT_IGNORED_ISSUERS,
-      label: 'invalid cert ignored issuers',
-      acceptEmpty: true, // an emptied cloud list brings the defaults back
-    });
+    return Promise.all([
+      this._startIssuerListLoader(this.ignoredIssuers, {
+        cacheKey: Constants.REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG,
+        hashsetName: Constants.KEY_INVALID_CERT_IGNORED_ISSUERS,
+        label: 'invalid cert ignored issuers',
+        acceptEmpty: true, // an emptied cloud list brings the defaults back
+      }),
+      this._startIssuerListLoader(this.issuerBlacklist, {
+        cacheKey: Constants.REDIS_KEY_INVALID_CERT_ISSUER_BLACKLIST_CLOUD_CONFIG,
+        hashsetName: Constants.KEY_INVALID_CERT_ISSUER_BLACKLIST,
+        label: 'invalid cert issuer blacklist',
+        acceptEmpty: false, // an empty cloud list is ignored, so the cached or config.json list stays
+      }),
+    ]);
   }
 
   // FireMain only; required here, it opens a redis subscription when loaded
@@ -225,9 +236,10 @@ class BroNotice {
     if (!_.isEmpty(subject)) alarm["p.dest.ssl.subject"] = subject;
     // the conn entry of the failed handshake: the failure saveCertValidationFailure saved, read before an alarm exists
     // so known false positives are dropped, and the SNI cached at ClientHello, which DestInfoIntel keeps as the dest name
+    let issuer = null;
     try {
       const conn = await conntrack.getConnEntries(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp") || {};
-      const issuer = conn.validation_failed_issuer ? JSON.parse(conn.validation_failed_issuer) : null;
+      issuer = conn.validation_failed_issuer ? JSON.parse(conn.validation_failed_issuer) : null;
       if (issuer && this.ignoredIssuers.has(issuer)) {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
@@ -245,6 +257,12 @@ class BroNotice {
       if (host) alarm["p.dest.name"] = host;
     } catch (err) {
       log.warn("Failed to look up the connection of invalid server cert notice", err.message);
+    }
+    // without the issuer DN there is nothing to match against the blacklist, so the alarm is dropped too;
+    // always so where zeek doesn't load ssl-cert-chain.zeek (blue, red, navy, ubt)
+    if (alarm["p.dest.ssl.validation_status"] == "cert_invalid_issuer" && !(issuer && this.issuerBlacklist.has(issuer))) {
+      log.verbose("Ignoring invalid server cert notice of an issuer not on the blacklist", issuer);
+      return false;
     }
     return true;
   }
