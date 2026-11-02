@@ -325,7 +325,7 @@ describe('BroNotice invalid server certificate', function () {
     afterEach(() => {
       delete failedIssuers[REMOTE];
       delete failedFps[REMOTE];
-      broNotice.setIgnoredIssuers(null);
+      broNotice.ignoredIssuers.set(null);
     });
 
     it('puts the first failed cert issuer, its DN, name and fingerprint on the alarm', async () => {
@@ -350,12 +350,12 @@ describe('BroNotice invalid server certificate', function () {
 
     it('uses the cloud list instead of the default one, and falls back when it is empty', async () => {
       const notice = invalidCert(LAN_DEVICE, REMOTE);
-      broNotice.setIgnoredIssuers(['C=US,O=Other Root']);
+      broNotice.ignoredIssuers.set(['C=US,O=Other Root']);
       failedIssuers[REMOTE] = { O: 'Other Root', C: 'US' };
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
       failedIssuers[REMOTE] = { C: 'US', ST: 'Washington', L: 'Redmond', O: 'Microsoft Corporation', CN: 'Microsoft Root Certificate Authority 2011' };
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
-      broNotice.setIgnoredIssuers([]);
+      broNotice.ignoredIssuers.set([]);
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     });
 

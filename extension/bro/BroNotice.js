@@ -46,36 +46,49 @@ const DEFAULT_IGNORED_ISSUERS = [
   "CN=Microsoft Root Certificate Authority 2011,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
 ];
 
+// DNs matched attribute by attribute, so their order doesn't matter
+class IssuerList {
+  constructor(defaults) {
+    this.defaults = defaults;
+    this.set(null);
+  }
+
+  // an array of DN strings from the cloud replaces the defaults
+  set(dns) {
+    if (!Array.isArray(dns) || !dns.length) dns = this.defaults;
+    this.dns = dns.filter(_.isString).map(dn => intelTool.parseDN(dn));
+  }
+
+  has(issuer) {
+    return this.dns.some(dn => _.isEqual(dn, issuer));
+  }
+}
+
 class BroNotice {
   constructor() {
     if (instance === null) {
       instance = this;
-      this.setIgnoredIssuers(null);
+      this.ignoredIssuers = new IssuerList(DEFAULT_IGNORED_ISSUERS);
     }
   }
 
-  // FireMain only; required here, it opens a redis subscription when loaded
-  startIgnoredIssuersLoader() {
-    const CloudConfigLoader = require('../../sensor/CloudConfigLoader.js');
-    this.ignoredIssuersLoader = new CloudConfigLoader({
+  startIssuerListLoaders() {
+    return this._startIssuerListLoader(this.ignoredIssuers, {
       cacheKey: Constants.REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG,
       hashsetName: Constants.KEY_INVALID_CERT_IGNORED_ISSUERS,
       label: 'invalid cert ignored issuers',
-      apply: dns => this.setIgnoredIssuers(dns),
-      acceptEmpty: true // an emptied cloud list brings the default list back
+      acceptEmpty: true, // an emptied cloud list brings the defaults back
     });
-    return this.ignoredIssuersLoader.start();
   }
 
-  // an array of DN strings from the cloud replaces the default list
-  setIgnoredIssuers(dns) {
-    if (!Array.isArray(dns) || !dns.length) dns = DEFAULT_IGNORED_ISSUERS;
-    this.ignoredIssuers = dns.filter(_.isString).map(dn => intelTool.parseDN(dn));
-  }
-
-  // compared attribute by attribute, so the order of the DN doesn't matter
-  isIgnoredIssuer(issuer) {
-    return this.ignoredIssuers.some(dn => _.isEqual(dn, issuer));
+  // FireMain only; required here, it opens a redis subscription when loaded
+  _startIssuerListLoader(list, { cacheKey, hashsetName, label, acceptEmpty }) {
+    const CloudConfigLoader = require('../../sensor/CloudConfigLoader.js');
+    const loader = new CloudConfigLoader({
+      cacheKey, hashsetName, label, acceptEmpty,
+      apply: dns => list.set(dns),
+    });
+    return loader.start();
   }
 
   // zeek's src is the client; sets p.local_is_client and returns whether the alarm device is it
@@ -215,7 +228,7 @@ class BroNotice {
     try {
       const conn = await conntrack.getConnEntries(broObj["id.orig_h"], broObj["id.orig_p"], broObj["id.resp_h"], broObj["id.resp_p"], "tcp") || {};
       const issuer = conn.validation_failed_issuer ? JSON.parse(conn.validation_failed_issuer) : null;
-      if (issuer && this.isIgnoredIssuer(issuer)) {
+      if (issuer && this.ignoredIssuers.has(issuer)) {
         log.verbose("Ignoring invalid server cert notice of an ignored issuer", issuer);
         return false;
       }
