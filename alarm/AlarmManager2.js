@@ -87,6 +87,18 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail:";
 
+// the value of alarm.result for a block or an allow, and the field pointing at the rule or exception
+const RESULT_KINDS = {
+  block: { ref: 'result_policy' },
+  allow: { ref: 'result_exception' },
+};
+
+function setAlarmResult(alarm, kind, refId, auto) {
+  alarm[RESULT_KINDS[kind].ref] = refId;
+  alarm.result = kind;
+  if (auto) alarm.result_method = "auto";
+}
+
 const _ = require('lodash');
 
 const IntelManager = require('../net2/IntelManager.js')
@@ -1545,6 +1557,7 @@ module.exports = class {
     const exception = await exceptionManager.getException(exceptionID);
     const alarms = await this.findSimilarAlarmsByException(exception);
     for (const alarm of alarms) {
+      // not a block or an allow, so it stays out of RESULT_KINDS
       alarm.result_exception = exception.eid;
       alarm.result = "archiveByException";
       await this.updateAlarm(alarm);
@@ -1751,12 +1764,7 @@ module.exports = class {
 
     log.info(`Alarm to block: ${alarm.aid}`)
 
-    alarm.result_policy = policy.pid;
-    alarm.result = "block";
-
-    if (info && info.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'block', policy.pid, info && info.method === "auto");
 
     await this.updateAlarm(alarm);
 
@@ -1791,12 +1799,7 @@ module.exports = class {
 
     log.info(`Alarm to allow: ${alarm.aid}`)
 
-    alarm.result_exception = exception.eid;
-    alarm.result = "allow";
-
-    if (info.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'allow', exception.eid, info.method === "auto");
 
     await this.updateAlarm(alarm);
 
@@ -2059,12 +2062,7 @@ module.exports = class {
     // FIXME: make it transactional
     // set alarm handle result + add policy
     const { policy, alreadyExists } = await pm2.checkAndSaveAsync(p)
-    alarm.result_policy = policy.pid;
-    alarm.result = "block";
-
-    if (value.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'block', policy.pid, value.method === "auto");
 
     await this.updateAlarm(alarm)
 
@@ -2109,8 +2107,7 @@ module.exports = class {
 
     const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
 
-    alarm.result_exception = exception.eid;
-    alarm.result = "allow";
+    setAlarmResult(alarm, 'allow', exception.eid, false);
 
     await this.updateAlarm(alarm)
     await this.archiveAlarm(alarm.aid)
