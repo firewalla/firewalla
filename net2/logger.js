@@ -18,6 +18,7 @@ const config = winston.config;
 
 const loggerManager = require('./LoggerManager.js');
 const {argumentsToString} = require('../util/util.js');
+const { createFileTransport } = require('../util/logFileTransport.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -30,12 +31,12 @@ String.prototype.capitalizeFirstLetter = function () {
 var production = false;
 
 if (process.env.FWPRODUCTION) {
-  console.log("LOGGER SET TO PRODUCTION");
+  console.error("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
 if (fs.existsSync("/tmp/FWPRODUCTION")) {
-  console.log("LOGGER SET TO PRODUCTION");
+  console.error("LOGGER SET TO PRODUCTION");
   production = true;
 }
 
@@ -43,41 +44,24 @@ var globalLogLevel = 'info';
 
 if (process.env.FWDEBUG) {
   globalLogLevel = process.env.FWDEBUG;
-  console.log("LOGGER SET TO", globalLogLevel);
+  console.error("LOGGER SET TO", globalLogLevel);
 } else if (fs.existsSync("/home/pi/.firewalla/config/FWDEBUG")) {
   globalLogLevel = fs.readFileSync("/home/pi/.firewalla/config/FWDEBUG", "utf8").trim();
-  console.log("LOGGER SET TO", globalLogLevel);
+  console.error("LOGGER SET TO", globalLogLevel);
 }
 else if (production) {
   globalLogLevel = 'warn';
 }
 
 function getFileTransport() {
-  let loglevel = 'silly';
-  // if (production) {
-  //   loglevel = 'warn';
-  // }
-
-  return new(winston.transports.File)({
-    level: loglevel,
+  return createFileTransport({
+    level: 'silly',
     name: 'log-file',
     filename: process.title + ".log",
-    json: false,
     dirname: `${process.env.HOME}/logs`,
     maxsize: 1000000,
     maxFiles: 3,
-    timestamp: function() {
-      return moment().format('YYYY-MM-DD HH:mm:ss')
-    },
-    formatter: function(options) {
-      // - Return string will be passed to logger.
-      // - Optionally, use options.colorize(options.level, <string>) to
-      //   colorize output based on the log level.
-      return options.timestamp() + ' ' +
-        options.level.toUpperCase() + ' ' +
-        (options.message ? options.message : '') +
-        (options.meta && Object.keys(options.meta).length ? '\n\t'+ JSON.stringify(options.meta) : '' );
-    }
+    withLevel: true
   })
 }
 

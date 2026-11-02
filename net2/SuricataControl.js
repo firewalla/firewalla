@@ -18,7 +18,7 @@
 const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const _ = require('lodash');
@@ -29,6 +29,9 @@ const BASIC_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_basi
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const FlowEngine = require('./FlowEngine.js');
+const fc = require('./config.js');
+const Constants = require('./Constants.js');
 
 class SuricataControl {
   constructor() {
@@ -51,34 +54,40 @@ class SuricataControl {
   }
 
   async reloadSuricataRules() {
-    await exec(`sudo systemctl reload suricata`).catch((err) => {});
+    await execFile("sudo", ["systemctl", "reload", "suricata"]).catch((err) => {});
   }
 
   async addCronJobs() {
-    await exec(`sudo cp ${f.getFirewallaHome()}/etc/logrotate.d/suricata.logrotate /etc/logrotate.d/suricata`).catch((err) => {
+    await execFile("sudo", ["cp", `${f.getFirewallaHome()}/etc/logrotate.d/suricata.logrotate`, "/etc/logrotate.d/suricata"]).catch((err) => {
       log.error(`Failed to copy suricata logrotate config file to /etc/logrotate.d`, err.message);
     });
     log.info("Adding suricata related cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    // zssids runs the IDS under this unit only when it does not already run it
+    // inside the brofish process; with one process for both roles that unit is
+    // held off and crontab.zssids's watchdog covers the IDS too
+    const idsOnlyZssids = FlowEngine.appliedSuricataEngine() === 'zssids'
+      && !(FlowEngine.appliedZeekEngine() === 'zssids' && fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK));
+    const crontab = idsOnlyZssids ? 'crontab.zssids-ids' : 'crontab';
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh`, err.message);
     })
   }
 
   async removeCronJobs() {
-    await exec(`sudo rm -f /etc/logrotate.d/suricata`).catch((err) => {
+    await execFile("sudo", ["rm", "-f", "/etc/logrotate.d/suricata"]).catch((err) => {
       log.error(`Failed to remove suricata logrotate config file from /etc/logrotate.d`, err.message);
     });
     log.info("Removing suricata related cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+    await execFile(`${f.getFirewallaHome()}/scripts/update_crontab.sh`, []).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
 
   async cleanupRuntimeConfig() {
-    await exec(`mkdir -p ${f.getRuntimeInfoFolder()}/suricata`).then(() => exec(`rm -rf ${f.getRuntimeInfoFolder()}/suricata/*`)).catch((err) => {
+    await execFile("mkdir", ["-p", `${f.getRuntimeInfoFolder()}/suricata`]).then(() => exec(`rm -rf ${f.getRuntimeInfoFolder()}/suricata/*`)).catch((err) => {
       log.error(`Failed to cleanup suricata runtime config directory`, err.message);
     });
   }
@@ -91,6 +100,10 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
+      if (FlowEngine.appliedSuricataEngine() === 'zssids') {
+        log.info("Suricata rules are evaluated by zssids, not updating the suricata binary");
+        return;
+      }
       // Check if the current platform supports suricata from assets
       
       const isSupported = await platform.isSuricataFromAssetsSupported();
@@ -100,9 +113,11 @@ class SuricataControl {
       }
 
       // Create suricata binary lst file for assets
-      const suricataBinaryPath = `${f.getRuntimeInfoFolder()}/assets/suricata`;
       const suricataBinaryTarPath = `${f.getRuntimeInfoFolder()}/assets/suricata.tar.gz`;
-      const assetsConf = `${suricataBinaryTarPath} /gold/assets/u22/6.5.0-25-generic/suricata.tar.gz 644 ":" "tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets; sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata; if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
+      // suricata-run unpacks and validates the tarball when it launches suricata, so the
+      // hook only restarts a running instance onto the new binary; an inactive one picks
+      // it up whenever the feature next starts it
+      const assetsConf = `${suricataBinaryTarPath} ${platform.getSuricataAssetPath()} 644 ":" "if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
       const assetsConfPath = `${f.getExtraAssetsDir()}/assets_suricata.lst`;
       
       await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"});
@@ -110,8 +125,6 @@ class SuricataControl {
       
       // Update assets using the update_assets.sh script
       await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`);
-      await exec(`tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets`);
-      await exec(`sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata`);
       log.info("Updated suricata binary assets");
     } catch(err) {
       log.error("Failed to update suricata binary", err);
@@ -169,6 +182,12 @@ class SuricataControl {
   }
 
   async restart() {
+    if (FlowEngine.applyHeld()) {
+      log.warn('Flow engine configuration is not applied, not starting suricata');
+      // false: refused because of the hold, so the caller can try again once
+      // an apply in progress is over (the retry below returns this too)
+      return false;
+    }
     if (this.restarting) {
       // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
       if (!this.pendingRestart) {
@@ -185,7 +204,7 @@ class SuricataControl {
     try {
       this.restarting = true
       log.info('Restarting suricate ...')
-      await exec(`sudo systemctl restart suricata`)
+      await execFile("sudo", ["systemctl", "restart", "suricata"])
       this.restarting = false
       log.info('Restart suricata complete')
     } catch (err) {
@@ -197,7 +216,7 @@ class SuricataControl {
   }
 
   async stop() {
-    await exec(`sudo systemctl stop suricata`).catch((err) => {
+    await execFile("sudo", ["systemctl", "stop", "suricata"]).catch((err) => {
       log.error(`Failed to stop suricata`, err.message);
     });
   }

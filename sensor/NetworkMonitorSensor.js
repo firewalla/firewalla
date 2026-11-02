@@ -46,6 +46,8 @@ const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
+const JOB_SCOPE_SYSTEM = "system";
+const JOB_SCOPE_DEVICE = "device";
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 const fsp = require('fs').promises;
@@ -58,6 +60,9 @@ class NetworkMonitorSensor extends Sensor {
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
+    // scheduledKey -> { scope, target, cfg, active }, tracks what each running job was started with
+    // so that a reload can skip jobs whose target/config did not actually change
+    this.jobMeta = {};
     this.cachedPolicy = { "system": {}, "devices": {} };
     this.alerts = {};
   }
@@ -130,11 +135,30 @@ class NetworkMonitorSensor extends Sensor {
                 runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
-            case "MY_DNSES":
-              for (const dns of (intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns())) {
-                runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
+            case "MY_DNSES": {
+              const dnsList = intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns();
+              if (dnsList.length > 1) {
+                runtimeConfig["MY_DNSES"] = {...runtimeConfig["MY_DNSES"], ...cfg[key]};
+                for (const monitorType of Object.keys(runtimeConfig["MY_DNSES"])) {
+                  const mtCfg = runtimeConfig["MY_DNSES"][monitorType];
+                  if (mtCfg && typeof mtCfg === 'object') {
+                    let targets;
+                    switch (mtCfg.groupMode) {
+                      case "primary":   targets = [dnsList[0]]; break;
+                      case "secondary": targets = dnsList.slice(1).length > 0 ? dnsList.slice(1) : dnsList; break;
+                      case "combine":
+                      default:          targets = dnsList; break;
+                    }
+                    runtimeConfig["MY_DNSES"][monitorType] = {...mtCfg, groupTargets: targets};
+                  }
+                }
+              } else {
+                for (const dns of dnsList) {
+                  runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
+                }
               }
               break;
+            }
             default:
               runtimeConfig[key] = {...runtimeConfig[key], ...cfg[key]};
               break;
@@ -155,9 +179,7 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const systemPolicy = this.cachedPolicy.system;
       if ( systemPolicy && !_.isEmpty(systemPolicy) ) {
-        // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-        this.stopMonitorDeviceAll();
-        this.applyPolicySystem(systemPolicy);
+        this.reapplySystemPolicy(systemPolicy);
       }
       for (const mac in this.cachedPolicy.devices) {
         const deviceConfig = this.cachedPolicy.devices[mac]
@@ -192,12 +214,10 @@ class NetworkMonitorSensor extends Sensor {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
         if (systemPolicy && !_.isEmpty(systemPolicy)) {
-          // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-          this.stopMonitorDeviceAll();
-          this.applyPolicySystem(systemPolicy);
+          this.reapplySystemPolicy(systemPolicy);
         }
       } catch (err) {
-        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded");
+        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded", err);
       }
     });
 
@@ -210,6 +230,27 @@ class NetworkMonitorSensor extends Sensor {
       stop: this.stop
     });
 
+  }
+
+  /*
+   * Re-apply system policy without blindly restarting every job: a job whose target and config
+   * are unchanged keeps running with its original timer, so a burst of network reload events
+   * (e.g. flapping IPv6 prefix delegation) does not repeatedly cancel it before it ever fires.
+   * Only jobs no longer covered by the new policy are stopped.
+   */
+  reapplySystemPolicy(policy) {
+    for (const scheduledKey in this.jobMeta) {
+      if (this.jobMeta[scheduledKey].scope === JOB_SCOPE_SYSTEM)
+        this.jobMeta[scheduledKey].active = false;
+    }
+    this.applyPolicySystem(policy);
+    for (const scheduledKey of Object.keys(this.jobMeta)) {
+      const meta = this.jobMeta[scheduledKey];
+      if (meta.scope === JOB_SCOPE_SYSTEM && !meta.active) {
+        log.info(`${scheduledKey} is no longer covered by system policy, stop it`);
+        this.stopScheduledJob(scheduledKey);
+      }
+    }
   }
 
   applyPolicySystem(policy, intfUUID) {
@@ -233,7 +274,7 @@ class NetworkMonitorSensor extends Sensor {
           if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
             return;
           if (runtimeState && this.adminSwitch) {
-            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf);
+            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf, JOB_SCOPE_SYSTEM);
           } else {
             this.stopMonitorDevice(targetIP, intf);
           }
@@ -289,6 +330,9 @@ class NetworkMonitorSensor extends Sensor {
   async samplePing(target, cfg, opts) {
     log.debug(`sample PING to ${target}`, opts);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_PING, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -312,7 +356,7 @@ class NetworkMonitorSensor extends Sensor {
 
         rtid = intf.rtid;
       }
-      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
+      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ && !/DUP!/ {print $7}' | cut -d= -f2`).catch((err) => {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
@@ -327,6 +371,9 @@ class NetworkMonitorSensor extends Sensor {
   async sampleDNS(target, cfg, opts) {
     log.debug(`sample DNS to ${target}`);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_DNS, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -362,9 +409,54 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
+  async sampleCombined(monitorType, groupKey, cfg, opts) {
+    log.debug(`sample ${monitorType} group with key ${groupKey}, targets: ${cfg.groupTargets}`);
+    try {
+      const timeNow = Math.floor(Date.now() / 1000);
+      const timeSlot = ('sampleInterval' in cfg) ? (timeNow - timeNow % cfg.sampleInterval) : timeNow;
+      const singleCfg = Object.assign({}, cfg);
+      delete singleCfg.groupTargets;
+      const singleOpts = Object.assign({}, opts, { saveResult: false });
+
+      const sampleFn = (target) => {
+        switch (monitorType) {
+          case MONITOR_PING: return this.samplePing(target, Object.assign({}, singleCfg), singleOpts);
+          case MONITOR_DNS:  return this.sampleDNS(target, Object.assign({}, singleCfg), singleOpts);
+          case MONITOR_HTTP: return this.sampleHTTP(target, Object.assign({}, singleCfg), singleOpts);
+        }
+      };
+      const results = await Promise.all(cfg.groupTargets.map(sampleFn));
+
+      let combinedLossrate = 1;
+      let bestData = [];
+      let bestMedian = Infinity;
+
+      for (const result of results) {
+        const stat = result && result.data && result.data.stat;
+        const lossrate = (stat && stat.lossrate !== undefined) ? stat.lossrate : 1;
+        combinedLossrate = parseFloat((combinedLossrate * lossrate).toFixed(4));
+        if (stat && stat.median !== undefined && stat.median < bestMedian) {
+          bestMedian = stat.median;
+          bestData = (result.data && result.data.data) || [];
+        }
+      }
+
+      return {
+        "status": "OK",
+        "data": await this.recordSampleDataInRedis(monitorType, groupKey, timeSlot, bestData, cfg, opts, combinedLossrate)
+      };
+    } catch (err) {
+      log.error(`failed to sample ${monitorType} group:`, err.message);
+      return { "status": `ERROR: ${err.message}`, "data": {} };
+    }
+  }
+
   async sampleHTTP(target, cfg, opts) {
     log.debug(`sample HTTP to ${target}`);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_HTTP, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -402,14 +494,16 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleSampleJob(monitorType, ip, cfg, intf) {
-    log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  scheduleSampleJob(monitorType, target, cfg, intf) {
+    log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
-    // prevent too low value in sample interval
+    // prevent too low value in sample interval, clamp on a copy so that the caller's config object
+    // (which is kept in jobMeta and compared against the policy on the next reload) is left intact
+    let jobCfg = cfg;
     if (cfg.sampleInterval<SAMPLE_INTERVAL_MIN) {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-      cfg.sampleInterval = SAMPLE_INTERVAL_MIN
+      jobCfg = Object.assign({}, cfg, {sampleInterval: SAMPLE_INTERVAL_MIN});
     }
     const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
     if (intf)
@@ -417,28 +511,46 @@ class NetworkMonitorSensor extends Sensor {
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
-          this.samplePing(ip, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.samplePing(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_DNS: {
         scheduledJob = setInterval(() => {
-          this.sampleDNS(ip, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleDNS(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
       case MONITOR_HTTP: {
         scheduledJob = setInterval(() => {
-          this.sampleHTTP(ip, cfg, opts);
-        }, 1000*cfg.sampleInterval);
+          this.sampleHTTP(target, jobCfg, opts);
+        }, 1000*jobCfg.sampleInterval);
         break;
       }
     }
     return scheduledJob;
   }
 
-  async sampleOnce(monitorType, ip ,cfg, saveResult, intf) {
-    log.info(`run a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  async sampleOnce(monitorType, target, cfg, saveResult, intf) {
+    if (target === "MY_DNSES") {
+      const dnsList = intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns();
+      if (!dnsList || dnsList.length === 0)
+        return { status: "ERROR: no DNS configured", data: {} };
+      if (dnsList.length === 1) {
+        target = dnsList[0];
+      } else {
+        const groupMode = cfg && cfg.groupMode;
+        let groupTargets;
+        switch (groupMode) {
+          case "primary":   groupTargets = [dnsList[0]]; break;
+          case "secondary": groupTargets = dnsList.slice(1).length > 0 ? dnsList.slice(1) : dnsList; break;
+          case "combine":
+          default:          groupTargets = dnsList; break;
+        }
+        cfg = {...(cfg || {}), groupTargets};
+      }
+    }
+    log.info(`run a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     await hostManager.loadPolicyAsync();
     const hostPolicy = hostManager.policy;
@@ -446,16 +558,15 @@ class NetworkMonitorSensor extends Sensor {
     let mcfg = cfg;
     if ( hostPolicy && hostPolicy[POLICY_KEYNAME] &&
          hostPolicy[POLICY_KEYNAME]['config'] &&
-         hostPolicy[POLICY_KEYNAME]['config'][ip] &&
-         hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType] ) {
-      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType], ...cfg};
+         hostPolicy[POLICY_KEYNAME]['config'][target] &&
+         hostPolicy[POLICY_KEYNAME]['config'][target][monitorType] ) {
+      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][target][monitorType], ...cfg};
       log.info(`input config merged with system policy:`,mcfg);
     } else {
       mcfg = cfg;
-      log.warn(`NO applicable system policy on ${ip} for ${monitorType}, use input config:`,mcfg);
+      log.warn(`NO applicable system policy on ${target} for ${monitorType}, use input config:`,mcfg);
     }
-    const opts = SAMPLE_DEFAULT_OPTS;
-    opts.manual = true;
+    const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS, { manual: true });
     if (intf)
       opts.intf = intf;
     if (typeof saveResult == typeof(true))
@@ -463,68 +574,71 @@ class NetworkMonitorSensor extends Sensor {
     let result = {status:"unknown", data:{}};
     switch (monitorType) {
       case MONITOR_PING:
-        result = await this.samplePing(ip,mcfg,opts);
+        result = await this.samplePing(target, mcfg, opts);
         break;
       case MONITOR_DNS:
-        result = await this.sampleDNS(ip,mcfg,opts);
+        result = await this.sampleDNS(target, mcfg, opts);
         break;
       case MONITOR_HTTP:
-        result = await this.sampleHTTP(ip,mcfg,opts);
+        result = await this.sampleHTTP(target, mcfg, opts);
         break;
     }
     return result;
   }
 
-  startMonitorDevice(key, ip, cfg, intf = null) {
-    log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  startMonitorDevice(key, target, cfg, intf = null, scope = JOB_SCOPE_DEVICE) {
+    log.debug(`check monitor jobs of ${key}${intf ? ` on ${intf}` : ""} against target(${target})`);
     log.debug("config: ", cfg);
     if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
       const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
-      if ( scheduledKey in this.sampleJobs ) {
-        log.warn(`${monitorType} on ${key} already started`);
+      const mtCfg = cfg[monitorType];
+      const meta = this.jobMeta[scheduledKey];
+      if ( meta && _.isEqual(meta.target, target) && _.isEqual(meta.cfg, mtCfg) ) {
+        // target and config are unchanged, keep the job running as is so its timer is not reset
+        log.debug(`${monitorType} on ${key}${intf ? ` on ${intf}` : ""} is running with the same target/config, keep it as is`);
+        meta.active = true;
       } else {
-        log.debug(`scheduling sample job ${monitorType} on ${key} ...`);
-        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, ip, cfg[monitorType], intf);
+        if (meta) {
+          log.info(`target/config of ${scheduledKey} changed, rescheduling ...`);
+          this.stopScheduledJob(scheduledKey);
+        } else {
+          log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with target(${target})`);
+        }
+        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, target, mtCfg, intf);
         log.debug(`scheduling process job ${monitorType} on ${key} ...`);
-        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, ip, cfg[monitorType], intf);
+        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, target, mtCfg, intf);
+        this.jobMeta[scheduledKey] = { scope, target, cfg: mtCfg, active: true };
       }
     }
+  }
+
+  stopScheduledJob(scheduledKey) {
+    if ( scheduledKey in this.sampleJobs ) {
+      log.debug(`UNscheduling sample job ${scheduledKey} ...`);
+      clearInterval(this.sampleJobs[scheduledKey]);
+      delete(this.sampleJobs[scheduledKey]);
+    }
+    if ( scheduledKey in this.processJobs ) {
+      log.debug(`UNscheduling process job ${scheduledKey} ...`);
+      clearInterval(this.processJobs[scheduledKey]);
+      delete(this.processJobs[scheduledKey]);
+    }
+    delete(this.jobMeta[scheduledKey]);
   }
 
   stopMonitorDevice(key, intf = null) {
     log.info(`stop monitoring ${key}${intf ? ` on ${intf}` : ""} ...`)
     for ( const monitorType of MONITOR_TYPES ) {
-      const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
-      if ( scheduledKey in this.sampleJobs ) {
-        log.debug(`UNscheduling sample ${monitorType} on ${key} ...`);
-        clearInterval(this.sampleJobs[scheduledKey]);
-        delete(this.sampleJobs[scheduledKey])
-      } else {
-        log.debug(`${monitorType} on ${key} NOT scheduled`);
-      }
-      if ( scheduledKey in this.processJobs ) {
-        log.debug(`UNscheduling process ${monitorType} on ${key} ...`);
-        clearInterval(this.processJobs[scheduledKey]);
-        delete(this.processJobs[scheduledKey])
-      } else {
-        log.debug(`${monitorType} on ${key} NOT scheduled`);
-      }
+      this.stopScheduledJob(`${key}-${monitorType}${intf ? `-${intf}` : ""}`);
     }
   }
 
   stopMonitorDeviceAll() {
     log.info(`stop ALL monitoring jobs ...`)
-    Object.keys(this.sampleJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
-      clearInterval(this.sampleJobs[scheduledKey]);
-      delete(this.sampleJobs[scheduledKey]);
-    })
-    Object.keys(this.processJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in process jobs ...`);
-      clearInterval(this.processJobs[scheduledKey]);
-      delete(this.processJobs[scheduledKey]);
-    })
+    for (const scheduledKey of _.union(Object.keys(this.sampleJobs), Object.keys(this.processJobs))) {
+      this.stopScheduledJob(scheduledKey);
+    }
   }
 
   applyPolicyDevice(host, state, cfg) {
@@ -549,9 +663,7 @@ class NetworkMonitorSensor extends Sensor {
     try {
         if (ip === '0.0.0.0') {
             this.cachedPolicy.system = policy;
-            // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-            this.stopMonitorDeviceAll();
-            this.applyPolicySystem(policy);
+            this.reapplySystemPolicy(policy);
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
@@ -728,7 +840,7 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts) {
+  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts, lossrateOverride = undefined) {
     const count = cfg.sampleCount;
     let intfObj = null;
     if (opts.intf) {
@@ -747,21 +859,24 @@ class NetworkMonitorSensor extends Sensor {
       })
       const l = dataSorted.length;
       if (l === 0) {
-        // no data, 100% loss
+        // no data, 100% loss (or combined lossrate if overridden)
+        const lossrate = (lossrateOverride !== undefined) ? parseFloat(lossrateOverride.toFixed(4)) : 1;
         if (!opts || opts.saveResult !== false)
-          this.checkLossrate(monitorType,target,cfg,1, intfObj);
+          this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
           "stat" : {
-            "lossrate"  : 1
+            "lossrate"  : lossrate
           }
         }
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
         if (!opts || opts.saveResult !== false)
           this.checkRTT(monitorType, target, cfg, mean, intfObj);
-        const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
+        const lossrate = (lossrateOverride !== undefined)
+          ? parseFloat(lossrateOverride.toFixed(4))
+          : parseFloat(Number((count-data.length)/count).toFixed(4));
         if (!opts || opts.saveResult !== false)
           this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
@@ -865,11 +980,11 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleProcessJob(monitorType, ip, cfg, intf) {
-    log.info(`scheduling process job for ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  scheduleProcessJob(monitorType, target, cfg, intf) {
+    log.info(`scheduling process job for ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config: ",cfg);
     const scheduledJob = setInterval(() => {
-      this.processJob(monitorType, ip, cfg, intf);
+      this.processJob(monitorType, target, cfg, intf);
     }, 1000*cfg.processInterval);
     return scheduledJob;
   }

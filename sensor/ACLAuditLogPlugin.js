@@ -33,6 +33,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
+const FlowAggrTool = require('../net2/FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
 const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
@@ -43,9 +45,11 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 
 const { Address4, Address6 } = require('ip-address');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const _ = require('lodash');
 const LRU = require('lru-cache');
 const { Rule } = require('../net2/Iptables.js');
@@ -53,6 +57,7 @@ const iptc = require('../control/IptablesControl.js');
 const ipset = require('../net2/Ipset.js');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
+const TAG_FLOW_KEYS = Object.values(Constants.TAG_TYPE_MAP).map(t => t.flowKey)
 const MONITORED_NET_SET = ipset.CONSTANTS.IPSET_MONITORED_NET;
 
 const auditLogFile = "/alog/acl-audit.log";
@@ -74,7 +79,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.featureName = Constants.FEATURE_AUDIT_LOG
     this.buffer = {}
-    this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
+    this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1, 'audit:dns:system': 1};
     this.incTs = 0;
   }
 
@@ -88,6 +93,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.adblockPlugin = sl.getSensor("AdblockPlugin");
   }
 
   async job() {
@@ -130,6 +136,12 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  isAdblockTlsAuditRecord(record) {
+    return record
+      && record.ac === 'block'
+      && record.pid === Constants.RESERVED_PID_ADBLOCK_TLS;
+  }
+
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
   // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
   isDNATedOnBridge(inIntf) {
@@ -148,6 +160,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     if (!inIntf || !inIntf.name || !pcapZeekPlugin) return false
     return platform.isFireRouterManaged() && inIntf.name.startsWith("br") && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name);
+  }
+
+  // Record a rule id on the conn entry so BroDetect can pick it up when the flow is generated.
+  // Returns setConnEntry's result: falsy when the field already held this value (used for dedup).
+  _setConnRuleId(record, subKey, value) {
+    return conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, subKey, value, 600);
   }
 
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
@@ -315,7 +333,7 @@ class ACLAuditLogPlugin extends Sensor {
           await delay(t * 1000);
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
           if (!host) {
-            host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
+            host = await conntrack.getConnEntry(conntrack.getDNSClientKey(srcMac, src), "", dst, "", "dns", "host", 600);
             if (host) {
               await conntrack.setConnEntries(src, sport, dst, dport, record.pr, {proto: "dns", ip: dst, host}, 600);
               await dnsTool.addReverseDns(host, [dst]);
@@ -323,11 +341,6 @@ class ACLAuditLogPlugin extends Sensor {
           }
         }
         return;
-      } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
-        // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
-        // delete it here to make sure following zeek logs are not recoreded
-        await conntrack.delConnEntries(src, sport, dst, dport, 'udp');
-        await conntrack.delConnEntries(dst, dport, src, sport, 'udp');
       }
 
     }
@@ -369,7 +382,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "qos" || record.ac === "disturb") {
-      record.qmark = Number(mark) & 0x3fff000;
+      record.qmark = Number(mark) & 0x3fff0000;
       const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
       if (matchedPids && matchedPids.length > 0){
         record.pid = matchedPids[0];
@@ -407,6 +420,20 @@ class ACLAuditLogPlugin extends Sensor {
     const fam = net.isIP(record.dh)
     if (!fam) return
 
+    // flag blocked/isolated UDP flows in conntrack so BroDetect can suppress them, including local
+    // flows that get no conn entry from the accept-log path. Written unconditionally (0 sentinel
+    // when pid is unknown, e.g. global ipset/security drops) since presence, not the pid value, is
+    // the signal. Written here, before mac/identity resolution below, so a block whose device
+    // can't be attributed still lands (matching what the old delConnEntries branch covered).
+    // bpidts is stamped alongside so BroDetect can age the marker off its own write time instead
+    // of the hash's read-refreshed TTL - see BroDetect._isBlockedUDPFlow.
+    if (record.pr == 'udp' && ['block', 'isolation'].includes(record.ac) && record.sp && record.sp.length) {
+      await conntrack.setConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, {
+        [Constants.REDIS_HKEY_CONN_BPID]: record.pid || 0,
+        [Constants.REDIS_HKEY_CONN_BPID_TS]: record.ts,
+      }, 600);
+    }
+
     // check direction, keep it same as flow.fd
     // in, initiated from inside, outbound
     // out, initiated from outside, inbound
@@ -429,7 +456,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
       case "L": {
         // local connection
-        record.fd = ctdir === 'O' ? 'in' : 'out';
+        record.fd = 'in';
         intf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
@@ -439,7 +466,7 @@ class ACLAuditLogPlugin extends Sensor {
         // resolve destination device mac address
         const dstHost = hostManager.getHostFast(record.dh, fam)
         if (dstHost) {
-          record.dmac = dstHost.o.mac
+          record.dmac = dstHost.getUniqueId();
         } else {
           const identity = IdentityManager.getIdentityByIP(record.dh);
           if (identity) {
@@ -447,6 +474,12 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             record.dmac = IdentityManager.getGUID(identity);
             record.drl = IdentityManager.getEndpointByIP(record.dh);
+          } else {
+            // fallback to get mac by ip with cache
+            const dmac = await hostTool.getMacByIPWithCache(record.dh);
+            if (dmac && !sysManager.isMyMac(dmac)) {
+              record.dmac = dmac;
+            }
           }
         }
         break;
@@ -492,8 +525,13 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
-      mac = await hostTool.getMacByIPWithCache(localIP)
-        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      const host = hostManager.getHostFast(localIP)
+      if (host) {
+        mac = host.getUniqueId();
+      } else {
+        mac = await hostTool.getMacByIPWithCache(localIP)
+          || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
+      }
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
@@ -512,7 +550,7 @@ class ACLAuditLogPlugin extends Sensor {
     
     // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
+      await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_RPID, record.pid);
     }
 
     // try to get host name from conn entries for better timeliness and accuracy
@@ -541,18 +579,18 @@ class ACLAuditLogPlugin extends Sensor {
 
         if (connEntries && connEntries.host) {
           record.af = {};
-          record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+          record.af[connEntries.host] = _.pick(connEntries, ["proto"])
         }
       }
     } else {
       let added = true;
       // write apid immediately when pid is known from MARK (per-device allow)
       if (record.ac === "allow") {
-        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
+        added = await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT);
       }
       // record disturb rule id into conntrack for BroDetect to pick up on flow generation
       if (record.pid && record.ac === "disturb") {
-        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+        added = await this._setConnRuleId(record, Constants.REDIS_HKEY_CONN_DPID, record.pid);
       }
       // middle packets may still hit the allow chain; skip duplicate five-tuples.
       if (!added) return
@@ -657,6 +695,18 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.mac = mac;
     record.ct = record.ct || 1;
+
+    // prevent both adblock and global block rule for adblock domain hit count addition.
+    if (record.ac === 'block' && !record.pid) {
+      const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchedPIDs && matchedPIDs.length > 0)
+        record.pid = matchedPIDs[0];
+    }
+
+    if (record.ac === 'block' && !record.pid && record.reason === 'adblock') {
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
+    }
 
     this.writeBuffer(record);
   }
@@ -767,10 +817,21 @@ class ACLAuditLogPlugin extends Sensor {
           const block = record.ac == "block" || record.ac == "isolation";
           const disturb = record.ac == "disturb";
 
+          // adblock TLS block carries a reserved pid in the packet mark. Report it with a reason
+          // like a DNS adblock block does and drop the pid, it matches no rule the app knows about
+          const adblockTls = this.isAdblockTlsAuditRecord(record);
+          if (adblockTls) {
+            record.reason = 'adblock';
+            delete record.pid;
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
+          }
+
           // pid backtrace
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
-          if (type != 'ntp' && !(record.dmac && fd == 'out')) {
+          // adblock TLS matches no rule, skip backtrace so it is not attributed to an unrelated one
+          if (type != 'ntp' && !adblockTls && !(record.dmac && fd == 'out')) {
             if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
               const policy = await pm2.getPolicy(record.pid, true);
               // domain allow that uses IP-based matching
@@ -795,6 +856,19 @@ class ACLAuditLogPlugin extends Sensor {
               this.ruleStatsPlugin.accountRule(record);
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+
+              const matchedPolicy = await pm2.getPolicy(record.pid, true);
+              if (matchedPolicy) {
+                if (matchedPolicy.isAutoBlockPolicy()) {
+                  record.bType = 'category';
+                  record.bTarget = 'default_c';
+                } else if (matchedPolicy.type && matchedPolicy.target) {
+                  record.bType = matchedPolicy.type;
+                  record.bTarget = matchedPolicy.target;
+                }
+                if (matchedPolicy.purpose)
+                  record.purpose = matchedPolicy.purpose;
+              }
             }
           }
 
@@ -876,6 +950,20 @@ class ACLAuditLogPlugin extends Sensor {
           // use a dedicated switch for saving to audit:accpet as we still want rule stats
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
+          // bake the coded category snapshot (c) onto the block record, same as regular
+          // flow records: downstream consumers (audit:drop:* queries, FlowAggregationSensor
+          // sumflows) inherit it without doing their own intel lookups. Records here are
+          // already merged by descriptor so it's one lookup per destination per flush
+          if (block && dir != 'L' && !mac.startsWith(Constants.NS_INTERFACE + ':')) try {
+            const intel = type == 'dns'
+              ? await intelTool.getIntel(undefined, [record.dn])
+              : await intelTool.getIntel(fd == 'out' ? record.sh : record.dh, record.af && Object.keys(record.af));
+            if (intel && intel.category)
+              record.c = await intelTool.categoryToNumber(intel.category);
+          } catch (err) {
+            log.error('Failed to resolve intel for block record', record.dh || record.dn, err.message);
+          }
+
           delete record.dir
           if (type == 'ntp') delete record.dp
 
@@ -888,7 +976,7 @@ class ACLAuditLogPlugin extends Sensor {
           delete record.mac
           const recordJson = JSON.stringify(record);
           multi.zadd(key, _ts, recordJson);
-          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":") && flowAggrTool.shouldUpdateDeviceLastFlowTs(mac, _ts))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it
@@ -900,6 +988,26 @@ class ACLAuditLogPlugin extends Sensor {
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
 
+          // normalized block flow stats event, only for category/country block rules, consumed by BlockStatsSensor
+          if (block && dir != 'L' && record.bType && ['category', 'country'].includes(record.bType)) {
+            const afHost = record.af && Object.keys(record.af)[0];
+            const dest = type === 'dns' ? record.dn : (afHost || (fd == 'out' ? record.sh : record.dh));
+            if (dest) {
+              sem.emitLocalEvent({
+                type: Message.MSG_BLOCK_FLOW_STATS_UPDATE,
+                suppressEventLogging: true,
+                device: mac,
+                dest,
+                bType: record.bType,
+                bTarget: record.bTarget,
+                fd: fd || 'in',
+                ct: ct || 1,
+                _ts,
+                ..._.pick(record, TAG_FLOW_KEYS)
+              });
+            }
+          }
+
           // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
           if (block) {
             pclient.publishAsync(Constants.REDIS_CHANNEL_FLOW_BLOCK, recordJson).catch(err => {
@@ -910,6 +1018,9 @@ class ACLAuditLogPlugin extends Sensor {
         await multi.execAsync()
       }
       timeSeries.exec()
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      if (this.adblockPlugin)
+        await this.adblockPlugin.flushAdblockStats();
     } catch (err) {
       log.error("Failed to write audit logs", err)
     }
@@ -922,7 +1033,7 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(Date.now() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       const auditKeys = Object.keys(this.touchedKeys);
-      this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
+      this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1, 'audit:dns:system': 1};
       log.verbose('Start merging', start, end, 'Key(mac) count: ', auditKeys.length)
       for (const key of auditKeys) {
         const records = await rclient.zrangebyscoreAsync(key, '('+start, end)
@@ -1052,25 +1163,25 @@ class ACLAuditLogPlugin extends Sensor {
 
     await this.flushAuditChains();
     await this.addIptablesLogging();
-    await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
+    await execFile(`${f.getFirewallaHome()}/scripts/audit-run`, [])
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
 
-    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log on`);
+    await execFile(`${f.getFirewallaHome()}/scripts/dnsmasq-log`, ["on"]);
   }
 
   async globalOff() {
     super.globalOff()
 
     await this.flushAuditChains();
-    await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
+    await execFile(`${f.getFirewallaHome()}/scripts/audit-stop`, [])
 
     clearInterval(this.bufferDumper)
     clearInterval(this.aggregator)
     this.bufferDumper = this.aggregator = undefined
 
-    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log off`);
+    await execFile(`${f.getFirewallaHome()}/scripts/dnsmasq-log`, ["off"]);
   }
 }
 

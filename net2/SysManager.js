@@ -40,7 +40,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('./Mode.js');
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
@@ -84,6 +84,10 @@ const i18n = require('../util/i18n.js');
 const dns = require('dns');
 const Constants = require('./Constants.js');
 const CIDRTrie = require('../util/CIDRTrie.js');
+
+// window used to collapse the burst of reload triggers that one firerouter reload produces,
+// see scheduleNetworkInfoReload(). Measured gap between the two triggers is well under 1s.
+const NETWORK_INFO_RELOAD_WINDOW = 1500;
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,
@@ -113,7 +117,7 @@ class SysManager {
       })
 
       this.restartRsyslogJob = new scheduler.UpdateJob(async () => {
-        exec(`sudo systemctl restart rsyslog`).catch((err) => {
+        execFile("sudo", ["systemctl", "restart", "rsyslog"]).catch((err) => {
           log.error(`Failed to restart rsyslog`, err.message);
         });
       }, 3000);
@@ -152,10 +156,7 @@ class SysManager {
             break;
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
-            this.update(() => {
-              this.ipIntfCache.reset();
-              sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
-            });
+            this.scheduleNetworkInfoReload();
             break;
         }
       });
@@ -166,10 +167,7 @@ class SysManager {
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
-        this.update(() => {
-          this.ipIntfCache.reset();
-          sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
-        });
+        this.scheduleNetworkInfoReload();
       });
 
       this.reloadTimezone();
@@ -395,20 +393,49 @@ class SysManager {
     if (this.timezone == timezone) {
       return null;
     }
+    // Validate IANA timezone format: e.g. UTC, America/New_York, America/Argentina/Buenos_Aires, Etc/GMT+5
+    if (!timezone || !/^[A-Za-z_][A-Za-z0-9_-]*(?:\/[A-Za-z0-9_+-]+){0,2}$/.test(timezone)) {
+      log.error("setTimezone: invalid timezone value:", timezone);
+      return new Error(`Invalid timezone: ${timezone}`);
+    }
     this.timezone = timezone;
     try {
       await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
 
-      await exec(`sudo timedatectl set-timezone ${timezone}`);
-      await exec('sudo systemctl restart cron.service');
-      await exec('sudo systemctl restart rsyslog');
+      await execFile('sudo', ['timedatectl', 'set-timezone', timezone]);
+      await exec(`echo ${timezone} | sudo tee /etc/timezone`);
+      await execFile('sudo', ['systemctl', 'restart', 'cron.service']);
+      await execFile('sudo', ['systemctl', 'restart', 'rsyslog']);
 
       return null;
     } catch (err) {
       log.error("Failed to set timezone:", err);
       return err;
     }
+  }
+
+  // A single firerouter reload triggers a network info reload twice: once from the local
+  // MSG_FW_FR_RELOADED emitted at the end of FireRouter.init(), and once from the
+  // MSG_SYS_NETWORK_INFO_UPDATED that main publishes from generateNetworkInfo() in the middle of
+  // that same init. Both mean "re-read network info", so running them separately just makes every
+  // MSG_SYS_NETWORK_INFO_RELOADED listener do its work twice per reload.
+  //
+  // Collapse them into one update + one event. The window starts at the first trigger and is not
+  // extended by later ones, so a burst of network changes can't starve the reload and the delay
+  // stays bounded. Trailing edge is deliberate: the run has to land after the last trigger, since
+  // for the non-main processes it's the published one that tells them main has finished writing
+  // sys:network:info.
+  scheduleNetworkInfoReload() {
+    if (this.networkInfoReloadTask)
+      return;
+    this.networkInfoReloadTask = setTimeout(() => {
+      this.networkInfoReloadTask = null;
+      this.update(() => {
+        this.ipIntfCache.reset();
+        sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
+      });
+    }, NETWORK_INFO_RELOAD_WINDOW);
   }
 
   update(callback) {
@@ -904,7 +931,11 @@ class SysManager {
     const wanIfType = await fsp.readFile(`/sys/class/net/${intf}/type`, {encoding: "utf8"}).then(result => result.trim()).catch((err) => null);
     // arp is only applicable to interfaces with type ethernet (1)
     if (wanIfType === "1") {
-      mac = await exec(`arp -a -n -i ${intf} ${ip}`).then(result => result.stdout.trim().split(" ")[3].toUpperCase()).catch((err) => null);
+      mac = await fsp.readFile("/proc/net/arp", { encoding: "utf8" }).then(content => {
+        const row = content.split('\n').slice(1).map(l => l.trim().split(/\s+/)).find(cols => cols[0] === ip && cols[5] === intf);
+        const hwAddr = row && row[3];
+        return hwAddr && hwAddr !== "00:00:00:00:00:00" ? hwAddr.toUpperCase() : null;
+      }).catch((err) => null);
     }
     return mac;
   }
@@ -1022,8 +1053,8 @@ class SysManager {
     if (!f.isDocker() && !f.isTravis()) {
       if (platform.hasMultipleCPUs()) {
         const list = await platform.getCpuTemperature();
-        cpuTemperature = list[0]
-        cpuTemperatureList = list
+        cpuTemperature = list && list[0]
+        cpuTemperatureList = list || [];
       } else {
         cpuTemperature = await platform.getCpuTemperature();
         cpuTemperatureList = [cpuTemperature]

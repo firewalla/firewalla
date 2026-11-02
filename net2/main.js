@@ -85,6 +85,11 @@ async function run0() {
 
   await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
 
+  // check pstore for recent kernel crashes and update Redis before any module loading
+  const kernelCrashMonitor = require('./KernelCrashMonitor.js');
+  const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => null);
+  await kernelCrashMonitor.checkPstoreAndUpdateRedis('xt_udp_tls', udpTlsKoPath);
+
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 
@@ -256,7 +261,10 @@ async function run() {
     try {
       await policyManager.flush()
     } catch(err) {
-      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules", err);
+      // without the basic rules IPTABLES_READY is never emitted, so its listeners never run:
+      // new devices are dropped and policies are not enforced. systemd restarts FireMain instead
+      log.error("Failed to setup iptables basic rules, exiting so FireMain restarts", err);
+      setTimeout(() => process.exit(1), 1000 * 5); // give the logger time to write the error
       return;
     }
 
@@ -309,10 +317,9 @@ async function run() {
 
     try {
       await pm2.cleanupPolicyData()
-      //await pm2.enforceAllPolicies()
-      await pm2.checkRunPolicies(true)
+      await pm2.enforceAllPolicies()
     } catch (err) {
-      log.error("Failed to cleanup policy & check run policy rules: ", err);
+      log.error("Failed to cleanup policy & enforce policy rules: ", err);
     }
     require('./UpgradeManager').finishUpgrade();
 
@@ -351,9 +358,9 @@ async function run() {
     }
   },1000*60);
 
-  process.on('SIGUSR1', () => {
+  process.on('SIGUSR1', async () => {
     log.info('Received SIGUSR1. Trigger check.');
-    const dnsmasqCount = dnsmasq.getCounterInfo();
+    const dnsmasqCount = await dnsmasq.getCounterInfo();
     log.warn(dnsmasqCount);
   });
 }

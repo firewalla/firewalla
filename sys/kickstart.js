@@ -51,12 +51,13 @@ const fireRouter = require('../net2/FireRouter.js')
 
 const fs = require('fs');
 const cp = require('child_process');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const cloud = require('../encipher');
 const program = require('commander');
 const storage = require('node-persist');
 const mathuuid = require('../lib/Math.uuid.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const eptGroup = require('../util/eptGroup.js');
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
@@ -180,25 +181,12 @@ function generateEncryptionKey(license) {
 }
 
 async function initializeGroup() {
-  let groupId = storage.getItemSync('groupId');
-  if (groupId != null) {
-    log.info("Found stored group x", groupId);
-    return groupId;
-  }
-
-  log.info("Using identity:", eptcloud.eid);
-  log.info("Creating new group ", config.service, config.endpoint_name);
-  let meta = JSON.stringify({
-    'type': config.serviceType,
-    'member': config.memberType,
-    'model': platform.getName()
+  return eptGroup.ensureGroup({
+    eptcloud,
+    config,
+    model: platform.getName(),
+    storage
   });
-  const result = await eptcloud.eptCreateGroup(config.service, meta, config.endpoint_name)
-  log.info(result);
-  if (result !== null) {
-    storage.setItemSync('groupId', result);
-  }
-  return result
 }
 
 
@@ -353,7 +341,17 @@ async function inviteAdmin(gid) {
 
 
 async function launchService2(gid) {
-  await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
+  // atomic write: temp file + fsync + rename, so a crash/power-loss mid-write can never leave a truncated ui.conf
+  const uiConfPath = '/home/pi/.firewalla/ui.conf';
+  const tmpPath = `${uiConfPath}.tmp`;
+  const fh = await fs.promises.open(tmpPath, 'w');
+  try {
+    await fh.writeFile(JSON.stringify({gid:gid}), 'utf8');
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+  await fs.promises.rename(tmpPath, uiConfPath);
   
   /* bro is taken care of in FireMain now
   // don't start bro until app is linked
@@ -403,7 +401,9 @@ async function login() {
     process.exit();
   }
 
-  // NOTE: This should be the only code to update sys:ept to avoid race condition
+  // NOTE: FireKick is the primary writer of sys:ept. Token-only refreshers also
+  // write it (FWCloudWrapper.refreshToken, encipherio.rrWithEptRelogin) to heal
+  // expiry on long-uptime boxes.
   log.info("Storing Firewalla Cloud Token info to redis");
   // log.info("EID:", eptcloud.eid);
   // log.info("GID:", gid);
@@ -425,7 +425,7 @@ async function login() {
 
   process.removeAllListeners('SIGTERM')
 
-  exec("sudo systemctl stop firekick").catch(() => {
+  execFile("sudo", ["systemctl", "stop", "firekick"]).catch(() => {
     // this command will kill the program itself, catch this error silently
   })
 

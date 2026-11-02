@@ -25,7 +25,7 @@ const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const country = require('../extension/country/country.js')
 const ipUtil = require('../util/IPUtil.js')
 
-const exec = require('child-process-promise').exec
+const { execFile } = require('child-process-promise')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
@@ -52,7 +52,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       instance = this
 
       this.resetActiveCountries()
-      exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
+      execFile("mkdir", ["-p", DISK_CACHE_FOLDER]);
     }
 
     return instance
@@ -179,7 +179,12 @@ class CountryUpdater extends CategoryUpdaterBase {
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
     await fsp.writeFile(file, addresses.join('\n') + '\n');
     const countFile = file + '.count'
-    await fsp.writeFile(countFile, addresses.length);
+    await fsp.writeFile(countFile, String(addresses.length));
+  }
+
+  async updatePersistentIPSets(category, ip6 = false, options) {
+    if (this.isActivated(category))
+      await this.updateIpset(category, ip6, options);
   }
 
   async checkActivationStatus(category) {
@@ -210,7 +215,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await this.swapIpset(category, true);
 
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
@@ -249,10 +254,10 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       // add ipset right away to enforce policies
       // as v6 spaces is already standardized to CIDR
-      CIDRs.forEach(entry => Ipset.add(ipset, entry))
+      CIDRs.forEach(entry => Ipset.add(ipset, entry, {}, true))
     } else {
       await rclient.zremAsync(key, CIDRs)
-      CIDRs.forEach(entry => Ipset.del(ipset, entry))
+      CIDRs.forEach(entry => Ipset.del(ipset, entry, true))
     }
   }
 }

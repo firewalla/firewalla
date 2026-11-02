@@ -17,7 +17,7 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const rp = require('request-promise');
 
@@ -96,6 +96,10 @@ class GSEPlatform extends Platform {
       log.error("Failed to get cpu temperature, use 0 as default, err:", err);
       return 0;
     }
+  }
+
+  async getWpaCliBinPath() {
+    return 'wpa_cli';
   }
 
   getDefaultWlanIntfName() {
@@ -184,7 +188,7 @@ class GSEPlatform extends Platform {
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+      await execFile("sudo", [`${f.getFirewallaHome()}/scripts/apply_profile.sh`]);
     } catch(err) {
       log.error("Error applying profile", err)
     }
@@ -394,7 +398,7 @@ class GSEPlatform extends Platform {
     const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
     const kernelChecksum = await exec(`sudo dd if=${emmcDev} bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'`).then(result => result.stdout.trim());
 
-    const compiler = await exec("grep -o 'aarch64.*-linux-gnu-gcc' /proc/version").then(result => result.stdout.trim());
+    const compiler = await execFile("grep", ["-o", "aarch64.*-linux-gnu-gcc", "/proc/version"]).then(result => result.stdout.trim());
     const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
     if (fileExists) {
       koPath = `${koPath}.${kernelChecksum}`;
@@ -409,14 +413,18 @@ class GSEPlatform extends Platform {
   }
 
   getRedisSaveConfig(rdbSize) {
-    if (rdbSize > 104857600) {
-      // rdb size is greater than 100MB
-      return "7200 40 4800 4000 2400 400000";
-    } else if (rdbSize > 26214400) {
-      // rdb size is between 25MB and 100MB
-      return "3600 20 2400 2000 1200 200000";
+    if (rdbSize > 251658240) {
+      // > 240MB: primary save every 2 hours
+      return "14400 40 9600 4000 7200 400000";
+    } else if (rdbSize > 125829120) {
+      // 120-240MB: primary save every 1 hour
+      return "7200 20 4800 2000 3600 200000";
+    } else if (rdbSize > 62914560) {
+      // 60-120MB: primary save every 30 minutes
+      return "3600 10 2400 1000 1800 100000";
     }
-    return "1800 10 1200 1000 600 100000";
+    // <= 60MB: primary save every 15 minutes
+    return "1800 10 1200 1000 900 100000";
   }
 }
 

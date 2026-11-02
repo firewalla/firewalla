@@ -15,6 +15,7 @@
 'use strict';
 
 const net = require('net')
+const dgram = require('dgram')
 
 const log = require('../net2/logger.js')(__filename);
 
@@ -28,12 +29,15 @@ const hostTool = new HostTool();
 const sysManager = require('../net2/SysManager.js')
 const Message = require('../net2/Message.js');
 const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
+const bonjourDetect = require('../extension/detect/bonjour.js')
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
 const _ = require('lodash')
 
 const lastProcessTimeMap = {};
+
+const MDNS_MULTICAST_ADDR = '224.0.0.251';
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
@@ -65,34 +69,84 @@ class BonjourSensor extends Sensor {
 
       // do not initialize bonjour if there is no interface with IP address
       // otherwise dgram.addMembership will emit error and crash the process
-      if (sysManager.getMonitoringInterfaces().filter(i => i.ip_address).length == 0)
+      const ifaceIPs = _.uniq(sysManager.getMonitoringInterfaces()
+        .filter(i => i.ip_address && !['wg', 'awg', 'tun'].some(vpnPrefix => i.name.startsWith(vpnPrefix)))
+        .map(i => i.ip_address));
+      if (ifaceIPs.length == 0)
         return;
-      let bound = false;
-      // create new bonjour listeners
-      for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
-        for (const vpnPrefix of ['wg', 'awg', 'tun'])
-          if (iface.name.startsWith(vpnPrefix)) continue
-        const opts = {interface: iface.ip_address};
-        if (!bound) {
-          // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
-          opts.bind = "0.0.0.0";
-          bound = true;
-        } else {
-          // no need to bind on any address, multicast query can still be sent via interface in opts
-          opts.bind = false;
+
+      // One socket bound to 0.0.0.0:5353 serves every monitoring interface. The source
+      // port matters: avahi treats a query from any other port as "legacy unicast" and
+      // holds one of its 100 reflection slots for it. One instance per interface left
+      // all but the first socket unbound, i.e. on an ephemeral port, draining the slots.
+      const socket = dgram.createSocket({type: 'udp4', reuseAddr: true});
+
+      // Queries still have to leave on every interface, so IP_MULTICAST_IF is moved
+      // before each send. They go one at a time on purpose: dgram.send() only hands the
+      // packet to the kernel a tick later, so a plain loop sends them all on the last
+      // interface set.
+      const queue = [];
+      let sending = false;
+      let listening = false;
+      let query = null;
+      const drain = () => {
+        if (sending || !query)
+          return;
+        const job = queue.shift();
+        if (!job)
+          return;
+        sending = true;
+        let settled = false;
+        const done = () => {
+          if (settled)
+            return;
+          settled = true;
+          sending = false;
+          drain();
+        };
+        try {
+          socket.setMulticastInterface(job.ip);
+          query.call(mdns, job.name, job.type, null, done);
+        } catch (err) {
+          log.warn(`Failed to send mDNS query for ${job.name} via ${job.ip}`, err.message);
+          done();
         }
-        const instance = Bonjour(opts);
-        instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
-        instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
-        const browser = instance.find({}, (service) => this.bonjourParse(service));
-        this.bonjourListeners.push({browser, instance});
-      }
+      };
+
+      socket.on('listening', () => {
+        listening = true;
+        // multicast-dns only joins the group on opts.interface, join the rest here
+        for (const ip of ifaceIPs.slice(1)) {
+          try {
+            socket.addMembership(MDNS_MULTICAST_ADDR, ip);
+          } catch (err) {
+            log.warn(`Failed to join ${MDNS_MULTICAST_ADDR} on ${ip}`, err.message);
+          }
+        }
+        drain();
+      });
+
+      const instance = Bonjour({socket, bind: "0.0.0.0", interface: ifaceIPs[0]});
+      const mdns = instance._server.mdns;
+      mdns.on('warning', (err) => log.warn("Warning from mDNS server", err));
+      mdns.on('error', (err) => log.error("Error from mDNS server", err));
+
+      query = mdns.query;
+      mdns.query = function (name, type) {
+        for (const ip of ifaceIPs)
+          queue.push({ip, name, type});
+        if (listening)
+          drain();
+      };
+
+      const browser = instance.find({}, (service) => this.bonjourParse(service));
+      this.bonjourListeners.push({browser, instance});
 
       this.updateTask = setInterval(() => {
         log.info("Bonjour Watch Updating");
         // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
         for (const listener of this.bonjourListeners) {
-          Object.keys(listener.browser._serviceMap).forEach(fqdn => listener.browser._removeService(fqdn));
+          listener.browser.services.slice().forEach(s => listener.browser._removeService(s.fqdn));
           listener.browser.update();
         }
       }, 1000 * 60 * 5);
@@ -103,6 +157,13 @@ class BonjourSensor extends Sensor {
         }
       }, 1000 * 10);
     }, 5000);
+  }
+
+  // asset takes precedence; sensor config is fallback when asset is missing the list
+  async isServiceInList(serviceType, listName) {
+    if (!serviceType) return false
+    const list = await bonjourDetect.getList(listName) || this.config[listName]
+    return Array.isArray(list) && list.includes(serviceType)
   }
 
   run() {
@@ -224,15 +285,13 @@ class BonjourSensor extends Sensor {
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-
-        // printer could be added as service via airprint as well,
-        if (!detected.type) {
-          detect.type = 'printer'
-          if (txt) {
-            if (txt.ty) detect.name = txt.ty
-            if (txt.usb_MDL) detect.model = txt.usb_MDL
-            if (txt.usb_MFG) detect.brand = txt.usb_MFG
-          }
+        // printer could be added as service via airprint as well; give _printer
+        // a low priority in the bonjour asset so airplay/etc. won't be overwritten.
+        detect.type = 'printer'
+        if (txt) {
+          if (txt.ty) detect.name = txt.ty
+          if (txt.usb_MDL) detect.model = txt.usb_MDL
+          if (txt.usb_MFG) detect.brand = txt.usb_MFG
         }
         break
       case '_amzn-wplay':
@@ -293,7 +352,12 @@ class BonjourSensor extends Sensor {
           if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
         }
         break
+      case '_arduino':
+        detect.type = 'iot_default'
+        break
       case '_http':
+      case '_http-alt':
+      case '_https':
         // ignore _http on comprehensive devices even type is not from bonjour
         if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
           return
@@ -327,7 +391,8 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (name && name.length && !this.config.ignoreNames.some(n => name.includes(n)) && type != '_mi-connect')
+    if (name && name.length && type != '_mi-connect'
+      && !(await bonjourDetect.getList('ignoreNames') || []).some(n => name.includes(n)))
       host.bname = name
 
     if (ipv4Addr) {
@@ -350,7 +415,7 @@ class BonjourSensor extends Sensor {
     return host.replace(".local", "")
   }
 
-  getFriendlyDeviceName(service) {
+  async getFriendlyDeviceName(service) {
     // doubt that we are still using this
     let bypassList = [/eph:devhi:netbot/]
 
@@ -358,7 +423,7 @@ class BonjourSensor extends Sensor {
 
     if (!service.name ||
       service.fqdn && bypassList.some((x) => service.fqdn.match(x)) ||
-      this.config.nonReadableNameServices.includes(service.type)
+      await this.isServiceInList(service.type, 'nonReadableNameServices')
     ) {
       name = this.getHostName(service.host)
     } else {
@@ -369,7 +434,7 @@ class BonjourSensor extends Sensor {
     return name
   }
 
-  bonjourParse(service) {
+  async bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service);
     if (service == null) {
       return;
@@ -380,7 +445,7 @@ class BonjourSensor extends Sensor {
       return;
 
     // not really helpful on recognizing name & type
-    if (this.config.ignoreServices.includes(service.type)) {
+    if (await this.isServiceInList(service.type, 'ignoreServices')) {
       return
     }
 
@@ -405,7 +470,7 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getFriendlyDeviceName(service),
+      name: await this.getFriendlyDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       hostName: service.host,

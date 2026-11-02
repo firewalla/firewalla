@@ -41,7 +41,7 @@ const migrationPrefix = "oldDataMigration";
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -123,11 +123,28 @@ class OldDataCleanSensor extends Sensor {
     return count;
   }
 
+  // maxMem is the trigger threshold, not the hard memory limit
+  async cleanByMaxMem(key, maxMem, keepCount = 100) {
+    if (!maxMem)
+      return;
+    try {
+      // SAMPLES 0 walks the whole key and can block Redis, avoid using it
+      const usage = Number(await rclient.memoryAsync("usage", key, "SAMPLES", 100));
+      if (!Number.isFinite(usage) || usage <= maxMem)
+        return;
+      const removed = await this.cleanToCount(key, keepCount + 1); // +1 to keep the first kept member
+      log.info(`${key} MEMORY USAGE ${usage} > ${maxMem}, kept latest ${keepCount}, removed ${removed}`);
+    } catch (err) {
+      log.error('Error cleaning by maxMem', key, err);
+    }
+  }
+
   async regularClean(fullClean = false) {
     let batch = []
+    const maxMemKeys = []
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
-        for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc} of this.filterFunctions) {
+        for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc, dropTTL, limits} of this.filterFunctions) {
           if (fullCleanOnly && !fullClean)
             continue;
           if (filterFunc(key)) {
@@ -148,11 +165,17 @@ class OldDataCleanSensor extends Sensor {
               if (expireInterval) {
                 batch.push(['zremrangebyscore', key, "-inf", Date.now() / 1000 - expireInterval]);
                 // remove expire on those keys as they are now managed by OldDataCleanSensor
-                batch.push(['persist', key]);
+                if (dropTTL)
+                  batch.push(['persist', key]);
               }
               if (count) {
                 batch.push(['zremrangebyrank', key, 0, -count])
               }
+            }
+            const maxMem = limits && limits.maxMem;
+            if (maxMem) {
+              const keepCount = (limits && limits.keepCount) || 100;
+              maxMemKeys.push({ key, maxMem, keepCount })
             }
           }
         }
@@ -165,6 +188,9 @@ class OldDataCleanSensor extends Sensor {
     });
     if (batch.length)
       await rclient.pipelineAndLog(batch)
+    // add a protection to prevent memory usage from growing too large
+    for (const { key, maxMem, keepCount } of maxMemKeys)
+      await this.cleanByMaxMem(key, maxMem, keepCount)
   }
 
   async cleanExceptions() {
@@ -194,6 +220,12 @@ class OldDataCleanSensor extends Sensor {
     if(ttl === -1) {
       batch.push(['unlink', key]);
     }
+  }
+
+  // drop names of subdomains2:<suffix> (net2/DNSTool.js) not seen in 24 hours, aligned with the lifetime of
+  // rdns:domain:<name>. this is the only place old names are pruned, readers do not prune
+  async cleanSubdomains(type, key, batch) {
+    batch.push(['zremrangebyscore', key, '-inf', Date.now() / 1000 - 86400]);
   }
 
   async cleanFlowGraphWhenInitializng() {
@@ -569,7 +601,7 @@ class OldDataCleanSensor extends Sensor {
         }
         if (shouldRemove) {
           log.info(`Directory ${file.name} under ${f.getUserConfigFolder()}/dnsmasq is no longer used in any historical network config, delete it`);
-          await exec(`rm -rf ${f.getUserConfigFolder()}/dnsmasq/${file.name}`).catch((err) => {});
+          await execFile("rm", ["-rf", `${f.getUserConfigFolder()}/dnsmasq/${file.name}`]).catch((err) => {});
         }
       }
     }
@@ -577,16 +609,18 @@ class OldDataCleanSensor extends Sensor {
 
   registerFilterFunctions() {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
-    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
-    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
-    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"));
-    this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
-    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
-    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"));
+    // these flow types no longer set TTL on write, their leftover TTL should be dropped here
+    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"), false, null, true);
+    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"), false, null, true);
+    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"), false, null, true);
+    this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"), false, null, true);
+    // audit:dns:* holds allowed DNS records (dnsmasq_log_allow_redis), keep them like audit:accept:*
+    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:") || key.startsWith("audit:dns:"), false, null, true);
+    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"), false, null, true);
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
     this._registerFilterFunction("x509", key => key.startsWith("flow:x509:"), false, this.cleanFlowX509.bind(this));
     this._registerFilterFunction("flowgraph", key => key.startsWith("flowgraph:"), false, this.cleanFlowGraph);
-    this._registerFilterFunction("notice", (key) => key.startsWith("notice:"));
+    this._registerFilterFunction("notice", (key) => key.startsWith("notice:"), false, null, true);
     this._registerFilterFunction("monitor", (key) => key.startsWith("monitor:flow:"));
     this._registerFilterFunction("categoryflow", (key) => key.startsWith("categoryflow:"));
     this._registerFilterFunction("appflow", (key) => key.startsWith("appflow:"));
@@ -616,9 +650,11 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
     this._registerFilterFunction("ntp_off_set", (key) => key === Constants.REDIS_KEY_NTP_OFF_SET);
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
+    this._registerFilterFunction("subdomains2", (key) => key.startsWith("subdomains2:"), false, this.cleanSubdomains);
   }
 
-  _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {
+  // dropTTL is only for types whose write path no longer sets TTL, otherwise persist fights with it
+  _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc, dropTTL = false) {
     let platformRetentionCountMultiplier = 1;
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
@@ -636,11 +672,12 @@ class OldDataCleanSensor extends Sensor {
     }
     let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
     let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
+    const limits = this.config[type] && this.config[type].limits;
     if (count < 0)
       count = null;
     if (expireInterval < 0)
       expireInterval = null;
-    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc});
+    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc, dropTTL, limits});
   }
 
   run() {

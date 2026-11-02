@@ -19,7 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-const { exec } = require('child-process-promise')
+const { exec, execFile } = require('child-process-promise')
 
 const Firewalla = require('../net2/Firewalla');
 const nmap = require('../net2/Nmap.js');
@@ -79,7 +79,7 @@ class NmapSensor extends Sensor {
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
     // uses the latest OUI DB if possible
-    exec(`sudo cp -f ${OUI_ASSET_PATH} /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+    execFile("sudo", ["cp", "-f", OUI_ASSET_PATH, "/usr/share/nmap/nmap-mac-prefixes"]).catch(()=>{})
 
     this.scheduleReload();
     setInterval(() => {
@@ -87,7 +87,7 @@ class NmapSensor extends Sensor {
     }, 1000 * 60 * 120); // every 120 minutes, slow scan
     setInterval(() => {
       this.checkAndRunOnce(true);
-    }, 1000 * 60 * 15); // every 15 minutes, fast scan, it is reduced from 5 minutes to 15 minutes because nmap scan is no longer essential for device discovery, we already have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
+    }, 1000 * 60 * 12); // every 12 minutes, fast scan, it is reduced from 5 minutes to 12 minutes because nmap scan is no longer essential for device discovery, we already have flow, ARPSensor, DHCPSensor, and ICMP6Sensor, but still a bit shorter than offline threshold in the app
 
     /* nmap scan is no longer essential for device discovery, we have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
        so we don't need to run it immediately after network info is reloaded to reduce CPU overhead

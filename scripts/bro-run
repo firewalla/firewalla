@@ -3,6 +3,13 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+if [[ $(get_flow_engine_zeek) == zssids ]]; then
+  # brofish.service runs zssids through its drop-in (scripts/zssids-engine.sh);
+  # zeek must not be deployed beside it, they would write the same spool
+  logger 'FIREWALLA.BROFISH flow engine is zssids, not deploying zeek'
+  exit 0
+fi
+
 logger 'FIREWALLA.BROFISH Start '
 mkdir -p /firewalla
 chmod 777 /firewalla
@@ -37,10 +44,11 @@ ${FW_SCHEDULE_BRO:-true} && sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourl
 
 before_bro
 
-/usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl deploy
-logger "FIREWALLA: Deployed $BRO_PROC_NAME using ${BRO_PROC_NAME}ctl"
 sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
+
+/usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl deploy
+logger "FIREWALLA: Deployed $BRO_PROC_NAME using ${BRO_PROC_NAME}ctl"
 
 #cd $FIREWALLA_HOME
 #branch=$(sudo -u pi git rev-parse --abbrev-ref HEAD)

@@ -18,7 +18,7 @@ const firewalla = require('../net2/Firewalla.js')
 const log = require("../net2/logger.js")(__filename)
 
 const fsp = require('fs').promises;
-const exec = require('child-process-promise').exec
+const { execFile } = require('child-process-promise')
 
 const Sensor = require('./Sensor.js').Sensor;
 const platformLoader = require('../platform/PlatformLoader.js');
@@ -42,13 +42,18 @@ class RuntimeConfigSensor extends Sensor {
   async updateRedisConfig() {
     const rdbSize = (await fsp.stat('/data/redis/dump.rdb').then(stat => stat.size)) || 0;
     const saveConfig = platform.getRedisSaveConfig(rdbSize);
-    return exec(`redis-cli config set save "${saveConfig}"`)
+    return execFile("redis-cli", ["config", "set", "save", saveConfig])
   }
 
   runCronScripts() {
-    // do not await/block on this
-    exec(`sudo ${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`)
-      .catch(err => log.error("Failed to run cron scripts:", err.message));
+    // random delay so boxes restarting together don't hit the apt mirrors at once
+    const delay = Math.floor(Math.random() * 600 * 1000);
+    log.info(`Run cron scripts in ${Math.round(delay / 1000)}s`);
+    setTimeout(() => {
+      // do not await/block on this
+      execFile("sudo", [`${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`])
+        .catch(err => log.error("Failed to run cron scripts:", err.message));
+    }, delay);
   }
 
   async schedule() {
@@ -57,7 +62,7 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   async updateFakeClock() {
-    return exec('sudo FILE=/data/fake-hwclock.data fake-hwclock');
+    return execFile('sudo', ['FILE=/data/fake-hwclock.data', 'fake-hwclock']);
   }
 }
 

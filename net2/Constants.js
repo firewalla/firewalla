@@ -17,6 +17,9 @@
 
 // NS: namespace
 module.exports = {
+  LOCALHOST: "127.0.0.1",
+  INADDR_ANY: "0.0.0.0",
+  
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
   NS_AMNEZIAWG_PEER: "awg_peer",
@@ -25,6 +28,8 @@ module.exports = {
   RULE_SEQ_HI: 1,
   RULE_SEQ_REG: 2,
   RULE_SEQ_LO: 3,
+  // policy ids reserved for synthetic (non-user) iptables rules.
+  RESERVED_PID_ADBLOCK_TLS: 65500,
   DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
   DNS_DEFAULT_WAN_TAG: "wan",
@@ -35,6 +40,8 @@ module.exports = {
 
   INTF_AP_CTRL: "wg_ap",
   INTF_PCAP_TAP: "ifb_pcap_tap",
+  INTF_PCAP_RSPAN: "ifb_pcap_rspan",
+  WORKER_ID_RSPAN: "worker-rspan",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
@@ -42,6 +49,8 @@ module.exports = {
   PORT_DNS_TEST_SRC: 8855,
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
+  REDIS_KEY_EPT_MEMBER_EMAILS: "sys:ept:memberEmails",
+  REDIS_KEY_EPT_PAIRED_PENDING: "sys:ept:pairedPending",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
@@ -70,8 +79,39 @@ module.exports = {
   REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
   REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG: "block_stats_aggr_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_STATS_AGGR_CONFIG: "block_stats_aggr_config",
+  REDIS_KEY_BLOCK_STATS_AGGR_PREFIX: "blockStatsAggr::",
+  // zset tracking which blockStatsAggr::<ts> bucket keys actually exist (score = member = ts), so
+  // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
+  REDIS_KEY_BLOCK_STATS_AGGR_INDEX: "blockStatsAggr:index",
+  // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
+  REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_BLOCK_ALARM_CLOUD_CONFIG: "block_alarm_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_BLOCK_ALARM_CONFIG: "block_alarm_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
+  // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
+  // full key string), so readers don't have to reconstruct bucket boundaries from the current config
+  REDIS_KEY_EVENT_SUMMARY_INDEX: "eventSummary:index",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_EVENT_CLASSIFIER_CLOUD_CONFIG: "event_classifier_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_EVENT_CLASSIFIER_CONFIG: "event_classifier_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG: "invalid_cert_ignored_issuers_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync, a JSON array of DN strings
+  KEY_INVALID_CERT_IGNORED_ISSUERS: "invalid_cert_ignored_issuers",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
@@ -79,6 +119,7 @@ module.exports = {
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+  REDIS_KEY_EID_BLACKLIST: "sys:eid:blacklist",
 
   REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
 
@@ -88,6 +129,8 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+  REDIS_HKEY_CONN_BPID: "bpid", // block rule id; presence flags the 5-tuple as blocked
+  REDIS_HKEY_CONN_BPID_TS: "bpidts", // epoch seconds bpid was last (re)written; ages the marker off its own write time
 
   NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
   NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
@@ -110,7 +153,9 @@ module.exports = {
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
+  NOTIF_CATEGORY_PHONE_PAIRED: "com.firewalla.category.phone_paired",
 
+  STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
@@ -179,6 +224,12 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
+  FEATURE_PCAP_ZEEK_ZSSIDS: "pcap_zeek_zssids",
+  FEATURE_PCAP_SURICATA_ZSSIDS: "pcap_suricata_zssids",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
@@ -200,4 +251,17 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
+
+  // a plain file name: no path separators, so a value matching this cannot leave the directory it
+  // is resolved against. use it wherever an untrusted value becomes a path component
+  REGEX_FILENAME: /^[a-z0-9][a-z0-9._-]*$/i,
+
+  // matches if a value contains any control character. use it on untrusted values that end up in a
+  // line-oriented config file or on the stdin of a command interpreter, where a line break in the
+  // value injects a directive or a command
+  REGEX_CONTROL_CHARS: /[\x00-\x1f\x7f]/,
+
+  // same as above but tolerates CR and LF, for free text fields that are never written to a config
+  // file or a command line
+  REGEX_CONTROL_CHARS_MULTILINE: /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/,
 };

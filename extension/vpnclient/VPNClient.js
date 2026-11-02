@@ -16,7 +16,7 @@
 'use strict';
 
 const net = require('net')
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
 const f = require('../../net2/Firewalla.js');
@@ -31,6 +31,8 @@ const routing = require('../routing/routing.js');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const { Address4, Address6 } = require('ip-address');
+const validator = require('validator');
+const { buildDigArgs, DEFAULT_TIMEOUT: DIG_TIMEOUT, DEFAULT_TRIES: DIG_TRIES } = require('../../util/DNSUpstreamHealthCheck.js');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const Ipset = require('../../net2/Ipset.js');
@@ -43,7 +45,18 @@ const platform = PlatformLoader.getPlatform()
 const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
-const INTERNET_ON_OFF_THRESHOLD = 2;
+const INTERNET_ON_OFF_THRESHOLD = 2; // consecutive failed checks to take the internet as down
+const INTERNET_OFF_ON_THRESHOLD = 2; // consecutive good checks to take it as up again
+const INTERNET_UNKNOWN_THRESHOLD = 5; // consecutive checks that could not tell, before the link alone is taken as the verdict
+const INTERNET_TEST_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
+const PING_TEST_MAX_COUNT = 8;
+const START_PING_TEST_COUNT = 3; // the check after a start only has to tell a tunnel that works from one that does not
+const PING_TEST_TIMEOUT = 12000;
+// curl gives up after -m 5 itself, this only ends a wrapper that hangs
+const CURL_TEST_TIMEOUT = 10000;
+// a dig that gets no reply ends by itself after DIG_TRIES x DIG_TIMEOUT seconds with exit 9, the kill only has to come after that
+const DNS_TEST_TIMEOUT = (DIG_TIMEOUT * DIG_TRIES + 4) * 1000;
+const DEFAULT_DNS_TEST_DOMAIN = "github.com";
 
 const instances = {};
 
@@ -57,8 +70,7 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
-        this.internetFailureCount = 0;
-        this.internetSuccessCount = 0;
+        this._resetInternetCounters();
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -72,17 +84,9 @@ class VPNClient {
           const channel = this._getRedisRouteUpdateMessageChannel();
           sclient.on("message", (c, message) => {
             if (c === channel && message === this.profileId) {
-              log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
-              this._scheduleRefreshRoutes();
-              // emit link established event immediately
-              if (this._started) {
-                sem.emitEvent({
-                  type: "link_established",
-                  profileId: this.profileId,
-                  routeUpdated: true,
-                  suppressEventLogging: true,
-                });
-              }
+              this._handleRouteUpdated().catch((err) => {
+                log.error(`Failed to handle route update of VPN client ${this.profileId}`, err.message);
+              });
             }
           });
           sclient.subscribe(channel);
@@ -90,6 +94,37 @@ class VPNClient {
       }
     }
     return instances[profileId];
+  }
+
+  // a route update only says the tunnel is back (openvpn reconnected by itself), so the internet keeps its last verdict until the next check
+  async _handleRouteUpdated() {
+    log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
+    this._scheduleRefreshRoutes();
+    if (!this._started)
+      return;
+    let internet = true;
+    if (this._isInternetProbed()) {
+      const lastInternet = await this._getCachedInternetState();
+      if (lastInternet !== null)
+        internet = lastInternet;
+    }
+    // stop() may have run while the cache was read
+    if (!this._started)
+      return;
+    sem.emitEvent({
+      type: "link_state_change",
+      profileId: this.profileId,
+      link: true,
+      internet,
+      routeUpdated: true,
+      suppressEventLogging: true,
+    });
+  }
+
+  // a virtual wan group routes through its members whether or not they override the default route
+  _isInternetProbed() {
+    const VirtWanGroup = require('../../net2/VirtWanGroup.js');
+    return Boolean(this.settings.overrideDefaultRoute) || VirtWanGroup.hasMember(this.profileId);
   }
 
   static getInstance(profileId) {
@@ -199,6 +234,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}_${routeType}.conf`;
   }
 
+  _getDnsmasqPBRRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vc_pbr_${this.profileId}_${routeType}.conf`;
+  }
+
   _scheduleRefreshRoutes() {
     if (this.refreshRoutesTask)
       clearTimeout(this.refreshRoutesTask);
@@ -300,7 +339,7 @@ class VPNClient {
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, bypassSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
-    await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
+    await execFile("sudo", ["sysctl", "-w", `net.ipv4.conf.${intf}.rp_filter=2`]).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
@@ -321,6 +360,13 @@ class VPNClient {
     if (dnsServers.length > 0)
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of the "Force DNS over VPN" (routeDNS) toggle
+    if (rtId) {
+      await this._enablePBRDNSRoute("soft");
+      // PBR hard DNS route is owned by _prepareRoutes (enabled unconditionally, persists across disconnects)
+    } else {
+      await this._disablePBRDNSRoute("soft");
+    }
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
@@ -360,6 +406,12 @@ class VPNClient {
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
+    // PBR soft ipset is populated here, after the link is up. Soft route rules fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
+    // PBR hard ipset is the kill-switch bucket and is owned by _prepareRoutes (always populated, never flushed on disconnect, independent of strictVPN), so it is intentionally not touched here.
+    if (rtId) {
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+    }
 
     if (rtId) {
       await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
@@ -393,65 +445,83 @@ class VPNClient {
   async _checkConnectivity(force = false) {
     if (!this._started) {
       await this._setCachedState(false);
+      await this._setCachedInternetState(null);
       return;
     }
     if (this._restarting)
       return;
     if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
       return;
-    let result = await this._isLinkUp();
-    if (result === false) {
+    const link = await this._isLinkUp();
+    // a client that carries no default route is not tested for the internet, it has it as long as its link is up
+    let internet = link;
+    if (link === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
-      if (this.settings.overrideDefaultRoute) {
-        const internetAvailability = await this._isInternetAvailable();
-        if (!internetAvailability) {
-          log.error(`Internet is unavailable via VPN client ${this.profileId}`);
-          this.internetFailureCount++;
-          this.internetSuccessCount = 0;
+      if (this._isInternetProbed()) {
+        const internetAvailability = await this._isInternetAvailable(force);
+        if (internetAvailability === null) {
+          // could not tell: neither counter moves. a probe that stays blind falls back to the link-only verdict,
+          // so it cannot keep a client demoted
+          if (++this.internetUnknownCount >= INTERNET_UNKNOWN_THRESHOLD) {
+            this.internetFailureCount = 0;
+            this.internetSuccessCount = INTERNET_OFF_ON_THRESHOLD;
+          }
         } else {
-          log.debug(`Internet is available via VPN client ${this.profileId}`);
-          this.internetFailureCount = 0;
-          this.internetSuccessCount++;
+          this.internetUnknownCount = 0;
+          if (!internetAvailability) {
+            this.internetFailureCount++;
+            this.internetSuccessCount = 0;
+            // only the check that turns the verdict to down is logged as an error
+            if (this.internetFailureCount === INTERNET_ON_OFF_THRESHOLD)
+              log.error(`Internet is unavailable via VPN client ${this.profileId}`);
+            else
+              log.verbose(`Internet is unavailable via VPN client ${this.profileId}`);
+          } else {
+            log.debug(`Internet is available via VPN client ${this.profileId}`);
+            this.internetFailureCount = 0;
+            this.internetSuccessCount++;
+          }
         }
         // update result if consecutive internet connectivity tests return same results
-        if (this.internetSuccessCount >= INTERNET_ON_OFF_THRESHOLD)
-          result = true;
-        else {
-          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
-            result = false;
-          else // internet success/failure count is within switching threshold, pending another consecutive result to decide
-            result = null;
-        }
+        if (this.internetSuccessCount >= INTERNET_OFF_ON_THRESHOLD)
+          internet = true;
+        else if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+          internet = false;
+        else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+          internet = null;
       }
     }
     // Re-check after async tests so a stale successful check cannot override stop().
     if (!this._started) {
       await this._setCachedState(false);
+      await this._setCachedInternetState(null);
       return;
     }
     if (this._restarting)
       return;
-    // result is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
-    if (result === null)
+    // internet is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
+    if (internet === null)
       return;
-    if (result) {
-      await this._setCachedState(true);
-      sem.emitEvent({
-        type: "link_established",
-        profileId: this.profileId,
-        routeUpdated: force,
-        suppressEventLogging: true,
-      });
-    } else {
-      await this._setCachedState(false);
-      sem.emitEvent({
-        type: "link_broken",
-        profileId: this.profileId,
-        suppressEventLogging: true,
-      });
-    }
+    // status is the link alone, the internet is a state of its own
+    await this._setCachedState(link);
+    await this._setCachedInternetState(internet);
+    sem.emitEvent({
+      type: "link_state_change",
+      profileId: this.profileId,
+      link,
+      internet,
+      routeUpdated: force,
+      suppressEventLogging: true,
+    });
+  }
+
+  // a start needs 2 failed checks to be taken as down, and the first good check to be taken as up
+  _resetInternetCounters() {
+    this.internetFailureCount = 0;
+    this.internetSuccessCount = INTERNET_OFF_ON_THRESHOLD - 1;
+    this.internetUnknownCount = 0;
   }
 
   async getEffectiveRoutedSubnets() {
@@ -500,16 +570,21 @@ class VPNClient {
   }
 
   hookLinkStateChange() {
-    sem.on('link_broken', async (event) => {
+    // the client acts on the link only. the internet is for the virtual wan group, losing it behind a tunnel that is up changes nothing here
+    const onLinkBroken = async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          await this._disablePBRDNSRoute("soft");
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -537,9 +612,9 @@ class VPNClient {
           this.scheduleRestart();
         this._currentState = false;
       }
-    });
+    };
 
-    sem.on('link_established', async (event) => {
+    const onLinkEstablished = async (event) => {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
@@ -563,18 +638,29 @@ class VPNClient {
         }
         this._currentState = true;
       }
+    };
+
+    sem.on('link_state_change', async (event) => {
+      if (event.link === false)
+        await onLinkBroken(event);
+      else
+        await onLinkEstablished(event);
     });
 
     sem.on('link_wan_switched', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          await this._disablePBRDNSRoute("soft");
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -613,6 +699,16 @@ class VPNClient {
       if (profileId === this.profileId) {
         this._started = true;
         this._lastStartTime = Date.now();
+        this._resetInternetCounters();
+        // the tunnel is started in FireApi, which arms no check of its own: FireMain checks 20 s after the start, as a start done here does
+        if (f.isMain()) {
+          clearTimeout(this.startCheckTask);
+          this.startCheckTask = setTimeout(() => {
+            this._checkConnectivity(true).catch((err) => {
+              log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+            });
+          }, 20000);
+        }
       }
     })
   }
@@ -893,6 +989,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/VC:${profileId}_${routeType}`;
   }
 
+  static getPBRDNSRouteConfDir(profileId, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VC_PBR:${profileId}_${routeType}`;
+  }
+
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
@@ -904,6 +1004,20 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _enablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await dnsmasq.writeConfig(this._getDnsmasqPBRRouteConfigPath(routeType), `conf-dir=${VPNClient.getPBRDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.unlinkAsync(this._getDnsmasqPBRRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -947,7 +1061,9 @@ class VPNClient {
     await Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
-    // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
+    // Device-level VPN assignment uses the regular route ipset (hard). Its kill-switch behavior is governed by
+    // the VPN client's strictVPN setting: under strictVPN the hard set is pre-populated here (before the link is
+    // up) and kept on disconnect; otherwise it is populated later in _refreshRoutes and flushed on disconnect.
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -956,14 +1072,28 @@ class VPNClient {
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
-      await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-      await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
+    // PBR hard ipset is the kill-switch bucket for route rules with routeType=hard. It is decoupled from the VPN
+    // client's strictVPN setting: always populated here (independent of overrideDefaultRoute), never flushed on
+    // disconnect, so a hard route rule keeps blocking when the tunnel is down
+    // regardless of strictVPN. It is cleared only in stop(). PBR soft ipset is (re)populated in _refreshRoutes
+    // once the link is up, so clear it here for a clean slate.
+    if (rtId) {
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+    } else {
+      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    }
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
+    // The unreachable default route in the VPN routing table drops any traffic that is still marked when the
+    // tunnel is down. It must exist whenever the client is enabled (not only under strictVPN) so that hard route
+    // rules actually drop instead of leaking to the default WAN. It is removed only in stop().
+    await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
     const dnsServers = await this._getDNSServers() || [];
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
@@ -974,6 +1104,12 @@ class VPNClient {
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     }
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of routeDNS; enable hard PBR DNS route so kill-switch covers PBR-routed DNS too.
+    if (rtId) {
+      await this._enablePBRDNSRoute("hard");
+    } else {
+      await this._disablePBRDNSRoute("hard");
+    }
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -1006,6 +1142,7 @@ class VPNClient {
     }
 
     this._lastStartTime = Date.now();
+    this._resetInternetCounters();
     await this._prepareRoutes();
     await this.flushRemoteEndpointRoutes().catch((err) => { });
     await this._start().catch((err) => {
@@ -1022,10 +1159,11 @@ class VPNClient {
           establishmentTask = null;
         }
         await this._setCachedState(true);
+        await this._setCachedInternetState(null); // unknown until the first check
         this._scheduleRefreshRoutes();
         await this.addRemoteEndpointRoutes().catch((err) => { });
         if (f.isMain()) {
-          // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+          // check connectivity and emit link_state_change later, before which routes are already added and ping test using fwmark will work properly
           setTimeout(() => {
             this._checkConnectivity(true).catch((err) => {
               log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
@@ -1114,15 +1252,20 @@ class VPNClient {
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
     await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
     await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
     await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
     await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await this._disablePBRDNSRoute("hard");
+    await this._disablePBRDNSRoute("soft");
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
     await this._setCachedState(false);
+    await this._setCachedInternetState(null);
 
     if (!f.isMain()) {
       sem.emitEvent({
@@ -1193,6 +1336,16 @@ class VPNClient {
       return null;
   }
 
+  // PBR (route rule) ipset is independent of the "Internet: VPN/Direct" toggle (overrideDefaultRoute).
+  // It is always populated with match_all so that route rules pointing to this VPN client work
+  // regardless of whether Apply To devices are routing all traffic via VPN.
+  static getPBRRouteIpsetName(uid, hard = true) {
+    if (uid) {
+      return `c_rt_pbr_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getNetIpsetName(uid, af = 4) {
     if (uid) {
       return `c_net_${uid.substring(0, 13)}_set${af}`;
@@ -1223,11 +1376,18 @@ class VPNClient {
       const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
       await Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
 
+      const hardPBRRouteIpsetName = VPNClient.getPBRRouteIpsetName(uid);
+      await Ipset.create(hardPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
+
+      const softPBRRouteIpsetName = VPNClient.getPBRRouteIpsetName(uid, false);
+      await Ipset.create(softPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
+
       const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
       await Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
 
-      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 16 });
-      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 16 });
+      // routed subnets can come from external config (WireGuard peers' allowedIPs, Tailscale subnet routers), so leave enough headroom
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 256 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 256 });
 
       const oifIpsetName = VPNClient.getOifIpsetName(uid);
       const oifIpsetName4 = `${oifIpsetName}4`;
@@ -1245,6 +1405,8 @@ class VPNClient {
 
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "soft")).catch((err) => { });
       envCreatedMap[uid] = 1;
     }).catch((err) => {
       log.error(`Failed to create enforcement env for VPN client ${uid}`, err.message);
@@ -1283,6 +1445,9 @@ class VPNClient {
     })());
     promises.push((async () => {
       result.status = await this.status();
+    })());
+    promises.push((async () => {
+      result.internet = await this._getCachedInternetState();
     })());
     promises.push((async () => {
       result.stats = await this.getStatistics();
@@ -1324,20 +1489,24 @@ class VPNClient {
     if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
       return;
     // first, find DNS zone from AUTHORITY SECTION
-    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
+    const zone = await execFile("dig", ["+noall", "+authority", "+time=3", "+tries=2", "SOA", domain]).then(result => {
+      // owner name of the first authority record
+      const record = result.stdout.split('\n').map(line => line.trim()).find(line => line.length > 0);
+      return record ? record.split(/\s+/)[0] : null;
+    }).catch((err) => {
       log.error(`Failed to find zone of ${domain}`, err.message);
       return null;
     });
     if (!zone)
       return;
     // then, find authoritative DNS server on zone
-    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
+    const servers = await execFile("dig", ["+time=3", "+tries=2", "+short", "NS", zone]).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
       log.error(`Failed to get servers of zone ${zone}`, err.message);
       return [];
     });
     // finally, send DNS query to authoritative DNS server
     for (const server of servers) {
-      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
+      const ip = await execFile("dig", ["+short", "+time=3", "+tries=1", `@${server}`, "A", domain]).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });
@@ -1347,59 +1516,130 @@ class VPNClient {
     return null;
   }
 
-  // do more evaluation other than ping tests in this function and return boolean
-  async _checkInternetAvailability() {
-    return true;
+  // true, false, or null when it could not be told. clients with a check of their own override this.
+  // quick is the check right after a start, which pings less
+  async _checkInternetAvailability(quick = false) {
+    const ping = await this._runPingTests(quick);
+    if (ping === false)
+      return false;
+    // an inconclusive DNS test counts like a skipped one
+    if (await this._runDnsTest() === false)
+      return false;
+    return ping;
   }
 
-  async _isInternetAvailable() {
+  // runs a command with this client's own mark, so it takes the tunnel the way routed traffic does
+  async _execWithClientMark(args, options = {}) {
+    return execFile('sudo', [`${f.getFirewallaHome()}/scripts/test_wan.sh`, this.getInterfaceName(), ...args], options);
+  }
+
+  async _checkInternetByCurl() {
+    for (const ip of INTERNET_TEST_IPS) {
+      const result = await this._execWithClientMark(['curl', '-m', '5', '-s', '-o', '/dev/null', `https://${ip}`], { timeout: CURL_TEST_TIMEOUT, killSignal: 'SIGKILL' }).then(() => true).catch((err) => false);
+      if (result)
+        return true;
+    }
+    return false;
+  }
+
+  // true or false for whether the tunnel reaches the internet, null when that could not be told
+  async _isInternetAvailable(quick = false) {
     if (!this._started)
-      return true;
-    const up = await this._isLinkUp();
-    if (!up)
-      return true;
-    const targets = this.settings && this.settings.pingTestTargets || [];
-    if (_.isEmpty(targets)) {
-      const dnsServers = await this._getDNSServers();
-      if (!_.isEmpty(dnsServers))
-        Array.prototype.push.apply(targets, dnsServers.slice(0, 3));
-      else {
-        if (this.settings.overrideDefaultRoute)
-          Array.prototype.push.apply(targets, ["1.1.1.1", "8.8.8.8", "9.9.9.9"]);
-      }
-    }
-    if (_.isEmpty(targets)) {
-      log.warn(`Cannot find any target for ping tests on VPN client ${this.profileId}`);
-      return true;
-    }
-    const count = this.settings && this.settings.pingTestCount || 8;
-    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
-    // TODO: evaluate ping test results and return false if it is lower than the threshold
-
-    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
-    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
-    return await this._checkInternetAvailability();
+      return null;
+    if (!await this._isLinkUp())
+      return null;
+    const result = await this._checkInternetAvailability(quick);
+    log.verbose(`VPN client ${this.profileId} internet availability: ${result}`);
+    return result;
   }
 
-  async _runPingTest(target, count = 8) {
-    const result = { target, totalCount: count };
-    const af = new Address4(target).isValid() ? 4 : 6;
-    const ping = af == 4 ? "ping" : "ping6";
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
-    let optI = "";
-    if (_.isArray(ips) && ips.length > 0) {
-      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
-      optI = `-I ${srcIp.addressMinusSuffix}`;
+  async _runPingTests(quick = false) {
+    const configured = this.settings.pingTestTargets;
+    const targets = (_.isEmpty(configured) ? INTERNET_TEST_IPS : configured).slice(0, 3);
+    const count = this.settings.pingTestCount || PING_TEST_MAX_COUNT;
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, quick ? Math.min(count, START_PING_TEST_COUNT) : count)));
+    const verdict = VPNClient._pingVerdict(results);
+    log.verbose(`VPN client ${this.profileId} ping tests [${results.map(r => `${r.target} ${r.successCount}/${r.totalCount}`)}] verdict ${verdict}`);
+    return verdict;
+  }
+
+  async _runPingTest(target, count = PING_TEST_MAX_COUNT) {
+    // a round has to end inside the 30s check interval
+    count = Number.isInteger(count) && count > 0 ? Math.min(count, PING_TEST_MAX_COUNT) : PING_TEST_MAX_COUNT;
+    // successCount stays null when ping printed no statistics, then the target says nothing
+    const result = { target, totalCount: count, successCount: null };
+    // Validate target: must be a real IPv4 or IPv6 address
+    const isV4 = new Address4(target).isValid();
+    const isV6 = !isV4 && new Address6(target).isValid();
+    if (!isV4 && !isV6) {
+      log.warn(`VPN ${this.profileId} ping test: invalid target address: ${target}`);
+      return result;
     }
-    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
-    await exec(cmd).then((output) => {
-      result.successCount = Number(output.stdout.trim());
-    }).catch((err) => {
-      result.successCount = 0;
-    });
+    const ping = isV4 ? "ping" : "ping6";
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
+    const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    const args = [ping, '-n', '-q', '-m', String(rtId), '-c', String(count)];
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      args.push('-I', srcIp.addressMinusSuffix);
+    }
+    args.push('-W', '1', '-i', '1', target);
+    // ping exits 1 on total loss and still prints the statistics
+    const stdout = await execFile('sudo', args, { timeout: PING_TEST_TIMEOUT, killSignal: 'SIGKILL' }).then(output => output.stdout).catch(err => err.stdout);
+    result.successCount = VPNClient._parsePingReceived(stdout);
     log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  // parse "N received" or "N packets received" from ping statistics line, null if there is none
+  static _parsePingReceived(stdout) {
+    const match = (stdout || "").match(/(\d+)\s+(?:packets\s+)?received/);
+    return match ? Number(match[1]) : null;
+  }
+
+  // true if any target got at least half of its replies, false if every target was conclusive and none did
+  static _pingVerdict(results) {
+    return VPNClient._anyVerdict(results.map(r => r.successCount === null ? null : r.successCount * 2 >= r.totalCount));
+  }
+
+  // true if any probe passed, false if all of them failed, null if none passed and some could not tell
+  static _anyVerdict(verdicts) {
+    if (verdicts.includes(true))
+      return true;
+    return verdicts.includes(null) ? null : false;
+  }
+
+  // test_wan.sh marks the command through the platform's cgroup_sock_mark, the net_cls fallback of the others is not relied on
+  _isDnsTestSupported() {
+    return fs.existsSync(`${platform.getPlatformFilesPath()}/cgroup_sock_mark`);
+  }
+
+  async _runDnsTest() {
+    if (!this.settings.routeDNS || !this._isDnsTestSupported())
+      return true;
+    const servers = (await this._getDNSServers() || []).filter(server => net.isIPv4(server)).slice(0, 3);
+    if (_.isEmpty(servers))
+      return true;
+    const domain = this.settings.dnsTestDomain || DEFAULT_DNS_TEST_DOMAIN;
+    // the domain ends up in a root shell line of test_wan.sh, and settings can also be saved without the API check
+    if (!_.isString(domain) || !validator.isFQDN(domain)) {
+      log.warn(`VPN client ${this.profileId} DNS test: invalid domain ${domain}`);
+      return null;
+    }
+    const verdicts = await Promise.all(servers.map(server =>
+      this._execWithClientMark(['dig', ...buildDigArgs({ host: server, domain })], { timeout: DNS_TEST_TIMEOUT, killSignal: 'SIGKILL' })
+        .then(() => 0).catch(err => err.code).then(code => VPNClient._digVerdict(code))
+    ));
+    log.verbose(`VPN client ${this.profileId} DNS tests [${servers}] verdicts [${verdicts}]`);
+    return VPNClient._anyVerdict(verdicts);
+  }
+
+  // dig exits 0 on any reply (NXDOMAIN and SERVFAIL included) and 9 on none. any other code (dig missing,
+  // killed, test_wan.sh failing to set up) says nothing about the internet
+  static _digVerdict(code) {
+    if (code === 0)
+      return true;
+    return code === 9 ? false : null;
   }
 
   async _setRouteMarkInRedis() {
@@ -1423,13 +1663,34 @@ class VPNClient {
     return `VC:${profileId}:connState`;
   }
 
+  static getInternetStateCacheKey(profileId) {
+    return `VC:${profileId}:internetState`;
+  }
+
   async _setCachedState(state) {
     await rclient.setAsync(VPNClient.getStateCacheKey(this.profileId), state);
     await rclient.expireAsync(VPNClient.getStateCacheKey(this.profileId), 86400 * 7);
   }
 
+  // true or false while the internet behind the tunnel is judged, null when it is not (stopped, just started)
+  async _setCachedInternetState(state) {
+    const key = VPNClient.getInternetStateCacheKey(this.profileId);
+    if (_.isNil(state))
+      return rclient.delAsync(key);
+    await rclient.setAsync(key, state);
+    await rclient.expireAsync(key, 86400 * 7);
+  }
+
+  async _getCachedInternetState() {
+    return VPNClient._getCachedBoolean(VPNClient.getInternetStateCacheKey(this.profileId));
+  }
+
   async _getCachedState() {
-    const state = await rclient.getAsync(VPNClient.getStateCacheKey(this.profileId));
+    return VPNClient._getCachedBoolean(VPNClient.getStateCacheKey(this.profileId));
+  }
+
+  static async _getCachedBoolean(key) {
+    const state = await rclient.getAsync(key);
     switch (state) {
       case "true":
         return true;
@@ -1441,7 +1702,7 @@ class VPNClient {
   }
 
   async _deleteCachedState() {
-    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId));
+    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId), VPNClient.getInternetStateCacheKey(this.profileId));
   }
 
   static async notifyWanSwitched() {

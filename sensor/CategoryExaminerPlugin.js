@@ -404,6 +404,8 @@ class CategoryExaminerPlugin extends Sensor {
 
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
+
+        this.sendUpdateNotification(category);
       }
     }
   }

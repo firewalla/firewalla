@@ -87,8 +87,11 @@ def cmd_list(entries):
     # print latest first; seq = index in ascending order
     for seq in range(len(entries) - 1, -1, -1):
         score, val = entries[seq]
+        app = json.loads(val).get("app") or {}
+        platform = str(app.get("platform") or "-")
+        version = str(app.get("version") or "-")
         d = digest(entries[seq - 1][1], val) if seq > 0 else ""
-        print(f"{seq:>3}  {score}  {fmt_time(score)}  {d}")
+        print(f"{seq:>3}  {score}  {fmt_time(score)}  {platform:<4}  {version:<12}  {d}")
 
 
 def cmd_show(entries, ref):
