@@ -2679,22 +2679,18 @@ module.exports = class HostManager extends Monitorable {
         let totalDownload = 0;
         const activeWanIntf = sysManager.getDefaultWanInterface();
         const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
-        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
-          if (wanType === Constants.WAN_TYPE_FAILOVER) {
-            if (wanId === activeWanUUID) {
-              totalUpload = parseInt(wanConf.upload) || 0;
-              totalDownload = parseInt(wanConf.download) || 0;
-              break;
-            }
-          } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-            if (wanId === activeWanUUID) {
-              totalUpload = parseInt(wanConf.upload) || 0;
-              totalDownload = parseInt(wanConf.download) || 0;
-              break;
-            }
-          } else if (wanType === Constants.WAN_TYPE_LB) {
+        // a load_balance backup is the default WAN only while it carries all traffic alone, like the active primary_standby WAN
+        const backupInUse = wanType === Constants.WAN_TYPE_LB && activeWanIntf && activeWanIntf.backup === true;
+        if (wanType === Constants.WAN_TYPE_FAILOVER || wanType === Constants.WAN_TYPE_SINGLE || backupInUse) {
+          if (_.has(bandwidth.wanConfs, activeWanUUID)) {
+            const wanConf = bandwidth.wanConfs[activeWanUUID];
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+          }
+        } else if (wanType === Constants.WAN_TYPE_LB) {
+          for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
             const intf = sysManager.getInterfaceViaUUID(wanId);
-            if (!intf || intf.type !== "wan" || !intf.ready)
+            if (!intf || intf.type !== "wan" || !intf.ready || intf.backup === true)
               continue;
             totalUpload += parseInt(wanConf.upload) || 0;
             totalDownload += parseInt(wanConf.download) || 0;

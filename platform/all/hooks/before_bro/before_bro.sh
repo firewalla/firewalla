@@ -32,7 +32,6 @@ else
 fi
 
 # the CA list bundled with zeek is outdated, replace it with one generated from the system bundle
-ZEEK_CA_LIST=/usr/local/zeek/share/zeek/base/protocols/ssl/mozilla-ca-list.zeek
-[[ -e $ZEEK_CA_LIST ]] && sudo cp $CUR_DIR/mozilla-ca-list.zeek $ZEEK_CA_LIST
+${FIREWALLA_HOME:-/home/pi/firewalla}/scripts/update_zeek_ca_list.sh
 
 sync

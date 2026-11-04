@@ -1411,6 +1411,9 @@
       "default": {"state": "ready"}
     }
   },
+  "invalidCertIssuerBlacklist": [
+    "CN=emSign ECC Root CA - G3,O=eMudhra Technologies Limited,OU=emSign PKI,C=IN"
+  ],
   "cloudcache": {
     "expirationDays": 90
   },
