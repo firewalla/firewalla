@@ -39,6 +39,14 @@ const names = { [BOX_LL]: 'Test Box', [LAN_DEVICE]: 'Test Laptop' };
 const failedIssuers = {};
 // sha256 of the first failed cert saved on the conn entry, by server ip
 const failedFps = {};
+// the issuer of the default blacklist in config.json
+const LISTED_DN = 'CN=emSign ECC Root CA - G3,O=eMudhra Technologies Limited,OU=emSign PKI,C=IN';
+const LISTED_ISSUER = { CN: 'emSign ECC Root CA - G3', O: 'eMudhra Technologies Limited', OU: 'emSign PKI', C: 'IN' };
+// redis strings the issuer list loaders read and write, and the cloud hashsets they fetch, by name
+const redisStore = {};
+const cloudHashsets = {};
+// what config.js getConfig returns
+const config = { invalidCertIssuerBlacklist: [LISTED_DN] };
 
 let mock;
 let cacheSnapshot;
@@ -53,8 +61,21 @@ function setupMocks() {
     isLocalIP: (ip) => localIPs.has(ip),
     isMyIP: (ip) => ip === BOX_IP,
     isMyIP6: (ip) => ip === BOX_LL || ip === BOX_V6,
+    getTimezone: () => 'UTC',
   });
-  mock('../net2/config.js', { isFeatureOn: (name) => features[name] !== false });
+  mock('../util/redis_manager.js', {
+    getRedisClient: () => ({
+      getAsync: async (key) => redisStore[key] || null,
+      setAsync: async (key, value) => { redisStore[key] = value; },
+    }),
+    getSubscriptionClient: () => ({ on: () => {}, subscribe: () => {} }),
+  });
+  mock('../lib/Bone.js', { hashsetAsync: async (name) => cloudHashsets[name] });
+  mock('cron', { CronJob: class CronJob { stop() {} } });
+  mock('../net2/config.js', {
+    isFeatureOn: (name) => features[name] !== false,
+    getConfig: () => config,
+  });
   mock('../net2/IntelTool.js', class IntelTool {
     // enough for the plain DNs used here
     parseDN(dn) { return dn ? Object.fromEntries(dn.split(',').map(rdn => rdn.split('='))) : {}; }
@@ -226,10 +247,76 @@ describe('BroNotice SSH password guessing', function () {
   });
 });
 
+describe('BroNotice issuer list loaders', function () {
+  const BLACKLIST_KEY = 'invalid_cert_issuer_blacklist_cloud_config';
+  const BAD_ISSUER = { CN: 'Bad CA', O: 'Bad Root', C: 'US' };
+
+  before(setupMocks);
+  after(restoreMocks);
+  afterEach(() => {
+    for (const key of Object.keys(redisStore)) delete redisStore[key];
+    for (const name of Object.keys(cloudHashsets)) delete cloudHashsets[name];
+    broNotice.issuerBlacklist.set(null);
+  });
+
+  // start() doesn't wait for the fetch; the mocks resolve at once, so a macrotask is enough
+  async function startLoaders() {
+    await broNotice.startIssuerListLoaders();
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  it('keeps the cached blacklist when the cloud returns an empty list', async () => {
+    redisStore[BLACKLIST_KEY] = JSON.stringify(['CN=Bad CA,O=Bad Root,C=US']);
+    cloudHashsets.invalid_cert_issuer_blacklist = '[]';
+    await startLoaders();
+    expect(redisStore[BLACKLIST_KEY]).to.equal(JSON.stringify(['CN=Bad CA,O=Bad Root,C=US']));
+    expect(broNotice.issuerBlacklist.has(BAD_ISSUER)).to.equal(true);
+    expect(broNotice.issuerBlacklist.has(LISTED_ISSUER)).to.equal(false);
+  });
+
+  it('uses the config default blacklist when there is no cache and the cloud returns an empty list', async () => {
+    cloudHashsets.invalid_cert_issuer_blacklist = '[]';
+    await startLoaders();
+    expect(redisStore).to.not.have.property(BLACKLIST_KEY);
+    expect(broNotice.issuerBlacklist.has(LISTED_ISSUER)).to.equal(true);
+  });
+
+  it('caches and applies a non-empty cloud blacklist', async () => {
+    cloudHashsets.invalid_cert_issuer_blacklist = JSON.stringify(['C=US,O=Bad Root,CN=Bad CA']);
+    await startLoaders();
+    expect(JSON.parse(redisStore[BLACKLIST_KEY])).to.deep.equal(['C=US,O=Bad Root,CN=Bad CA']);
+    expect(broNotice.issuerBlacklist.has(BAD_ISSUER)).to.equal(true);
+    expect(broNotice.issuerBlacklist.has(LISTED_ISSUER)).to.equal(false);
+  });
+});
+
+describe('BroNotice without a usable config blacklist', function () {
+  afterEach(() => {
+    restoreMocks();
+    config.invalidCertIssuerBlacklist = [LISTED_DN];
+  });
+
+  for (const value of [undefined, null, 'not a list']) {
+    it(`loads with an empty blacklist when the config value is ${value}`, async () => {
+      if (value === undefined) delete config.invalidCertIssuerBlacklist;
+      else config.invalidCertIssuerBlacklist = value;
+      setupMocks();
+      expect(broNotice.issuerBlacklist.has(LISTED_ISSUER)).to.equal(false);
+      broNotice.issuerBlacklist.set(['C=US,O=Bad Root,CN=Bad CA']);
+      expect(broNotice.issuerBlacklist.has({ CN: 'Bad CA', O: 'Bad Root', C: 'US' })).to.equal(true);
+    });
+  }
+});
+
 describe('BroNotice invalid server certificate', function () {
   before(setupMocks);
   after(restoreMocks);
-  afterEach(() => { delete features['cyber_security.invalidServerCert']; });
+  // a blacklisted issuer, so an invalid issuer notice raises an alarm unless a case says otherwise
+  beforeEach(() => { failedIssuers[REMOTE] = LISTED_ISSUER; });
+  afterEach(() => {
+    delete features['cyber_security.invalidServerCert'];
+    delete failedIssuers[REMOTE];
+  });
 
   // zeek's validate-certs raises the notice with $conn, so src/dst are the tls client/server
   function invalidCert(src, dst, status = 'unable to get local issuer certificate') {
@@ -280,10 +367,12 @@ describe('BroNotice invalid server certificate', function () {
     expect(alarm).to.not.have.property('p.dest.name');
   });
 
-  it('still raises the alarm when the lookup fails', async () => {
-    const notice = invalidCert(LAN_DEVICE, REMOTE);
+  it('drops an invalid issuer alarm when the lookup fails, and still raises an expired cert one', async () => {
     connHosts[`${LAN_DEVICE}:52000:${REMOTE}:443:tcp`] = new Error('redis down');
     try {
+      let notice = invalidCert(LAN_DEVICE, REMOTE);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+      notice = invalidCert(LAN_DEVICE, REMOTE, 'certificate has expired');
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
       expect(alarm).to.not.equal(null);
       expect(alarm).to.not.have.property('p.dest.name');
@@ -325,21 +414,21 @@ describe('BroNotice invalid server certificate', function () {
     afterEach(() => {
       delete failedIssuers[REMOTE];
       delete failedFps[REMOTE];
-      broNotice.setIgnoredIssuers(null);
+      broNotice.ignoredIssuers.set(null);
+      broNotice.issuerBlacklist.set(null);
     });
 
     it('puts the first failed cert issuer, its DN, name and fingerprint on the alarm', async () => {
-      failedIssuers[REMOTE] = { CN: 'emSign ECC Root CA - G3', C: 'IN' };
       failedFps[REMOTE] = 'ba105ce02bac';
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
-      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: { CN: 'emSign ECC Root CA - G3', C: 'IN' } });
-      expect(alarm['p.dest.ssl.validation_failed_cert_issuer']).to.equal('CN=emSign ECC Root CA - G3,C=IN');
+      expect(alarm['p.dest.ssl.validation_failed_cert']).to.deep.equal({ issuer: LISTED_ISSUER });
+      expect(alarm['p.dest.ssl.validation_failed_cert_issuer']).to.equal(LISTED_DN);
       expect(alarm['p.dest.ssl.validation_failed_cert_issuer_name']).to.equal('emSign ECC Root CA - G3');
       expect(alarm['p.dest.ssl.validation_failed_fp']).to.equal('ba105ce02bac');
       expect(alarm['p.dest.port']).to.equal(443);
       expect(alarm['e.dest.ssl.validation_status']).to.equal('unable to get local issuer certificate');
-      expect(JSON.parse(alarm['e.dest.ssl.cert_chain'])).to.deep.equal([{ fp: 'ba105ce02bac', subject: { CN: 'leaf' } }, { subject: { CN: 'emSign ECC Root CA - G3', C: 'IN' } }]);
+      expect(JSON.parse(alarm['e.dest.ssl.cert_chain'])).to.deep.equal([{ fp: 'ba105ce02bac', subject: { CN: 'leaf' } }, { subject: LISTED_ISSUER }]);
     });
 
     it('drops an issuer of the default list, whatever the attribute order', async () => {
@@ -349,17 +438,19 @@ describe('BroNotice invalid server certificate', function () {
     });
 
     it('uses the cloud list instead of the default one, and falls back when it is empty', async () => {
-      const notice = invalidCert(LAN_DEVICE, REMOTE);
-      broNotice.setIgnoredIssuers(['C=US,O=Other Root']);
+      // an expired cert, which the blacklist doesn't limit
+      const notice = invalidCert(LAN_DEVICE, REMOTE, 'certificate has expired');
+      broNotice.ignoredIssuers.set(['C=US,O=Other Root']);
       failedIssuers[REMOTE] = { O: 'Other Root', C: 'US' };
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
       failedIssuers[REMOTE] = { C: 'US', ST: 'Washington', L: 'Redmond', O: 'Microsoft Corporation', CN: 'Microsoft Root Certificate Authority 2011' };
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
-      broNotice.setIgnoredIssuers([]);
+      broNotice.ignoredIssuers.set([]);
       expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
     });
 
     it('names an issuer without CN by its O, then its OU', async () => {
+      broNotice.issuerBlacklist.set(['C=CN,O=Some Root,OU=Some Unit', 'C=CN,OU=Some Unit', 'C=CN']);
       const notice = invalidCert(LAN_DEVICE, REMOTE);
       failedIssuers[REMOTE] = { C: 'CN', O: 'Some Root', OU: 'Some Unit' };
       let alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
@@ -375,16 +466,64 @@ describe('BroNotice invalid server certificate', function () {
       expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_name');
     });
 
-    it('still raises the alarm, without the issuer, when none is saved or the lookup fails', async () => {
+    it('drops an invalid issuer alarm when no issuer is saved or the lookup fails, and raises an expired cert one without the issuer', async () => {
       for (const saved of [undefined, new Error('redis down')]) {
         failedIssuers[REMOTE] = saved;
-        const notice = invalidCert(LAN_DEVICE, REMOTE);
+        let notice = invalidCert(LAN_DEVICE, REMOTE);
+        expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+        notice = invalidCert(LAN_DEVICE, REMOTE, 'certificate has expired');
         const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
         expect(alarm).to.not.equal(null);
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert');
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_fp');
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer');
         expect(alarm).to.not.have.property('p.dest.ssl.validation_failed_cert_issuer_name');
+      }
+    });
+
+    it('raises an invalid issuer alarm only for an issuer on the blacklist, whatever the attribute order', async () => {
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      broNotice.issuerBlacklist.set(['C=US,O=Bad Root,CN=Bad CA']);
+      failedIssuers[REMOTE] = { CN: 'Bad CA', O: 'Bad Root', C: 'US' };
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
+      failedIssuers[REMOTE] = { CN: 'Other CA', O: 'Bad Root', C: 'US' };
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+      // the cloud list replaced the config default
+      failedIssuers[REMOTE] = LISTED_ISSUER;
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    });
+
+    it('uses the config default blacklist when the cloud list is empty or absent', async () => {
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      failedIssuers[REMOTE] = { C: 'IN', OU: 'emSign PKI', O: 'eMudhra Technologies Limited', CN: 'emSign ECC Root CA - G3' };
+      for (const dns of [[], null, 'not a list']) {
+        broNotice.issuerBlacklist.set(dns);
+        expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.not.equal(null);
+      }
+    });
+
+    it('drops an ignored issuer even when it is on the blacklist', async () => {
+      broNotice.issuerBlacklist.set(['CN=Microsoft Root Certificate Authority 2011,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US']);
+      failedIssuers[REMOTE] = { CN: 'Microsoft Root Certificate Authority 2011', O: 'Microsoft Corporation', L: 'Redmond', ST: 'Washington', C: 'US' };
+      const notice = invalidCert(LAN_DEVICE, REMOTE);
+      expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
+    });
+
+    it('raises other validation failures for an issuer not on the blacklist', async () => {
+      failedIssuers[REMOTE] = { CN: 'Other CA', C: 'US' };
+      const expected = {
+        'certificate has expired': 'cert_expired',
+        'certificate is not yet valid': 'cert_not_yet_valid',
+        'certificate signature failure': 'cert_invalid',
+      };
+      for (const [status, constant] of Object.entries(expected)) {
+        const notice = invalidCert(LAN_DEVICE, REMOTE, status);
+        const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+        expect(alarm['p.dest.ssl.validation_status']).to.equal(constant);
+      }
+      for (const status of ['unable to get local issuer certificate', 'self-signed certificate in certificate chain']) {
+        const notice = invalidCert(LAN_DEVICE, REMOTE, status);
+        expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
       }
     });
   });
