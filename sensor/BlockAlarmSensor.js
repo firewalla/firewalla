@@ -127,7 +127,7 @@ class BlockAlarmSensor extends Sensor {
   }
 
   // resolves to whether the alarm job was saved
-  async _raiseAlarm({ device, dest, bTarget, fd }) {
+  async _raiseAlarm({ device, dest, bTarget, pid, fd }) {
     const deviceFields = await am2.getDeviceAlarmFields({ mac: device, withIntf: true });
     if (!deviceFields) {
       log.verbose('No device to alarm for', device);
@@ -138,6 +138,7 @@ class BlockAlarmSensor extends Sensor {
       "p.dest.name": dest,
       "p.dest.category": bTarget,
       "p.noticeType": bTarget, // the push data carries p.noticeType, not p.dest.category
+      ...(pid && { "p.pid": pid }), // the rule that blocked, as in ACLAlarmLogPlugin
       "p.local_is_client": fd === 'out' ? "0" : "1", // 'out' is initiated from outside
       "p.cooldown": COOLDOWN_SECS,
       "p.ignoreDestIntel": "1" // the domain is all there is, as in ACLAlarmLogPlugin

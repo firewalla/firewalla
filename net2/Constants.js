@@ -112,6 +112,10 @@ module.exports = {
   REDIS_KEY_INVALID_CERT_IGNORED_ISSUERS_CLOUD_CONFIG: "invalid_cert_ignored_issuers_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync, a JSON array of DN strings
   KEY_INVALID_CERT_IGNORED_ISSUERS: "invalid_cert_ignored_issuers",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_INVALID_CERT_ISSUER_BLACKLIST_CLOUD_CONFIG: "invalid_cert_issuer_blacklist_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync, a JSON array of DN strings
+  KEY_INVALID_CERT_ISSUER_BLACKLIST: "invalid_cert_issuer_blacklist",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
