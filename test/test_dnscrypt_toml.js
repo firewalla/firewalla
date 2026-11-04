@@ -253,6 +253,35 @@ describe('dnscrypt toml generation', function () {
     });
   });
 
+  // dnscrypt.sh makes the same choice when it starts the proxy
+  describe('getBinaryPath', function () {
+    const asset = () => path.join(RUNTIME, 'assets', 'dnscrypt');
+    const arch = { x64: 'x86_64', arm64: 'aarch64', arm: 'armv7l' }[process.arch] || process.arch;
+    const repoBuild = path.join(HOME, 'extension', 'dnscrypt', `dnscrypt.${arch}`);
+    const install = (mode) => {
+      fs.mkdirSync(path.dirname(asset()), { recursive: true });
+      fs.writeFileSync(asset(), 'binary');
+      fs.chmodSync(asset(), mode);
+    };
+    afterEach(function () {
+      try { fs.unlinkSync(asset()); } catch (err) { /* not installed by this test */ }
+    });
+
+    it('falls back to the build in the repo while there is no asset', function () {
+      expect(dc.getBinaryPath()).to.equal(repoBuild);
+    });
+
+    it('uses the fireupgrade asset as soon as it is there', function () {
+      install(0o755);
+      expect(dc.getBinaryPath()).to.equal(asset());
+    });
+
+    it('does not pick an asset it cannot run', function () {
+      install(0o644);
+      expect(dc.getBinaryPath()).to.equal(repoBuild);
+    });
+  });
+
   describe('control channel', function () {
     it('keeps control_socket out of the config, it is a dnscrypt-proxy default', async function () {
       dc = loadDnscrypt({ 'ext.dnscrypt.servers': JSON.stringify(['quad9']) });

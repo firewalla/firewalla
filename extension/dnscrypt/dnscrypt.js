@@ -257,9 +257,16 @@ class DNSCrypt {
       .replace("%DNSCRYPT_SERVER_LIST%", () => JSON.stringify(serverList));
   }
 
+  // the same choice dnscrypt.sh makes: the fireupgrade asset, else the repo build
   getBinaryPath() {
-    const arch = DNSCRYPT_ARCH_BINARY[process.arch] || process.arch;
-    return `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.${arch}`;
+    const asset = `${f.getRuntimeInfoFolder()}/assets/dnscrypt`;
+    try {
+      fs.accessSync(asset, fs.constants.X_OK);
+      return asset;
+    } catch (err) {
+      const arch = DNSCRYPT_ARCH_BINARY[process.arch] || process.arch;
+      return `${f.getFirewallaHome()}/extension/dnscrypt/dnscrypt.${arch}`;
+    }
   }
 
   // Asks dnscrypt-proxy whether it would accept this config, without touching
