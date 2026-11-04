@@ -1288,9 +1288,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if (this.isTLSActivated(category))
             options.tlsHostSet = Block.getTLSHostSet(category);
 
-          const connIpset = this.getConnectionIPSetName(category);
-
-          options.connIpset = connIpset;
+          options.connSet = this.getConnectionIPSetName(category);
           options.category = category;
 
           if (d.startsWith("*."))

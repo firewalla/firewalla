@@ -43,6 +43,7 @@ function updateTouchFile() {
 }
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 rclient.del('sys:bone:url') // always try configured server for 1st checkin
 
 const bone = require("../lib/Bone.js");
@@ -119,6 +120,13 @@ async function run0() {
       log.error("Got error when checkin, err", err);
       // running firewalla in non-license mode if checkin failed, do not return, continue run()
     })
+
+    // mspd's own check-in at boot usually fails before the network is ready and is not retried for hours
+    if (platform.getName() === 'crystal') {
+      pclient.publishAsync('mspd_update', '').catch((err) => {
+        log.error("Failed to trigger mspd checkin", err);
+      })
+    }
 
     await run();
   } else {
