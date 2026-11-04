@@ -15,8 +15,6 @@ fi
 # ca-certificates version, so a box whose store is not upgraded yet keeps the bundled roots
 SYSTEM_CA_MIN_VERSION=20260816ubuntu0.22.04.1   # must match SYSTEM_CA_MIN_VERSION in firerouter bin/node
 function use_system_ca {
-  # --use-openssl-ca needs Node >= 7.5, a Node without a version in its path is left alone
-  [[ $NODE =~ /v([0-9]+)\.[0-9]+\.[0-9]+/ ]] && (( BASH_REMATCH[1] >= 8 )) || return 1
   # manual switch back to the bundled roots
   [[ ! -e ${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/.node_bundled_ca ]] || return 1
   [[ -s /etc/ssl/certs/ca-certificates.crt ]] || return 1
