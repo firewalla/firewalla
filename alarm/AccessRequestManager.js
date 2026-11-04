@@ -76,7 +76,7 @@ function isInSchedule(policy) {
   }
 
   // if the policy is expired, return false
-  if (policy.expire) {
+  if (policy.expire || policy.expireTs) {
     if (policy.isExpired() || policy.willExpireSoon()) {
       return false;
     }

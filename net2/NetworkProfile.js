@@ -458,7 +458,7 @@ class NetworkProfile extends Monitorable {
     if (!netListIpsetName || !netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      Ipset.flush(netListIpsetName);
+      await Promise.all([Ipset.flush(netListIpsetName), Ipset.flush(netIpsetName)]);
       Ipset.add(netListIpsetName, netIpsetName);
       Ipset.add(netListIpsetName, netIpsetName6);
       Ipset.add(netListIpsetName, netLinklocalIpsetName6);

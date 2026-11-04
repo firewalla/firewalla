@@ -1049,3 +1049,43 @@ describe('Test CategoryUpdater.addRegexDomains', function() {
     expect(stored).to.deep.equal([GOOD]);
   });
 });
+
+describe('Test CategoryUpdater.updateDomain', function() {
+  this.timeout(10000);
+
+  const category = 'test_conn_category';
+  const domain = 'test-conn-domain.firewalla.com';
+  const domainBlock = require('../control/DomainBlock.js');
+
+  let categoryUpdater;
+  let origBlockDomain;
+  let origUpdateCategoryBlock;
+  let captured;
+
+  beforeEach(() => {
+    categoryUpdater = new CategoryUpdater();
+    categoryUpdater.activeCategories = { [category]: 1 };
+    categoryUpdater.effectiveCategoryDomains = {};
+    captured = null;
+    origBlockDomain = domainBlock.blockDomain;
+    origUpdateCategoryBlock = domainBlock.updateCategoryBlock;
+    domainBlock.blockDomain = async (d, options) => { captured = { d, options } };
+    domainBlock.updateCategoryBlock = async () => {};
+  });
+
+  afterEach(async () => {
+    domainBlock.blockDomain = origBlockDomain;
+    domainBlock.updateCategoryBlock = origUpdateCategoryBlock;
+    await rclient.zremAsync(categoryUpdater.getCategoryKey(category), domain);
+  });
+
+  // a runtime learned domain only reaches the category connection ipset if it is
+  // registered with connSet, the key DomainUpdater reads
+  it('should register a learned domain with the category connection ipset', async () => {
+    await categoryUpdater.updateDomain(category, domain);
+
+    expect(captured).to.not.equal(null);
+    expect(captured.d).to.equal(domain);
+    expect(captured.options.connSet).to.equal(categoryUpdater.getConnectionIPSetName(category));
+  });
+});

@@ -1571,7 +1571,8 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === Number(this["p.wan.total"]))) {
+      // counts can match while a nextHop is down (active backup); firerouter flags every nextHop return as switched, so an unswitched return is a standby backup
+      if (wan && this["p.wan.backup.active"] !== "true" && this["p.wan.switched"] == "true" && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === Number(this["p.wan.total"]))) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {

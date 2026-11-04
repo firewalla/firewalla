@@ -297,6 +297,8 @@ async function generateNetworkInfo() {
       redisIntf.ready = intf.state.wanConnState.ready || false;
       redisIntf.active = intf.state.wanConnState.active || false;
       redisIntf.pendingTest = intf.state.wanConnState.pendingTest || false;
+      if (intf.state.wanConnState.backup === true)
+        redisIntf.backup = true;
     }
 
     if (intf.state && intf.state.hasOwnProperty("essid")) {
@@ -351,6 +353,51 @@ let primaryWanIntfName = null
 let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
+
+function getWanConnState(intfName) {
+  return intfNameMap[intfName] && intfNameMap[intfName].state && intfNameMap[intfName].state.wanConnState;
+}
+
+// first active WAN, else first inUse WAN, else the fallback
+function pickDefaultWan(candidates, fallback) {
+  return candidates.find(i => _.get(getWanConnState(i), "active") === true)
+    || candidates.find(i => _.get(getWanConnState(i), "inUse") === true)
+    || fallback;
+}
+
+// bakIntfs that firerouter runs as load_balance backups, older firerouter flags none
+function getLBBackupWans(defaultRoutingConfig) {
+  return _.isArray(defaultRoutingConfig.bakIntfs)
+    ? _.uniq(defaultRoutingConfig.bakIntfs).filter(i => _.get(getWanConnState(i), "backup") === true)
+    : [];
+}
+
+// dualwan_state value of the OK state: expected-active WANs active, all WANs ready
+function okStateValue(activeBitMask, expectedActiveIdx) {
+  return expectedActiveIdx.reduce((mask, idx) => mask & ~(1 << (idx * 2)), activeBitMask);
+}
+
+// load_balance re-routes VPN clients from init instead, every nextHop change there is wanSwitched
+function vpnRerouteNeeded(type, wanSwitched) {
+  return type === Constants.WAN_TYPE_FAILOVER && !!wanSwitched;
+}
+
+// load_balance backup WAN carrying traffic as of the last FireMain init, undefined before the first one
+let lastLBBackupWanInUse = undefined;
+
+// records the load_balance backup WAN carrying traffic, true when it changed since the last init
+// any other type resets the baseline without notifying, its failover path re-routes on wanSwitched
+function lbBackupWanChanged(type, backupWanInUse) {
+  if (type !== Constants.WAN_TYPE_LB) {
+    lastLBBackupWanInUse = null;
+    return false;
+  }
+  const changed = lastLBBackupWanInUse !== undefined && lastLBBackupWanInUse !== backupWanInUse;
+  if (changed)
+    log.info(`Load balance backup WAN in use changed from ${lastLBBackupWanInUse} to ${backupWanInUse}, re-routing VPN clients`);
+  lastLBBackupWanInUse = backupWanInUse;
+  return changed;
+}
 
 class FireRouter {
   constructor() {
@@ -482,6 +529,7 @@ class FireRouter {
       const lastMonitoringIntfNames = monitoringIntfNames;
       const lastRspanIntfNames = rspanIntfNames;
       const routingWans = [];
+      let lbBackupWanInUse = null;
       const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
       this.tcFilterRefreshNeeded = false;
       const pcapRestartNeeded = this.pcapRestartNeeded;
@@ -541,33 +589,21 @@ class FireRouter {
                 primaryWanIntfName = defaultRoutingConfig.viaIntf;
                 viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
               }
-              for (const viaIntf of viaIntfs) {
-                routingWans.push(viaIntf);
-                const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
-                if (state && state.wanConnState && state.wanConnState.active === true) {
-                  defaultWanIntfName = viaIntf;
-                }
-              }
-              if (!defaultWanIntfName) {
-                const inUseIntf = viaIntfs.find(viaIntf => {
-                  const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
-                  return state && state.wanConnState && state.wanConnState.inUse === true;
-                });
-                defaultWanIntfName = inUseIntf || primaryWanIntfName;
-              }
+              routingWans.push(...viaIntfs);
+              defaultWanIntfName = pickDefaultWan(viaIntfs, primaryWanIntfName);
               break;
             }
             case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-                // load balance default route: first active WAN in nextHops+intfNameMap, else first inUse WAN
-                for (const nextHop of defaultRoutingConfig.nextHops) {
-                  routingWans.push(nextHop.viaIntf);
-                }
-                const getWanConnState = (viaIntf) => intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState;
-                const firstActive = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.active === true; });
-                const firstInUse = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.inUse === true; });
-                defaultWanIntfName = (firstActive && firstActive.viaIntf) || (firstInUse && firstInUse.viaIntf) || defaultRoutingConfig.nextHops[0].viaIntf;
+                // load balance default route: first active WAN in nextHops then flagged backups (state from intfNameMap), else first inUse WAN
+                const nextHopIntfs = defaultRoutingConfig.nextHops.map(nextHop => nextHop.viaIntf);
+                const backupIntfs = getLBBackupWans(defaultRoutingConfig);
+                routingWans.push(...nextHopIntfs, ...backupIntfs);
+                defaultWanIntfName = pickDefaultWan(nextHopIntfs.concat(backupIntfs), nextHopIntfs[0]);
                 primaryWanIntfName = defaultWanIntfName;
+                // an inUse but unready backup still carries traffic when no WAN is active, so active is not required
+                if (backupIntfs.includes(defaultWanIntfName))
+                  lbBackupWanInUse = defaultWanIntfName;
               }
               break;
             }
@@ -778,6 +814,11 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
+        // init follows every WAN change, so a backup takeover or return is seen here whatever the message order
+        if (lbBackupWanChanged(wanType, lbBackupWanInUse)) {
+          const VPNClient = require('../extension/vpnclient/VPNClient.js');
+          VPNClient.notifyWanSwitched();
+        }
         if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames) || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
         }
@@ -806,13 +847,15 @@ class FireRouter {
           let pendingTest = false;
           for (const i in routingWans.sort()) {
             const iface = routingWans[i];
-            const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
+            const wanConnState = getWanConnState(iface);
             currentStatus[iface] = {
               ready: wanConnState && wanConnState.ready || false,
               active: wanConnState && wanConnState.active || false,
               wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
               wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
             };
+            if (wanConnState && wanConnState.backup === true)
+              currentStatus[iface].backup = true;
             if (currentStatus[iface].ready !== true)
               stateVal += (1 << i);
             if (wanConnState && wanConnState.pendingTest)
@@ -1451,17 +1494,22 @@ class FireRouter {
         labels.primaryInterface = primaryInterface;
         if (failback) {
           const primaryIntfIndex = wanIntfs.indexOf(primaryInterface);
-          if (primaryIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (primaryIntfIndex * 2)))
+          if (primaryIntfIndex >= 0 && dualWANStateValue === okStateValue(activeBitMask, [primaryIntfIndex]))
             dualWANStateValue = 0;
         } else {
           const activeIntfIndex = wanIntfs.findIndex(intf => currentStatus[intf].active === true);
-          if (activeIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (activeIntfIndex * 2)))
+          if (activeIntfIndex >= 0 && dualWANStateValue === okStateValue(activeBitMask, [activeIntfIndex]))
             dualWANStateValue = 0;
         }
-        if (wanSwitched) {
-          const VPNClient = require('../extension/vpnclient/VPNClient.js');
-          VPNClient.notifyWanSwitched();
-        }
+      } else if (type === Constants.WAN_TYPE_LB) {
+        // a ready backup is expected to stay inactive while load-balanced WANs are up
+        const expectedActiveIdx = wanIntfs.map((wanIntf, i) => currentStatus[wanIntf].backup === true ? -1 : i).filter(i => i >= 0);
+        if (dualWANStateValue === okStateValue(activeBitMask, expectedActiveIdx))
+          dualWANStateValue = 0;
+      }
+      if (vpnRerouteNeeded(type, wanSwitched)) {
+        const VPNClient = require('../extension/vpnclient/VPNClient.js');
+        VPNClient.notifyWanSwitched();
       }
       log.debug("labels=", labels);
       era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
@@ -1501,19 +1549,22 @@ class FireRouter {
       const Alarm = require('../alarm/Alarm.js');
       const AM2 = require('../alarm/AlarmManager2.js');
       const am2 = new AM2();
-      let alarm = new Alarm.DualWanAlarm(
-        Date.now() / 1000,
-        ifaceName,
-        {
-          "p.iface.name":ifaceName,
-          "p.active.wans":activeWans,
-          "p.wan.switched": wanSwitched,
-          "p.wan.type": type,
-          "p.ready": ready,
-          "p.failures": failures,
-          "p.message": msg
-        }
-      );
+      const payload = {
+        "p.iface.name":ifaceName,
+        "p.active.wans":activeWans,
+        "p.wan.switched": wanSwitched,
+        "p.wan.type": type,
+        "p.ready": ready,
+        "p.failures": failures,
+        "p.message": msg
+      };
+      if (type === Constants.WAN_TYPE_LB) {
+        // an active backup means not every nextHop is up, so the alarm must not report restore.all
+        payload["p.wan.total"] = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].backup !== true).length;
+        if (Object.keys(currentStatus).some(i => currentStatus[i] && currentStatus[i].backup === true && currentStatus[i].active))
+          payload["p.wan.backup.active"] = "true";
+      }
+      let alarm = new Alarm.DualWanAlarm(Date.now() / 1000, ifaceName, payload);
       am2.enqueueAlarm(alarm);
     }
   }
