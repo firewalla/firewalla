@@ -252,4 +252,18 @@ describe('dnscrypt toml generation', function () {
       expect(seen).to.be.empty;
     });
   });
+
+  describe('control channel', function () {
+    it('keeps control_socket out of the config, it is a dnscrypt-proxy default', async function () {
+      dc = loadDnscrypt({ 'ext.dnscrypt.servers': JSON.stringify(['quad9']) });
+      await dc.prepareConfig();
+      expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.not.include('control_socket');
+    });
+
+    it('skips flushing quietly when there is no control socket', async function () {
+      // e.g. a binary without the control channel; would warn once if it tried
+      await dc.flushCache(['example.com']);
+      expect(dc._flushFailing).to.not.equal(true);
+    });
+  });
 });
