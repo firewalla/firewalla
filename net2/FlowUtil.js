@@ -41,6 +41,12 @@ function hashHost(_domain, opts) {
   }
 }
 
+// [hash of shortest lookup expression, hash of full domain], or null if it doesn't canonicalize
+function hashDomain(domain) {
+  const hashes = urlHash.canonicalizeAndHashExpressions(domain);
+  return hashes.length ? [hashes[0][2], hashes[hashes.length - 1][2]] : null;
+}
+
 // return longer domains first, tld latter
 function getSubDomains(_domain) {
   const results = urlHash.canonicalize(_domain);
@@ -275,6 +281,7 @@ module.exports = {
   checkFlag,
   hashFlow,
   hashHost,
+  hashDomain,
   hashMac,
   hashIp,
   hashApp,
