@@ -82,7 +82,7 @@ UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \
 #   now=$(date +%s)
 #   { awk -v t=$((now - 1800)) '$1 > t' $exits_file 2>/dev/null; echo $now; } > $exits_file.tmp && mv $exits_file.tmp $exits_file
 #   if (( $(wc -l < $exits_file) >= 3 )); then
-#     node_ver=${node_bin#$NODE_VERSIONS_DIR/}; node_ver=${node_ver%%/*}
+#     node_ver=$($node_bin -v)
 #     echo $node_ver > ${FIREWALLA_HIDDEN:-/home/pi/.firewalla}/config/.node_legacy
 #     rm -f ${exits_file%.*}.*   # every service's count: leftovers would roll a later version back early
 #     logger "FIREWALLA:NODE_UPGRADE:ROLLBACK $service exited (rc=$node_rc) 3 times within 30min on $node_ver, falling back to default node"

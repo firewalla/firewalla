@@ -1000,6 +1000,7 @@ class ACLAuditLogPlugin extends Sensor {
                 dest,
                 bType: record.bType,
                 bTarget: record.bTarget,
+                pid: record.pid, // the policy that blocked, bType and bTarget are taken from it
                 fd: fd || 'in',
                 ct: ct || 1,
                 _ts,
