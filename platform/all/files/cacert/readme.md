@@ -25,3 +25,14 @@ When a CA is compromised or distrusted, publish the fixed deb through fireupgrad
 ## Refreshing the bundled deb
 
 Refresh the bundled deb periodically (roughly once a year) and after a CA incident, so new releases ship with an up-to-date floor. Place the versioned `.deb` in this directory and point the `ca-certificates_all.deb` symlink at it.
+
+## Zeek CA list
+
+Zeek validates server certificates against its own list of roots, `/usr/local/zeek/share/zeek/base/protocols/ssl/mozilla-ca-list.zeek`, not the system bundle. `scripts/update_zeek_ca_list.sh` installs it from one of two files:
+
+- **Asset list**: `~/.firewalla/run/assets/mozilla-ca-list.zeek`, downloaded by `update_assets.sh` from fireupgrade `/all/mozilla-ca-list.zeek`.
+- **Bundled list**: `platform/all/hooks/before_bro/mozilla-ca-list.zeek`, which ships with the release.
+
+It installs the asset list when it exists, and the bundled list otherwise. It runs from the `before_bro` hook at every zeek start, and from the asset's `exec_post`, which restarts a running brofish when the installed list changed.
+
+To publish a new list, run `scripts/gen_zeek_ca_list.sh` on a box with the new `ca-certificates` installed, and commit the output as `files/all/mozilla-ca-list.zeek` to `firewalla/fireupgrade` the same way as the deb above.

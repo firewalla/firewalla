@@ -36,7 +36,7 @@ const SETTINGS = [{ key: 'nrd', filter: NRD }, { key: 'lookalike_domain', filter
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function blockEvent(overrides) {
-  return Object.assign({ device: MAC, dest: 'new.example.org', bType: 'category', bTarget: 'nrd', fd: 'in', ct: 1, _ts: Date.now() / 1000 }, overrides);
+  return Object.assign({ device: MAC, dest: 'new.example.org', bType: 'category', bTarget: 'nrd', pid: 12, fd: 'in', ct: 1, _ts: Date.now() / 1000 }, overrides);
 }
 
 describe('test block alarm sensor', function () {
@@ -149,8 +149,15 @@ describe('test block alarm sensor', function () {
       expect(alarm['p.dest.name']).to.equal('new.example.org');
       expect(alarm['p.dest.category']).to.equal('nrd');
       expect(alarm['p.noticeType']).to.equal('nrd');
+      expect(alarm['p.pid']).to.equal(12);
       expect(alarm['p.local_is_client']).to.equal('1');
       expect(alarm['p.cooldown']).to.equal(86400);
+    });
+
+    it('leaves p.pid out when the event has no policy', async () => {
+      await feed(newSensor(), blockEvent({ pid: undefined }));
+      expect(enqueued).to.have.length(1);
+      expect(enqueued[0]).to.not.have.property('p.pid');
     });
 
     it('marks an inbound block', async () => {

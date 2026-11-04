@@ -162,7 +162,7 @@ class BroDetect {
     if (!firewalla.isMain() && !firewalla.isTest())
       return;
     if (firewalla.isMain()) // no cloud fetch from test runs
-      broNotice.startIgnoredIssuersLoader().catch(err => log.error("Failed to load invalid cert ignored issuers", err.message));
+      broNotice.startIssuerListLoaders().catch(err => log.error("Failed to load invalid cert issuer lists", err.message));
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
