@@ -18,6 +18,7 @@
 const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const Bone = require('../lib/Bone.js');
 
@@ -494,7 +495,7 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, merged.redisfy());
 
-    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "idleTs",
+    const emptyStringCheckKeys = ["expire", "expireTs", "cronTime", "duration", "activatedTime", "idleTs",
       "remote", "remoteType", "local", "localType", "localPort", "remotePort", "protocol",
       "parentRgId", "targetRgId", "targetList", "disturbLevel", 'appTimeUsage', "useBf",
       "notes", 
@@ -1265,6 +1266,18 @@ class PolicyManager2 {
     // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
     await blockControl.finishInitialization();
 
+    // the queued rules and ipsets are in the kernel now; processes outside firewalla
+    // (e.g. vulcan) re-check their own chains on this. A plain channel rather than a
+    // sem event, which would also fire listeners in the other firewalla processes.
+    // The key is set first, so a subscriber that reads it after subscribing can't miss it
+    try {
+      const ts = Date.now();
+      await rclient.setAsync('iptables:rebuilt_ts', ts);
+      await pclient.publishAsync('iptables:rebuilt', String(ts));
+    } catch (err) {
+      log.error('Failed to publish iptables:rebuilt', err);
+    }
+
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, JSON.stringify({ spend: (end - start) / 1000, reboot: isReboot, ts: end / 1000 }));
@@ -1340,10 +1353,16 @@ class PolicyManager2 {
           if (idleExpireSoon) {
             if (idleTsFromNow > 0)
               await delay(idleTsFromNow * 1000);
+            if (await this.dropIfWindowEnded(policy))
+              return;
             await this.enablePolicy(policy);
             log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
           } else {
             const policyTimer = setTimeout(async () => {
+              if (await this.dropIfWindowEnded(policy).catch(err => {
+                log.error('Failed to check scheduled window of policy', policy.pid, err);
+                return false;
+              })) return;
               log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
               await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
             }, idleTsFromNow * 1000)
@@ -1351,9 +1370,11 @@ class PolicyManager2 {
             this.enabledTimers[policy.pid] = policyTimer;
           }
         } else {
-          // for now, expire (one-time only rule) and idleTs (pause for a specific time) won't co-exist in the same rule
-          // so no need to consider timing between the two keys
-          if (policy.expire) {
+          // expire (relative, one time only rule) and idleTs (pause until a specific time) used to be
+          // mutually exclusive. a rule with a future start time now carries idleTs (start) together with
+          // expireTs (end): idleTs is handled above and the window is applied once the rule is enabled,
+          // so the two keys still never need to be timed against each other here
+          if (policy.expire || policy.expireTs) {
             const timeout = policy.getExpireDiffFromNow();
             if (policy.willExpireSoon()) {
               if (timeout > 0)
@@ -1385,9 +1406,10 @@ class PolicyManager2 {
       } else if (this.needDisturbRegister(policy)) {
         // this is a disturb policy, use DisturbManager to manage it
         return PolicyDisturbManager.registerPolicy(policy);
-      } else if (policy.expire) {
+      } else if (policy.expire || policy.expireTs) {
         const p = Object.assign(Object.create(Policy.prototype), policy);
         delete p.expire;
+        delete p.expireTs;
 
         // auto unenforce if expire time is set
         if (policy.willExpireSoon()) {
@@ -2370,6 +2392,23 @@ class PolicyManager2 {
         }
       }
     }
+  }
+
+  // a rule whose scheduled window has already ended must not be activated, e.g. the box was powered
+  // off across the whole window. only applies to rules carrying an absolute end time, a rule with a
+  // relative expire has no meaningful window until it is activated
+  async dropIfWindowEnded(policy) {
+    if (!policy.expireTs || !policy.isExpired())
+      return false;
+    log.info(`Scheduled window of policy ${policy.pid} has already ended, skip activation`);
+    if (policy.autoDeleteWhenExpires == "1") {
+      await this.deletePolicy(policy.pid);
+      await this.removeBypassChainForPolicy(policy);
+    } else {
+      // keep it paused, but drop the stale start time so it is not re-evaluated on every restart
+      await this.updatePolicyAsync({ pid: policy.pid, idleTs: '' });
+    }
+    return true;
   }
 
   invalidateExpireTimer(policy) {

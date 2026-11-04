@@ -124,8 +124,10 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   }
 
   async probeHealth() {
+    const domains = dnsHealth.getVerificationDomains(this.getHealthCheckDomains());
+    await dc.flushCache(domains);
     const result = await dnsHealth.probeLocalServer(Constants.LOCALHOST, dc.getLocalPort(), {
-      domains: this.getHealthCheckDomains(),
+      domains,
       timeout: this.healthCheckTimeout,
       tries: this.healthCheckTries
     });

@@ -87,6 +87,32 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail:";
 
+// per value of alarm.result: the field pointing at the rule or exception, how to delete it, and how
+// to tell it still exists (a stats writer can re-create the hash of a deleted one, so look for the id field)
+const RESULT_KINDS = {
+  block: {
+    ref: 'result_policy', key: id => pm2.getPolicyKey(id), idField: 'pid',
+    remove: id => pm2.disableAndDeletePolicy(id)
+  },
+  allow: {
+    ref: 'result_exception', key: id => exceptionManager.getExceptionKey(id), idField: 'eid',
+    remove: id => exceptionManager.deleteException(id)
+  },
+};
+
+// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
+const CLEAR_RESULT_LUA = `
+if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1], 'result') == ARGV[3] then
+  return redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+end
+return 0`;
+
+function setAlarmResult(alarm, kind, refId, auto) {
+  alarm[RESULT_KINDS[kind].ref] = refId;
+  alarm.result = kind;
+  if (auto) alarm.result_method = "auto";
+}
+
 const _ = require('lodash');
 
 const IntelManager = require('../net2/IntelManager.js')
@@ -1396,6 +1422,8 @@ module.exports = class {
 
     const results = await multi.execAsync()
 
+    await this.removeStaleResults(results.slice(0, ids.length))
+
     if (withDetails) {
       for (let i = 0; i < ids.length; i++) {
         if (!results[ids.length + i]) continue;
@@ -1408,6 +1436,37 @@ module.exports = class {
 
     // don't filter result and keep the original id to alarm mapping
     return results.slice(0, ids.length).map(r => this.jsonToAlarm(r))
+  }
+
+  // Runs on the raw hashes, before jsonToAlarm builds the message from the result fields. Fails open:
+  // when the check fails the alarms stay as stored and the next read tries again.
+  async removeStaleResults(hashes) {
+    try {
+      const probes = [];
+      for (const kind of Object.keys(RESULT_KINDS)) {
+        const { ref } = RESULT_KINDS[kind];
+        const byId = _.groupBy(hashes.filter(h => h && h.result === kind && h[ref]), ref);
+        for (const id of Object.keys(byId)) probes.push({ kind, id, alarms: byId[id] });
+      }
+      if (probes.length === 0) return;
+
+      const replies = await rclient.pipelineAndLog(probes.map(({ kind, id }) =>
+        ['hexists', RESULT_KINDS[kind].key(id), RESULT_KINDS[kind].idField]));
+
+      // an Error reply is not 0
+      const stale = probes.filter((p, i) => replies[i] === 0);
+      for (const kind of Object.keys(RESULT_KINDS)) {
+        const { ref } = RESULT_KINDS[kind];
+        const alarms = _.flatMap(stale.filter(p => p.kind === kind), 'alarms');
+        if (alarms.length === 0) continue;
+
+        for (const a of alarms) log.verbose(`Alarm ${a.aid} points to ${ref} ${a[ref]}, which no longer exists`);
+        await this.clearAlarmResults(alarms, kind);
+        log.info(`Cleared the ${kind} result of ${alarms.length} alarm(s) whose ${ref} no longer exists`);
+      }
+    } catch (err) {
+      log.error('Failed to remove stale alarm results', err);
+    }
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -1545,6 +1604,7 @@ module.exports = class {
     const exception = await exceptionManager.getException(exceptionID);
     const alarms = await this.findSimilarAlarmsByException(exception);
     for (const alarm of alarms) {
+      // not a block or an allow, so it stays out of RESULT_KINDS
       alarm.result_exception = exception.eid;
       alarm.result = "archiveByException";
       await this.updateAlarm(alarm);
@@ -1751,12 +1811,7 @@ module.exports = class {
 
     log.info(`Alarm to block: ${alarm.aid}`)
 
-    alarm.result_policy = policy.pid;
-    alarm.result = "block";
-
-    if (info && info.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'block', policy.pid, info && info.method === "auto");
 
     await this.updateAlarm(alarm);
 
@@ -1791,12 +1846,7 @@ module.exports = class {
 
     log.info(`Alarm to allow: ${alarm.aid}`)
 
-    alarm.result_exception = exception.eid;
-    alarm.result = "allow";
-
-    if (info.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'allow', exception.eid, info.method === "auto");
 
     await this.updateAlarm(alarm);
 
@@ -2059,12 +2109,7 @@ module.exports = class {
     // FIXME: make it transactional
     // set alarm handle result + add policy
     const { policy, alreadyExists } = await pm2.checkAndSaveAsync(p)
-    alarm.result_policy = policy.pid;
-    alarm.result = "block";
-
-    if (value.method === "auto") {
-      alarm.result_method = "auto";
-    }
+    setAlarmResult(alarm, 'block', policy.pid, value.method === "auto");
 
     await this.updateAlarm(alarm)
 
@@ -2109,8 +2154,7 @@ module.exports = class {
 
     const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
 
-    alarm.result_exception = exception.eid;
-    alarm.result = "allow";
+    setAlarmResult(alarm, 'allow', exception.eid, false);
 
     await this.updateAlarm(alarm)
     await this.archiveAlarm(alarm.aid)
@@ -2142,27 +2186,7 @@ module.exports = class {
 
   async unblockFromAlarmAsync(alarmID, info) {
     log.info("Going to unblock alarm " + alarmID);
-
-    let alarmInfo = info.info; // not used by now
-
-    let alarm = await this.getAlarm(alarmID)
-
-    if (!alarm) {
-      log.error("Invalid alarm ID:", alarmID);
-      throw new Error("Invalid alarm ID: " + alarmID);
-    }
-
-    let pid = alarm.result_policy;
-
-    // FIXME: make it transactional
-    // set alarm handle result + add policy
-
-    await pm2.disableAndDeletePolicy(pid)
-
-    alarm.result = "";
-    alarm.result_policy = "";
-    alarm.result_method = "";
-    await this.updateAlarm(alarm)
+    await this.unhandleAlarm(alarmID, 'block');
   }
 
   unallowFromAlarm(alarmID, info, callback) {
@@ -2174,25 +2198,39 @@ module.exports = class {
 
   async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
+    await this.unhandleAlarm(alarmID, 'allow');
+  }
 
-    let alarmInfo = info.info; // not used by now
-
-    let alarm = await this.getAlarm(alarmID)
+  async unhandleAlarm(alarmID, kind) {
+    const alarm = await this.getAlarm(alarmID)
 
     if (!alarm) {
       log.error("Invalid alarm ID:", alarmID);
       throw new Error("Invalid alarm ID: " + alarmID);
     }
 
-    let eid = alarm.result_exception;
+    const { ref, remove } = RESULT_KINDS[kind];
 
     // FIXME: make it transactional
-    // set alarm handle result + add policy
+    // the rule or exception goes first, so a failed clear is healed by the next read
+    await remove(alarm[ref]);
+    await this.clearAlarmResults([alarm], kind);
+  }
 
-    await exceptionManager.deleteException(eid);
-    alarm.result = "";
-    alarm.result_policy = "";
-    await this.updateAlarm(alarm);
+  // HDEL, not '' and updateAlarm: redisfy() drops empty fields and HMSET never removes a field
+  async clearAlarmResults(alarms, kind) {
+    const { ref } = RESULT_KINDS[kind];
+    const withRef = alarms.filter(a => a[ref]);
+    if (withRef.length === 0) return;
+
+    await rclient.pipelineAndLog(withRef.map(a =>
+      ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], kind]));
+
+    for (const a of withRef) {
+      delete a.result;
+      delete a[ref];
+      delete a.result_method;
+    }
   }
 
   async _alignAlarmInfo(alarm) { // alarm object
