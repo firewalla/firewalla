@@ -308,7 +308,32 @@ class FWAPC {
   }
 
   async getAssetsStatus() {
-    return localGet("/status/ap", 1).then(resp => resp.info);
+    try {
+      const resp = await localGet("/status/ap", 1);
+      return resp && resp.info != null ? resp.info : null;
+    } catch (err) {
+      log.error("Failed to get assets status from fwapc", err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Live stats for one AP asset. GET /status/ap/:uid/live_stats
+   * @param {string} uid - AP MAC / asset uid
+   * @returns {Promise<object|null>}
+   */
+  async getAssetLiveStats(uid) {
+    if (!uid) {
+      log.warn("uid is required to get asset live stats");
+      return null;
+    }
+    try {
+      const resp = await localGet(`/status/ap/${encodeURIComponent(uid)}/live_stats`, 1);
+      return resp && resp.info != null ? resp.info : null;
+    } catch (err) {
+      log.error("Failed to get asset live stats from fwapc", uid, err.message);
+      return null;
+    }
   }
 
   async getWiredStationTree() {

@@ -1752,10 +1752,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
           domainSuffix = domainSuffix.substring(2);
         }
 
-        const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-        if (!existing) { // a new domain
-          log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
-          await domainBlock.resolveDomain(domainSuffix)
+        // in domainOnly mode non-static domains are not translated into IPs at all,
+        // consistent with the early-return in updateIPSetByDomain, so skip the rdns warm-up
+        const domainOnly = !v.port && currentRecyclemode === "domainOnly" && !v.isStatic;
+        if (!domainOnly) {
+          const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+          if (!existing) { // a new domain
+            log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
+            await domainBlock.resolveDomain(domainSuffix)
+          }
         }
         const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
         const port = v.port || null;
@@ -1771,7 +1776,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         );
         const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
         if (!v.port) {
-          if (currentRecyclemode === "domainOnly" && !v.isStatic) {
+          if (domainOnly) {
             options.domainOnly = true;
           }
           await this.updateIPSetByDomain(category, domain, options);

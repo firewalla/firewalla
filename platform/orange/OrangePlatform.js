@@ -401,6 +401,10 @@ class OrangePlatform extends Platform {
     return "mt7996e";
   }
 
+  async getWpaCliBinPath() {
+    return 'wpa_cli';
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0'
   }

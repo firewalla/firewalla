@@ -127,6 +127,15 @@ class AuditTool extends LogQuery {
     if (entry.pid) {
       f.pid = entry.pid
     }
+    if (entry.bType) {
+      f.bType = entry.bType
+    }
+    if (entry.bTarget) {
+      f.bTarget = entry.bTarget
+    }
+    if (entry.purpose) {
+      f.purpose = entry.purpose
+    }
     if (entry.reason) {
       f.reason = entry.reason
     }

@@ -33,6 +33,17 @@ class Platform {
     return ["eth0"];
   }
 
+  // the box's own ethernet ports, i.e. getAllNicNames() minus the wlan NICs
+  getEthernetNicNames() {
+    return this.getAllNicNames().filter(nic => /^eth\d+$/.test(nic));
+  }
+
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
+  }
+
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
@@ -619,6 +630,10 @@ class Platform {
 
   getSpeedtestCliBinPath() {
     
+  }
+
+  async getWpaCliBinPath() {
+    return null;
   }
 
   async getWlanVendor() {

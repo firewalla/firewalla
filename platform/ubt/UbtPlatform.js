@@ -88,6 +88,10 @@ class UbtPlatform extends Platform {
     }
   }
 
+  async getWpaCliBinPath() {
+    return null;
+  }
+
   getSubnetCapacity() {
     return 19;
   }
