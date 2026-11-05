@@ -140,7 +140,7 @@ class EventSummarySensor extends Sensor {
     const aggrKeys = [];
     for (const entry of setting.aggrKeys) {
       if (!_.isPlainObject(entry) || !isNonEmptyString(entry.key) || !isNonEmptyString(entry.aggrLabelKey) ||
-          !_.has(AGGR_FUNCS, entry.aggrFunc))
+          !Object.keys(AGGR_FUNCS).includes(entry.aggrFunc))
         return invalid('an aggrKeys entry without a key, aggrLabelKey or a max/min aggrFunc');
       if (!_.isUndefined(entry.labelFields) &&
           (!_.isArray(entry.labelFields) || !entry.labelFields.every(isNonEmptyString)))
