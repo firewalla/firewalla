@@ -1349,53 +1349,31 @@ class PolicyManager2 {
       if (policy.disabled == 1) {
         const idleInfo = policy.getIdleInfo();
         if (idleInfo) {
-          const { idleTsFromNow, idleExpireSoon } = idleInfo;
-          if (idleExpireSoon) {
-            if (idleTsFromNow > 0)
-              await delay(idleTsFromNow * 1000);
-            if (await this.dropIfWindowEnded(policy))
-              return;
-            await this.enablePolicy(policy);
-            log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
-          } else {
-            const policyTimer = setTimeout(async () => {
-              if (await this.dropIfWindowEnded(policy).catch(err => {
-                log.error('Failed to check scheduled window of policy', policy.pid, err);
-                return false;
-              })) return;
-              log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
-              await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
-            }, idleTsFromNow * 1000)
-            this.invalidateExpireTimer(policy); // remove old one if exists
-            this.enabledTimers[policy.pid] = policyTimer;
-          }
+          const idleTs = Number(policy.idleTs);
+          this.setPolicyTimer(policy, idleInfo.idleTsFromNow, 'resume',
+            current => current.disabled == '1' && Number(current.idleTs) === idleTs,
+            async current => {
+              if (await this.dropIfWindowEnded(current))
+                return;
+              log.info(`Re-enable policy ${current.pid} as it's idle expired`);
+              await this.enablePolicy(current);
+            });
         } else {
           // expire (relative, one time only rule) and idleTs (pause until a specific time) used to be
           // mutually exclusive. a rule with a future start time now carries idleTs (start) together with
           // expireTs (end): idleTs is handled above and the window is applied once the rule is enabled,
           // so the two keys still never need to be timed against each other here
-          if (policy.expire || policy.expireTs) {
-            const timeout = policy.getExpireDiffFromNow();
-            if (policy.willExpireSoon()) {
-              if (timeout > 0)
-                await delay(timeout * 1000);
-              if (policy.autoDeleteWhenExpires) {
-                await this.deletePolicy(policy.pid);
-                await this.removeBypassChainForPolicy(policy);
-              }
-            } else {
-              // only need to handle timeout of a manually disabled one-time only policy here
-              // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
-              if (timeout > 0 && policy.autoDeleteWhenExpires) {
-                log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
-                const deleteTimeout = setTimeout(async () => {
-                  await this.deletePolicy(policy.pid);
-                  await this.removeBypassChainForPolicy(policy);
-                }, timeout * 1000);
-                this.invalidateExpireTimer(policy); // remove old one if exists
-                this.enabledTimers[policy.pid] = deleteTimeout;
-              }
-            }
+          // only need to handle timeout of a manually disabled one-time only policy here
+          // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
+          if ((policy.expire || policy.expireTs) && policy.autoDeleteWhenExpires) {
+            const end = policy.getWhenExpired();
+            log.info(`Will auto delete paused policy ${policy.pid} in ${Math.max(Math.floor(policy.getExpireDiffFromNow()), 0)} seconds`);
+            this.setPolicyTimer(policy, policy.getExpireDiffFromNow(), 'auto delete',
+              current => current.disabled == '1' && current.getWhenExpired() === end,
+              async current => {
+                await this.deletePolicy(current.pid);
+                await this.removeBypassChainForPolicy(current);
+              });
           }
         }
         return // ignore disabled policy rules
@@ -1414,18 +1392,24 @@ class PolicyManager2 {
         // auto unenforce if expire time is set
         if (policy.willExpireSoon()) {
           // skip enforce as it's already expired or expiring
-          await delay(policy.getExpireDiffFromNow() * 1000);
-
-          if (this.needAppTimeUsageRegister(policy)) {
-            await AppTimeUsageManager.deregisterPolicy(p);
-          } else {
-            await this._disablePolicy(policy);
-          }
-          if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await this.deletePolicy(policy.pid);
-            await this.removeBypassChainForPolicy(policy);
-          }
+          const end = policy.getWhenExpired();
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
+          this.setPolicyTimer(policy, policy.getExpireDiffFromNow(), 'expire',
+            current => current.getWhenExpired() === end,
+            async current => {
+              if (this.needAppTimeUsageRegister(current)) {
+                const q = Object.assign(Object.create(Policy.prototype), current);
+                delete q.expire;
+                delete q.expireTs;
+                await AppTimeUsageManager.deregisterPolicy(q);
+              } else {
+                await this._disablePolicy(current);
+              }
+              if (current.autoDeleteWhenExpires && current.autoDeleteWhenExpires == "1") {
+                await this.deletePolicy(current.pid);
+                await this.removeBypassChainForPolicy(current);
+              }
+            });
         } else {
           if (this.needAppTimeUsageRegister(policy)) {
             await AppTimeUsageManager.registerPolicy(p);
@@ -2409,6 +2393,30 @@ class PolicyManager2 {
       await this.updatePolicyAsync({ pid: policy.pid, idleTs: '' });
     }
     return true;
+  }
+
+  // Runs fn on a rule after a delay from a timer, never by waiting in the policy queue job: such a
+  // wait holds back every rule change queued behind it, then acts on the rule as it was when the job
+  // started. The timer sits in enabledTimers, so reenforce/unenforce replace or clear it, and fn gets
+  // the rule read back from redis, only if stillSame() says it is the one the timer was set for
+  setPolicyTimer(policy, seconds, what, stillSame, fn) {
+    const pid = policy.pid;
+    const timer = setTimeout(async () => {
+      if (this.enabledTimers[pid] === timer)
+        delete this.enabledTimers[pid];
+      try {
+        const current = await this.getPolicy(pid);
+        if (!current || !stillSame(current)) {
+          log.info(`Policy ${pid} changed since its ${what} was scheduled, skip`);
+          return;
+        }
+        await fn(current);
+      } catch (err) {
+        log.error(`Failed to ${what} policy ${pid}`, err);
+      }
+    }, Math.max(seconds, 0) * 1000);
+    this.invalidateExpireTimer(policy); // remove old one if exists
+    this.enabledTimers[pid] = timer;
   }
 
   invalidateExpireTimer(policy) {
