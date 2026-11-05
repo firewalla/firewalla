@@ -642,6 +642,29 @@ describe('Test event summary action events', function() {
     expect(min(3, 5)).to.equal(3);
     expect(min(5, 3)).to.equal(3);
   });
+
+  it('should keep one record per wan and target with the ping defaults', async () => {
+    const defaults = require('../net2/config.json').sensors.EventSummarySensor.eventSummarySettings;
+    for (const [actionType, label, aggrKey] of [['ping_RTT', 'rtt', 'maxRtt'], ['ping_lossrate', 'lossrate', 'maxLossrate']]) {
+      const def = defaults.find(s => s.key === `event::${actionType}`);
+      // TEST_KEY so cleanup() removes the buckets
+      const pingSensor = makeSensor([Object.assign({}, def, { key: TEST_KEY })]);
+      const pingSetting = pingSensor.eventSummaryConfs.eventSummarySettings[0];
+      const ping = (ts, target, value) => Object.assign(actionEvent(ts, { wan_intf_uuid: WAN, target, [label]: value }),
+        { action_type: actionType });
+      await pingSensor._onEvent(ping(anchor * 1000, '198.51.100.1', 30));
+      await pingSensor._onEvent(ping((anchor + 60) * 1000, '198.51.100.1', 50));
+      await pingSensor._onEvent(ping(anchor * 1000, '198.51.100.2', 10));
+      const records = (await readBucket(pingSensor, pingSetting, bucketTs)).records;
+      expect(records).to.deep.equal([
+        { _k: JSON.stringify([WAN, '198.51.100.1']), wan_intf_uuid: WAN, target: '198.51.100.1',
+          cnt: 2, _firstTs: anchor * 1000, _lastTs: (anchor + 60) * 1000, aggr: { [aggrKey]: { [label]: 50 } } },
+        { _k: JSON.stringify([WAN, '198.51.100.2']), wan_intf_uuid: WAN, target: '198.51.100.2',
+          cnt: 1, _firstTs: anchor * 1000, _lastTs: anchor * 1000, aggr: { [aggrKey]: { [label]: 10 } } }
+      ]);
+      await cleanup();
+    }
+  });
 });
 
 describe('Test event summary caps', function() {

@@ -1120,13 +1120,13 @@
               }
             ]
           },
-          "labelKeys": [ "wan_intf_uuid" ],
+          "labelKeys": [ "wan_intf_uuid", "target" ],
           "aggrKeys": [
             {
               "key": "maxRtt",
               "aggrLabelKey": "rtt",
               "aggrFunc": "max",
-              "labelFields": [ "rtt", "target" ]
+              "labelFields": [ "rtt" ]
             }
           ]
         },
@@ -1145,13 +1145,13 @@
               }
             ]
           },
-          "labelKeys": [ "wan_intf_uuid" ],
+          "labelKeys": [ "wan_intf_uuid", "target" ],
           "aggrKeys": [
             {
               "key": "maxLossrate",
               "aggrLabelKey": "lossrate",
               "aggrFunc": "max",
-              "labelFields": [ "lossrate", "target" ]
+              "labelFields": [ "lossrate" ]
             }
           ]
         }
