@@ -199,16 +199,16 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  isUdpTLSBlockSupport() {
-    return true;
-  }
-
   _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  async getWpaCliBinPath() {
+    return null;
   }
 
   getSpeedtestCliBinPath() {

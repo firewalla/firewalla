@@ -40,6 +40,9 @@ fi
 
 # Edit the EASY_RSA variable in the vars file to point to the new easy-rsa directory,
 # And change from default 1024 encryption if desired
+if [[ -e $FW_PLATFORM_CUR_DIR/files/openssl.cnf ]]; then
+  sudo cp $FW_PLATFORM_CUR_DIR/files/openssl.cnf /etc/openvpn/easy-rsa/openssl.cnf
+fi
 cd /etc/openvpn/easy-rsa
 sed -i 's:"`pwd`":"/etc/openvpn/easy-rsa":' vars
 if [ $ENCRYPT = 1024 ]; then

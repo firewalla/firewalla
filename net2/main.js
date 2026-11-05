@@ -85,6 +85,11 @@ async function run0() {
 
   await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
 
+  // check pstore for recent kernel crashes and update Redis before any module loading
+  const kernelCrashMonitor = require('./KernelCrashMonitor.js');
+  const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => null);
+  await kernelCrashMonitor.checkPstoreAndUpdateRedis('xt_udp_tls', udpTlsKoPath);
+
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 
@@ -351,9 +356,9 @@ async function run() {
     }
   },1000*60);
 
-  process.on('SIGUSR1', () => {
+  process.on('SIGUSR1', async () => {
     log.info('Received SIGUSR1. Trigger check.');
-    const dnsmasqCount = dnsmasq.getCounterInfo();
+    const dnsmasqCount = await dnsmasq.getCounterInfo();
     log.warn(dnsmasqCount);
   });
 }
