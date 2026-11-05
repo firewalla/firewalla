@@ -26,6 +26,7 @@ const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
+const { checkKeySettings, resolveValues } = require('../event/EventKeySettings.js');
 
 const DEFAULT_PERIOD = 86400; // 1 day, used when "period" isn't configured or is invalid
 const RETENTION_SECS = 86400 * 7; // 7 days
@@ -97,33 +98,9 @@ class EventSummarySensor extends Sensor {
   _validateSettings(settings) {
     const valid = [];
     for (const setting of settings) {
-      if (!_.isObject(setting) || !setting.key) {
-        log.error('Ignoring event summary setting without a key', setting);
-        continue;
-      }
-      // matchFilter() returns false for an empty node, a setting without a filter would silently
-      // never match, which is far more confusing than dropping it here
-      if (_.isEmpty(setting.filter)) {
-        log.error(`Ignoring event summary setting ${setting.key} without a filter`);
-        continue;
-      }
-      // silently coercing a malformed list to [] would produce WRONG GROUPING rather than the
-      // "setting ignored" degradation this function is contracted to provide
-      if ((!_.isUndefined(setting.eventKeys) && !_.isArray(setting.eventKeys)) ||
-          (!_.isUndefined(setting.labelKeys) && !_.isArray(setting.labelKeys))) {
-        log.error(`Ignoring event summary setting ${setting.key} with a non-array eventKeys/labelKeys`);
-        continue;
-      }
-      const eventKeys = setting.eventKeys || [];
-      const labelKeys = setting.labelKeys || [];
-      // event[null] or event[''] would create a record field literally named "null"/""
-      const isNonEmptyString = k => _.isString(k) && k.length > 0;
-      if (!eventKeys.every(isNonEmptyString) || !labelKeys.every(isNonEmptyString)) {
-        log.error(`Ignoring event summary setting ${setting.key} with a non-string key in eventKeys/labelKeys`);
-        continue;
-      }
-      if (_.isEmpty(eventKeys) && _.isEmpty(labelKeys)) {
-        log.error(`Ignoring event summary setting ${setting.key} without eventKeys or labelKeys`);
+      const { eventKeys, labelKeys, error } = checkKeySettings(setting);
+      if (error) {
+        log.error(`Ignoring event summary setting ${error[0]}`, ...error.slice(1));
         continue;
       }
       // the record is a flat map, so a name in both lists could only ever store one of the two values
@@ -151,17 +128,10 @@ class EventSummarySensor extends Sensor {
   // Resolves setting.eventKeys against the top-level event, then setting.labelKeys against
   // event.labels, into a single ordered [name, value] list - the outer-then-label order is the
   // single source of truth for both the joined key and the record's visible fields.
-  // The isNil->null matters: JSON.stringify([undefined]) is "[null]", so without it every record with a
-  // missing field would collapse into one group while the stored record silently dropped the field.
-  // An eventKeys value that resolves to a non-primitive (e.g. ['labels'] itself) is also coerced to
-  // null: JSON.stringify's key order for an object is insertion-dependent, which would make _k an
-  // unstable record identity. labelKeys is left as-is - untouched to keep existing settings' _k
-  // byte-identical.
+  // labelKeys objects are NOT coerced to null, to keep existing settings' _k byte-identical.
   _resolveRecordFields(setting, event, labels) {
-    return setting.eventKeys.map(k => {
-      const v = event[k];
-      return [k, (_.isNil(v) || _.isObject(v)) ? null : v];
-    }).concat(setting.labelKeys.map(k => [k, _.isNil(labels[k]) ? null : labels[k]]));
+    return resolveValues(setting.eventKeys, event, true)
+      .concat(resolveValues(setting.labelKeys, labels, false));
   }
 
   // JSON-encode the value tuple so the Map/record key is both human-readable and collision-free (a
