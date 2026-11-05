@@ -1104,6 +1104,56 @@
             ]
           },
           "labelKeys": [ "switch_mac", "port" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ping_RTT",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "action"
+              },
+              {
+                "field": "action_type",
+                "value": "ping_RTT"
+              }
+            ]
+          },
+          "labelKeys": [ "wan_intf_uuid" ],
+          "aggrKeys": [
+            {
+              "key": "maxRtt",
+              "aggrLabelKey": "rtt",
+              "aggrFunc": "max",
+              "labelFields": [ "rtt", "target" ]
+            }
+          ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ping_lossrate",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "action"
+              },
+              {
+                "field": "action_type",
+                "value": "ping_lossrate"
+              }
+            ]
+          },
+          "labelKeys": [ "wan_intf_uuid" ],
+          "aggrKeys": [
+            {
+              "key": "maxLossrate",
+              "aggrLabelKey": "lossrate",
+              "aggrFunc": "max",
+              "labelFields": [ "lossrate", "target" ]
+            }
+          ]
         }
       ]
     },
