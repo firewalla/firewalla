@@ -57,4 +57,4 @@ function resolveValues(names, source, coerceObjects) {
   });
 }
 
-module.exports = { checkKeySettings, resolveValues };
+module.exports = { checkKeySettings, resolveValues, isNonEmptyString };

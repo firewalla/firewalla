@@ -73,6 +73,28 @@ function stateEvent(ts, stateValue, labels, prevStateValue) {
   return e;
 }
 
+function actionEvent(ts, labels) {
+  return {
+    event_type: 'action',
+    ts,                       // MILLISECONDS, as every producer emits
+    action_type: 'test_action',
+    action_value: 1,
+    labels: labels || {}
+  };
+}
+
+const ACTION_SETTING = {
+  period: 86400,
+  key: TEST_KEY,
+  filter: { and: [ { field: 'event_type', value: 'action' },
+                   { field: 'action_type', value: 'test_action' } ] },
+  labelKeys: ['wan_intf_uuid'],
+  aggrKeys: [
+    { key: 'maxRtt', aggrLabelKey: 'rtt', aggrFunc: 'max', labelFields: ['rtt', 'target'] },
+    { key: 'minRtt', aggrLabelKey: 'rtt', aggrFunc: 'min', labelFields: ['rtt', 'target'] }
+  ]
+};
+
 const SETTING = {
   period: 86400,
   key: TEST_KEY,
@@ -239,6 +261,32 @@ describe('Test event summary settings validation', function() {
     expect(sensor._validateSettings([Object.assign({}, base, { eventKeys: 'state_key' })])).to.be.empty;
     // the same name in both lists - the record is a flat map and cannot hold both values
     expect(sensor._validateSettings([Object.assign({}, base, { eventKeys: ['mac'], labelKeys: ['mac'] })])).to.be.empty;
+  });
+
+  it('should normalize aggrKeys and default labelFields to []', async () => {
+    const sensor = makeSensor([]);
+    expect(sensor._validateSettings([SETTING])[0].aggrKeys).to.deep.equal([]);
+    const valid = sensor._validateSettings([Object.assign({}, ACTION_SETTING,
+      { aggrKeys: [{ key: 'maxRtt', aggrLabelKey: 'rtt', aggrFunc: 'max' }] })]);
+    expect(valid).to.have.lengthOf(1);
+    expect(valid[0].aggrKeys[0].labelFields).to.deep.equal([]);
+  });
+
+  it('should drop a setting with a malformed aggrKeys', async () => {
+    const sensor = makeSensor([]);
+    const entry = { key: 'maxRtt', aggrLabelKey: 'rtt', aggrFunc: 'max', labelFields: ['target'] };
+    const withAggr = aggrKeys => Object.assign({}, ACTION_SETTING, { aggrKeys });
+    expect(sensor._validateSettings([withAggr({ maxRtt: entry })])).to.be.empty;
+    expect(sensor._validateSettings([withAggr(['maxRtt'])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([Object.assign({}, entry, { key: '' })])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([Object.assign({}, entry, { aggrLabelKey: 1 })])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([Object.assign({}, entry, { aggrFunc: 'avg' })])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([Object.assign({}, entry, { labelFields: 'target' })])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([Object.assign({}, entry, { labelFields: [''] })])])).to.be.empty;
+    expect(sensor._validateSettings([withAggr([entry, Object.assign({}, entry, { aggrFunc: 'min' })])])).to.be.empty;
+    // "aggr" can't be a key field once the record carries the aggr map
+    expect(sensor._validateSettings([Object.assign(withAggr([entry]), { labelKeys: ['aggr'] })])).to.be.empty;
+    expect(sensor._validateSettings([Object.assign(withAggr([entry]), { eventKeys: ['aggr'] })])).to.be.empty;
   });
 });
 
@@ -434,11 +482,31 @@ describe('Test event summary record upsert', function() {
     expect(await readBucket(sensor2, setting2, bucketTs)).to.be.null;
   });
 
-  it('should ignore action events', async () => {
+  it('should not fold an action event into a state setting', async () => {
     const e = stateEvent(anchor * 1000, 1, { mac: MAC }, 0);
     e.event_type = 'action';
     await sensor._onEvent(e);
     expect(await readBucket(sensor, SETTING, bucketTs)).to.be.null;
+  });
+
+  it('should keep a state record without aggrKeys free of aggr', async () => {
+    await sensor._onEvent(stateEvent(anchor * 1000, 1, { mac: MAC, rtt: 5 }, 0));
+    const rec = (await readBucket(sensor, SETTING, bucketTs)).records[0];
+    expect(Object.keys(rec)).to.deep.equal(
+      ['_k', 'mac', 'prev_state', 'end_state', 'seen_states', 'cnt', '_firstTs', '_lastTs']);
+  });
+
+  it('should aggregate a label on a state setting and keep the state fields', async () => {
+    const setting = Object.assign({}, SETTING, { aggrKeys: ACTION_SETTING.aggrKeys });
+    const sensor2 = makeSensor([setting]);
+    const setting2 = sensor2.eventSummaryConfs.eventSummarySettings[0];
+    await sensor2._onEvent(stateEvent(anchor * 1000, 1, { mac: MAC, rtt: 20, target: 'a' }, 0));
+    await sensor2._onEvent(stateEvent((anchor + 60) * 1000, 2, { mac: MAC, rtt: 40, target: 'b' }, 1));
+    const rec = (await readBucket(sensor2, setting2, bucketTs)).records[0];
+    expect(Object.keys(rec)).to.deep.equal(
+      ['_k', 'mac', 'prev_state', 'end_state', 'seen_states', 'cnt', '_firstTs', '_lastTs', 'aggr']);
+    expect(rec.end_state).to.equal(2);
+    expect(rec.aggr).to.deep.equal({ maxRtt: { rtt: 40, target: 'b' }, minRtt: { rtt: 20, target: 'a' } });
   });
 
   it('should ignore an event with an unusable ts', async () => {
@@ -457,6 +525,112 @@ describe('Test event summary record upsert', function() {
     const ttl2 = await rclient.ttlAsync(key);
     // ttl is pinned to the bucket horizon, a flat EX would renew it on every write
     expect(ttl2).to.be.at.most(ttl1);
+  });
+});
+
+describe('Test event summary action events', function() {
+  let sensor;
+  let setting;
+  let savedTz;
+  let bucketTs;
+  let anchor;
+  const WAN = 'test-wan-uuid';
+
+  beforeEach(async () => {
+    savedTz = sysManager.timezone;
+    sysManager.timezone = LA;
+    sensor = makeSensor([ACTION_SETTING]);
+    setting = sensor.eventSummaryConfs.eventSummarySettings[0];
+    anchor = todayAt(3 * 3600); // 03:00 local today
+    bucketTs = sensor._periodStart(anchor, 86400);
+    await cleanup();
+  });
+  afterEach(async () => {
+    await cleanup();
+    sysManager.timezone = savedTz;
+  });
+
+  async function record() {
+    return (await readBucket(sensor, setting, bucketTs)).records[0];
+  }
+
+  it('should record an action event with cnt, timestamps and aggr only', async () => {
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: '198.51.100.1' }));
+    const rec = await record();
+    expect(Object.keys(rec)).to.deep.equal(['_k', 'wan_intf_uuid', 'cnt', '_firstTs', '_lastTs', 'aggr']);
+    expect(rec._k).to.equal(JSON.stringify([WAN]));
+    expect(rec.cnt).to.equal(1);
+    expect(rec._firstTs).to.equal(anchor * 1000);
+    expect(rec._lastTs).to.equal(anchor * 1000);
+    expect(rec.aggr).to.deep.equal({
+      maxRtt: { rtt: 30, target: '198.51.100.1' },
+      minRtt: { rtt: 30, target: '198.51.100.1' }
+    });
+  });
+
+  it('should track max and min regardless of arrival order', async () => {
+    await sensor._onEvent(actionEvent((anchor + 60) * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 50, target: 'b' }));
+    await sensor._onEvent(actionEvent((anchor + 30) * 1000, { wan_intf_uuid: WAN, rtt: 10, target: 'c' }));
+    const rec = await record();
+    expect(rec.cnt).to.equal(3);
+    expect(rec._firstTs).to.equal(anchor * 1000);
+    expect(rec._lastTs).to.equal((anchor + 60) * 1000);
+    expect(rec.aggr.maxRtt).to.deep.equal({ rtt: 50, target: 'b' });
+    expect(rec.aggr.minRtt).to.deep.equal({ rtt: 10, target: 'c' });
+  });
+
+  it('should keep the existing entry on a tie', async () => {
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    await sensor._onEvent(actionEvent((anchor + 60) * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'b' }));
+    const rec = await record();
+    expect(rec.aggr.maxRtt.target).to.equal('a');
+    expect(rec.aggr.minRtt.target).to.equal('a');
+  });
+
+  it('should count but not aggregate a non-numeric value', async () => {
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    for (const rtt of ['999', null, '', undefined, NaN])
+      await sensor._onEvent(actionEvent((anchor + 60) * 1000, { wan_intf_uuid: WAN, rtt, target: 'x' }));
+    const rec = await record();
+    expect(rec.cnt).to.equal(6);
+    expect(rec.aggr.maxRtt).to.deep.equal({ rtt: 30, target: 'a' });
+    expect(rec.aggr.minRtt).to.deep.equal({ rtt: 30, target: 'a' });
+  });
+
+  it('should leave aggr empty until a numeric value arrives', async () => {
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, target: 'a' }));
+    expect((await record()).aggr).to.deep.equal({});
+  });
+
+  it('should store the compared value when labelFields omits it', async () => {
+    const sensor2 = makeSensor([Object.assign({}, ACTION_SETTING,
+      { aggrKeys: [{ key: 'maxRtt', aggrLabelKey: 'rtt', aggrFunc: 'max', labelFields: ['target', 'missing'] }] })]);
+    await sensor2._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    const rec = (await readBucket(sensor2, sensor2.eventSummaryConfs.eventSummarySettings[0], bucketTs)).records[0];
+    expect(rec.aggr.maxRtt).to.deep.equal({ target: 'a', missing: null, rtt: 30 });
+  });
+
+  it('should add aggr to a record written before the setting had aggrKeys', async () => {
+    const plain = makeSensor([Object.assign({}, ACTION_SETTING, { aggrKeys: undefined })]);
+    await plain._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    expect(await record()).to.not.have.property('aggr');
+    await sensor._onEvent(actionEvent((anchor + 60) * 1000, { wan_intf_uuid: WAN, rtt: 20, target: 'b' }));
+    const rec = await record();
+    expect(rec.cnt).to.equal(2);
+    expect(rec.aggr).to.deep.equal({ maxRtt: { rtt: 20, target: 'b' }, minRtt: { rtt: 20, target: 'b' } });
+  });
+
+  it('should treat a stored entry without a numeric value as absent', async () => {
+    await sensor._onEvent(actionEvent(anchor * 1000, { wan_intf_uuid: WAN, rtt: 30, target: 'a' }));
+    const key = sensor._getBucketKey(setting, bucketTs);
+    const bucket = JSON.parse(await rclient.getAsync(key));
+    bucket.records[0].aggr.maxRtt.rtt = 'bad';
+    await rclient.setAsync(key, JSON.stringify(bucket), 'EX', 3600);
+    await sensor._onEvent(actionEvent((anchor + 60) * 1000, { wan_intf_uuid: WAN, rtt: 5, target: 'b' }));
+    const rec = await record();
+    expect(rec.aggr.maxRtt).to.deep.equal({ rtt: 5, target: 'b' });
+    expect(rec.aggr.minRtt).to.deep.equal({ rtt: 5, target: 'b' });
   });
 });
 
