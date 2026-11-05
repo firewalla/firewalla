@@ -632,6 +632,16 @@ describe('Test event summary action events', function() {
     expect(rec.aggr.maxRtt).to.deep.equal({ rtt: 5, target: 'b' });
     expect(rec.aggr.minRtt).to.deep.equal({ rtt: 5, target: 'b' });
   });
+
+  it('should return the aggregated value from each aggr function', async () => {
+    const { max, min } = EventSummarySensor.AGGR_FUNCS;
+    expect(max(undefined, 3)).to.equal(3);
+    expect(max(3, 5)).to.equal(5);
+    expect(max(5, 3)).to.equal(5);
+    expect(min(undefined, 3)).to.equal(3);
+    expect(min(3, 5)).to.equal(3);
+    expect(min(5, 3)).to.equal(3);
+  });
 });
 
 describe('Test event summary caps', function() {

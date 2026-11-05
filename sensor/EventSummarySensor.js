@@ -32,10 +32,10 @@ const DEFAULT_PERIOD = 86400; // 1 day, used when "period" isn't configured or i
 const RETENTION_SECS = 86400 * 7; // 7 days
 const MAX_RECORDS_PER_KEY = 400; // cap on distinct records per key per bucket, to bound redis payload size
 const MAX_SEEN_STATES = 100; // cap on distinct state values tracked per record
-// true when v should replace the current aggr value
+// (cur, v) -> the new aggregate, cur is undefined until the first value
 const AGGR_FUNCS = {
-  max: (v, cur) => v > cur,
-  min: (v, cur) => v < cur
+  max: (cur, v) => (cur === undefined || v > cur) ? v : cur,
+  min: (cur, v) => (cur === undefined || v < cur) ? v : cur
 };
 const isFiniteNumber = v => typeof v === 'number' && Number.isFinite(v);
 
@@ -292,13 +292,17 @@ class EventSummarySensor extends Sensor {
       const v = labels[aggrLabelKey];
       if (!isFiniteNumber(v)) continue;
       const cur = record.aggr[key];
-      if (cur && isFiniteNumber(cur[aggrLabelKey]) && !AGGR_FUNCS[aggrFunc](v, cur[aggrLabelKey])) continue;
+      const prev = cur && isFiniteNumber(cur[aggrLabelKey]) ? cur[aggrLabelKey] : undefined;
+      const next = AGGR_FUNCS[aggrFunc](prev, v);
+      // a tie keeps the stored entry along with the labels first seen with that value
+      if (prev !== undefined && next === prev) continue;
       const entry = Object.fromEntries(resolveValues(labelFields, labels, false));
-      // the compared value is always kept, so the next event can compare against it
-      entry[aggrLabelKey] = v;
+      // the aggregate is always kept, so the next event can fold into it
+      entry[aggrLabelKey] = next;
       record.aggr[key] = entry;
     }
   }
 }
 
 module.exports = EventSummarySensor;
+module.exports.AGGR_FUNCS = AGGR_FUNCS;
