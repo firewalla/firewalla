@@ -74,7 +74,7 @@ async function run0() {
 
     const kernelCrashMonitor = require('../../net2/KernelCrashMonitor.js');
     const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
-    await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
+    await kernelCrashMonitor.checkPstoreAndUpdateRedis('xt_udp_tls', udpTlsKoPath);
     
     run();
   } else {
