@@ -87,18 +87,26 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const alarmDetailPrefix = "_alarmDetail:";
 
-// per value of alarm.result: the field pointing at the rule or exception, how to delete it, and how
-// to tell it still exists (a stats writer can re-create the hash of a deleted one, so look for the id field)
-const RESULT_KINDS = {
-  block: {
-    ref: 'result_policy', key: id => pm2.getPolicyKey(id), idField: 'pid',
+// per pointer field on an alarm: how to delete the rule or exception it names, and how to tell it
+// still exists (a stats writer can re-create the hash of a deleted one, so look for the id field)
+const RESULT_REFS = {
+  result_policy: {
+    key: id => pm2.getPolicyKey(id), idField: 'pid',
     remove: id => pm2.disableAndDeletePolicy(id)
   },
-  allow: {
-    ref: 'result_exception', key: id => exceptionManager.getExceptionKey(id), idField: 'eid',
+  result_exception: {
+    key: id => exceptionManager.getExceptionKey(id), idField: 'eid',
     remove: id => exceptionManager.deleteException(id)
   },
 };
+
+// the pointer a result stands on, nothing for results that are not backed by a rule or an exception
+function resultRefOf(alarm) {
+  switch (alarm.result) {
+    case 'block': return 'result_policy';
+    case 'allow': return 'result_exception';
+  }
+}
 
 // compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
 const CLEAR_RESULT_LUA = `
@@ -107,9 +115,9 @@ if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1
 end
 return 0`;
 
-function setAlarmResult(alarm, kind, refId, auto) {
-  alarm[RESULT_KINDS[kind].ref] = refId;
-  alarm.result = kind;
+function setAlarmResult(alarm, result, ref, refId, auto) {
+  alarm[ref] = refId;
+  alarm.result = result;
   if (auto) alarm.result_method = "auto";
 }
 
@@ -1405,6 +1413,17 @@ module.exports = class {
     return results[0];
   }
 
+  async getValidAlarm(alarmID) {
+    const alarm = await this.getAlarm(alarmID)
+
+    if (!alarm) {
+      log.error("Invalid alarm ID:", alarmID);
+      throw new Error("Invalid alarm ID: " + alarmID);
+    }
+
+    return alarm
+  }
+
   async idsToAlarmsAsync(ids, withDetails = false) {
     if (!Array.isArray(ids)) throw new Error('Non-array ID input')
 
@@ -1443,26 +1462,24 @@ module.exports = class {
   async removeStaleResults(hashes) {
     try {
       const probes = [];
-      for (const kind of Object.keys(RESULT_KINDS)) {
-        const { ref } = RESULT_KINDS[kind];
-        const byId = _.groupBy(hashes.filter(h => h && h.result === kind && h[ref]), ref);
-        for (const id of Object.keys(byId)) probes.push({ kind, id, alarms: byId[id] });
+      for (const ref of Object.keys(RESULT_REFS)) {
+        const byId = _.groupBy(hashes.filter(h => h && resultRefOf(h) === ref && h[ref]), ref);
+        for (const id of Object.keys(byId)) probes.push({ ref, id, alarms: byId[id] });
       }
       if (probes.length === 0) return;
 
-      const replies = await rclient.pipelineAndLog(probes.map(({ kind, id }) =>
-        ['hexists', RESULT_KINDS[kind].key(id), RESULT_KINDS[kind].idField]));
+      const replies = await rclient.pipelineAndLog(probes.map(({ ref, id }) =>
+        ['hexists', RESULT_REFS[ref].key(id), RESULT_REFS[ref].idField]));
 
       // an Error reply is not 0
       const stale = probes.filter((p, i) => replies[i] === 0);
-      for (const kind of Object.keys(RESULT_KINDS)) {
-        const { ref } = RESULT_KINDS[kind];
-        const alarms = _.flatMap(stale.filter(p => p.kind === kind), 'alarms');
+      for (const ref of Object.keys(RESULT_REFS)) {
+        const alarms = _.flatMap(stale.filter(p => p.ref === ref), 'alarms');
         if (alarms.length === 0) continue;
 
         for (const a of alarms) log.verbose(`Alarm ${a.aid} points to ${ref} ${a[ref]}, which no longer exists`);
-        await this.clearAlarmResults(alarms, kind);
-        log.info(`Cleared the ${kind} result of ${alarms.length} alarm(s) whose ${ref} no longer exists`);
+        await this.clearAlarmResults(alarms, ref);
+        log.info(`Cleared the result of ${alarms.length} alarm(s) whose ${ref} no longer exists`);
       }
     } catch (err) {
       log.error('Failed to remove stale alarm results', err);
@@ -1604,11 +1621,8 @@ module.exports = class {
     const exception = await exceptionManager.getException(exceptionID);
     const alarms = await this.findSimilarAlarmsByException(exception);
     for (const alarm of alarms) {
-      // not a block or an allow, so it stays out of RESULT_KINDS
-      alarm.result_exception = exception.eid;
-      alarm.result = "archiveByException";
-      await this.updateAlarm(alarm);
-      await this.archiveAlarm(alarm.aid);
+      // not a block or an allow, so resultRefOf leaves it alone
+      await this.resolveAlarm(alarm, { result: 'archiveByException', ref: 'result_exception', refId: exception.eid });
     }
     return alarms;
   }
@@ -1804,20 +1818,44 @@ module.exports = class {
     })
   }
 
-  async blockAlarmByPolicy(alarm, policy, info) {
-    if (!alarm || !policy) {
-      return
-    }
-
-    log.info(`Alarm to block: ${alarm.aid}`)
-
-    setAlarmResult(alarm, 'block', policy.pid, info && info.method === "auto");
+  // sets the result of an alarm and archives it
+  async resolveAlarm(alarm, { result, ref, refId, auto = false, archive = true }) {
+    setAlarmResult(alarm, result, ref, refId, auto);
 
     await this.updateAlarm(alarm);
 
-    await this.archiveAlarm(alarm.aid);
+    if (archive) await this.archiveAlarm(alarm.aid);
+  }
 
-    log.info(`Alarm ${alarm.aid} is blocked successfully`)
+  // one alarm at a time, so a failure leaves out that alarm only. Returns the alarms that went through
+  async resolveRelatedAlarms(alarms, resolve, by) {
+    const resolved = [];
+    for (const a of alarms) {
+      try {
+        await resolve(a);
+        resolved.push(a);
+      } catch (err) {
+        log.error(`Failed to resolve alarm ${a.aid} with ${by}: ${err}`);
+      }
+    }
+    return resolved;
+  }
+
+  // the flags of a rule request, from the duplicate status that checkAndSave reports
+  ruleSaveFlags(status) {
+    return { alreadyExists: status === "duplicated", updated: status === "duplicated_and_updated" };
+  }
+
+  // FIXME: make it transactional
+  // saves the rule and sets the result of the alarm it came from, which stays active for an auto block
+  async saveAlarmRule(alarm, p, { result, auto = false }) {
+    const { policy, alreadyExists } = await pm2.checkAndSaveAsync(p)
+
+    await this.resolveAlarm(alarm, {
+      result, ref: 'result_policy', refId: policy.pid, auto, archive: !(auto || alarm.result_method === "auto")
+    });
+
+    return { policy, alreadyExists }
   }
 
   async findSimilarAlarmsByException(exception, curAlarmID) {
@@ -1839,48 +1877,17 @@ module.exports = class {
     })
   }
 
-  async allowAlarmByException(alarm, exception, info, needArchive) {
-    if (!alarm || !exception) {
-      return
-    }
-
-    log.info(`Alarm to allow: ${alarm.aid}`)
-
-    setAlarmResult(alarm, 'allow', exception.eid, info.method === "auto");
-
-    await this.updateAlarm(alarm);
-
-    if (needArchive) {
-      await this.archiveAlarm(alarm.aid);
-    } else {
-      await this.removeAlarmAsync(alarm.aid);
-    }
-
-    log.info(`Alarm ${alarm.aid} is allowed successfully`)
-  }
-
   blockFromAlarm(alarmID, info, callback) {
     return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function () { })
   }
 
-  async blockFromAlarmAsync(alarmID, value) {
-    log.info("Going to block alarm " + alarmID);
-    log.info("value: ", value);
-
-    let info = value.info;
-
-    const alarm = await this.getAlarm(alarmID)
-
-    log.info("Alarm to block:", alarm);
-
-    if (!alarm) {
-      log.error("Invalid alarm ID:", alarmID);
-      throw new Error("Invalid alarm ID: " + alarmID);
-    }
+  // the rule an alarm turns into, from the alarm and the info of the request
+  async buildPolicyFromAlarm(alarm, value) {
+    const info = value.info;
 
     let p = {
       alarm_type: alarm.type,
-      aid: alarmID,
+      aid: alarm.aid,
       reason: alarm.type,
     };
 
@@ -2106,30 +2113,33 @@ module.exports = class {
 
     log.info("Policy object:", p);
 
-    // FIXME: make it transactional
-    // set alarm handle result + add policy
-    const { policy, alreadyExists } = await pm2.checkAndSaveAsync(p)
-    setAlarmResult(alarm, 'block', policy.pid, value.method === "auto");
+    return p;
+  }
 
-    await this.updateAlarm(alarm)
+  async blockFromAlarmAsync(alarmID, value) {
+    log.info("Going to block alarm " + alarmID);
+    log.info("value: ", value);
 
-    if (alarm.result_method != "auto") {
-      // archive alarm unless it's auto block
-      await this.archiveAlarm(alarm.aid)
-    }
+    const info = value.info;
+
+    const alarm = await this.getValidAlarm(alarmID)
+
+    log.info("Alarm to block:", alarm);
+
+    const p = await this.buildPolicyFromAlarm(alarm, value);
+
+    // alarm:block records block even for a rule that allows
+    const { policy, alreadyExists } = await this.saveAlarmRule(alarm, p, { result: 'block', auto: value.method === "auto" });
 
     log.info("Trying to find if any other active alarms are covered by this new policy")
     const alarms = await this.findSimilarAlarmsByPolicy(p)
-    const blockedAlarms = []
-    for (const a of alarms) {
-      if (a.aid == alarm.aid) continue
-      try {
-        await this.blockAlarmByPolicy(a, policy, info)
-        blockedAlarms.push(a)
-      } catch (err) {
-        log.error(`Failed to block alarm ${a.aid} with policy ${policy.pid}: ${err}`)
-      }
-    }
+    const blockedAlarms = await this.resolveRelatedAlarms(alarms.filter(a => a.aid != alarm.aid), async a => {
+      log.info(`Alarm to block: ${a.aid}`)
+      await this.resolveAlarm(a, {
+        result: 'block', ref: 'result_policy', refId: policy.pid, auto: info && info.method === "auto"
+      });
+      log.info(`Alarm ${a.aid} is blocked successfully`)
+    }, `policy ${policy.pid}`)
     return { policy, blockedAlarms, alreadyExists }
   }
 
@@ -2138,14 +2148,9 @@ module.exports = class {
 
     let userInput = info.info;
 
-    const alarm = await this.getAlarm(alarmID)
+    const alarm = await this.getValidAlarm(alarmID)
 
     log.info("Alarm to allow: ", alarm);
-
-    if (!alarm) {
-      log.error("Invalid alarm ID:", alarmID);
-      throw new Error("Invalid alarm ID: " + alarmID)
-    }
 
     const e = await this.createException(alarm, userInput);
 
@@ -2154,22 +2159,17 @@ module.exports = class {
 
     const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
 
-    setAlarmResult(alarm, 'allow', exception.eid, false);
-
-    await this.updateAlarm(alarm)
-    await this.archiveAlarm(alarm.aid)
+    await this.resolveAlarm(alarm, { result: 'allow', ref: 'result_exception', refId: exception.eid });
     log.info("Trying to find if any other active alarms are covered by this new exception")
     let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
     if (alarms && alarms.length > 0) {
-      let allowedAlarms = []
-      for (const alarm of alarms) {
-        try {
-          await this.allowAlarmByException(alarm, exception, info, true);
-          allowedAlarms.push(alarm)
-        } catch (err) {
-          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
-        }
-      }
+      const allowedAlarms = await this.resolveRelatedAlarms(alarms, async a => {
+        log.info(`Alarm to allow: ${a.aid}`)
+        await this.resolveAlarm(a, {
+          result: 'allow', ref: 'result_exception', refId: exception.eid, auto: info.method === "auto"
+        });
+        log.info(`Alarm ${a.aid} is allowed successfully`)
+      }, `exception ${exception.eid}`)
       return { exception, allowedAlarms, alreadyExists }
     } else {
       log.info("No similar alarms are found")
@@ -2186,7 +2186,7 @@ module.exports = class {
 
   async unblockFromAlarmAsync(alarmID, info) {
     log.info("Going to unblock alarm " + alarmID);
-    await this.unhandleAlarm(alarmID, 'block');
+    await this.unhandleAlarm(alarmID, () => 'result_policy');
   }
 
   unallowFromAlarm(alarmID, info, callback) {
@@ -2198,33 +2198,28 @@ module.exports = class {
 
   async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
-    await this.unhandleAlarm(alarmID, 'allow');
+    await this.unhandleAlarm(alarmID, () => 'result_exception');
   }
 
-  async unhandleAlarm(alarmID, kind) {
-    const alarm = await this.getAlarm(alarmID)
+  // pickRef: which pointer of the alarm to follow
+  async unhandleAlarm(alarmID, pickRef) {
+    const alarm = await this.getValidAlarm(alarmID)
 
-    if (!alarm) {
-      log.error("Invalid alarm ID:", alarmID);
-      throw new Error("Invalid alarm ID: " + alarmID);
-    }
-
-    const { ref, remove } = RESULT_KINDS[kind];
+    const ref = pickRef(alarm);
 
     // FIXME: make it transactional
     // the rule or exception goes first, so a failed clear is healed by the next read
-    await remove(alarm[ref]);
-    await this.clearAlarmResults([alarm], kind);
+    await RESULT_REFS[ref].remove(alarm[ref]);
+    await this.clearAlarmResults([alarm], ref);
   }
 
   // HDEL, not '' and updateAlarm: redisfy() drops empty fields and HMSET never removes a field
-  async clearAlarmResults(alarms, kind) {
-    const { ref } = RESULT_KINDS[kind];
-    const withRef = alarms.filter(a => a[ref]);
+  async clearAlarmResults(alarms, ref) {
+    const withRef = alarms.filter(a => a[ref] && resultRefOf(a) === ref);
     if (withRef.length === 0) return;
 
     await rclient.pipelineAndLog(withRef.map(a =>
-      ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], kind]));
+      ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], a.result]));
 
     for (const a of withRef) {
       delete a.result;

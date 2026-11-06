@@ -2589,8 +2589,7 @@ class netBot extends ControllerBot {
           return {
             policy: policy,
             otherAlarms: blockedAlarms,
-            alreadyExists: alreadyExists === "duplicated",
-            updated: alreadyExists === "duplicated_and_updated"
+            ...am2.ruleSaveFlags(alreadyExists)
           }
         } else
           return policy
