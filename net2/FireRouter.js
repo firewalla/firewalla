@@ -365,10 +365,11 @@ function pickDefaultWan(candidates, fallback) {
     || fallback;
 }
 
-// configured backups that firerouter flags as backups, older firerouter flags none
+// backup.viaIntfs that firerouter runs as backups: it skips names also used as primaries, older firerouter flags none
 function getBackupWans(defaultRoutingConfig) {
-  return _.isArray(defaultRoutingConfig.bakIntfs)
-    ? _.uniq(defaultRoutingConfig.bakIntfs).filter(i => _.get(getWanConnState(i), "backup") === true)
+  const viaIntfs = _.get(defaultRoutingConfig, "backup.viaIntfs");
+  return _.isArray(viaIntfs)
+    ? _.uniq(viaIntfs).filter(i => _.get(getWanConnState(i), "backup") === true)
     : [];
 }
 
@@ -589,8 +590,10 @@ class FireRouter {
                 primaryWanIntfName = defaultRoutingConfig.viaIntf;
                 viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
               }
-              routingWans.push(...viaIntfs);
-              defaultWanIntfName = pickDefaultWan(viaIntfs, primaryWanIntfName);
+              // an active backup carries traffic, so it is the default WAN while primaryWanIntfName stays the configured primary
+              const backupIntfs = getBackupWans(defaultRoutingConfig);
+              routingWans.push(...viaIntfs, ...backupIntfs);
+              defaultWanIntfName = pickDefaultWan(viaIntfs.concat(backupIntfs), primaryWanIntfName);
               break;
             }
             case Constants.WAN_TYPE_LB: {
