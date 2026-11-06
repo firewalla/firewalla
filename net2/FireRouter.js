@@ -588,7 +588,8 @@ class FireRouter {
                 viaIntfs.push(...defaultRoutingConfig.viaIntfs);
               } else {
                 primaryWanIntfName = defaultRoutingConfig.viaIntf;
-                viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
+                // viaIntf2 is optional, an undefined entry would count as a never-ready WAN in overall_wan_state
+                viaIntfs.push(..._.compact([defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2]));
               }
               // an active backup carries traffic, so it is the default WAN while primaryWanIntfName stays the configured primary
               backupIntfs = getBackupWans(defaultRoutingConfig);
