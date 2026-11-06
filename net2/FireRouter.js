@@ -1483,6 +1483,7 @@ class FireRouter {
         * OK state
         * - Failover   : both ready, and primary active but standby inactive, or either active if failback is false
         * - LoadBalance: both active and ready
+        * - Either, with backupFailback false: all ready and a holding backup the only active WAN
         */
       let labels = {
         "changedInterface": intf,
@@ -1508,6 +1509,11 @@ class FireRouter {
         // a ready backup is expected to stay inactive while load-balanced WANs are up
         const expectedActiveIdx = wanIntfs.map((wanIntf, i) => currentStatus[wanIntf].backup === true ? -1 : i).filter(i => i >= 0);
         if (dualWANStateValue === okStateValue(activeBitMask, expectedActiveIdx))
+          dualWANStateValue = 0;
+      }
+      if (routingConfig.backupFailback === false) {
+        const holdIdx = wanIntfs.findIndex(intf => currentStatus[intf].backup === true && currentStatus[intf].active === true);
+        if (holdIdx >= 0 && dualWANStateValue === okStateValue(activeBitMask, [holdIdx]))
           dualWANStateValue = 0;
       }
       if (vpnRerouteNeeded(type, wanSwitched)) {
