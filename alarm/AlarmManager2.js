@@ -100,11 +100,12 @@ const RESULT_REFS = {
   },
 };
 
-// the pointer a result stands on, nothing for results that are not backed by a rule or an exception
+// the pointer a result stands on, nothing for results that are not backed by a rule or an exception.
+// An allow stands on its exception, or on its rule when it came from alarm:addRule
 function resultRefOf(alarm) {
   switch (alarm.result) {
     case 'block': return 'result_policy';
-    case 'allow': return 'result_exception';
+    case 'allow': return alarm.result_exception ? 'result_exception' : 'result_policy';
   }
 }
 
@@ -114,6 +115,12 @@ if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1
   return redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
 end
 return 0`;
+
+// HDEL and HMSET in one step. ARGV: how many fields to delete, those fields, then the field/value pairs
+const WRITE_ALARM_LUA = `
+local n = tonumber(ARGV[1])
+redis.call('HDEL', KEYS[1], unpack(ARGV, 2, n + 1))
+return redis.call('HMSET', KEYS[1], unpack(ARGV, n + 2))`;
 
 function setAlarmResult(alarm, result, ref, refId, auto) {
   alarm[ref] = refId;
@@ -699,12 +706,17 @@ module.exports = class {
     callback(null, this.jsonToAlarm(json));
   }
 
-  async updateAlarm(alarm) {
+  // dropFields: removed in the same atomic write, since HMSET never removes a field
+  async updateAlarm(alarm, dropFields = []) {
     if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
     if (!alarm) throw new Error('Failed to create Alarm object')
 
     const alarmKey = alarmPrefix + alarm.aid;
-    await rclient.hmsetAsync(alarmKey, alarm.redisfy())
+    if (dropFields.length) {
+      await rclient.evalAsync(WRITE_ALARM_LUA, 1, alarmKey, dropFields.length, ...dropFields, ..._.flatten(Object.entries(alarm.redisfy())))
+    } else {
+      await rclient.hmsetAsync(alarmKey, alarm.redisfy())
+    }
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     return alarm
   }
@@ -1820,9 +1832,14 @@ module.exports = class {
 
   // sets the result of an alarm and archives it
   async resolveAlarm(alarm, { result, ref, refId, auto = false, archive = true }) {
+    // every other pointer goes in the same atomic write: a concurrent resolve may have set one since this
+    // alarm was read, and the readers pick one of the pointers, so a leftover would stand next to the wrong result
+    const others = Object.keys(RESULT_REFS).filter(r => r !== ref);
+    others.forEach(r => delete alarm[r]);
+
     setAlarmResult(alarm, result, ref, refId, auto);
 
-    await this.updateAlarm(alarm);
+    await this.updateAlarm(alarm, others);
 
     if (archive) await this.archiveAlarm(alarm.aid);
   }
@@ -1847,12 +1864,14 @@ module.exports = class {
   }
 
   // FIXME: make it transactional
-  // saves the rule and sets the result of the alarm it came from, which stays active for an auto block
-  async saveAlarmRule(alarm, p, { result, auto = false }) {
+  // saves the rule and sets the result of the alarm it came from, which stays active for an auto block.
+  // The result is the action of the saved rule unless the caller names one.
+  // archive: alarm:block leaves an alarm that is, or was, auto blocked active
+  async saveAlarmRule(alarm, p, { result, auto = false, archive = !(auto || alarm.result_method === "auto") } = {}) {
     const { policy, alreadyExists } = await pm2.checkAndSaveAsync(p)
 
     await this.resolveAlarm(alarm, {
-      result, ref: 'result_policy', refId: policy.pid, auto, archive: !(auto || alarm.result_method === "auto")
+      result: result || policy.action, ref: 'result_policy', refId: policy.pid, auto, archive
     });
 
     return { policy, alreadyExists }
@@ -2177,6 +2196,59 @@ module.exports = class {
     }
   }
 
+  // what a rule from an alarm can not be, checked on the built rule before anything is saved
+  checkAlarmRule(alarm, p, info) {
+    if (!["block", "allow"].includes(p.action))
+      throw { code: 400, msg: `Unsupported action ${p.action}` };
+
+    // the types createException can express, which is how the related alarms are found.
+    // It builds its own matcher for a bro notice, whatever the rule is
+    if (!["dns", "ip", "category", "country"].includes(p.type) || alarm.type === "ALARM_BRO_NOTICE")
+      throw { code: 400, msg: `Unsupported rule type ${p.type} for ${alarm.type}` };
+
+    // the builder leaves a rule without a scope global, which would make an allow cover every device
+    if (!(p.scope || p.guids || p.tag || info.matchAllDevice))
+      throw { code: 400, msg: "A device, a network, a group or matchAllDevice is required" };
+
+    if (p.type === "ip" && p.target !== alarm["p.dest.ip"])
+      throw { code: 400, msg: "The target of an ip rule has to be the destination ip of the alarm" };
+
+    if (info.exactMatch && !p.domainExactMatch)
+      throw { code: 400, msg: "exactMatch needs info.type dns" };
+  }
+
+  // saves a block or an allow rule from an alarm, and resolves the other active alarms the rule covers
+  async addRuleFromAlarm(alarmID, value) {
+    log.info("Going to add a rule from alarm " + alarmID);
+    log.info("value: ", value);
+
+    const info = value.info || {};
+    // the Policy constructor throws a plain error for internet, which the app would get as a 500
+    if (info.type === "internet")
+      throw { code: 400, msg: "Unsupported rule type internet" };
+
+    const alarm = await this.getValidAlarm(alarmID)
+
+    const p = await this.buildPolicyFromAlarm(alarm, value);
+    this.checkAlarmRule(alarm, p, info);
+
+    // the user decided on this alarm, so it is archived even when an auto block left it active
+    const { policy, alreadyExists } = await this.saveAlarmRule(alarm, p, { archive: true });
+
+    log.info("Trying to find if any other active alarms are covered by this new policy")
+    // from the saved rule, a duplicate returns the one in place. The exception is only a matcher and is not saved
+    const e = await this.createException(alarm, {
+      type: policy.type, target: policy.target, device: _.head(policy.scope) || _.head(policy.guids), tag: policy.tag
+    }, { exactDomain: !!policy.domainExactMatch });
+    const alarms = await this.findSimilarAlarmsByException(e, alarm.aid)
+    const otherAlarms = await this.resolveRelatedAlarms(alarms.filter(a => policy.matchesDirection(a, true)), async a => {
+      await this.resolveAlarm(a, { result: policy.action, ref: 'result_policy', refId: policy.pid });
+      log.verbose(`Alarm ${a.aid} is resolved by policy ${policy.pid}`)
+    }, `policy ${policy.pid}`)
+
+    return { policy, otherAlarms: otherAlarms.map(a => ({ aid: a.aid })), ...this.ruleSaveFlags(alreadyExists) }
+  }
+
   unblockFromAlarm(alarmID, info, callback) {
     this.unblockFromAlarmAsync(alarmID, info).then(
       res => callback(null, res),
@@ -2198,7 +2270,8 @@ module.exports = class {
 
   async unallowFromAlarmAsync(alarmID, info) {
     log.info("Going to unallow alarm " + alarmID);
-    await this.unhandleAlarm(alarmID, () => 'result_exception');
+    // a stray unallow on a block follows the exception, so it never touches the rule of the block
+    await this.unhandleAlarm(alarmID, alarm => alarm.result === 'allow' ? resultRefOf(alarm) : 'result_exception');
   }
 
   // pickRef: which pointer of the alarm to follow
@@ -2455,7 +2528,8 @@ module.exports = class {
     return alarmIDs;
   }
 
-  async createException(alarm, userInput) {
+  // exactDomain: the rule it stands for is exact, so a dns exception keeps the name without the *. that covers subdomains
+  async createException(alarm, userInput, { exactDomain = false } = {}) {
     let i_target = null;
     let i_type = null;
     //IGNORE
@@ -2580,11 +2654,13 @@ module.exports = class {
         e["target_ip"] = alarm["p.dest.ip"];
         break;
       case "domain":
-      case "dns":
-        e["p.dest.name"] = `*.${i_target}` // add *. prefix to domain for dns matching
-        e["target_name"] = `*.${i_target}`
+      case "dns": {
+        const name = exactDomain ? i_target : `*.${i_target}` // add *. prefix to domain for dns matching
+        e["p.dest.name"] = name
+        e["target_name"] = name
         e["target_ip"] = alarm["p.dest.ip"];
         break;
+      }
       case "category":
         e["p.dest.category"] = i_target;
         e["target_name"] = i_target;

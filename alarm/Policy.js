@@ -416,10 +416,12 @@ class Policy {
     }
   }
 
-  // an inbound rule only covers alarms raised for inbound flows
-  matchesDirection(alarm) {
+  // an inbound rule only covers alarms raised for inbound flows. strict: an outbound rule only covers outbound ones
+  matchesDirection(alarm, strict = false) {
     // default to outbound alarm
-    return this.direction !== "inbound" || (alarm["p.local_is_client"] || "1") !== "1";
+    const outbound = (alarm["p.local_is_client"] || "1") === "1";
+    if (this.direction === "inbound") return !outbound;
+    return !strict || this.direction !== "outbound" || outbound;
   }
 
   match(alarm) {

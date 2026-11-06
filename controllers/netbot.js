@@ -2594,6 +2594,8 @@ class netBot extends ControllerBot {
         } else
           return policy
       }
+      case "alarm:addRule":
+        return am2.addRuleFromAlarm(value.alarmID, value)
       case "alarm:allow": {
         const { exception, allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
         if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
