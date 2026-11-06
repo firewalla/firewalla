@@ -365,8 +365,8 @@ function pickDefaultWan(candidates, fallback) {
     || fallback;
 }
 
-// bakIntfs that firerouter runs as load_balance backups, older firerouter flags none
-function getLBBackupWans(defaultRoutingConfig) {
+// configured backups that firerouter flags as backups, older firerouter flags none
+function getBackupWans(defaultRoutingConfig) {
   return _.isArray(defaultRoutingConfig.bakIntfs)
     ? _.uniq(defaultRoutingConfig.bakIntfs).filter(i => _.get(getWanConnState(i), "backup") === true)
     : [];
@@ -597,7 +597,7 @@ class FireRouter {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route: first active WAN in nextHops then flagged backups (state from intfNameMap), else first inUse WAN
                 const nextHopIntfs = defaultRoutingConfig.nextHops.map(nextHop => nextHop.viaIntf);
-                const backupIntfs = getLBBackupWans(defaultRoutingConfig);
+                const backupIntfs = getBackupWans(defaultRoutingConfig);
                 routingWans.push(...nextHopIntfs, ...backupIntfs);
                 defaultWanIntfName = pickDefaultWan(nextHopIntfs.concat(backupIntfs), nextHopIntfs[0]);
                 primaryWanIntfName = defaultWanIntfName;
@@ -1457,6 +1457,7 @@ class FireRouter {
     const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => currentStatus[i].wan_intf_name);
     const ifaceName = currentStatus[intf] && currentStatus[intf].wan_intf_name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+    const routingConfig = _.get(routerConfig, ["routing", "global", "default"], {});
 
     if (type !== 'single') {
       // dualwan_state event
@@ -1488,7 +1489,6 @@ class FireRouter {
         "failures": failures
       };
       if (type === Constants.WAN_TYPE_FAILOVER && _.has(routerConfig, ["routing", "global", "default"])) {
-        const routingConfig = _.get(routerConfig, ["routing", "global", "default"]);
         const primaryInterface = wanIntfs.find(intf => currentStatus[intf].seq === 0);
         const failback = routingConfig.failback || false;
         labels.primaryInterface = primaryInterface;
