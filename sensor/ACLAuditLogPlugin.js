@@ -960,6 +960,9 @@ class ACLAuditLogPlugin extends Sensor {
               : await intelTool.getIntel(fd == 'out' ? record.sh : record.dh, record.af && Object.keys(record.af));
             if (intel && intel.category)
               record.c = await intelTool.categoryToNumber(intel.category);
+            const cc = intelTool.getIntelCategory(intel);
+            if (cc)
+              record.cc = cc;
           } catch (err) {
             log.error('Failed to resolve intel for block record', record.dh || record.dn, err.message);
           }

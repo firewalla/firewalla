@@ -198,11 +198,27 @@ class IntelTool {
     return this.categoryEnumReverse[code]
   }
 
+  // security category (phishing, malware, ...) of an 'intel' category record, taken from the
+  // cloud's cc JSON array, for flows and the domain alarm alike. "attackpage" is a generic feed
+  // label, skipped
+  getIntelCategory(intel) {
+    if (!intel || intel.category !== 'intel' || !intel.cc) return undefined
+    try {
+      const categories = JSON.parse(intel.cc)
+      if (Array.isArray(categories))
+        return categories.find(s => _.isString(s) && s && s !== 'attackpage')
+    } catch (err) {
+      log.verbose('Malformed intel cc', intel.cc)
+    }
+    return undefined
+  }
+
   // Once the flow_inline_intel migration is older than the flow retention window
   // (bro.conn.expires), every stored flow was written with a baked intel snapshot
   // (c/a fields), so query-time intel enrichment can be skipped.
-  isInlineIntelReady() {
-    const migratedTs = fc.isMigrationComplete('flow_inline_intel');
+  // flow_inline_intel_cc does the same for the security category (cc).
+  isInlineIntelReady(codeName = 'flow_inline_intel') {
+    const migratedTs = fc.isMigrationComplete(codeName);
     if (!migratedTs) return false;
     const expires = _.get(fc.getConfig(), ['bro', 'conn', 'expires'], 24 * 60 * 60);
     return (Date.now() / 1000 - migratedTs) > expires;
@@ -502,8 +518,11 @@ class IntelTool {
               // NONE is a reseved word for custom intel to state a specific field to be empty
               if (domainIntel.category === 'NONE')
                 delete intel.category
-              else
+              else {
                 intel.category = domainIntel.category;
+                // cc belongs to the record that supplied the category
+                if (domainIntel.cc) intel.cc = domainIntel.cc
+              }
             }
             if (domainIntel.app && !intel.app) {
               // no JSON parsing required here. there was a bug not properly dealing with app

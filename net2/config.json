@@ -775,7 +775,8 @@
         "bipartite_graph",
         "per_wan_data_usage",
         "flow_inline_intel",
-        "subdomains_zset"
+        "subdomains_zset",
+        "flow_inline_intel_cc"
       ]
     },
     "FlowCompressionSensor": {

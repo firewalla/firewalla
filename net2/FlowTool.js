@@ -275,6 +275,7 @@ class FlowTool extends LogQuery {
       const category = intelTool.numberToCategory(flow.c);
       if (category) f.category = category;
     }
+    if (flow.cc) f.cc = flow.cc;
     // if (flow.a) f.app = flow.a;
 
     return f;
