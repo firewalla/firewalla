@@ -34,6 +34,15 @@ const Constants = require('../net2/Constants.js');
 let categoryUpdater = null;
 
 const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
+// backstop only: one pending job per domain means a box would need this many covered domains
+// resolving at once to reach it. dropping is not free - BroDetect holds identical DNS answers in
+// an LRU for an hour, so a dropped mapping is not necessarily re-sent soon - hence the error log
+const MAX_PENDING_MAPPINGS = 20000;
+// and one domain cannot grow a single pending job without bound either
+const MAX_ADDRESSES_PER_MAPPING = 1000;
+// what actually bounds the memory: a wildcard registration covers every subdomain, so the number
+// of domains with a pending job is not bounded by the rules, only by this
+const MAX_QUEUED_ADDRESSES = 50000;
 var instance = null;
 
 class DomainUpdater {
@@ -44,7 +53,17 @@ class DomainUpdater {
       instance = this;
       this._needRefresh = false;
       this._priorityJobQueue = []; // registerUpdate / unregisterUpdate
-      this._standardJobQueue = []; // updateDomainMapping
+      // clearIPCacheForDomain and anything else enqueued at standard priority. a Map, not an
+      // array: it dequeues without Array.shift(), which is O(queue length)
+      this._standardJobs = new Map();
+      // one entry per domain, in insertion order, so repeated answers for the same domain merge
+      // instead of piling up. kept apart from _standardJobs because only these can be dropped,
+      // and a category recycle can leave thousands of clear jobs in front of them
+      this._pendingMappings = new Map();
+      this._jobSeq = 0;
+      this._droppedJobs = 0;
+      this._droppedAddresses = 0;
+      this._queuedAddresses = 0;
       this._processorRunning = false;
 
       sem.on('Domain:Flush', async () => {
@@ -65,7 +84,12 @@ class DomainUpdater {
       });
 
       setInterval(async () => {
-        log.debug(`_priorityJobQueue.length:${this._priorityJobQueue.length}, _standardJobQueue.length:${this._standardJobQueue.length}`);
+        log.debug(`_priorityJobQueue.length:${this._priorityJobQueue.length}, _standardJobs.size:${this._standardJobs.size}, _pendingMappings.size:${this._pendingMappings.size}, _queuedAddresses:${this._queuedAddresses}`);
+        if (this._droppedJobs > 0 || this._droppedAddresses > 0) {
+          log.error(`Dropped ${this._droppedJobs} domain mappings and ${this._droppedAddresses} addresses, over ${MAX_PENDING_MAPPINGS} pending mappings, ${MAX_QUEUED_ADDRESSES} queued addresses or ${MAX_ADDRESSES_PER_MAPPING} for one domain`);
+          this._droppedJobs = 0;
+          this._droppedAddresses = 0;
+        }
         if (this._needRefresh) {
           log.debug("DomainUpdater refreshing connmark for updated ipsets");
           blockControl.scheduleRefreshConnmark();
@@ -232,20 +256,73 @@ class DomainUpdater {
   _dequeueNextJob() {
     if (this._priorityJobQueue.length > 0)
       return this._priorityJobQueue.shift();
-    if (this._standardJobQueue.length > 0)
-      return this._standardJobQueue.shift();
+    // standard jobs before mappings: clearIPCacheForDomain is synchronous and drains at once,
+    // and a mapping running after a clear re-adds its addresses, which is what the clear is for
+    for (const queue of [this._standardJobs, this._pendingMappings]) {
+      const next = queue.keys().next();
+      if (next.done)
+        continue;
+      const entry = queue.get(next.value);
+      // taken out before it runs, so an answer arriving meanwhile starts a new entry instead of
+      // being merged into the one already in flight
+      queue.delete(next.value);
+      if (entry.addresses)
+        this._queuedAddresses -= entry.addresses.size;
+      return entry;
+    }
     return null;
   }
 
-  _enqueueJob(fn, highPriority) {
-    return new Promise((resolve, reject) => {
-      const entry = { fn, resolve, reject };
-      if (highPriority)
-        this._priorityJobQueue.push(entry);
-      else
-        this._standardJobQueue.push(entry);
-      this._kickJobProcessor();
+  // a standard job with a dedupeKey that is already pending is not queued again: the caller
+  // shares the pending job's promise
+  _enqueueJob(fn, highPriority, dedupeKey) {
+    if (!highPriority && dedupeKey) {
+      const pending = this._standardJobs.get(dedupeKey);
+      if (pending)
+        return pending.promise;
+    }
+    const entry = { fn };
+    entry.promise = new Promise((resolve, reject) => {
+      entry.resolvers = [resolve];
+      entry.rejecters = [reject];
     });
+    if (highPriority)
+      this._priorityJobQueue.push(entry);
+    else
+      this._standardJobs.set(dedupeKey || `j${this._jobSeq++}`, entry);
+    this._kickJobProcessor();
+    return entry.promise;
+  }
+
+  // the oldest first, and only mappings: a clearIPCacheForDomain would never come back
+  _dropOverflowJobs() {
+    while (this._pendingMappings.size > MAX_PENDING_MAPPINGS || this._queuedAddresses > MAX_QUEUED_ADDRESSES) {
+      const key = this._pendingMappings.keys().next().value;
+      if (key === undefined)
+        return;
+      const entry = this._pendingMappings.get(key);
+      this._pendingMappings.delete(key);
+      this._queuedAddresses -= entry.addresses.size;
+      for (const resolve of entry.resolvers)
+        resolve();
+      this._droppedJobs++;
+    }
+  }
+
+  // the parent domains of `domain` that something registered an update for. both the enqueue
+  // check and the job itself go through this, so they cannot disagree about what matches.
+  // walks the domain itself rather than reusing getParentDomains: this runs on every DNS
+  // answer, and that one builds an array of every parent whether it is registered or not
+  _registeredParentKeys(domain) {
+    const keys = [];
+    if (this.updateOptions[domain])
+      keys.push(domain);
+    for (let i = domain.indexOf('.'); i >= 0 && i + 1 < domain.length; i = domain.indexOf('.', i + 1)) {
+      const parent = domain.substring(i + 1);
+      if (this.updateOptions[parent])
+        keys.push(parent);
+    }
+    return keys;
   }
 
   _kickJobProcessor() {
@@ -255,16 +332,18 @@ class DomainUpdater {
     const processNext = async () => {
       let job;
       while ((job = this._dequeueNextJob()) != null) {
-        const { fn, resolve, reject } = job;
+        const { fn, resolvers, rejecters } = job;
         try {
           await fn();
-          resolve();
+          for (const resolve of resolvers)
+            resolve();
         } catch (err) {
-          reject(err);
+          for (const reject of rejecters)
+            reject(err);
         }
       }
       this._processorRunning = false;
-      if (this._priorityJobQueue.length > 0 || this._standardJobQueue.length > 0)
+      if (this._priorityJobQueue.length > 0 || this._standardJobs.size > 0 || this._pendingMappings.size > 0)
         this._kickJobProcessor();
     };
     processNext();
@@ -324,22 +403,37 @@ class DomainUpdater {
     }
 
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+    if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key]) {
       delete this.updateOptions[domainKey][key];
+      // an empty bucket still reads as a registration, so every answer for a domain policy has
+      // dropped would keep being queued for a job with nothing to do
+      if (_.isEmpty(this.updateOptions[domainKey]))
+        delete this.updateOptions[domainKey];
+    }
   }
   
+  // one pending clear per registration: back-to-back category recycles would otherwise queue
+  // one job per domain each time
   clearIPCacheForDomain(domain, options) {
-    return this._enqueueJob(() => this._clearIPCacheForDomain(domain, options), false);
+    // the key is built here, not in the job, so a bad domain must not throw into the caller's loop
+    if (!_.isString(domain))
+      return Promise.resolve();
+    const { domainKey, key } = this._clearTarget(domain, options);
+    return this._enqueueJob(() => this._clearIPCacheForDomain(domainKey, key), false, `clear:${domainKey}:${key}`);
+  }
+
+  // Mirrors registerDefaultUpdate: exactMatch is derived from the domain pattern.
+  _clearTarget(domain, options) {
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    const exactMatch = !domain.startsWith("*.");
+    const key = domainIPTool.getDomainIPMappingKey(domainKey, { ...options, exactMatch });
+    return { domainKey, key };
   }
 
   // Clear ipCache for a specific domain registration so that DomainUpdater
   // re-adds IPs after the underlying ipset has been flushed or swapped out by
   // recycleIPSet without going through DomainUpdater.
-  // Mirrors registerDefaultUpdate: exactMatch is derived from the domain pattern.
-  _clearIPCacheForDomain(domain, options) {
-    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
-    const exactMatch = !domain.startsWith("*.");
-    const key = domainIPTool.getDomainIPMappingKey(domainKey, { ...options, exactMatch });
+  _clearIPCacheForDomain(domainKey, key) {
     const config = this.updateOptions[domainKey] && this.updateOptions[domainKey][key];
     if (config && config.ipCache) {
       config.ipCache.reset();
@@ -401,11 +495,9 @@ class DomainUpdater {
   async _updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
-    const parentDomains = this.getParentDomains(domain);
+    const parentDomains = this._registeredParentKeys(domain);
 
     for (const domainKey of parentDomains) {
-      if (!this.updateOptions[domainKey])
-        continue;
       const DNSTool = require("../net2/DNSTool.js");
       const dnsTool = new DNSTool();
 
@@ -446,14 +538,17 @@ class DomainUpdater {
             existingSet[addr] = 1;
           });
 
-          for (let i in newAddresses) {
-            const address = newAddresses[i];
-            if (ipCache) {
+          const unmappedAddresses = newAddresses.filter((address) => !existingSet[address]);
+          // one round trip instead of one per address: this runs on every DNS answer that
+          // matches a rule, and the job queue is strictly serial
+          if (unmappedAddresses.length > 0) {
+            await rclient.saddAsync(key, unmappedAddresses);
+          }
+          // cached only once redis has them: a failure above must leave the next answer free to
+          // retry, and a cached address that was never stored is invisible for half its ttl
+          if (ipCache) {
+            for (const address of newAddresses)
               ipCache.set(address, 1);
-            }
-            if (!existingSet[address]) {
-              await rclient.saddAsync(key, address);
-            }
           }
           log.debug(`DomainUpdater updateDomainMapping for domain ${domain} with filteredaddresses: ${newAddresses}, original addresses: ${addresses}`);
           // add comment string to ipset, @ to indicate dynamically updated.
@@ -476,7 +571,47 @@ class DomainUpdater {
   }
 
   updateDomainMapping(domain, addresses) {
-    return this._enqueueJob(() => this._updateDomainMapping(domain, addresses), false);
+    if (!_.isString(domain) || _.isEmpty(addresses))
+      return Promise.resolve();
+    // most DNS answers are for domains no rule covers. a registerUpdate still in the priority
+    // queue could add this very domain, so only skip while none is waiting
+    if (this._priorityJobQueue.length === 0 && this._registeredParentKeys(domain).length === 0)
+      return Promise.resolve();
+
+    const pending = this._pendingMappings.get(domain);
+    if (pending) {
+      this._mergeAddresses(pending, addresses);
+      // merging grows the address budget too, so it has to answer for it like a new entry
+      this._dropOverflowJobs();
+      // the same promise, not one more per answer: a merge has to cost nothing to be worth it
+      return pending.promise;
+    }
+
+    const entry = { addresses: new Set(), rejecters: [] };
+    this._mergeAddresses(entry, addresses);
+    entry.promise = new Promise((resolve) => { entry.resolvers = [resolve]; });
+    // caught here rather than rejected: the caller does not await this, and an unhandled
+    // rejection on a DNS answer would reach the cloud through main.js's handler
+    entry.fn = () => this._updateDomainMapping(domain, Array.from(entry.addresses))
+      .catch((err) => log.error(`Failed to update domain mapping for ${domain}`, err.message));
+    this._pendingMappings.set(domain, entry);
+    this._dropOverflowJobs();
+    this._kickJobProcessor();
+    return entry.promise;
+  }
+
+  // one domain's pending job cannot grow without bound either, however fast its answers rotate
+  _mergeAddresses(entry, addresses) {
+    for (const address of addresses) {
+      if (entry.addresses.size >= MAX_ADDRESSES_PER_MAPPING) {
+        this._droppedAddresses++;
+        continue;
+      }
+      if (entry.addresses.has(address))
+        continue;
+      entry.addresses.add(address);
+      this._queuedAddresses++;
+    }
   }
 
   async flush() {
