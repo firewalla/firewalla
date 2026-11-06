@@ -268,9 +268,9 @@ class FlowTool extends LogQuery {
         f.dstTags = flow.dstTags;
     }
 
-    // decode the intel snapshot baked at flow-write time (c = coded category).
-    // enrichWithIntel runs after this and overrides with live intel:ip when available, so
-    // this is the fallback for flows whose intel:ip has since expired.
+    // decode the intel snapshot baked at flow-write time (c = coded category, cc = security
+    // category of 'intel'). enrichWithIntel keeps it, and fills a missing category or cc from
+    // local intel only until the flow_inline_intel_cc migration matures
     if (flow.c != null) {
       const category = intelTool.numberToCategory(flow.c);
       if (category) f.category = category;
