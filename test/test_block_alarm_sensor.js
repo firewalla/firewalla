@@ -142,13 +142,15 @@ describe('test block alarm sensor', function () {
       await feed(sensor, blockEvent());
       expect(enqueued).to.have.length(1);
       const alarm = enqueued[0];
-      expect(alarm).to.be.instanceof(Alarm.CategoryBlockAlarm);
-      expect(alarm.type).to.equal('ALARM_CATEGORY_BLOCK');
+      expect(alarm).to.be.instanceof(Alarm.CategoryAlarm);
+      expect(alarm.type).to.equal('ALARM_CATEGORY');
       expect(alarm['p.device.ip']).to.equal('192.168.1.10');
       expect(alarm['p.device.mac']).to.equal(MAC);
       expect(alarm['p.dest.name']).to.equal('new.example.org');
       expect(alarm['p.dest.category']).to.equal('nrd');
       expect(alarm['p.noticeType']).to.equal('nrd');
+      expect(alarm['p.result']).to.equal('block');
+      expect(alarm.result).to.be.undefined; // the handling result stays empty until the user acts
       expect(alarm['p.pid']).to.equal(12);
       expect(alarm['p.local_is_client']).to.equal('1');
       expect(alarm['p.cooldown']).to.equal(86400);
@@ -368,14 +370,14 @@ describe('test block alarm sensor', function () {
     const data = { 'p.device.mac': MAC, 'p.dest.name': 'new.example.org', 'p.dest.category': 'nrd', 'p.device.name': 'sim1', 'p.device.id': MAC };
 
     it('dedups on device, domain and category', () => {
-      const a = new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', data);
-      expect(a.isDup(new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', data))).to.be.true;
-      expect(a.isDup(new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({}, data, { 'p.dest.category': 'lookalike_domain' })))).to.be.false;
-      expect(a.isDup(new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({}, data, { 'p.dest.name': 'other.example.org' })))).to.be.false;
+      const a = new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', data);
+      expect(a.isDup(new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', data))).to.be.true;
+      expect(a.isDup(new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({}, data, { 'p.dest.category': 'lookalike_domain' })))).to.be.false;
+      expect(a.isDup(new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({}, data, { 'p.dest.name': 'other.example.org' })))).to.be.false;
     });
 
     it('lasts for its cooldown and is not a policy match or security alarm', () => {
-      const a = new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.cooldown': 86400 }, data));
+      const a = new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.cooldown': 86400 }, data));
       expect(a.getExpirationTime()).to.equal(86400);
       expect(a.needPolicyMatch()).to.be.false;
       expect(a.isSecurityAlarm()).to.be.false;
@@ -383,19 +385,19 @@ describe('test block alarm sensor', function () {
     });
 
     it('renders the message and the push arguments', () => {
-      const alarm = am2.jsonToAlarm(Object.assign({ type: 'ALARM_CATEGORY_BLOCK' }, data));
+      const alarm = am2.jsonToAlarm(Object.assign({ type: 'ALARM_CATEGORY' }, data));
       expect(alarm.message).to.equal('sim1 was blocked from accessing new.example.org');
-      expect(alarm.localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY_BLOCK');
+      expect(alarm.localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY');
       expect(alarm.localizedNotificationContentArray()).to.eql(['sim1', 'new.example.org']);
-      expect(alarm.localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK');
+      expect(alarm.localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY');
     });
 
     it('suffixes the title key only for a category that has its own title', () => {
-      const withType = type => am2.jsonToAlarm(Object.assign({ type: 'ALARM_CATEGORY_BLOCK' }, data, { 'p.noticeType': type }));
-      expect(withType('nrd').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK.nrd');
-      expect(withType('nrd').localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY_BLOCK');
-      expect(withType('lookalike_domain').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK.lookalike_domain');
-      expect(withType('porn').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY_BLOCK');
+      const withType = type => am2.jsonToAlarm(Object.assign({ type: 'ALARM_CATEGORY' }, data, { 'p.noticeType': type }));
+      expect(withType('nrd').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY.nrd');
+      expect(withType('nrd').localizedNotificationContentKey()).to.equal('notif.content.ALARM_CATEGORY');
+      expect(withType('lookalike_domain').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY.lookalike_domain');
+      expect(withType('porn').localizedNotificationTitleKey()).to.equal('notif.title.ALARM_CATEGORY');
     });
 
     describe('auto block', () => {
@@ -419,19 +421,19 @@ describe('test block alarm sensor', function () {
       });
 
       it('does not auto block a category block alarm', async () => {
-        const a = new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.cooldown': 86400 }, data));
+        const a = new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.cooldown': 86400 }, data));
         expect(await am2.shouldAutoBlock(a)).to.be.false;
       });
 
       it('would auto block the same alarm with a block key', async () => {
-        const a = new Alarm.CategoryBlockAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.action.block': true }, data));
+        const a = new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', Object.assign({ 'p.action.block': true }, data));
         expect(await am2.shouldAutoBlock(a)).to.be.true;
       });
     });
 
     it('is the only type that skips the cloud arbitration', () => {
       for (const [type, proto] of Object.entries(Alarm.mapping))
-        expect(proto.needCloudArbitration(), type).to.equal(type !== 'ALARM_CATEGORY_BLOCK');
+        expect(proto.needCloudArbitration(), type).to.equal(type !== 'ALARM_CATEGORY');
     });
   });
 });
