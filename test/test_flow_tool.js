@@ -21,6 +21,9 @@ const fireRouter = require('../net2/FireRouter.js')
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const sysManager = require('../net2/SysManager.js');
 const flowTool = require('../net2/FlowTool');
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
 
 let sample = require('./sample_data');
 
@@ -194,5 +197,115 @@ describe('should format simple format', function() {
 
     flow.oIntf = fullID.substring(0, 8)
     expect(flowTool.toSimpleFormat(flow).oIntf).to.equal(fullID)
+  })
+
+  it('should decode the security category', async () => {
+    const code = await intelTool.categoryToNumber('intel')
+    const flow = {ts:1710300917.62, sh:"192.168.1.1", dh:"203.0.113.10", ob:29,rb:25,ct:1,fd:"in", lh:"192.168.1.1", intf:"00000000-0000-0000-0000-000000000000", du:29,pr:"tcp", ltype:"mac", sp:[51000],dp:443, c:code, cc:"phishing"};
+    const formatted = flowTool.toSimpleFormat(flow)
+    expect(formatted.category).to.equal('intel')
+    expect(formatted.cc).to.equal('phishing')
+
+    delete flow.cc
+    expect(flowTool.toSimpleFormat(flow).cc).to.be.undefined
+  })
+});
+
+describe('enrichWithIntel security category', function() {
+  let getIntel, isInlineIntelReady, processIP, lookups, intel, refreshed
+
+  // migrations listed here are past the flow retention window
+  const ready = (...codeNames) => {
+    intelTool.isInlineIntelReady = codeName => codeNames.includes(codeName || 'flow_inline_intel')
+  }
+
+  before(() => {
+    getIntel = intelTool.getIntel
+    isInlineIntelReady = intelTool.isInlineIntelReady
+    processIP = DestIPFoundHook.prototype.processIP
+    intelTool.getIntel = async () => {
+      lookups++
+      return intel
+    }
+    DestIPFoundHook.prototype.processIP = async ip => { refreshed.push(ip) }
+  })
+
+  beforeEach(() => {
+    lookups = 0
+    intel = {category: 'intel', cc: '["attackpage","malware"]', host: 'www.example.com'}
+    refreshed = []
+  })
+
+  after(() => {
+    intelTool.getIntel = getIntel
+    intelTool.isInlineIntelReady = isInlineIntelReady
+    DestIPFoundHook.prototype.processIP = processIP
+  })
+
+  it('should take the security category from the intel lookup', async () => {
+    ready()
+    const [ip, domain] = await flowTool.enrichWithIntel([
+      {ip: '203.0.113.10', type: 'ip', appHosts: ['www.example.com']},
+      {domain: 'www.example.com'},
+    ])
+    expect(ip.category).to.equal('intel')
+    expect(ip.cc).to.equal('malware')
+    expect(domain.category).to.equal('intel')
+    expect(domain.cc).to.equal('malware')
+  })
+
+  it('should look up cc of an intel record written before the cc migration', async () => {
+    ready('flow_inline_intel')
+    const [ip, domain, baked, other, none] = await flowTool.enrichWithIntel([
+      {ip: '203.0.113.10', type: 'ip', category: 'intel'},
+      {domain: 'www.example.com', category: 'intel'},
+      {ip: '203.0.113.11', type: 'ip', category: 'intel', cc: 'phishing'},
+      {ip: '203.0.113.12', type: 'ip', category: 'porn'},
+      {ip: '203.0.113.13', type: 'ip'},
+    ])
+    expect(ip.cc).to.equal('malware')
+    expect(domain.cc).to.equal('malware')
+    expect(baked.cc).to.equal('phishing')
+    expect(other.cc).to.be.undefined
+    expect(none.category).to.equal('intel')
+    expect(none.cc).to.equal('malware')
+    expect(lookups).to.equal(3)
+  })
+
+  it('should refresh intel from the cloud only for a record with no category', async () => {
+    intel = undefined
+    ready('flow_inline_intel')
+    await flowTool.enrichWithIntel([
+      {ip: '203.0.113.14', type: 'ip', category: 'intel'},
+      {ip: '203.0.113.15', type: 'ip'},
+    ])
+    expect(lookups).to.equal(2)
+    expect(refreshed).to.be.empty
+
+    ready()
+    await flowTool.enrichWithIntel([
+      {ip: '203.0.113.14', type: 'ip', category: 'intel'},
+      {ip: '203.0.113.15', type: 'ip'},
+    ])
+    expect(refreshed).to.deep.equal(['203.0.113.15'])
+  })
+
+  it('should not look up once the cc migration is past the retention window', async () => {
+    ready('flow_inline_intel', 'flow_inline_intel_cc')
+    const [f] = await flowTool.enrichWithIntel([
+      {ip: '203.0.113.10', type: 'ip', category: 'intel'},
+    ])
+    expect(f.category).to.equal('intel')
+    expect(f.cc).to.be.undefined
+    expect(lookups).to.equal(0)
+  })
+
+  it('should drop the security category of an adblock record', async () => {
+    ready('flow_inline_intel', 'flow_inline_intel_cc')
+    const [f] = await flowTool.enrichWithIntel([
+      {domain: 'www.example.com', category: 'intel', cc: 'phishing', reason: 'adblock'},
+    ])
+    expect(f.category).to.equal('ad')
+    expect(f.cc).to.be.undefined
   })
 });

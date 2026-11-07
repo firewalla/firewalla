@@ -1603,9 +1603,12 @@ class BroDetect {
           // resolves null (without blocking) when the enrich backlog is saturated
           const intel = await destIPFoundHook.appendNewFlow(enrichFlow, true);
           if (intel) {
-            // compact keys to save memory: c = category (coded)
+            // compact keys to save memory: c = category (coded), cc = security category of 'intel'
             if (intel.category)
               tmpspec.c = await intelTool.categoryToNumber(intel.category);
+            const cc = intelTool.getIntelCategory(intel);
+            if (cc)
+              tmpspec.cc = cc;
             // per-flow app is deprecated by app time usage, which accounts app activity
             // by domain with its own dedicated config
             // if (intel.app)
