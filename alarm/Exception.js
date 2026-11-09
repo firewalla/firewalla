@@ -238,9 +238,10 @@ module.exports = class {
         }
         let val2JSON
         // Exception will be parsed at object creation
-        // while alarm will always use string to avoid compatibility issue with clients
+        // while alarm will always use string to avoid compatibility issue with clients,
+        // unless it went through jsonToAlarm or was enriched in memory, then it holds the array
         try {
-          val2JSON = JSON.parse(val2)
+          val2JSON = Array.isArray(val2) ? val2 : JSON.parse(val2)
           log.debug('parsed val2 as JSON', key, val2JSON);
         } catch(err) {
         }
