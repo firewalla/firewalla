@@ -160,7 +160,9 @@ module.exports = class HostManager extends Monitorable {
         })
       })
       messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
-        let host = this.getHostFastByMAC(mac)
+        // a host dropped from hostsdb keeps its instance, and loading it from redis would map its
+        // possibly stale address in hostsdb again
+        let host = this.getHostFastByMAC(mac) || Host.getInstance(mac)
         log.info('Removing host cache', mac)
         if (!host)
           host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
@@ -169,10 +171,14 @@ module.exports = class HostManager extends Monitorable {
           return;
         }
 
-        delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
-        log.info('Removing host cache', host.o.ipv4Addr)
+        // a stale address may already map to the device that took it over
+        if (this.hostsdb[`host:ip4:${host.o.ipv4Addr}`] === host) {
+          delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
+          log.info('Removing host cache', host.o.ipv4Addr)
+        }
         if (Array.isArray(host.ipv6Addr)) {
           host.ipv6Addr.forEach(ip6 => {
+            if (this.hostsdb[`host:ip6:${ip6}`] !== host) return
             log.info('Removing host cache', ip6)
             delete this.hostsdb[`host:ip6:${ip6}`]
           })

@@ -756,10 +756,11 @@ class Host extends Monitorable {
 
       // delete redis host keys
       if (this.o.ipv4Addr) {
-        await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
+        await hostTool.deleteIPEntryIfOwner(this.o.ipv4Addr, this.o.mac)
       }
-      if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
-        await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
+      if (Array.isArray(this.ipv6Addr)) {
+        for (const ip6 of this.ipv6Addr)
+          await hostTool.deleteIPEntryIfOwner(ip6, this.o.mac)
       }
       await hostTool.deleteMac(this.o.mac)
       await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
