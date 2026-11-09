@@ -43,6 +43,10 @@ const policyKeyName = 'freeradius_server';
 const LOCK_APPLY_FREERADIUS_SERVER_POLICY = "LOCK_APPLY_FREERADIUS_SERVER_POLICY";
 const LOCK_DEVICE_TAG_PREFIX = "LOCK_FREERADIUS_DEVICE_TAG_";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// radius auth failures for debug are recorded once per mac and reason in a window
+const RADIUS_EVENT_WINDOW = 15 * 1000;
+const RADIUS_EVENT_SEEN_MAX = 100;
+const radiusEventSeen = new Map(); // key -> ts of last record, oldest first
 
 class FreeRadiusSensor extends Sensor {
   constructor(config) {
@@ -210,9 +214,14 @@ class FreeRadiusSensor extends Sensor {
           await this.processAuthEvent(message);
           break;
         }
+        case 'radius_auth_failure': {
+          this.processAuthFailure(message);
+          break;
+        }
       }
     });
     sclient.subscribe("radius_auth_event");
+    sclient.subscribe("radius_auth_failure");
   }
 
   async refreshDeviceTags(options = {}) {
@@ -398,6 +407,62 @@ class FreeRadiusSensor extends Sensor {
     return this._normalizeMac(msg.user_name) === mac;
   }
 
+  // values of radius_auth_failure are escaped by freeradius %{escape:}, unsafe bytes as =XX
+  _unescapeRadius(value) {
+    if (!_.isString(value))
+      return value;
+    return value.replace(/(?:=[0-9A-F]{2})+/g, m => Buffer.from(m.replace(/=/g, ""), "hex").toString("utf8"));
+  }
+
+  // kept for support reference, OldDataCleanSensor trims it by radius_event config
+  async _saveRadiusEvent(event) {
+    await rclient.zaddAsync(Constants.REDIS_KEY_RADIUS_EVENTS, event.ts, JSON.stringify(event));
+  }
+
+  // false when the same key was recorded in the window
+  _isNewRadiusEvent(key, now = Date.now()) {
+    for (const [k, ts] of radiusEventSeen) {
+      if (now - ts < RADIUS_EVENT_WINDOW && radiusEventSeen.size <= RADIUS_EVENT_SEEN_MAX)
+        break;
+      radiusEventSeen.delete(k);
+    }
+    if (radiusEventSeen.has(key))
+      return false;
+    radiusEventSeen.set(key, now);
+    return true;
+  }
+
+  _recordAuthSuccess(msg, mac, ssid, auth) {
+    const vlan = msg.vlan || msg.vlan_id || "";
+    const tag = msg.tag || msg.filter_id || "";
+    const event = { type: "auth_success", ts: Number(msg.ts) || Math.floor(Date.now() / 1000), mac, auth, user: msg.user_name, ssid, nas: msg.nas_ip, vlan, tag };
+    this._saveRadiusEvent(event).catch((err) => {
+      log.warn("failed to save radius auth success event", err.message);
+    });
+  }
+
+  // debug only: log rejected auth requests
+  processAuthFailure(message) {
+    message = message.trim();
+    if (!message.startsWith("{"))
+      message = "{" + message + "}";
+    try {
+      const msg = _.mapValues(JSON.parse(message), v => this._unescapeRadius(v));
+      const mac = this._normalizeMac(msg.mac) || msg.mac;
+      const authMethod = msg.auth_method || (this._normalizeMac(msg.user_name) === mac ? "mab" : "");
+      const reason = msg.root_reason || msg.reason;
+      if (!this._isNewRadiusEvent(`${mac}|${reason}`))
+        return;
+      log.warn(`radius auth failure, mac ${mac}, auth ${authMethod}, user ${msg.user_name}, ssid ${msg.ssid}, nas ${msg.nas_ip}, reason ${reason}`);
+      const event = { type: "auth_failure", ts: Number(msg.ts) || Math.floor(Date.now() / 1000), mac, auth: authMethod, user: msg.user_name, ssid: msg.ssid, nas: msg.nas_ip, reason };
+      this._saveRadiusEvent(event).catch((err) => {
+        log.warn("failed to save radius auth failure event", err.message);
+      });
+    } catch (err) {
+      log.error("parse radius_auth_failure message error", err.message, message);
+    }
+  }
+
   // supports both post-auth publish and json authlog fields
   async processAuthEvent(message) {
     message = message.trim();
@@ -413,7 +478,10 @@ class FreeRadiusSensor extends Sensor {
           return;
         }
         const ssid = msg.ssid || msg.called_station_ssid;
-        if (this._isMabEvent(msg, mac)) {
+        const isMab = this._isMabEvent(msg, mac);
+        if (msg.result && msg.result === "Access-Accept")
+          this._recordAuthSuccess(msg, mac, ssid, isMab ? "mab" : "dot1x");
+        if (isMab) {
           if (msg.result && msg.result !== "Access-Accept")
             return;
           const tagUid = msg.tag || msg.filter_id;

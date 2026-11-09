@@ -649,6 +649,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("api_stats", (key) => key.startsWith("api:stats:"));
     this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
     this._registerFilterFunction("ntp_off_set", (key) => key === Constants.REDIS_KEY_NTP_OFF_SET);
+    this._registerFilterFunction("radius_event", (key) => key === Constants.REDIS_KEY_RADIUS_EVENTS);
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
     this._registerFilterFunction("subdomains2", (key) => key.startsWith("subdomains2:"), false, this.cleanSubdomains);
   }
