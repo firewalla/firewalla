@@ -1682,18 +1682,13 @@ class PolicyManager2 {
     let tags = [];
     if (!_.isEmpty(unsorted)) {
       for (const tagStr of unsorted) {
-        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          intfs.push(intfUuid);
-        } else {
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            if (tagStr.startsWith(config.ruleTagPrefix)) {
-              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-              tags.push(tagUid);
-            }
-          }
-        }
+        const parsed = Policy.parseTagStr(tagStr);
+        if (!parsed)
+          continue;
+        if (parsed.type === "intf")
+          intfs.push(parsed.uid);
+        else
+          tags.push(parsed.uid);
       }
     }
     tags = _.uniq(tags);
@@ -3679,28 +3674,11 @@ class PolicyManager2 {
       let { scope, target, action = "block", tag, guids } = rule;
       rule.type = rule["i.type"] || rule["type"];
       rule.direction = rule.direction || "bidirection";
-      const intfs = [];
+      let intfs = [];
       let tags = [];
       if (!_.isEmpty(tag)) {
-        let invalid = true;
-        for (const tagStr of tag) {
-          if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-            invalid = false;
-            let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-            intfs.push(intfUuid);
-          } else {
-            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-              const config = Constants.TAG_TYPE_MAP[type];
-              if (tagStr.startsWith(config.ruleTagPrefix)) {
-                invalid = false;
-                const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-                tags.push(tagUid);
-              }
-            }
-            tags = _.uniq(tags);
-          }
-        }
-        if (invalid) {
+        ({ intfs, tags } = this.parseTags(tag));
+        if (intfs.length === 0 && tags.length === 0) {
           rule.rank = -1;
           return rule;
         }

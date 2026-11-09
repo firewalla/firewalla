@@ -2651,18 +2651,13 @@ module.exports = class {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       for (const tagStr of userInput.tag) {
-        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          e["p.intf.id"] = intfUuid;
-        } else {
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            if (tagStr.startsWith(config.ruleTagPrefix)) {
-              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-              e[config.alarmIdKey] = [tagUid];
-            }
-          }
-        }
+        const parsed = Policy.parseTagStr(tagStr);
+        if (!parsed)
+          continue;
+        if (parsed.type === "intf")
+          e["p.intf.id"] = parsed.uid;
+        else
+          e[Constants.TAG_TYPE_MAP[parsed.type].alarmIdKey] = [parsed.uid];
       }
     }
 
