@@ -130,6 +130,16 @@ const simpleRuleSetMap = {
 
 const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", "resolve", "address", "snat", "bypass"];
 
+// the cloud counts every policy feedback as a block, so only blocking policies report
+const intelFeedbackActions = ["block", "app_block"];
+
+function submitPolicyIntelFeedback(feedbackAction, policy) {
+  if (!intelFeedbackActions.includes(policy.action)) return;
+  Bone.submitIntelFeedback(feedbackAction, policy).catch((err) => {
+    log.error(`Failed to submit intel feedback`, feedbackAction, policy, err);
+  });
+}
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -532,9 +542,7 @@ class PolicyManager2 {
     await rclient.hmsetAsync(policyKey, policy.redisfy());
     await this.addToActiveQueue(policy);
     this.tryPolicyEnforcement(policy);
-    Bone.submitIntelFeedback('block', policy).catch((err) => {
-      log.error(`Failed to submit intel feedback`, policy, err);
-    });
+    submitPolicyIntelFeedback('block', policy);
     return policy;
   }
 
@@ -639,7 +647,7 @@ class PolicyManager2 {
     await this._enablePolicy(policy)
 
     this.tryPolicyEnforcement(policy, "enforce")
-    Bone.submitIntelFeedback('enable', policy)
+    submitPolicyIntelFeedback('enable', policy)
     return policy
   }
 
@@ -650,7 +658,7 @@ class PolicyManager2 {
     const oldPolicy = Object.assign(Object.create(Policy.prototype), policy);
     await this._disablePolicy(policy)
     this.tryPolicyEnforcement(oldPolicy, "unenforce")
-    Bone.submitIntelFeedback('disable', policy)
+    submitPolicyIntelFeedback('disable', policy)
   }
 
   async resetStats(policyIDs) {
@@ -758,7 +766,7 @@ class PolicyManager2 {
     // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
     await this.removeFromRefrencedBypassPolicies(policy);
 
-    Bone.submitIntelFeedback('unblock', policy);
+    submitPolicyIntelFeedback('unblock', policy);
   }
 
   getPolicyKey(pid) {
