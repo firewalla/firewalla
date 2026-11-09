@@ -46,6 +46,7 @@ const lock = new AsyncLock();
 const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
 const { compactTime } = require('../util/util')
+const { localDayStart, nextLocalDayStart } = require('../util/TimeSlot.js');
 
 
 class FlowAggregationSensor extends Sensor {
@@ -93,6 +94,8 @@ class FlowAggregationSensor extends Sensor {
        period => weekly   use daily sum
     }
     */
+
+    await this.updateDailyInboundBlockFlows(Date.now() / 1000).catch(err => log.error(err))
 
     // sum last 24 hours, hourly sum flow can be used to generate 24-hour sum flow
     await this.sumFlowRange(ts).catch(err => log.error(err))
@@ -410,7 +413,7 @@ class FlowAggregationSensor extends Sensor {
       const options = {begin, end, max_flow: this.config.sumAuditFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
       await flowAggrTool.incrSumFlow(uid, traffic, "ipB", options, "in");
-      await flowAggrTool.incrSumFlow(uid, traffic, "ipB", options, "out");
+      await flowAggrTool.incrSumFlow(uid, traffic, "ipB", this.inboundBlockHourOptions(uid, options), "out");
     }
 
     for (const key in dnsBlockCache) {
@@ -430,9 +433,38 @@ class FlowAggregationSensor extends Sensor {
       const begin = end - 3600;
       const options = {begin, end, max_flow: this.config.sumAuditFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
-      await flowAggrTool.incrSumFlow(uid, traffic, "ifB", options, "out");
+      await flowAggrTool.incrSumFlow(uid, traffic, "ifB", this.inboundBlockHourOptions(uid, options), "out");
     }
     log.debug('updateAllHourlySummedFlows ended', ts)
+  }
+
+  // a day (up to 25h) is recomputed until 30 min after its last hour closes, so its first hour must
+  // outlive dayStart + 25.5h; 26h leaves 30 min of margin and must grow if that window grows
+  inboundBlockHourOptions(uid, options) {
+    if (uid !== 'global')
+      return options;
+    return Object.assign({}, options, {expireTime: Math.max(options.expireTime, 26 * 3600)});
+  }
+
+  // network-wide inbound blocks of each local day, rebuilt from the hourly sumflows
+  async updateDailyInboundBlockFlows(now) {
+    if (!platform.isAuditLogSupported())
+      return;
+    const tz = sysManager.getTimezone();
+    const todayStart = localDayStart(now, tz);
+    const days = [todayStart];
+    // yesterday's last hour bucket is still being written on the first runs after it closes,
+    // which is after local midnight in :30/:45 offset zones
+    if (now < Math.ceil(todayStart / 3600) * 3600 + 1800)
+      days.push(localDayStart(todayStart - 1, tz));
+    const options = {max_flow: this.config.sumAuditFlowMaxFlow, expireTime: FlowAggrTool.DAILY_SUMFLOW_DAYS * 86400};
+    for (const dayStart of days) {
+      const dayEnd = nextLocalDayStart(dayStart, tz);
+      for (const dimension of ['ipB', 'ifB']) {
+        await flowAggrTool.addDailySumFlow('global', dimension, 'out', dayStart, dayEnd, options);
+      }
+      log.verbose('daily inbound block flows updated', dayStart, dayEnd);
+    }
   }
 
   async addFlowsForView(options) {

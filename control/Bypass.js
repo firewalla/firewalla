@@ -72,6 +72,16 @@ async function bypassDNSRules(options) {
   let shouldAppend = false;
   let restartDNS = false;
   const categoryMap = new Map(); // key: category${seqHigh}, value: {category, seq}
+  const derivedAppTargetsCache = new Map();
+
+  const getDerivedAppTargets = async (category) => {
+    if (!derivedAppTargetsCache.has(category))
+      derivedAppTargetsCache.set(category, await pm2._getDerivedAppTargetsForCategory(category).catch((err) => {
+        log.error(`Failed to get derived app targets of category ${category}: ${err}`);
+        return [];
+      }));
+    return derivedAppTargetsCache.get(category);
+  };
 
   for (const aPid of affectedPids) {
     const policy = await pm2.getPolicy(aPid);
@@ -80,11 +90,27 @@ async function bypassDNSRules(options) {
       continue;
     }
     if (type == "category") {
-      const categories = policy.targets || [policy.target];
-      for (let category of categories) {
-        if (policy.useBf) {
-          category = categoryUpdater.getBfCategoryName(category);
-        }
+      // mirror the enforcement side of a category policy in PolicyManager2._enforce: a category
+      // rule also enforces the app targets derived from the category, and, on useBf, the BF variant
+      // of each category *in addition to* the category itself. Every tag emitted by the affected
+      // policy needs its own bypass entry, otherwise the excluded object stays blocked by the tags
+      // that were left out.
+      // PolicyManager2._enforce() normalizes app_block to block before it decides whether to derive
+      // app targets, so the same normalization has to happen here or an app time limit rule keeps
+      // its derived tags in force for the excluded object
+      const affectedAction = (policy.action || "block") === "app_block" ? "block" : (policy.action || "block");
+      const categories = [];
+      for (const category of (policy.targets || [policy.target])) {
+        categories.push(category);
+        if (["block", "disturb"].includes(affectedAction))
+          categories.push(...await getDerivedAppTargets(category));
+      }
+      if (policy.useBf) {
+        // useBf only applies to original categories, not TLX-fw-* derived targets
+        for (const category of categories.filter(c => !categoryUpdater.isSmallExtendedTargetList(c)))
+          categories.push(categoryUpdater.getBfCategoryName(category));
+      }
+      for (const category of categories) {
         const key = `${category}${policy.seq == Constants.RULE_SEQ_HI ? 'Hi' : 'Normal'}`;
         if (!categoryMap.has(key)) {
           categoryMap.set(key, {category, seq: policy.seq});
@@ -161,7 +187,6 @@ async function bypassIptablesRules(options) {
   const {affectedPids, tags, intfs, action, pid, targets, scope, guids, type} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
   const pm2 = new PolicyManager2();
-  const categoriesWithBfSet = new Set();
   const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
 
   // try to inject exception to all affected policies
@@ -171,15 +196,11 @@ async function bypassIptablesRules(options) {
       log.warn(`Failed to ${action} bypass policy ${pid} for affected policy ${aPid} as it doesn't exist`);
       continue;
     }
-    if (policy.useBf) {
-      const categories = policy.targets || [policy.target];
-      categories.forEach(category => categoriesWithBfSet.add(category));
-    }
 
     const tables = [];
     if (policy.action == "disturb") {
       tables.push('mangle');
-      if (PolicyDisturbManager.checkIfNeedDisableQuic(policy)) {
+      if (await PolicyDisturbManager.checkIfNeedDisableQuic(policy)) {
         tables.push('filter');
       }
     } else {

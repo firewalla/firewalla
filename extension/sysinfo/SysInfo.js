@@ -724,7 +724,7 @@ async function getEthErrorStats(nic) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  for (const nic of platform.getAllNicNames().filter(nic => nic.startsWith("eth"))) {
+  for (const nic of platform.getEthernetNicNames()) {
     if (!await fileExist(`/sys/class/net/${nic}/ifindex`)) // NIC not present on this box
       continue;
     // negotiated link speed in Mbps, -1 when the link is down. a NIC running below the speed it
