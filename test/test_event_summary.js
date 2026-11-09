@@ -55,7 +55,7 @@ const TEST_KEY = 'event::test_summary';
 
 function makeSensor(settings) {
   const sensor = new EventSummarySensor({ eventSummarySettings: settings || [] });
-  // bypass the cloud fetch, exercise only the validation/merge half of loadConfig
+  // bypass the cloud fetch, exercise only the validation/merge half of applyConfig
   sensor.eventSummaryConfs = { eventSummarySettings: sensor._validateSettings(settings || []) };
   return sensor;
 }
@@ -178,7 +178,7 @@ describe('Test event summary period alignment', function() {
 
 describe('Test event summary startup', function() {
   it('should apply local settings before any cloud fetch', async () => {
-    // run() only reaches loadConfig() after a cloud round trip, but EventRequestHandler is already
+    // run() only reaches applyConfig() after a cloud round trip, but EventRequestHandler is already
     // emitting by then - a sensor that has only been constructed must already match
     const sensor = new EventSummarySensor({ eventSummarySettings: [SETTING] });
     expect(sensor.eventSummaryConfs.eventSummarySettings).to.have.lengthOf(1);

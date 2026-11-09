@@ -83,12 +83,14 @@ module.exports = {
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   // local redis cache of whatever the cloud hashset below returned
-  REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG: "block_stats_cloud_config",
+  REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG: "block_stats_aggr_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
-  KEY_BLOCK_STATS_CONFIG: "block_stats_config",
-  REDIS_KEY_BLOCK_STATS_PREFIX: "blockStats::",
-  // zset tracking which blockStats::<ts> bucket keys actually exist (score = member = ts), so
+  KEY_BLOCK_STATS_AGGR_CONFIG: "block_stats_aggr_config",
+  REDIS_KEY_BLOCK_STATS_AGGR_PREFIX: "blockStatsAggr::",
+  // zset tracking which blockStatsAggr::<ts> bucket keys actually exist (score = member = ts), so
   // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
+  REDIS_KEY_BLOCK_STATS_AGGR_INDEX: "blockStatsAggr:index",
+  // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
   // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
@@ -211,6 +213,12 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
+  FEATURE_PCAP_ZEEK_ZSSIDS: "pcap_zeek_zssids",
+  FEATURE_PCAP_SURICATA_ZSSIDS: "pcap_suricata_zssids",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",

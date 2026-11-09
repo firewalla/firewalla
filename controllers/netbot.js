@@ -149,6 +149,7 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -926,11 +927,11 @@ class netBot extends ControllerBot {
           script = args.shift();
         }
         if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
-          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+          log.debug("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
         } else {
-          log.error("FIREWALLA CLOUD SCRIPT", script, args);
+          log.debug("FIREWALLA CLOUD SCRIPT", script, args);
           execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
-            .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+            .catch((err) => log.debug("FIREWALLA CLOUD SCRIPT failed", script, err.message));
         }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
@@ -1467,7 +1468,7 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
-      case "blockStats": {
+      case "blockStatsAggr": {
         //  value.begin/value.end: time range in seconds used to query block stats time slots,
         //  begin included, end excluded, end defaults to now if not given
         const value = msg.data.value || {};
@@ -1478,6 +1479,20 @@ class netBot extends ControllerBot {
         }
         const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
         return { blockStats };
+      }
+      case "dailyInboundBlockStats": {
+        //  value.ts: any time in the local day to return, within the last 7 days
+        const value = msg.data.value || {};
+        if (value.ts == null || isNaN(value.ts)) {
+          throw new Error('Invalid ts');
+        }
+        const dayStart = localDayStart(Number(value.ts), sysManager.getTimezone());
+        const json = {};
+        await Promise.all([
+          netBotTool.prepareTopFlows(json, 'ipB', 'out', {dayStart, limit: 400}),
+          netBotTool.prepareTopFlows(json, 'ifB', 'out', {dayStart, limit: 400}),
+        ]);
+        return { ts: dayStart, flows: json.flows };
       }
       case "neighbors":
       case "neighborsLocal": {
@@ -4339,6 +4354,10 @@ class netBot extends ControllerBot {
                 options.includeAppTimeIntervals = data.includeAppTimeIntervals;
               if (data.timeUsageApps)
                 options.timeUsageApps = data.timeUsageApps;
+              options.blockStatsAggrFilter = data.blockStatsAggrFilter;
+              // { include: [<state_type>] } or { exclude: [<state_type>] } for the latest state events
+              if (data.stateEventTypeFilter)
+                options.stateEventTypeFilter = data.stateEventTypeFilter;
 
               if (!data.apiVer || data.apiVer <= 2) {
                 options.legacyLocalBlock = true;

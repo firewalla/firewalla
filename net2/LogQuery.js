@@ -454,6 +454,11 @@ class LogQuery {
     return feeds
   }
 
+  // a local flow is stored under both devices, drop the destination side's copy when both are queried
+  localCopyExclude(macs) {
+    // fd "out" still covers ordinary copies written before the reverse marker, and audit copies
+    return [{dstMac: macs, fd: "out"}, {dstMac: macs, reverse: true}]
+  }
 
   async enrichWithIntel(logs, enrichIP = false) {
     // once the flow_inline_intel migration matures, every stored record was written with
@@ -478,7 +483,6 @@ class LogQuery {
           // lodash/assign appears to be x4 times less efficient
           // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
           if (intel) {
-            if (intel.country) f.country = intel.country
             if (intel.category) f.category = intel.category
             // if (intel.app) f.app = intel.app
           }

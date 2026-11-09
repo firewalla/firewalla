@@ -189,3 +189,81 @@ describe('Test event handler state event', function() {
   });
 });
 
+
+describe('Test latest state events', function() {
+  const hashes = {};
+  let hgetall;
+
+  const entry = (type, key, ts, value = 0) => [`${type}:${key}`,
+    JSON.stringify({"event_type":"state","state_type":type,"state_key":key,"state_value":value,"ts":ts})];
+
+  before(() => {
+    // served from memory, so the box's own event:state:cache is never touched
+    hgetall = rclient.hgetallAsync;
+    rclient.hgetallAsync = async (key) => hashes[key] || null;
+  });
+
+  after(() => {
+    rclient.hgetallAsync = hgetall;
+  });
+
+  beforeEach(() => {
+    const now = Date.now();
+    const all = [], error = [];
+    // a switch went offline 2 days ago and came back a day ago
+    all.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 86400000, 0));
+    error.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 2 * 86400000, 1));
+    // 300 newer keys of every other type, 150 of them of types excluded by default
+    for (let i = 0; i < 50; i++) all.push(entry("switch_port_state", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 100; i++) all.push(entry("dap_state", `AA:BB:CC:00:00:${i}`, now - 1000 * i));
+    for (let i = 0; i < 50; i++) all.push(entry("switch_port_speed_change", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 100; i++) all.push(entry("ping", `fe80::${i}`, now - 1000 * i));
+    hashes["event:state:cache"] = Object.fromEntries(all);
+    hashes["event:state:cache:error"] = Object.fromEntries(error);
+  });
+
+  const types = (events) => new Set(Object.values(events).map(e => e.state_type));
+
+  it('should leave out default excluded types', async () => {
+    const all = await eventapi.listLatestStateEventsAll();
+    expect(Object.keys(all).length).to.equal(151);
+    expect([...types(all)]).to.have.members(["switch_port_state", "switch_connect_state", "ping"]);
+  });
+
+  it('should return the entry paired with each error even if it is not among the newest', async () => {
+    for (let i = 50; i < 300; i++)
+      hashes["event:state:cache"][`switch_port_state:20:6D:31:A0:01:5F_${i}`] = entry("switch_port_state", `x_${i}`, Date.now() - 1000 * i)[1];
+    const all = await eventapi.listLatestStateEventsAll();
+    // 200 newest, plus the recovery of the switch offline
+    expect(Object.keys(all).length).to.equal(201);
+    expect(all["switch_connect_state:20:6D:31:AF:00:41"].state_value).to.equal(0);
+    const error = await eventapi.listLatestStateEventsError();
+    expect(Object.keys(error)).to.deep.equal(["switch_connect_state:20:6D:31:AF:00:41"]);
+  });
+
+  it('should return only included types, under the same cap', async () => {
+    for (let i = 50; i < 300; i++)
+      hashes["event:state:cache"][`switch_port_state:20:6D:31:A0:01:5F_${i}`] = entry("switch_port_state", `x_${i}`, Date.now() - 1000 * i)[1];
+    const all = await eventapi.listLatestStateEventsAll(true, {include: ["switch_port_state", "switch_connect_state"], exclude: ["switch_port_state"]});
+    // 200 newest switch ports, plus the recovery of the switch offline
+    expect(Object.keys(all).length).to.equal(201);
+    expect(all["switch_connect_state:20:6D:31:AF:00:41"].state_value).to.equal(0);
+    const ping = await eventapi.listLatestStateEventsAll(true, {include: ["ping"]});
+    expect(Object.keys(ping).length).to.equal(100);
+    expect(await eventapi.listLatestStateEventsError(true, {include: ["ping"]})).to.be.empty;
+  });
+
+  it('should replace default excluded types with the given ones', async () => {
+    const all = await eventapi.listLatestStateEventsAll(true, {exclude: ["ping"]});
+    // the switch recovery is the oldest of 201, it is cut and then added back for its error
+    expect(Object.keys(all).length).to.equal(201);
+    expect(types(all).has("ping")).to.be.false;
+    expect(types(all).has("dap_state")).to.be.true;
+  });
+
+  it('should fall back to default when filter is malformed', async () => {
+    const all = await eventapi.listLatestStateEventsAll(true, {include: "ping"});
+    expect(Object.keys(all).length).to.equal(151);
+    expect(types(all).has("dap_state")).to.be.false;
+  });
+});

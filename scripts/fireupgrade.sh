@@ -257,6 +257,7 @@ fi
 
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+git config "branch.$branch.remote" origin
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
 GIT_FETCH="(sudo -u pi $MGIT fetch origin $remote_branch)"
 if eval $GIT_FETCH ||
