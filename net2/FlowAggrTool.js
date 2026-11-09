@@ -499,26 +499,16 @@ class FlowAggrTool {
     ]);
   }
 
-  async removeAggrFlowsAll(mac) {
-    let keys = [];
+  // macs: a mac or guid, or an array of them
+  async removeAggrFlowsAll(macs) {
+    macs = [].concat(macs)
+    const keys = await rclient.scanResultsByIds(
+      ['lastsumflow:', 'category:host:', 'app:host:', 'aggrflow:', 'sumflow:'], macs)
 
-    let search = await Promise.all([
-      rclient.scanResults('lastsumflow:' + mac + ':*'),
-      rclient.scanResults('category:host:' + mac + ':*'),
-      rclient.scanResults('app:host:' + mac + ':*'),
-    ])
+    for (const mac of macs)
+      keys.push('lastcategory:host:' + mac, 'lastapp:host:' + mac)
 
-    keys.push(
-      ... _.flatten(search),
-      'lastcategory:host:' + mac,
-      'lastapp:host:' + mac
-    )
-
-    return Promise.all([
-      rclient.unlinkAsync(keys),
-      this.removeAllFlowKeys(mac),
-      this.removeAllSumFlows(mac),
-    ])
+    return rclient.unlinkAsync(keys)
   }
 
   async recordDeviceLastFlowTs(uid, ts) {

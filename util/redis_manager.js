@@ -52,6 +52,34 @@ redis.RedisClient.prototype.scanResults = async function(pattern, count = 1000) 
   return _.uniq(allResults)
 }
 
+// above this many ids one full scan is cheaper than a MATCH scan per prefix and id
+const SCAN_MATCH_MAX_IDS = 4
+
+// keys named <prefix><id>:..., for every prefix and id
+redis.RedisClient.prototype.scanResultsByIds = async function(prefixes, ids, count = 1000) {
+  if (ids.length <= SCAN_MATCH_MAX_IDS) {
+    const search = await Promise.all(prefixes.flatMap(prefix =>
+      ids.map(id => this.scanResults(prefix + id + ':*', count))))
+    return _.uniq(_.flatten(search))
+  }
+
+  const idSet = new Set(ids)
+  const allResults = []
+  await this.scanAll(null, async (results) => {
+    for (const key of results) {
+      const matched = prefixes.some(prefix => {
+        if (!key.startsWith(prefix)) return false
+        // ids may contain ':' themselves, so try every ':' after the prefix as the end of the id
+        for (let i = key.indexOf(':', prefix.length); i > 0; i = key.indexOf(':', i + 1))
+          if (idSet.has(key.substring(prefix.length, i))) return true
+        return false
+      })
+      if (matched) allResults.push(key)
+    }
+  }, count)
+  return _.uniq(allResults)
+}
+
 // mulit in redis is more like a resource lock other than triditional transaction,
 // redis doesn't stop processing commands on error, neither does it rollback any
 // multi() with exec() in redis package just pipelines commands

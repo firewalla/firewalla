@@ -2753,13 +2753,15 @@ module.exports = class DNSMASQ {
     }
   }
 
-  // ip could be a string of single IP or an array of IPs
+  // mac and ip could each be a string or an array
   // return deleted lines
   async deleteLeaseRecord(mac, ip) {
-    if (!mac && (!ip || !ip.length))
+    if ((!mac || !mac.length) && (!ip || !ip.length))
       return [];
     const leaseFile = platform.getDnsmasqLeaseFilePath();
-    const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    const macRegex = !mac || !mac.length ? '[0-9a-f:]{17}'
+      : Array.isArray(mac) ? `(${mac.map(m => m.toLowerCase()).join('|')})` : mac.toLowerCase()
+    const regex = `^[0-9]+ ${macRegex} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
     log.debug('lease file sed regex', regex)
     return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
