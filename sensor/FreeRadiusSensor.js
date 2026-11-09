@@ -41,6 +41,7 @@ const Constants = require('../net2/Constants.js');
 const featureName = 'freeradius_server';
 const policyKeyName = 'freeradius_server';
 const LOCK_APPLY_FREERADIUS_SERVER_POLICY = "LOCK_APPLY_FREERADIUS_SERVER_POLICY";
+const LOCK_DEVICE_TAG_PREFIX = "LOCK_FREERADIUS_DEVICE_TAG_";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 class FreeRadiusSensor extends Sensor {
@@ -241,32 +242,54 @@ class FreeRadiusSensor extends Sensor {
     const keys = await rclient.scanResults(`${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}*`);
     for (const key of keys) {
       const mac = key.substring(Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE.length);
-      const autoGroup = await hostTool.getWirelessAutoGroup(mac);
-      if (!autoGroup)
-        continue;
-      let parsed;
-      try {
-        parsed = JSON.parse(autoGroup);
-      } catch (err) {
-        continue;
-      }
-      if (!parsed || parsed.auth !== "mab" || !parsed.tag)
-        continue;
-      if (!await hostManager.getHostAsync(mac))
-        continue;
-      const { tag, ssid, ts, ...options } = parsed;
-      log.info(`retry set mab device tag ${mac} to ${tag}`);
-      await this.setDeviceTagByUid(mac, tag, ssid, options);
+      await this._withDeviceTagLock(mac, async () => {
+        // a newer auth event may have removed or replaced the candidate while waiting for the lock
+        if (!await hostTool.getWirelessDeviceTagCandidate(mac))
+          return;
+        const parsed = await this._loadAutoGroup(mac);
+        if (!parsed || parsed.auth !== "mab" || !parsed.tag)
+          return;
+        if (!await hostManager.getHostAsync(mac))
+          return;
+        const { tag, ssid, ts, ...options } = parsed;
+        log.info(`retry set mab device tag ${mac} to ${tag}`);
+        await this._setDeviceTagByUid(mac, tag, ssid, options);
+      });
+    }
+  }
+
+  // serialize tag assignment and removal of one device
+  async _withDeviceTagLock(mac, fn) {
+    return await lock.acquire(`${LOCK_DEVICE_TAG_PREFIX}${mac}`, fn);
+  }
+
+  // auto group of host, or the cached one of a device not seen yet
+  async _loadAutoGroup(mac, monitorable = null) {
+    if (monitorable && monitorable.o.autoGroup)
+      return monitorable.o.autoGroup;
+    const cached = await hostTool.getWirelessAutoGroup(mac);
+    if (!cached)
+      return null;
+    try {
+      return JSON.parse(cached);
+    } catch (err) {
+      return null;
     }
   }
 
   async setDeviceTag(mac, username, ssid, options = {}) {
-    const userTag = tagManager.getTagByRadiusUser(username);
-    await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+    await this._withDeviceTagLock(mac, async () => {
+      const userTag = tagManager.getTagByRadiusUser(username);
+      await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+    });
   }
 
   // MAB: Filter-Id is the tag uid
   async setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
+    await this._withDeviceTagLock(mac, () => this._setDeviceTagByUid(mac, tagUid, ssid, options));
+  }
+
+  async _setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
     const userTag = tagManager.getTagByUid(String(tagUid));
     await this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
   }
@@ -327,6 +350,38 @@ class FreeRadiusSensor extends Sensor {
     await monitorable.setPolicyAsync(policyKey, [tagId], true);
   }
 
+  // mac no longer in any group's mab list, only undo a group that mab itself assigned
+  async removeMabAutoGroup(mac) {
+    await this._withDeviceTagLock(mac, () => this._removeMabAutoGroup(mac));
+  }
+
+  async _removeMabAutoGroup(mac) {
+    await hostTool.deleteWirelessDeviceTagCandidate(mac);
+    const monitorable = await hostManager.getHostAsync(mac);
+    const autoGroup = await this._loadAutoGroup(mac, monitorable);
+    if (!autoGroup || autoGroup.auth !== "mab")
+      return;
+    if (!monitorable) {
+      await hostTool.resetWirelessAutoGroup(mac);
+      return;
+    }
+    await monitorable.resetAutoGroupAsync();
+
+    // auto group disabled on this device, keep its group like the assignment path does
+    const wifiAutoGroup = monitorable.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    if (_.get(wifiAutoGroup, "state") === false) {
+      log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${mac}, keep its group`);
+      return;
+    }
+
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]);
+    const origPolicy = await monitorable.loadPolicyAsync();
+    if (!_.isEqual((origPolicy[policyKey] || []).map(String), [String(autoGroup.tag)]))
+      return;
+    log.info(`remove policy of ${mac} ${policyKey}:[${autoGroup.tag}]`);
+    await monitorable.setPolicyAsync(policyKey, [], true);
+  }
+
   _normalizeMac(mac) {
     if (!_.isString(mac))
       return null;
@@ -367,7 +422,8 @@ class FreeRadiusSensor extends Sensor {
           if (vlan)
             options.dvlanId = String(vlan);
           if (!tagUid) {
-            log.info(`skip set device tag ${mac}, no tag in mab auth event`);
+            log.info(`no tag in mab auth event, remove mab auto group of ${mac}`);
+            await this.removeMabAutoGroup(mac);
             return;
           }
           await this.setDeviceTagByUid(mac, tagUid, ssid, options);
