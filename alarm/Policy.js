@@ -774,6 +774,20 @@ class Policy {
     return target;
   }
 
+  // Splits a rule tag string into its type and uid. type is "intf" or a Constants.TAG_TYPE_MAP key.
+  // Returns null for an unknown prefix.
+  static parseTagStr(tagStr) {
+    if (tagStr.startsWith(Policy.INTF_PREFIX))
+      return { type: "intf", uid: tagStr.substring(Policy.INTF_PREFIX.length) };
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const prefix = Constants.TAG_TYPE_MAP[type].ruleTagPrefix;
+      if (tagStr.startsWith(prefix))
+        return { type, uid: tagStr.substring(prefix.length) };
+    }
+    return null;
+  }
+
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
