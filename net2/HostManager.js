@@ -2225,6 +2225,37 @@ module.exports = class HostManager extends Monitorable {
     return false;
   }
 
+  // devices kept visible however long they have been inactive: port forward targets, DHCP
+  // reservations, APC assets, and pinned devices when includePinned is set
+  async getAlwaysVisibleMACs(portforwardConfig, includePinned) {
+    const macs = new Set()
+    if (portforwardConfig && Array.isArray(portforwardConfig.maps))
+      portforwardConfig.maps.forEach(p => macs.add(p.toMac))
+
+    for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+      macs.add(mac)
+
+    if (includePinned)
+      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
+        macs.add(mac)
+
+    if (platform.isFireRouterManaged()) {
+      try {
+        const networkConfig = await FireRouter.getConfig();
+        const assets = _.get(networkConfig, ["apc", "assets"]);
+        if (_.isObject(assets)) {
+          for (const assetMac of Object.keys(assets)) {
+            if (hostTool.isMacAddress(assetMac))
+              macs.add(assetMac.toUpperCase());
+          }
+        }
+      } catch (err) {
+        log.error("Failed to get APC assets from FireRouter config", err.message);
+      }
+    }
+    return macs
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync(options = {}) {
     log.verbose("getHosts: started");
@@ -2258,30 +2289,8 @@ module.exports = class HostManager extends Monitorable {
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)
-      if (portforwardConfig && Array.isArray(portforwardConfig.maps))
-        portforwardConfig.maps.forEach(p => visibleMACs.add(p.toMac))
-
-      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+      for (const mac of await this.getAlwaysVisibleMACs(portforwardConfig, includePinnedHosts))
         visibleMACs.add(mac)
-
-      if (includePinnedHosts)
-        for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
-          visibleMACs.add(mac)
-
-      if (platform.isFireRouterManaged()) {
-        try {
-          const networkConfig = await FireRouter.getConfig();
-          const assets = _.get(networkConfig, ["apc", "assets"]);
-          if (_.isObject(assets)) {
-            for (const assetMac of Object.keys(assets)) {
-              if (hostTool.isMacAddress(assetMac))
-                visibleMACs.add(assetMac.toUpperCase());
-            }
-          }
-        } catch (err) {
-          log.error("Failed to get APC assets from FireRouter config", err.message);
-        }
-      }
 
       // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
