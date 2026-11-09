@@ -174,6 +174,7 @@ class PolicyManager2 {
           this.policyCache.del(Number(pid));
         }
       });
+      sem.on('Policy:CacheInvalidate', () => this.invalidatePolicyCache());
     }
     return instance;
   }
@@ -853,6 +854,7 @@ class PolicyManager2 {
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let changed = false;
 
     for (let rule of rules) {
       if (rule.type == 'mac' && macSet.has(rule.target)) {
@@ -874,6 +876,7 @@ class PolicyManager2 {
         // rule targets NOT only deleted devices
         else {
           await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          changed = true;
           const newRule = await this.getPolicy(rule.pid)
 
           this.tryPolicyEnforcement(newRule, 'reenforce', rule);
@@ -894,7 +897,11 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      changed = true;
     }
+    // FireApi answers acl:check and route:check from its own rule cache, also for removals FireMain makes
+    if (changed)
+      sem.sendEventToFireApi({ type: 'Policy:CacheInvalidate', message: 'device related policies changed', suppressEventLogging: true });
     log.info('Deleted', macs, 'related policies:', policyKeys);
   }
 

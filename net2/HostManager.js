@@ -160,35 +160,11 @@ module.exports = class HostManager extends Monitorable {
         })
       })
       messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
-        // a host dropped from hostsdb keeps its instance, and loading it from redis would map its
-        // possibly stale address in hostsdb again
-        let host = this.getHostFastByMAC(mac) || Host.getInstance(mac)
-        log.info('Removing host cache', mac)
-        if (!host)
-          host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
-        if (!host) {
-          log.warn(`Cannot find host with MAC address: ${mac}`);
-          return;
-        }
-
-        // a stale address may already map to the device that took it over
-        if (this.hostsdb[`host:ip4:${host.o.ipv4Addr}`] === host) {
-          delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
-          log.info('Removing host cache', host.o.ipv4Addr)
-        }
-        if (Array.isArray(host.ipv6Addr)) {
-          host.ipv6Addr.forEach(ip6 => {
-            if (this.hostsdb[`host:ip6:${ip6}`] !== host) return
-            log.info('Removing host cache', ip6)
-            delete this.hostsdb[`host:ip6:${ip6}`]
-          })
-        }
-        delete this.hostsdb[`host:mac:${mac}`]
-
-        this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
-        await host.destroy().catch((err) => {
-          log.error(`Failed to destroy device ${mac}`, err.message);
-        });
+        // an expiry run announces its devices at once, tear those down one at a time
+        if (obj && obj.mac)
+          await lock.acquire('DEVICE_EXPIRY', () => this.removeHost(mac, obj))
+        else
+          await this.removeHost(mac)
       })
 
       // updates hostsdb when host is updated
@@ -807,14 +783,18 @@ module.exports = class HostManager extends Monitorable {
     json.safeSearchConfig = config;
   }
 
-  async getPortforwardConfig() {
+  // strict: throw on a read or parse error instead of returning null
+  async getPortforwardConfig(strict = false) {
     return rclient.getAsync("extension.portforward.config").then((data) => {
       if (data) {
         const config = JSON.parse(data);
           return config;
       } else
         return null;
-    }).catch((err) => null);
+    }).catch((err) => {
+      if (strict) throw err
+      return null
+    });
   }
 
   async newAlarmDataForInit(json) {
@@ -2136,6 +2116,44 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
+  // expired: the host:mac of a device removed by expiry, read before its removal
+  async removeHost(mac, expired) {
+    // a host dropped from hostsdb keeps its instance, and loading it from redis would map its
+    // possibly stale address in hostsdb again
+    let host = this.getHostFastByMAC(mac) || Host.getInstance(mac)
+    log.info('Removing host cache', mac)
+    if (!host)
+      host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
+    // FireMain may never have loaded an expired device, whose policy, hosts file and address
+    // mappings still need the teardown
+    if (!host && expired && f.isMain())
+      host = new Host(Host.parse(expired), true)
+    if (!host) {
+      // other processes hold nothing for an expired device they never loaded
+      log.verbose(`Cannot find host with MAC address: ${mac}`);
+      return;
+    }
+
+    // a stale address may already map to the device that took it over
+    if (this.hostsdb[`host:ip4:${host.o.ipv4Addr}`] === host) {
+      delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
+      log.info('Removing host cache', host.o.ipv4Addr)
+    }
+    if (Array.isArray(host.ipv6Addr)) {
+      host.ipv6Addr.forEach(ip6 => {
+        if (this.hostsdb[`host:ip6:${ip6}`] !== host) return
+        log.info('Removing host cache', ip6)
+        delete this.hostsdb[`host:ip6:${ip6}`]
+      })
+    }
+    delete this.hostsdb[`host:mac:${mac}`]
+
+    this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+    await host.destroy().catch((err) => {
+      log.error(`Failed to destroy device ${mac}`, err.message);
+    });
+  }
+
   async createHost(o, noWrite = false) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
@@ -2233,7 +2251,8 @@ module.exports = class HostManager extends Monitorable {
 
   // devices kept visible however long they have been inactive: port forward targets, DHCP
   // reservations, APC assets, and pinned devices when includePinned is set
-  async getAlwaysVisibleMACs(portforwardConfig, includePinned) {
+  // strict: throw when the APC assets cannot be read instead of leaving them out
+  async getAlwaysVisibleMACs(portforwardConfig, includePinned, strict = false) {
     const macs = new Set()
     if (portforwardConfig && Array.isArray(portforwardConfig.maps))
       portforwardConfig.maps.forEach(p => macs.add(p.toMac))
@@ -2257,6 +2276,7 @@ module.exports = class HostManager extends Monitorable {
         }
       } catch (err) {
         log.error("Failed to get APC assets from FireRouter config", err.message);
+        if (strict) throw err
       }
     }
     return macs

@@ -256,6 +256,9 @@ class Host extends Monitorable {
   }
 
   async destroyEnv() {
+    // sets this process never created were destroyed when it started
+    if (!envCreatedMap[this.o.mac])
+      return;
     log.info('Flushing ipset for', this.o.mac)
     await Ipset.flush(Host.getIpSetName(this.o.mac, 4))
     await Ipset.flush(Host.getIpSetName(this.o.mac, 6))
