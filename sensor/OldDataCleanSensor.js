@@ -31,6 +31,7 @@ const em = new ExceptionManager()
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
+const Host = require('../net2/Host.js');
 
 const _ = require('lodash');
 
@@ -450,6 +451,9 @@ class OldDataCleanSensor extends Sensor {
       log.info(`Start ${fullClean ? "full" : "regular"} cleaning old data in redis`)
 
       await this.regularClean(fullClean);
+      await Host.destroyOrphanEnvs().catch(err => {
+        log.error('Failed to destroy ipsets of removed devices', err);
+      });
 
       await this.cleanUserAgents();
       await this.cleanupAlarmExtendedKeys();
