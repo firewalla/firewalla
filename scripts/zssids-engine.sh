@@ -87,6 +87,8 @@ resolve() {
     log "zssids binary $ZSSIDS_BIN not present, keeping zeek/suricata until the asset arrives"
   elif _fw_feature_on pcap_suricata_zssids && ! suricata_role_supported; then
     log "this platform has no IDS role (no $SURICATA_BIN, no suricata asset), so zssids does not take it"
+  elif ! zssids_allowed_on_stage && { _fw_feature_on pcap_zeek_zssids || _fw_feature_on pcap_suricata_zssids; }; then
+    log "zssids is limited to the $ZSSIDS_MAX_STAGE stage on this platform, keeping zeek/suricata on this branch"
   fi
 }
 

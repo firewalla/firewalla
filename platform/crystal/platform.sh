@@ -18,6 +18,7 @@ MAX_NUM_OF_THREADS=40000
 NODE_VERSION=10.16.3
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.crystal
+ZSSIDS_MAX_STAGE=beta
 REAL_PLATFORM='real.x86_64'
 # ubuntu26 image ships chrony only, ntpd is not installed
 NTP_SVC="chrony"

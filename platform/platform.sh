@@ -172,8 +172,24 @@ function zssids_available {
   [[ -x $ZSSIDS_BIN ]]
 }
 
+# the furthest release stage (alpha, beta or prod) zssids may run on; a platform raises it once zssids is proven there
+ZSSIDS_MAX_STAGE=alpha
+
+function zssids_allowed_on_stage {
+  local branch=$(git -C "${FIREWALLA_HOME:-/home/pi/firewalla}" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [[ $branch == release_* ]]; then
+    [[ $ZSSIDS_MAX_STAGE == prod ]]
+    return
+  fi
+  if [[ $branch == "$(map_target_branch beta_6_0)" ]]; then
+    [[ $ZSSIDS_MAX_STAGE == beta || $ZSSIDS_MAX_STAGE == prod ]]
+    return
+  fi
+  return 0
+}
+
 function get_flow_engine_zeek {
-  if _fw_feature_on pcap_zeek_zssids && zssids_available; then echo zssids; else echo zeek; fi
+  if _fw_feature_on pcap_zeek_zssids && zssids_available && zssids_allowed_on_stage; then echo zssids; else echo zeek; fi
 }
 
 # The IDS role exists only where PcapSuricataPlugin.isSupported() holds: a
@@ -193,7 +209,7 @@ function suricata_role_supported {
 }
 
 function get_flow_engine_suricata {
-  if _fw_feature_on pcap_suricata_zssids && zssids_available && suricata_role_supported; then echo zssids; else echo suricata; fi
+  if _fw_feature_on pcap_suricata_zssids && zssids_available && suricata_role_supported && zssids_allowed_on_stage; then echo zssids; else echo suricata; fi
 }
 
 # the roles themselves can be switched off by the box: pcap_zeek governs flow
