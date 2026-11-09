@@ -741,7 +741,9 @@ class Host extends Monitorable {
       // PolicyManager2 should be dealing with iptables entries alone
       this.destroyEnv();
 
-      await this.resetPolicies().catch(err => { log.error('Error reseting policy', err) });
+      // skip the reset if ownership can't be read, rather than spoof an address another device took
+      await this.dropUnownedIPs().then(() => this.resetPolicies())
+        .catch(err => { log.error('Error reseting policy', err) });
 
       if (this.invalidateHostsFileTask)
         clearTimeout(this.invalidateHostsFileTask);
@@ -771,6 +773,18 @@ class Host extends Monitorable {
     delete envCreatedMap[this.o.mac];
     await fwapc.deleteDeviceAcl(this.o.mac);
     delete Monitorable.instances[this.o.mac]
+  }
+
+  // DHCP may have leased a stored address to another device, whose monitor policy must win
+  async dropUnownedIPs() {
+    if (this.o.ipv4Addr && await hostTool.getIPOwner(this.o.ipv4Addr) !== this.o.mac)
+      this.o.ipv4Addr = null
+    if (Array.isArray(this.ipv6Addr)) {
+      const owned = []
+      for (const ip6 of this.ipv6Addr)
+        if (await hostTool.getIPOwner(ip6) === this.o.mac) owned.push(ip6)
+      this.ipv6Addr = owned
+    }
   }
 
   scheduleUpdateHostData() {

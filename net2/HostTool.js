@@ -263,11 +263,18 @@ class HostTool {
   // the stored address of a device can be stale once DHCP has leased it to another device,
   // so only the owner's mapping is removed, atomically against a concurrent takeover
   deleteIPEntryIfOwner(ip, mac) {
-    const key = net.isIPv4(ip) ? this.getHostKey(ip) : this.getIPv6HostKey(ip)
     return rclient.evalAsync(
       'if redis.call("hget", KEYS[1], "mac") == ARGV[1] then return redis.call("unlink", KEYS[1]) end return 0',
-      1, key, mac
+      1, this.getIPEntryKey(ip), mac
     )
+  }
+
+  getIPOwner(ip) {
+    return rclient.hgetAsync(this.getIPEntryKey(ip), 'mac')
+  }
+
+  getIPEntryKey(ip) {
+    return net.isIPv4(ip) ? this.getHostKey(ip) : this.getIPv6HostKey(ip)
   }
 
   getMacKey(mac) {
