@@ -163,3 +163,41 @@ describe('Test process iptables log', function(){
   });
 
 });
+
+describe('writeLogs intel snapshot on block records', function() {
+  this.timeout(5000);
+
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const IntelTool = require('../net2/IntelTool.js');
+  const intelTool = new IntelTool();
+  const mac = '00:00:5E:00:53:02';
+  let plugin, getIntel;
+
+  before(() => {
+    plugin = new ACLAuditLogPlugin({});
+    plugin.ruleStatsPlugin = { getMatchedPids: async () => [] };
+    getIntel = intelTool.getIntel;
+  });
+
+  after(async () => {
+    intelTool.getIntel = getIntel;
+    const members = await rclient.zrangeAsync('audit:drop:system', -50, -1);
+    for (const m of members.filter(m => m.includes('203.0.113.30')))
+      await rclient.zremAsync('audit:drop:system', m);
+    await rclient.unlinkAsync(`audit:drop:${mac}`);
+  });
+
+  it('should bake the security category of an intel block', async () => {
+    intelTool.getIntel = async () => ({category: 'intel', cc: '["phishing"]'});
+    plugin.buffer = { [mac]: { unittest: {
+      type: 'ip', ac: 'block', _ts: Date.now() / 1000, ts: Date.now() / 1000, ct: 1, fd: 'out', dir: 'O', pr: 'tcp',
+      sh: '203.0.113.30', dh: '192.168.1.10', sp: [443], dp: 50000,
+    } } };
+    await plugin.writeLogs();
+
+    const [str] = await rclient.zrevrangeAsync(`audit:drop:${mac}`, 0, 0);
+    const record = JSON.parse(str);
+    expect(intelTool.numberToCategory(record.c)).to.equal('intel');
+    expect(record.cc).to.equal('phishing');
+  });
+});
