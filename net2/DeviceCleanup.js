@@ -37,32 +37,45 @@ const flowManager = new FlowManager();
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 
+// nothing retries once the device is gone, so a failed step must not skip the ones after it
+async function step(what, guids, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    log.error(`Failed to delete ${what} of`, guids, err);
+  }
+}
+
 // rules, exceptions, alarms and flows of devices or identities
 async function deleteRelatedData(guids) {
-  await pm2.deleteMacRelatedPolicies(guids);
-  await em.deleteMacRelatedExceptions(guids);
-  await am2.deleteMacRelatedAlarms(guids);
-  await categoryFlowTool.delAllTypes(guids);
-  await flowAggrTool.removeAggrFlowsAll(guids);
-  await flowManager.removeFlowsAll(guids);
+  await step('policies', guids, () => pm2.deleteMacRelatedPolicies(guids));
+  await step('exceptions', guids, () => em.deleteMacRelatedExceptions(guids));
+  await step('alarms', guids, () => am2.deleteMacRelatedAlarms(guids));
+  await step('category flows', guids, () => categoryFlowTool.delAllTypes(guids));
+  await step('aggregated flows', guids, () => flowAggrTool.removeAggrFlowsAll(guids));
+  await step('flows', guids, () => flowManager.removeFlowsAll(guids));
 }
 
 async function deleteHostsRelatedData(macs) {
   await deleteRelatedData(macs);
-  await dnsmasq.deleteLeaseRecord(macs);
-  dnsmasq.scheduleRestartDHCPService();
+  await step('lease records', macs, async () => {
+    await dnsmasq.deleteLeaseRecord(macs);
+    dnsmasq.scheduleRestartDHCPService();
+  });
 
-  await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, macs);
-  await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, macs);
-  await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, macs);
+  await step('device indexes', macs, async () => {
+    await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, macs);
+    await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, macs);
+    await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, macs);
+  });
 
   // TODO: delete and substract timeseries data from global/intf/tag
 
   // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-  await rclient.unlinkAsync(macs.flatMap(mac => [
+  await step('monitor specs', macs, () => rclient.unlinkAsync(macs.flatMap(mac => [
     "monitor:flow:" + mac,
     "monitor:large:" + mac,
-  ]));
+  ])));
 }
 
 async function resetDap(macs) {
@@ -70,10 +83,12 @@ async function resetDap(macs) {
   const dapSensor = sl.getSensor('DapSensor');
   if (!dapSensor)
     return;
-  for (const mac of macs) {
+  for (const [i, mac] of macs.entries()) {
     const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${mac}`);
     if (dapResult.code !== 200) {
-      log.warn(`Failed to reset DAP for ${mac}`, dapResult.msg || dapResult.code);
+      // dap is likely down, and each call can take its full timeout
+      log.warn(`Failed to reset DAP for ${mac}, skipping ${macs.length - i - 1} more`, dapResult.msg || dapResult.code);
+      return;
     }
   }
 }
