@@ -22,6 +22,8 @@ const disabledSids = [
     2010677, // "My Session" user agent, hit by 10jqka
     2803418, // "MERONG" user agent, hit by 10jqka
     2832142, // marap beacon, POST .php with param=<base64>, hit by 10jqka my_stock.php
+    2832623, // vnc scan, counts SYNs to any port 5900 by source only, hit by a vnc client reconnecting to one server
+    2101892, // snmp null community, no protocol check, hit by an ntp reply to a client whose port is 161
 ];
 
 function getCategory(msg) {
