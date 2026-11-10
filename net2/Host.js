@@ -806,9 +806,9 @@ class Host extends Monitorable {
       await this.dropUnownedIPs().then(() => this.resetPolicies())
         .catch(err => { log.error('Error reseting policy', err) });
       // qos has no default to reset to, and the QoS-off sets would keep the device's sets referenced.
-      // Its sets can only be members if this process created them
+      // Its sets can only be members if this process created them, maybe in the reset above
       await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
-      if (envCreated) {
+      if (envCreated || envCreatedMap[this.o.mac]) {
         await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
         await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
       }
