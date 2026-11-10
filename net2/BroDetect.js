@@ -539,7 +539,12 @@ class BroDetect {
         return
       }
 
+      // a line without orig_l2_addr gets its MAC from the IP above, its device and groups apply too
+      if (!monitorable) monitorable = hostManager.getHostFastByMAC(localMac)
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
+      // v6 link-local addresses have no interface by IP
+      const intfUUID = intfInfo && intfInfo.uuid || monitorable && monitorable.getNicUUID()
+      if (!await hostTool.isRecordingOn(monitorable, intfUUID, tags)) return
       Object.assign(dnsFlow, tags)
 
       this.recordTraffic({ dns: 1 }, localMac);
@@ -711,14 +716,16 @@ class BroDetect {
     return (monitorable && monitorable.constructor || Monitorable).defaultPolicy().dnsmasq.dnsCaching;
   }
 
-  isConnFlowValid(intf, monitorable) {
+  // groups are only checked when tags are given, as computing them costs more
+  async isConnFlowValid(intf, monitorable, tags) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    return hostTool.isMonitoring(monitorable, intf && intf.uuid)
+    if (!tags) return hostTool.isMonitoring(monitorable, intf && intf.uuid)
+    return hostTool.isRecordingOn(monitorable, intf && intf.uuid, tags)
   }
 
   // Decide whether a same-network local flow should be dropped.
@@ -1173,7 +1180,7 @@ class BroDetect {
         intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
       }
 
-      if (!this.isConnFlowValid(intfInfo, monitorable))
+      if (!await this.isConnFlowValid(intfInfo, monitorable))
         return;
 
       if (obj.proto === "udp" && accounting.isBlockedDevice(localMac)) {
@@ -1433,6 +1440,10 @@ class BroDetect {
       
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
+      // either end unmonitored drops the flow, the reverse pass of a local flow checks both ends too
+      if (!await this.isConnFlowValid(intfInfo, monitorable, tags)
+        || localFlow && !await this.isConnFlowValid(dstIntfInfo, dstMonitorable, dstTags))
+        return
       Object.assign(tmpspec, tags)
       if (Object.keys(dstTags).length) tmpspec.dstTags = dstTags;
 

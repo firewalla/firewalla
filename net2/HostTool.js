@@ -716,6 +716,28 @@ class HostTool {
     return true;
   }
 
+  // isMonitoring, plus no group of the device or of its network has monitor off.
+  // tags is the getTags() result, when the caller already has it
+  async isRecordingOn(monitorable, intfUUID, tags) {
+    if (!this.isMonitoring(monitorable, intfUUID))
+      return false;
+    if (!tags)
+      tags = await this.getTags(monitorable, intfUUID);
+    const uids = _.flatten(Object.values(tags));
+    // getTags only adds network tags of the types the device has, so read the network's own
+    const networkProfile = intfUUID && require('./NetworkProfileManager.js').getNetworkProfile(intfUUID);
+    if (networkProfile) {
+      const networkTags = await networkProfile.getTransitiveTags();
+      for (const type in networkTags)
+        uids.push(...Object.keys(networkTags[type]));
+    }
+    const TagManager = require('./TagManager.js');
+    return !uids.some(uid => {
+      const tag = TagManager.getTagByUid(uid);
+      return tag && !tag.isMonitoring();
+    });
+  }
+
   // identity by GUID, else host by MAC; an interface key (if:<uuid>) has no monitorable
   getMonitorableFast(uid) {
     const identity = require('./IdentityManager.js').getIdentityByGUID(uid);
