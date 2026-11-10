@@ -28,8 +28,6 @@ const ExceptionManager = require('../alarm/ExceptionManager.js');
 const em = new ExceptionManager();
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
-const TypeFlowTool = require('../flow/TypeFlowTool.js');
-const categoryFlowTool = new TypeFlowTool('category');
 const FlowAggrTool = require('./FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
 const FlowManager = require('./FlowManager.js');
@@ -51,8 +49,7 @@ async function deleteRelatedData(guids) {
   await step('policies', guids, () => pm2.deleteMacRelatedPolicies(guids));
   await step('exceptions', guids, () => em.deleteMacRelatedExceptions(guids));
   await step('alarms', guids, () => am2.deleteMacRelatedAlarms(guids));
-  await step('category flows', guids, () => categoryFlowTool.delAllTypes(guids));
-  await step('aggregated flows', guids, () => flowAggrTool.removeAggrFlowsAll(guids));
+  await step('summed flows', guids, () => flowAggrTool.removeRecentSumFlows(guids));
   await step('flows', guids, () => flowManager.removeFlowsAll(guids));
 }
 

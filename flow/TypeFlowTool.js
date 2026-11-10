@@ -54,12 +54,11 @@ class TypeFlowTool {
     await rclient.expireAsync(key, this.typeExpireTime) // whenever there is a new update, reset the expire time
   }
 
-  // macs: a mac or guid, or an array of them
-  async delAllTypes(macs) {
-    const keys = (await rclient.scanResultsByIds([`${this.dimension}flow:`], [].concat(macs)))
-      .filter(key => key.split(':').pop() !== 'intel')
-    if (keys.length)
-      await rclient.unlinkAsync(keys)
+  async delAllTypes(mac) {
+    const types = await this.getTypes(mac)
+    for (const type of types) {
+      await this.delTypeFlow(mac, type)
+    }
   }
 
   delTypeFlow(mac, type) {
