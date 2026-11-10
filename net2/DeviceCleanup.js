@@ -75,19 +75,22 @@ async function deleteHostsRelatedData(macs) {
   ])));
 }
 
+// returns false after a failed reset, so the caller can stop resetting the rest of its batch
 async function resetDap(macs) {
   const sl = f.isApi() ? require('../sensor/APISensorLoader.js') : require('../sensor/SensorLoader.js');
   const dapSensor = sl.getSensor('DapSensor');
   if (!dapSensor)
-    return;
+    return true;
   for (const [i, mac] of macs.entries()) {
     const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${mac}`);
     if (dapResult.code !== 200) {
       // dap is likely down, and each call can take its full timeout
-      log.warn(`Failed to reset DAP for ${mac}, skipping ${macs.length - i - 1} more`, dapResult.msg || dapResult.code);
-      return;
+      const rest = macs.length - i - 1;
+      log.warn(`Failed to reset DAP for ${mac}` + (rest ? `, skipping ${rest} more` : ''), dapResult.msg || dapResult.code);
+      return false;
     }
   }
+  return true;
 }
 
 module.exports = {

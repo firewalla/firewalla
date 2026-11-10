@@ -2118,8 +2118,22 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
+  // an instance's activity since the expiry reaches host:mac through its save, so redis alone is read
+  async isBackSinceExpiry(mac, expired) {
+    const [firstFound, lastActive] = await rclient.hmgetAsync(`host:mac:${mac}`, 'firstFoundTimestamp', 'lastActiveTimestamp')
+    if (firstFound && Number(firstFound) !== Number(expired.firstFoundTimestamp || 0))
+      return true
+    return Boolean(lastActive) && Number(lastActive) > Number(expired.lastActiveTimestamp || expired.firstFoundTimestamp || 0)
+  }
+
   // expired: the host:mac of a device removed by expiry, read before its removal
   async removeHost(mac, expired) {
+    // the teardown is queued, the device may have come back since its expiry. Only activity counts,
+    // as FireMain's own teardown briefly rewrites host:mac with spoofing fields only
+    if (expired && await this.isBackSinceExpiry(mac, expired)) {
+      log.info(`Device ${mac} is back since its expiry, skipping its teardown`)
+      return
+    }
     // a host dropped from hostsdb keeps its instance, and loading it from redis would map its
     // possibly stale address in hostsdb again
     let host = this.getHostFastByMAC(mac) || Host.getInstance(mac)

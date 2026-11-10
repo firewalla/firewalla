@@ -60,9 +60,14 @@ const Policy = require('../alarm/Policy.js');
 
 const MIN_HOST_TTL = 6 * 3600;
 const MAX_HOST_TTL_EXPIRY_PER_RUN = 200; // per network
-// removes a host:mac only if it has not been active since it was read, and returns its fields
-const UNLINK_IF_INACTIVE_SCRIPT = 'local v = redis.call("hmget", KEYS[1], "lastActiveTimestamp", "firstFoundTimestamp") ' +
-  'if (v[1] or v[2]) ~= ARGV[1] then return 0 end ' +
+// a candidate stays expirable while it has not been active since it was read and has not been
+// pinned or DHCP-reserved since the exemption set was built
+const EXPIRABLE_CHECK = 'local v = redis.call("hmget", KEYS[1], "lastActiveTimestamp", "firstFoundTimestamp", "pinned") ' +
+  'if (v[1] or v[2]) ~= ARGV[1] or v[3] or redis.call("sismember", KEYS[3], ARGV[2]) == 1 ' +
+  'or redis.call("sismember", KEYS[4], ARGV[2]) == 1 then return 0 end ';
+const IS_EXPIRABLE_SCRIPT = EXPIRABLE_CHECK + 'return 1';
+// removes an expirable host:mac and returns its fields
+const UNLINK_IF_EXPIRABLE_SCRIPT = EXPIRABLE_CHECK +
   'local h = redis.call("hgetall", KEYS[1]) ' +
   'redis.call("unlink", KEYS[1]) redis.call("zrem", KEYS[2], ARGV[2]) return h';
 const ZADD_IF_EXISTS_SCRIPT = 'if redis.call("exists", KEYS[1]) == 0 then return 0 end ' +
@@ -362,28 +367,38 @@ class OldDataCleanSensor extends Sensor {
   async expireHostTTLCandidates(ctx) {
     if (!ctx.candidates.length)
       return;
-    // DAP looks the device up through FireApi, so it is reset while host:mac still exists
-    await resetDap(ctx.candidates.map(c => c.mac));
-
     const expired = [];
+    let resetDapOn = true;
+    let noDapReset = 0;
     for (const { key, mac, activeTS, intf } of ctx.candidates) {
-      let removed
+      let removed, dapReset = false
+      const keys = [key, Constants.REDIS_KEY_HOST_ACTIVE, Constants.REDIS_KEY_HOST_PINNED, Constants.REDIS_KEY_HOST_DHCPCONF];
       try {
-        removed = await rclient.evalAsync(UNLINK_IF_INACTIVE_SCRIPT, 2, key, Constants.REDIS_KEY_HOST_ACTIVE, activeTS, mac);
+        // a device active again, pinned or reserved since the scan keeps its record and its DAP state
+        if (!await rclient.evalAsync(IS_EXPIRABLE_SCRIPT, keys.length, ...keys, activeTS, mac))
+          continue;
+        // DAP looks the device up through FireApi, so it is reset while host:mac still exists
+        if (resetDapOn)
+          resetDapOn = dapReset = await resetDap([mac]);
+        removed = await rclient.evalAsync(UNLINK_IF_EXPIRABLE_SCRIPT, keys.length, ...keys, activeTS, mac);
       } catch (err) {
         // the device is kept and retried next run
         log.error('Failed to expire by hostTTL', key, err);
         continue;
       }
-      if (!removed) // active again since the scan
+      if (!removed) // active again, pinned or reserved since the scan
         continue;
       expired.push(mac);
+      if (!dapReset)
+        noDapReset++;
       log.info(key, "Deleting due to hostTTL", activeTS, intf);
       hostTool.invalidateMacEntryCache(mac);
       // tear down the device in every process, after its key is gone. It carries the removed fields,
       // as FireMain may never have loaded the device, and FireApi/FireMon may hold one FireMain does not
       messageBus.publish("DiscoveryEvent", "Device:Delete", mac, Object.assign(_.fromPairs(_.chunk(removed, 2)), { mac }));
     }
+    if (!resetDapOn)
+      log.warn(`DAP resets stopped after a failure, ${noDapReset} devices expired by hostTTL without one`);
     if (expired.length)
       await deleteHostsRelatedData(expired);
   }
