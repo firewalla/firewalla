@@ -33,7 +33,8 @@ const Constants = require('./Constants.js');
 const _ = require('lodash');
 const fc = require('./config.js');
 const LRU = require('lru-cache');
-const NetworkProfileManager = require('./NetworkProfileManager.js');
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
 
 // Cache for rate limiting alarm generation - 5 minutes TTL
 const alarmRateLimitCache = new LRU({
@@ -71,17 +72,6 @@ class SuricataDetect {
       }
     });
     reader.watch();
-  }
-
-  isMonitoring(intfUUID, host) {
-    if (!hostManager.isMonitoring())
-      return false;
-    if (host && !host.isMonitoring())
-      return false;
-    const networkProfile = NetworkProfileManager.getNetworkProfile(intfUUID);
-    if (networkProfile && !networkProfile.isMonitoring())
-      return false;
-    return true;
   }
 
   async processAlertEvent(e) {
@@ -144,7 +134,7 @@ class SuricataDetect {
       if (host) {
         srcName = host.getReadableName();
         intfId = host.getNicUUID();
-        if (!this.isMonitoring(intfId, host))
+        if (!hostTool.isMonitoring(host, intfId))
           return;
       }
     } else {
@@ -170,7 +160,7 @@ class SuricataDetect {
       if (host) {
         dstName = host.getReadableName();
         intfId = host.getNicUUID();
-        if (!this.isMonitoring(intfId, host))
+        if (!hostTool.isMonitoring(host, intfId))
           return;
       }
     } else {

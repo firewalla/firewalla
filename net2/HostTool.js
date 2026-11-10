@@ -703,6 +703,19 @@ class HostTool {
     return result
   }
 
+  // system, device and network monitor state, a missing monitorable or network is not checked
+  isMonitoring(monitorable, intfUUID) {
+    const HostManager = require('./HostManager.js');
+    if (!new HostManager().isMonitoring())
+      return false;
+    if (monitorable && !monitorable.isMonitoring())
+      return false;
+    const networkProfile = intfUUID && require('./NetworkProfileManager.js').getNetworkProfile(intfUUID);
+    if (networkProfile && !networkProfile.isMonitoring())
+      return false;
+    return true;
+  }
+
   async setWlanVendorToCache(mac, wlanVendors) {
     const key = `wlanVendor:${mac.toUpperCase()}`;
     let value = wlanVendors;

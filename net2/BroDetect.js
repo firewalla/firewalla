@@ -526,7 +526,7 @@ class BroDetect {
         this.recordDeviceHeartbeat(localMac, dnsFlow.ts, dnsFlow.sh, localFam)
       }
 
-      if (!this.isMonitoring(intfInfo, monitorable) || !this.isDNSCacheOn(intfInfo, monitorable)) {
+      if (!hostTool.isMonitoring(monitorable, intfInfo && intfInfo.uuid) || !this.isDNSCacheOn(intfInfo, monitorable)) {
         return;
       }
 
@@ -695,25 +695,6 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  // assuming identity is pre-checked and result is passed
-  isMonitoring(intf, monitorable) {
-    if (!hostManager.isMonitoring())
-      return false;
-
-    if (monitorable && !monitorable.isMonitoring())
-      return false
-
-    if (intf) {
-      const uuid = intf && intf.uuid;
-      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      if (networkProfile && !networkProfile.isMonitoring()) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   isDNSCacheOn(intf, monitorable) {
     let policy = _.get(monitorable, 'policy.dnsmasq.dnsCaching', undefined)
     if (policy !== undefined)
@@ -737,7 +718,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    return this.isMonitoring(intf, monitorable)
+    return hostTool.isMonitoring(monitorable, intf && intf.uuid)
   }
 
   // Decide whether a same-network local flow should be dropped.
