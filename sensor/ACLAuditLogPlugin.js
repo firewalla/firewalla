@@ -703,11 +703,6 @@ class ACLAuditLogPlugin extends Sensor {
         record.pid = matchedPIDs[0];
     }
 
-    if (record.ac === 'block' && !record.pid && record.reason === 'adblock') {
-      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
-      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
-    }
-
     this.writeBuffer(record);
   }
 
@@ -795,6 +790,25 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  // a local record is dropped when either end is unmonitored
+  async isRecordingOn(record, mac, monitorable, intf, tags) {
+    if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
+      const uuid = mac.substring(Constants.NS_INTERFACE.length + 1)
+      const networkProfile = networkProfileManager.getNetworkProfile(uuid)
+      // a WAN in router mode is not a monitoring interface, its monitor state means nothing
+      const srcOn = !networkProfile || networkProfile.o.monitoring !== true
+        ? hostTool.isMonitoring(null)
+        : await hostTool.isRecordingOn(null, uuid)
+      if (!srcOn) return false
+    } else if (!await hostTool.isRecordingOn(monitorable, intf || monitorable && monitorable.getNicUUID(), tags))
+      return false
+    if (record.dir != 'L' || !record.dmac && !record.dIntf)
+      return true
+    const dstMonitorable = record.dmac && hostTool.getMonitorableFast(record.dmac)
+    const dstIntf = record.dIntf && networkProfileManager.prefixMap[record.dIntf] || dstMonitorable && dstMonitorable.getNicUUID()
+    return hostTool.isRecordingOn(dstMonitorable, dstIntf)
+  }
+
   _getAuditKey(mac, type, dir, block) {
     return `audit:${dir=='L'?'local:':''}${block?'drop':type=='dns'?'dns':'accept'}:${mac}`
   }
@@ -823,6 +837,25 @@ class ACLAuditLogPlugin extends Sensor {
           if (adblockTls) {
             record.reason = 'adblock';
             delete record.pid;
+          }
+
+          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
+            continue
+
+          const monitorable = hostTool.getMonitorableFast(mac);
+          const tags = await hostTool.getTags(monitorable, intf)
+
+          // a record that fails the check is kept, it must not drop records of monitored devices
+          let recording = true
+          try {
+            recording = await this.isRecordingOn(record, mac, monitorable, intf, tags)
+          } catch (err) {
+            log.error('Failed to check monitor state of audit record', mac, err.message)
+          }
+          if (!recording) continue
+
+          // counted after the monitor check, an unmonitored device adds no adblock hits
+          if (adblockTls || type == 'dns' && record.ac === 'block' && !record.pid && record.reason === 'adblock') {
             this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
             this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
           }
@@ -872,22 +905,11 @@ class ACLAuditLogPlugin extends Sensor {
             }
           }
 
-          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
-            continue
-
-          let monitorable = IdentityManager.getIdentityByGUID(mac);
-          if (!monitorable && !mac.startsWith(Constants.NS_INTERFACE + ':')) {
-            monitorable = hostManager.getHostFastByMAC(mac);
-          }
-          const tags = await hostTool.getTags(monitorable, intf)
           if (monitorable) Object.assign(record, tags)
 
           if (record.dir == 'L') {
             if (record.dmac) {
-              let dstMonitorable = IdentityManager.getIdentityByGUID(record.dmac);
-              if (!dstMonitorable && !record.dmac.startsWith(Constants.NS_INTERFACE + ':')) {
-                dstMonitorable = hostManager.getHostFastByMAC(record.dmac);
-              }
+              const dstMonitorable = hostTool.getMonitorableFast(record.dmac);
               if (dstMonitorable) {
                 const dstTags = await hostTool.getTags(dstMonitorable, intf)
                 if (Object.keys(dstTags).length) record.dstTags = dstTags

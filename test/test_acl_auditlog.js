@@ -90,8 +90,10 @@ describe('Test process iptables log', function(){
       sysManager.getInterfaceViaIP = origGetInterfaceViaIP;
     }
 
-    expect(adblockHitRecord).to.not.be.null;
+    // counted in writeLogs after the monitor check, not per line
+    expect(adblockHitRecord).to.be.null;
     expect(record.pid).to.be.undefined;
+    expect(this.plugin.buffer[record.mac][this.plugin.getDescriptor(record)].reason).to.equal('adblock');
   });
 
   it('should count an adblock-labeled hit as the covering rule instead, not adblock (issue #9261)', async () => {

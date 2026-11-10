@@ -526,7 +526,7 @@ class BroDetect {
         this.recordDeviceHeartbeat(localMac, dnsFlow.ts, dnsFlow.sh, localFam)
       }
 
-      if (!this.isMonitoring(intfInfo, monitorable) || !this.isDNSCacheOn(intfInfo, monitorable)) {
+      if (!hostTool.isMonitoring(monitorable, intfInfo && intfInfo.uuid) || !this.isDNSCacheOn(intfInfo, monitorable)) {
         return;
       }
 
@@ -539,7 +539,12 @@ class BroDetect {
         return
       }
 
+      // a line without orig_l2_addr gets its MAC from the IP above, its device and groups apply too
+      if (!monitorable) monitorable = hostManager.getHostFastByMAC(localMac)
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
+      // v6 link-local addresses have no interface by IP
+      const intfUUID = intfInfo && intfInfo.uuid || monitorable && monitorable.getNicUUID()
+      if (!await hostTool.isRecordingOn(monitorable, intfUUID, tags)) return
       Object.assign(dnsFlow, tags)
 
       this.recordTraffic({ dns: 1 }, localMac);
@@ -695,25 +700,6 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  // assuming identity is pre-checked and result is passed
-  isMonitoring(intf, monitorable) {
-    if (!hostManager.isMonitoring())
-      return false;
-
-    if (monitorable && !monitorable.isMonitoring())
-      return false
-
-    if (intf) {
-      const uuid = intf && intf.uuid;
-      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      if (networkProfile && !networkProfile.isMonitoring()) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   isDNSCacheOn(intf, monitorable) {
     let policy = _.get(monitorable, 'policy.dnsmasq.dnsCaching', undefined)
     if (policy !== undefined)
@@ -730,14 +716,16 @@ class BroDetect {
     return (monitorable && monitorable.constructor || Monitorable).defaultPolicy().dnsmasq.dnsCaching;
   }
 
-  isConnFlowValid(intf, monitorable) {
+  // groups are only checked when tags are given, as computing them costs more
+  async isConnFlowValid(intf, monitorable, tags) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    return this.isMonitoring(intf, monitorable)
+    if (!tags) return hostTool.isMonitoring(monitorable, intf && intf.uuid)
+    return hostTool.isRecordingOn(monitorable, intf && intf.uuid, tags)
   }
 
   // Decide whether a same-network local flow should be dropped.
@@ -1192,7 +1180,7 @@ class BroDetect {
         intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
       }
 
-      if (!this.isConnFlowValid(intfInfo, monitorable))
+      if (!await this.isConnFlowValid(intfInfo, monitorable))
         return;
 
       if (obj.proto === "udp" && accounting.isBlockedDevice(localMac)) {
@@ -1452,6 +1440,10 @@ class BroDetect {
       
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
+      // either end unmonitored drops the flow, the reverse pass of a local flow checks both ends too
+      if (!await this.isConnFlowValid(intfInfo, monitorable, tags)
+        || localFlow && !await this.isConnFlowValid(dstIntfInfo, dstMonitorable, dstTags))
+        return
       Object.assign(tmpspec, tags)
       if (Object.keys(dstTags).length) tmpspec.dstTags = dstTags;
 
@@ -2122,6 +2114,7 @@ class BroDetect {
         const monitorable = await hostManager.getIdentityOrHost(deviceIP).catch(() => null); // the alarm still goes out without it
         const intf = monitorable && monitorable.getNicUUID() || _.get(sysManager.getInterfaceViaIP(deviceIP), 'uuid');
         if (intf) alarm["p.intf.id"] = intf;
+        if (!await hostTool.isRecordingOn(monitorable, intf)) return;
 
         am2.enqueueAlarm(alarm);
       }
