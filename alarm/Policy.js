@@ -633,6 +633,16 @@ class Policy {
   }
 
   matchDomain(domain) {
+    if (!domain || !this.target) return false
+    // a *. target covers subdomains only, exact match or not, the same as every enforcement path
+    // treats it: DomainBlock keeps the pattern lookup and drops the suffix itself, the tls host and
+    // the dnsmasq entry are used as they are
+    if (this.target.startsWith("*."))
+      return minimatch(domain, this.target)
+    // read the flag exactly as enforcement does, so a rule can never be enforced one way and
+    // matched the other. that would mute alarms for traffic it does not block
+    if (this.domainExactMatch)
+      return domain === this.target
     return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 
