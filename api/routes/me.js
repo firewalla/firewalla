@@ -29,6 +29,7 @@ const firewalla = require('../../net2/Firewalla.js');
 const platform = require('../../platform/PlatformLoader').getPlatform();
 const _ = require('lodash');
 const { findPathByMac, buildHops } = require('./meTopology.js');
+const { apIpInDeviceSubnet } = require('./apAddr.js');
 const { execFile } = require('child-process-promise');
 const net = require('net');
 const LRU = require('lru-cache');
@@ -197,6 +198,8 @@ async function buildTopology(target) {
     if (!switchStatus || !_.isObject(switchStatus) ) {
       topologyError = 'Failed to fetch network topology';
     }
+    // a VPN client located in the LAN reaches the APs from its real device's network
+    const subnetIp = vpnRealMac ? connIp : target;
     const hopList = Array.isArray(hops) ? hops : [];
     for (let index = 0; index < hopList.length; index++) {
       const hop = hopList[index];
@@ -224,6 +227,8 @@ async function buildTopology(target) {
             if (assetInfo.model) {
               hop.model = assetInfo.model;
             }
+            const ip = apIpInDeviceSubnet(assetInfo.addrs, subnetIp);
+            if (ip) hop.ip = ip;
             if (hmac == mac) {
               device.type = hop.type;
               device.model = hop.model;
