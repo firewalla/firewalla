@@ -106,6 +106,13 @@ class ZssidsEnginePlugin extends Sensor {
       return;
     }
 
+    // fc only calls back when its own value changes, so an app value that now hides or reveals the cloud override goes unnoticed
+    if (this.wantedFeatures() !== this.publishedFeatures) {
+      log.info(`features changed without an event, wanted: ${this.wantedFeatures()}`);
+      this.requestApply();
+      return;
+    }
+
     const available = FlowEngine.zssidsAvailable();
     if (available === this.zssidsAvailable) {
       return;
@@ -192,6 +199,7 @@ class ZssidsEnginePlugin extends Sensor {
     try {
       fs.writeFileSync(tmpFile, JSON.stringify(state), { mode: 0o644 });
       fs.renameSync(tmpFile, EFFECTIVE_FEATURES);
+      this.publishedFeatures = this.wantedFeatures();
     } catch (err) {
       try {
         fs.unlinkSync(tmpFile);
