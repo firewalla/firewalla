@@ -40,13 +40,20 @@ class PcapZeekPlugin extends PcapPlugin {
   }
 
   async restart() {
+    // a restart queued or retried after the role was switched off
+    if (!this.roleOn())
+      return;
+    if (this.deferWhileApplying())
+      return;
     const zeekOptions = await this.calculateZeekOptions();
     if (platform.isFireRouterManaged())
       await broControl.writeClusterConfig(zeekOptions);
 
     const localNetworks = this.calculateLocalNetworks();
     await broControl.writeNetworksConfig(localNetworks);
-    await broControl.restart().then(() => broControl.addCronJobs()).then(() => {
+    // an apply that started while the configuration above was written makes
+    // BroControl refuse: retry after it (or now, if it is already over)
+    await broControl.restart().then((started) => started === false && this.retryRefusedRestart() ? null : broControl.addCronJobs()).then(() => {
       log.info("Zeek restarted");
     });
   }
