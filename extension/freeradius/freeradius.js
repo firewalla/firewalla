@@ -37,6 +37,8 @@ const Ipset = require('../../net2/Ipset.js');
 const openssl = require('../../util/openssl.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
+// freeradius-server writes the result of applying generated config here
+const applyStatusFile = `${dockerDir}/config/.apply_status`;
 const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
@@ -90,7 +92,7 @@ class FreeRadius {
   }
 
   async _prepare(options = {}) {
-    await this.watchContainer(60000, false);
+    await this.watchContainer(60, false);
     await this.startDockerDaemon(options);
     await this.generateDockerCompose(options);
     await this.prepareImage(options);
@@ -107,6 +109,19 @@ class FreeRadius {
 
   async _watchStatus() {
     await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
+  }
+
+  // check the status directly instead of waiting for the next watcher round
+  async _waitRunning(expected, timeout) {
+    const deadline = Date.now() + timeout;
+    while (true) {
+      await this._watchStatus();
+      if (this.running === expected)
+        return true;
+      if (Date.now() >= deadline)
+        return false;
+      await sleep(1000);
+    }
   }
 
   async _watch(container = false) {
@@ -201,7 +216,7 @@ class FreeRadius {
       if (!await this._start()) {
         return false;
       }
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 120000).catch((err) => { });
+      await this._waitRunning(true, options.timeout * 1000 || 120000);
       if (!this.running && !await this.isListening()) {
         log.warn("Container freeradius-server is not started.")
         return false;
@@ -1074,9 +1089,8 @@ class FreeRadius {
       return;
     });
     await sleep(3000);
-    await util.waitFor(_ => this.running === false, options.timeout * 1000 || 120000).catch((err) => {
-      log.warn("Container freeradius-server timeout to terminate,", err.message)
-    });
+    if (!await this._waitRunning(false, options.timeout * 1000 || 120000))
+      log.warn("Container freeradius-server timeout to terminate");
 
     if (await this.isListening()) {
       log.warn("Container freeradius-server is not terminated.")
@@ -1086,40 +1100,76 @@ class FreeRadius {
     return;
   }
 
+  // written by freeradius-server after each check round, missing in images before 1.1.5
+  async _readApplyStatus() {
+    try {
+      return JSON.parse(await fs.readFileAsync(applyStatusFile, 'utf8'));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // pid of the serving daemon, skipping the "freeradius -C" config check that service.sh runs before a reload
+  async _getFreeradiusPid() {
+    const script = 'for p in $(pidof freeradius); do c=$(tr "\\0" " " < /proc/$p/cmdline 2>/dev/null); [ -n "$c" ] || continue; '
+      + 'case " $c " in *" -C "*) ;; *) echo $p;; esac; done';
+    const pids = await execFile("sudo", ["docker-compose", "-f", `${dockerDir}/docker-compose.yml`, "exec", "-T", "freeradius", "sh", "-c", script])
+      .then(r => r.stdout.trim().split(/\s+/).filter(Boolean)).catch(() => []);
+    return pids.length > 0 ? String(Math.min(...pids.map(Number))) : null;
+  }
+
+  // "applied" or "failed" for the config generated since startTs, null if not confirmed before timeout.
+  // 1.1.5+ reports it in the status file, which may appear late on a fresh container; a pid change means
+  // freeradius restarted with the new config (older images restart on every change, 1.1.5+ only after the check passed)
+  async _waitConfigApplied(startTs, pid, timeout = 120000) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const status = await this._readApplyStatus();
+      if (status && status.generating_ts >= startTs)
+        return status.result;
+      const currentPid = await this._getFreeradiusPid();
+      if (currentPid && currentPid !== pid) {
+        log.info(`freeradius pid changed from ${pid} to ${currentPid}`);
+        return "applied";
+      }
+      await sleep(2000);
+    }
+    return null;
+  }
+
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
     if (!this.featureOn) return false;
 
     try {
       await this._statusServer(options);
-      const pid = this.pid;
+      const pid = await this._getFreeradiusPid();
+      const startTs = Math.floor(Date.now() / 1000);
 
       if (!await this.generateRadiusConfig(options)) {
         log.warn("Abort starting radius-server, configuration not ready");
         return false;
       }
-      log.info("Reloading container freeradius-server...");
 
-      if (pid) {
-        log.info(`Current freeradius pid ${pid}...`);
-        // check if pid is changed in 120s, return true if changed
-        await util.waitFor(_ => this.pid && this.pid !== pid, 120000).catch((err) => {
-          log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message);
-        });
-        if (this.pid && this.pid !== pid) {
-          log.info(`Container freeradius-server pid changed, new pid ${this.pid}`);
-          return true;
-        }
+      // freeradius-server reloads (same pid) or restarts by itself, and keeps the running config if the new one fails
+      const result = await this._waitConfigApplied(startTs, pid);
+      if (result === "applied") {
+        log.info("freeradius-server applied new config");
+        return true;
       }
+      if (result === "failed") {
+        log.warn("freeradius-server failed to apply new config, keep the running config");
+        return false;
+      }
+      log.warn(`freeradius-server did not confirm new config (pid ${pid}), restart container`);
 
       await execFile("sudo", ["systemctl", "restart", "docker-compose@freeradius"]).catch((e) => {
         log.warn("Cannot restart freeradius,", e.message)
         return false;
       });
       await sleep(3000);
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 120000).catch((err) => {
-        log.warn("Container freeradius-server timeout to reload,", err.message)
-      });
+      if (!await this._waitRunning(true, options.timeout * 1000 || 120000))
+        log.warn("Container freeradius-server timeout to reload");
       if (this.running) {
         log.info("Container freeradius-server is reloaded successfully.");
       }
@@ -1185,9 +1235,8 @@ class FreeRadius {
       await execFile("sudo", ["systemctl", "stop", "docker-compose@freeradius"]).catch((e) => {
         log.warn("Cannot stop freeradius,", e.message)
       });
-      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 120000).catch((err) => {
-        log.warn("Container freeradius-server timeout to stop,", err.message)
-      });
+      if (!await this._waitRunning(false, options.timeout * 1000 || 120000))
+        log.warn("Container freeradius-server timeout to stop");
       if (this.running || await this.isListening()) {
         log.warn("Container freeradius-server is not stopped.")
         await this._terminateServer(options);
@@ -1281,9 +1330,10 @@ class FreeRadius {
       return false;
     }
 
+    let result = false;
     try {
       this.watchContainer(5, true);
-      await this._reconfigServer(target, options);
+      result = await this._reconfigServer(target, options);
     } catch (err) {
       log.warn("Failed to reconfig freeradius,", target, options, err.message);
     } finally {
@@ -1291,7 +1341,8 @@ class FreeRadius {
       this.watchContainer(60, false);
     }
 
-    return this.running;
+    // the restart path returns undefined on success
+    return result !== false && this.running;
   }
 
   // radius listens on 1812-1813
@@ -1304,10 +1355,9 @@ class FreeRadius {
     return { running: this.running, pid: this.pid };
   }
 
+  // redact secret values in a JSON string, values may contain escaped quotes
   mask(jsonStr) {
-    jsonStr = jsonStr.replace(/"secret"\s*:\s*"[^"]*"/g, '"secret":"*** redacted ***"');
-    jsonStr = jsonStr.replace(/"private_key_pass"\s*:\s*"[^"]*"/g, '"private_key_pass":"*** redacted ***"');
-    return jsonStr.replace(/"passwd"\s*:\s*"[^"]*"/g, '"passwd":"*** redacted ***"');
+    return jsonStr.replace(/"(secret|passwd|psk|private_key_pass)"\s*:\s*"(?:[^"\\]|\\.)*"/g, '"$1":"*** redacted ***"');
   }
 }
 

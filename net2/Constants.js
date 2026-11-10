@@ -80,6 +80,7 @@ module.exports = {
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
   REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
   REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
+  REDIS_KEY_RADIUS_EVENTS: "event:radius", // zset of radius event json, score is ts in seconds
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   // local redis cache of whatever the cloud hashset below returned

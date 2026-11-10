@@ -759,6 +759,10 @@
         "expires": 86400,
         "count": 1000
       },
+      "radius_event": {
+        "expires": 604800,
+        "count": 1000
+      },
       "flow_domain:": {
         "count": 200
       }
