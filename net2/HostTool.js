@@ -716,6 +716,15 @@ class HostTool {
     return true;
   }
 
+  // identity by GUID, else host by MAC; an interface key (if:<uuid>) has no monitorable
+  getMonitorableFast(uid) {
+    const identity = require('./IdentityManager.js').getIdentityByGUID(uid);
+    if (identity || uid.startsWith(Constants.NS_INTERFACE + ':'))
+      return identity;
+    const HostManager = require('./HostManager.js');
+    return new HostManager().getHostFastByMAC(uid);
+  }
+
   async setWlanVendorToCache(mac, wlanVendors) {
     const key = `wlanVendor:${mac.toUpperCase()}`;
     let value = wlanVendors;

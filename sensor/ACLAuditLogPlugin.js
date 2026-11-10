@@ -814,6 +814,8 @@ class ACLAuditLogPlugin extends Sensor {
           const record = buffer[mac][descriptor];
           const { type, ac, _ts, ct, fd, dir } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
+          const monitorable = hostTool.getMonitorableFast(mac);
+          const tags = await hostTool.getTags(monitorable, intf)
           const block = record.ac == "block" || record.ac == "isolation";
           const disturb = record.ac == "disturb";
 
@@ -875,19 +877,11 @@ class ACLAuditLogPlugin extends Sensor {
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
             continue
 
-          let monitorable = IdentityManager.getIdentityByGUID(mac);
-          if (!monitorable && !mac.startsWith(Constants.NS_INTERFACE + ':')) {
-            monitorable = hostManager.getHostFastByMAC(mac);
-          }
-          const tags = await hostTool.getTags(monitorable, intf)
           if (monitorable) Object.assign(record, tags)
 
           if (record.dir == 'L') {
             if (record.dmac) {
-              let dstMonitorable = IdentityManager.getIdentityByGUID(record.dmac);
-              if (!dstMonitorable && !record.dmac.startsWith(Constants.NS_INTERFACE + ':')) {
-                dstMonitorable = hostManager.getHostFastByMAC(record.dmac);
-              }
+              const dstMonitorable = hostTool.getMonitorableFast(record.dmac);
               if (dstMonitorable) {
                 const dstTags = await hostTool.getTags(dstMonitorable, intf)
                 if (Object.keys(dstTags).length) record.dstTags = dstTags
