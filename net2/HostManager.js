@@ -2178,11 +2178,23 @@ module.exports = class HostManager extends Monitorable {
       return host
     }
 
-    host = new Host(o)
-    !noWrite && await host.save()
+    // a removed device whose queued teardown has not run yet keeps its instance, which the
+    // constructor would return as is, old timestamps included
+    host = Host.getInstance(o.mac)
+    if (host) {
+      log.info('createHost: instance still held', o.mac)
+      await host.update(o, false, !noWrite)
+    } else {
+      host = new Host(o)
+      !noWrite && await host.save()
+    }
 
     this.hostsdb[`host:mac:${o.mac}`] = host
-    this.hosts.all.push(host);
+    const index = this.hosts.all.findIndex(h => h.o.mac === o.mac)
+    if (index == -1)
+      this.hosts.all.push(host);
+    else
+      this.hosts.all[index] = host;
 
     this.syncV6DB(host)
     return host
