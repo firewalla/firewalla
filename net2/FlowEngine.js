@@ -16,9 +16,8 @@
 
 // Which program handles each pcap role.
 //
-// Two answers, and they are not the same thing:
-//   zeekEngine() / suricataEngine()  what the features ask for (intent)
-//   appliedZeekEngine() / appliedSuricataEngine()  what the units will run
+// appliedZeekEngine() / appliedSuricataEngine() say what the units will run.
+// ZssidsEnginePlugin decides what the features ask for.
 //
 // The applied answer comes from the systemd drop-ins scripts/zssids-engine.sh
 // installs, so it is right from the first line of code in a process: the
@@ -31,14 +30,13 @@
 // The features:
 //   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
 //   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
-// Defaults come from the platform's files/config.json (userFeatures), the
-// runtime state from sys:features like every other feature. The shell side
+// sys:features (set from the app) wins, then the zssids:config cloud override,
+// then the platform's files/config.json (userFeatures). ZssidsEnginePlugin
+// saves this box's part of zssids:config in redis, so the shell side
 // (platform.sh get_flow_engine_zeek / get_flow_engine_suricata) reads the same
-// two sources; scripts/zssids-engine.sh turns the answers into systemd drop-ins.
+// three sources; scripts/zssids-engine.sh turns the answers into systemd drop-ins.
 
-const fc = require('./config.js');
 const f = require('./Firewalla.js');
-const Constants = require('./Constants.js');
 const fs = require('fs');
 
 const ZSSIDS_BIN = `${f.getRuntimeInfoFolder()}/assets/zssids`;
@@ -56,14 +54,6 @@ function zssidsAvailable() {
   } catch (err) {
     return false;
   }
-}
-
-function zeekEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'zeek';
-}
-
-function suricataEngine() {
-  return fc.isFeatureOn(Constants.FEATURE_PCAP_SURICATA_ZSSIDS) && zssidsAvailable() ? 'zssids' : 'suricata';
 }
 
 const BROFISH_DROPIN = '/etc/systemd/system/brofish.service.d/zssids.conf';
@@ -127,7 +117,6 @@ async function waitForApply(timeoutMs = APPLY_WAIT_MS) {
 }
 
 module.exports = {
-  zeekEngine, suricataEngine,
   appliedZeekEngine, appliedSuricataEngine,
   zssidsAvailable, applyHeld, applyRunning, waitForApply, ZSSIDS_BIN, APPLY_FAILED_MARKER,
 };
