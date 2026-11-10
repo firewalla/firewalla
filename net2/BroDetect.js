@@ -2114,6 +2114,7 @@ class BroDetect {
         const monitorable = await hostManager.getIdentityOrHost(deviceIP).catch(() => null); // the alarm still goes out without it
         const intf = monitorable && monitorable.getNicUUID() || _.get(sysManager.getInterfaceViaIP(deviceIP), 'uuid');
         if (intf) alarm["p.intf.id"] = intf;
+        if (!await hostTool.isRecordingOn(monitorable, intf)) return;
 
         am2.enqueueAlarm(alarm);
       }

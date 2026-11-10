@@ -134,7 +134,7 @@ class SuricataDetect {
       if (host) {
         srcName = host.getReadableName();
         intfId = host.getNicUUID();
-        if (!hostTool.isMonitoring(host, intfId))
+        if (!await hostTool.isRecordingOn(host, intfId))
           return;
       }
     } else {
@@ -160,7 +160,7 @@ class SuricataDetect {
       if (host) {
         dstName = host.getReadableName();
         intfId = host.getNicUUID();
-        if (!hostTool.isMonitoring(host, intfId))
+        if (!await hostTool.isRecordingOn(host, intfId))
           return;
       }
     } else {

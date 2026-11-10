@@ -49,6 +49,10 @@ const dnsmasq = new DNSMASQ();
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js')
 const am2 = new AlarmManager2();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const IdentityManager = require('../net2/IdentityManager.js');
+const sysManager = require('../net2/SysManager.js');
 const BF_SERVER_MATCH = "bf_server_match"
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
@@ -404,6 +408,9 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async _genSecurityAlarm(ip, mac, dn, item) {
+    const monitorable = hostTool.getMonitorableFast(mac) || IdentityManager.getIdentityByIP(ip);
+    const intf = monitorable && monitorable.getNicUUID() || _.get(sysManager.getInterfaceViaIP(ip), 'uuid');
+    if (!await hostTool.isRecordingOn(monitorable, intf)) return;
     const device = await am2.getDeviceAlarmFields({ ip, mac });
     if (!device) return;
     const alarm = new Alarm.IntelAlarm(new Date() / 1000, device["p.device.ip"], "major", {
