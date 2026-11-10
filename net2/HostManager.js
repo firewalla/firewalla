@@ -142,6 +142,8 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
 const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
+// one expiry run can announce more devices than the default 1000 pending, bounded by its per-network cap
+const expiryLock = new AsyncLock({ maxPending: Infinity });
 const blockControl = require('../control/BlockControl.js');
 
 module.exports = class HostManager extends Monitorable {
@@ -162,7 +164,7 @@ module.exports = class HostManager extends Monitorable {
       messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
         // an expiry run announces its devices at once, tear those down one at a time
         if (obj && obj.mac)
-          await lock.acquire('DEVICE_EXPIRY', () => this.removeHost(mac, obj))
+          await expiryLock.acquire('DEVICE_EXPIRY', () => this.removeHost(mac, obj))
         else
           await this.removeHost(mac)
       })
