@@ -142,6 +142,8 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
 const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
+// one expiry run can announce more devices than the default 1000 pending, bounded by its per-network cap
+const expiryLock = new AsyncLock({ maxPending: Infinity });
 const blockControl = require('../control/BlockControl.js');
 
 module.exports = class HostManager extends Monitorable {
@@ -160,29 +162,11 @@ module.exports = class HostManager extends Monitorable {
         })
       })
       messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
-        let host = this.getHostFastByMAC(mac)
-        log.info('Removing host cache', mac)
-        if (!host)
-          host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
-        if (!host) {
-          log.warn(`Cannot find host with MAC address: ${mac}`);
-          return;
-        }
-
-        delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
-        log.info('Removing host cache', host.o.ipv4Addr)
-        if (Array.isArray(host.ipv6Addr)) {
-          host.ipv6Addr.forEach(ip6 => {
-            log.info('Removing host cache', ip6)
-            delete this.hostsdb[`host:ip6:${ip6}`]
-          })
-        }
-        delete this.hostsdb[`host:mac:${mac}`]
-
-        this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
-        await host.destroy().catch((err) => {
-          log.error(`Failed to destroy device ${mac}`, err.message);
-        });
+        // an expiry run announces its devices at once, tear those down one at a time
+        if (obj && obj.mac)
+          await expiryLock.acquire('DEVICE_EXPIRY', () => this.removeHost(mac, obj))
+        else
+          await this.removeHost(mac)
       })
 
       // updates hostsdb when host is updated
@@ -801,14 +785,18 @@ module.exports = class HostManager extends Monitorable {
     json.safeSearchConfig = config;
   }
 
-  async getPortforwardConfig() {
+  // strict: throw on a read or parse error instead of returning null
+  async getPortforwardConfig(strict = false) {
     return rclient.getAsync("extension.portforward.config").then((data) => {
       if (data) {
         const config = JSON.parse(data);
           return config;
       } else
         return null;
-    }).catch((err) => null);
+    }).catch((err) => {
+      if (strict) throw err
+      return null
+    });
   }
 
   async newAlarmDataForInit(json) {
@@ -2130,6 +2118,58 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
+  // an instance's activity since the expiry reaches host:mac through its save, so redis alone is read
+  async isBackSinceExpiry(mac, expired) {
+    const [firstFound, lastActive] = await rclient.hmgetAsync(`host:mac:${mac}`, 'firstFoundTimestamp', 'lastActiveTimestamp')
+    if (firstFound && Number(firstFound) !== Number(expired.firstFoundTimestamp || 0))
+      return true
+    return Boolean(lastActive) && Number(lastActive) > Number(expired.lastActiveTimestamp || expired.firstFoundTimestamp || 0)
+  }
+
+  // expired: the host:mac of a device removed by expiry, read before its removal
+  async removeHost(mac, expired) {
+    // the teardown is queued, the device may have come back since its expiry. Only activity counts,
+    // as FireMain's own teardown briefly rewrites host:mac with spoofing fields only
+    if (expired && await this.isBackSinceExpiry(mac, expired)) {
+      log.info(`Device ${mac} is back since its expiry, skipping its teardown`)
+      return
+    }
+    // a host dropped from hostsdb keeps its instance, and loading it from redis would map its
+    // possibly stale address in hostsdb again
+    let host = this.getHostFastByMAC(mac) || Host.getInstance(mac)
+    log.info('Removing host cache', mac)
+    if (!host)
+      host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
+    // FireMain may never have loaded an expired device, whose policy, hosts file and address
+    // mappings still need the teardown
+    if (!host && expired && f.isMain())
+      host = new Host(Host.parse(expired), true)
+    if (!host) {
+      // other processes hold nothing for an expired device they never loaded
+      log.verbose(`Cannot find host with MAC address: ${mac}`);
+      return;
+    }
+
+    // a stale address may already map to the device that took it over
+    if (this.hostsdb[`host:ip4:${host.o.ipv4Addr}`] === host) {
+      delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
+      log.info('Removing host cache', host.o.ipv4Addr)
+    }
+    if (Array.isArray(host.ipv6Addr)) {
+      host.ipv6Addr.forEach(ip6 => {
+        if (this.hostsdb[`host:ip6:${ip6}`] !== host) return
+        log.info('Removing host cache', ip6)
+        delete this.hostsdb[`host:ip6:${ip6}`]
+      })
+    }
+    delete this.hostsdb[`host:mac:${mac}`]
+
+    this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+    await host.destroy().catch((err) => {
+      log.error(`Failed to destroy device ${mac}`, err.message);
+    });
+  }
+
   async createHost(o, noWrite = false) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
@@ -2138,11 +2178,23 @@ module.exports = class HostManager extends Monitorable {
       return host
     }
 
-    host = new Host(o)
-    !noWrite && await host.save()
+    // a removed device whose queued teardown has not run yet keeps its instance, which the
+    // constructor would return as is, old timestamps included
+    host = Host.getInstance(o.mac)
+    if (host) {
+      log.info('createHost: instance still held', o.mac)
+      await host.update(o, false, !noWrite)
+    } else {
+      host = new Host(o)
+      !noWrite && await host.save()
+    }
 
     this.hostsdb[`host:mac:${o.mac}`] = host
-    this.hosts.all.push(host);
+    const index = this.hosts.all.findIndex(h => h.o.mac === o.mac)
+    if (index == -1)
+      this.hosts.all.push(host);
+    else
+      this.hosts.all[index] = host;
 
     this.syncV6DB(host)
     return host
@@ -2225,6 +2277,39 @@ module.exports = class HostManager extends Monitorable {
     return false;
   }
 
+  // devices kept visible however long they have been inactive: port forward targets, DHCP
+  // reservations, APC assets, and pinned devices when includePinned is set
+  // strict: throw when the APC assets cannot be read instead of leaving them out
+  async getAlwaysVisibleMACs(portforwardConfig, includePinned, strict = false) {
+    const macs = new Set()
+    if (portforwardConfig && Array.isArray(portforwardConfig.maps))
+      portforwardConfig.maps.forEach(p => macs.add(p.toMac))
+
+    for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+      macs.add(mac)
+
+    if (includePinned)
+      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
+        macs.add(mac)
+
+    if (platform.isFireRouterManaged()) {
+      try {
+        const networkConfig = await FireRouter.getConfig();
+        const assets = _.get(networkConfig, ["apc", "assets"]);
+        if (_.isObject(assets)) {
+          for (const assetMac of Object.keys(assets)) {
+            if (hostTool.isMacAddress(assetMac))
+              macs.add(assetMac.toUpperCase());
+          }
+        }
+      } catch (err) {
+        log.error("Failed to get APC assets from FireRouter config", err.message);
+        if (strict) throw err
+      }
+    }
+    return macs
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync(options = {}) {
     log.verbose("getHosts: started");
@@ -2258,30 +2343,8 @@ module.exports = class HostManager extends Monitorable {
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)
-      if (portforwardConfig && Array.isArray(portforwardConfig.maps))
-        portforwardConfig.maps.forEach(p => visibleMACs.add(p.toMac))
-
-      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+      for (const mac of await this.getAlwaysVisibleMACs(portforwardConfig, includePinnedHosts))
         visibleMACs.add(mac)
-
-      if (includePinnedHosts)
-        for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
-          visibleMACs.add(mac)
-
-      if (platform.isFireRouterManaged()) {
-        try {
-          const networkConfig = await FireRouter.getConfig();
-          const assets = _.get(networkConfig, ["apc", "assets"]);
-          if (_.isObject(assets)) {
-            for (const assetMac of Object.keys(assets)) {
-              if (hostTool.isMacAddress(assetMac))
-                visibleMACs.add(assetMac.toUpperCase());
-            }
-          }
-        } catch (err) {
-          log.error("Failed to get APC assets from FireRouter config", err.message);
-        }
-      }
 
       // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs

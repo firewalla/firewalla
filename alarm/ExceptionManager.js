@@ -411,12 +411,14 @@ module.exports = class {
     }
   }
 
-  async deleteMacRelatedExceptions(mac) {
+  // macs: a mac or guid, or an array of them
+  async deleteMacRelatedExceptions(macs) {
+    const macSet = new Set([].concat(macs).map(mac => mac.toUpperCase()))
     // remove exceptions
     let exceptions = await this.loadExceptionsAsync();
     let relatedEx = exceptions
       .filter(ex => _.isString(ex['p.device.mac']) &&
-        ex['p.device.mac'].toUpperCase() === mac.toUpperCase())
+        macSet.has(ex['p.device.mac'].toUpperCase()))
       .map(ex => ex.eid);
 
     await this.deleteExceptions(relatedEx);

@@ -344,15 +344,21 @@ class BoneSensor extends Sensor {
     this.scheduledJob();
 
     sem.on("CloudURLUpdate", async () => {
-      return this.applyNewCloudInstanceURL()
+      return this.applyNewCloudInstanceURL().catch(err => {
+        log.error('Failed to checkin after cloud URL update', err.message)
+      })
     })
 
     sem.on("PublicIP:Updated", () => {
-      this.checkIn();
+      this.checkIn().catch(err => {
+        log.error('Failed to checkin after public IP update', err.message)
+      });
     });
 
     sem.on(Message.MSG_LICENSE_UPDATED, () => {
-      this.checkIn(true); // force using original endpoint in case the endpoint was previously redirected to blackhole due to simultaneous license update 
+      this.checkIn(true).catch(err => {
+        log.error('Failed to checkin after license update', err.message)
+      }); // force using original endpoint in case the endpoint was previously redirected to blackhole due to simultaneous license update 
     });
 
     sem.on("CloudReCheckin", async () => {

@@ -33,10 +33,15 @@ const MAX_FLOW_PER_SUM = 400
 // cut the per-flow zadd. Seconds.
 const DEVICE_LAST_FLOW_TS_RESOLUTION = 60
 
-// c is the coded category snapshot carried over from flow records, see FlowAggregationSensor
-const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra', 'c' ]
+// c (coded category) and cc (security category of 'intel') are the snapshot carried over
+// from flow records, see FlowAggregationSensor
+const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra', 'c', 'cc' ]
 const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
 const TOPFLOW_KEYS = COMMON_SUMFLOW_KEYS.concat('device')
+// [dimension, fd] of the hourly and 24-hour sumflows of a device, with and without :local
+const SUMFLOW_DEVICE_VARIANTS = [['upload'], ['download'], [null, 'in'], [null, 'out'], ['ipB', 'in'], ['ipB', 'out'], ['dnsB']]
+// hourly sumflows live sumFlowExpireTime (24h) after their last update, plus late flows and margin
+const SUMFLOW_HOURS_KEPT = 27
 
 function toInt(n){ return Math.floor(Number(n)) }
 
@@ -498,26 +503,26 @@ class FlowAggrTool {
     ]);
   }
 
-  async removeAggrFlowsAll(mac) {
-    let keys = [];
+  // per-device sumflows all expire within a day (hourly ones after sumFlowExpireTime, the 24-hour
+  // ones after 24 min), so they are removed by name instead of by a keyspace scan.
+  // ids: macs or guids. Keeps in step with what FlowAggregationSensor writes for a device
+  async removeRecentSumFlows(ids, now = Date.now() / 1000) {
+    const variants = []
+    for (const local of ['', ':local'])
+      for (const [dimension, fd] of SUMFLOW_DEVICE_VARIANTS)
+        variants.push([local, dimension, fd])
 
-    let search = await Promise.all([
-      rclient.scanResults('lastsumflow:' + mac + ':*'),
-      rclient.scanResults('category:host:' + mac + ':*'),
-      rclient.scanResults('app:host:' + mac + ':*'),
-    ])
-
-    keys.push(
-      ... _.flatten(search),
-      'lastcategory:host:' + mac,
-      'lastapp:host:' + mac
-    )
-
-    return Promise.all([
-      rclient.unlinkAsync(keys),
-      this.removeAllFlowKeys(mac),
-      this.removeAllSumFlows(mac),
-    ])
+    for (const id of ids) {
+      const lastKeys = variants.map(([local, dimension, fd]) => 'last' + this.getSumFlowKey(id + local, dimension, null, null, fd))
+      // the 24-hour sumflow each pointer names, older ones expire within its 24 min
+      const pointed = (await rclient.mgetAsync(lastKeys)).filter(k => k && k.startsWith(`sumflow:${id}:`))
+      const keys = lastKeys.concat(pointed)
+      const lastHourEnd = Math.ceil(now / 3600) * 3600
+      for (let end = lastHourEnd; end > now - SUMFLOW_HOURS_KEPT * 3600; end -= 3600)
+        for (const [local, dimension, fd] of variants)
+          keys.push(this.getSumFlowKey(id + local, dimension, end - 3600, end, fd))
+      await rclient.unlinkAsync(keys)
+    }
   }
 
   async recordDeviceLastFlowTs(uid, ts) {

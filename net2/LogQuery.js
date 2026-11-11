@@ -461,10 +461,12 @@ class LogQuery {
   }
 
   async enrichWithIntel(logs, enrichIP = false) {
-    // once the flow_inline_intel migration matures, every stored record was written with
+    // once the flow_inline_intel_cc migration matures, every stored record was written with
     // its intel snapshot baked in — absence of a category then means the flow simply has
-    // no intel, so query-time intel:ip lookups are skipped across the board
-    const inlineIntelReady = intelTool.isInlineIntelReady();
+    // no intel, so query-time intel:ip lookups are skipped across the board. It never runs
+    // before flow_inline_intel, so it covers the category (c) as well
+    const inlineIntelReady = intelTool.isInlineIntelReady('flow_inline_intel_cc');
+    const categoryReady = intelTool.isInlineIntelReady();
 
     return mapLimit(logs, 50, async f => {
       // sumflow records (incl. ipB/dnsB) carry the coded category as-is; regular flows
@@ -473,7 +475,10 @@ class LogQuery {
         const category = intelTool.numberToCategory(f.c);
         if (category) f.category = category;
       }
-      const skipIntel = inlineIntelReady || f.category != null
+      // an intel record written before flow_inline_intel_cc carries no cc
+      const skipIntel = inlineIntelReady || f.category != null && !(f.category == 'intel' && !f.cc)
+      // the cc lookup reads local intel only, a cloud refresh is for a missing category
+      const refreshIntel = !categoryReady && f.category == null
       // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
       if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
         let intel
@@ -483,7 +488,10 @@ class LogQuery {
           // lodash/assign appears to be x4 times less efficient
           // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
           if (intel) {
-            if (intel.category) f.category = intel.category
+            // a baked category wins over the live one
+            if (intel.category && !f.category) f.category = intel.category
+            const cc = intelTool.getIntelCategory(intel)
+            if (cc) f.cc = cc
             // if (intel.app) f.app = intel.app
           }
         }
@@ -500,7 +508,7 @@ class LogQuery {
         }
 
         // failed on previous cloud request, try again (only when we actually looked up)
-        if (!skipIntel && (!intel || intel.cloudFailed)) {
+        if (refreshIntel && (!intel || intel.cloudFailed)) {
           if (!firewalla.isApi()) {
             destIPFoundHook.processIP(f.ip);
           } else {
@@ -518,7 +526,9 @@ class LogQuery {
           const intel = await intelTool.getIntel(undefined, [f.domain])
 
           if (intel) {
-            if (intel.category) f.category = intel.category
+            if (intel.category && !f.category) f.category = intel.category
+            const cc = intelTool.getIntelCategory(intel)
+            if (cc) f.cc = cc
             // if (intel.app) f.app = intel.app
           }
         }
@@ -535,6 +545,7 @@ class LogQuery {
       // better do this by consolidating cloud data for domain intel and adblock list
       if (f.reason == "adblock") {
           f.category = "ad";
+          delete f.cc;
       }
       if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");

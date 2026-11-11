@@ -759,6 +759,10 @@
         "expires": 86400,
         "count": 1000
       },
+      "radius_event": {
+        "expires": 604800,
+        "count": 1000
+      },
       "flow_domain:": {
         "count": 200
       }
@@ -775,7 +779,8 @@
         "bipartite_graph",
         "per_wan_data_usage",
         "flow_inline_intel",
-        "subdomains_zset"
+        "subdomains_zset",
+        "flow_inline_intel_cc"
       ]
     },
     "FlowCompressionSensor": {
@@ -1104,6 +1109,56 @@
             ]
           },
           "labelKeys": [ "switch_mac", "port" ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ping_RTT",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "action"
+              },
+              {
+                "field": "action_type",
+                "value": "ping_RTT"
+              }
+            ]
+          },
+          "labelKeys": [ "wan_intf_uuid", "target" ],
+          "aggrKeys": [
+            {
+              "key": "maxRtt",
+              "aggrLabelKey": "rtt",
+              "aggrFunc": "max",
+              "labelFields": [ "rtt" ]
+            }
+          ]
+        },
+        {
+          "period": 86400,
+          "key": "event::ping_lossrate",
+          "filter": {
+            "and": [
+              {
+                "field": "event_type",
+                "value": "action"
+              },
+              {
+                "field": "action_type",
+                "value": "ping_lossrate"
+              }
+            ]
+          },
+          "labelKeys": [ "wan_intf_uuid", "target" ],
+          "aggrKeys": [
+            {
+              "key": "maxLossrate",
+              "aggrLabelKey": "lossrate",
+              "aggrFunc": "max",
+              "labelFields": [ "lossrate" ]
+            }
+          ]
         }
       ]
     },

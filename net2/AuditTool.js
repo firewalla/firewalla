@@ -157,6 +157,7 @@ class AuditTool extends LogQuery {
       const category = intelTool.numberToCategory(entry.c);
       if (category) f.category = category;
     }
+    if (entry.cc) f.cc = entry.cc;
     if (options.local)
       f.local = true
 

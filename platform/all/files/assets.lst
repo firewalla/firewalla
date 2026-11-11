@@ -1,5 +1,5 @@
-/home/pi/.firewalla/run/device-detector-regexes.tar.gz /all/device-detector-regexes.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/; tar -zxf device-detector-regexes.tar.gz; redis-cli publish "TO.FireMain" '\''{"type":"DeviceDetector:RegexUpdated","toProcess":"FireMain"}'\'
-/home/pi/.firewalla/run/assets/detect.tar.gz /all/detect.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets; tar -zxf detect.tar.gz; redis-cli publish "assets:updated" "detect/"'
+/home/pi/.firewalla/run/device-detector-regexes.tar.gz /all/device-detector-regexes.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/ && tar -zxf device-detector-regexes.tar.gz && (redis-cli publish "TO.FireMain" '\''{"type":"DeviceDetector:RegexUpdated","toProcess":"FireMain"}'\'' || true)'
+/home/pi/.firewalla/run/assets/detect.tar.gz /all/detect.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets && tar -zxf detect.tar.gz && (redis-cli publish "assets:updated" "detect/" || true)'
 /home/pi/.firewalla/run/assets/http-brute.nse /all/http-brute.nse 644
 /home/pi/.firewalla/run/assets/broadcast-dhcp-discover.nse /all/broadcast-dhcp-discover.nse 644
 /home/pi/.firewalla/run/assets/dhcp-discover.nse /all/dhcp-discover.nse 644
@@ -7,9 +7,9 @@
 /home/pi/.firewalla/run/assets/mysql8.lua /all/mysql8.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/mysql8.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/mysql8.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/outlib.lua /all/outlib.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/outlib.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/outlib.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/nmap-mac-prefixes /all/nmap-mac-prefixes 644 ':' 'sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes'
-/home/pi/.firewalla/run/assets/views/time_limits.tar.gz /all/time_limits.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets/views/; mkdir -p time_limits && rm -rf time_limits/* && tar -xzf time_limits.tar.gz -C time_limits --strip-components=1'
+/home/pi/.firewalla/run/assets/views/time_limits.tar.gz /all/time_limits.tar.gz 644 ':' '/home/pi/firewalla/scripts/install_view_asset.sh time_limits'
 /home/pi/.firewalla/run/assets/fw_min_version /all/fw_min_version 644
 /home/pi/.firewalla/run/assets/release_pub.gpg /all/release_pub.gpg 644
-/home/pi/.firewalla/run/assets/views/me.tar.gz /all/me.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets/views/; mkdir -p me && rm -rf me/* && tar -xzf me.tar.gz -C me --strip-components=1'
+/home/pi/.firewalla/run/assets/views/me.tar.gz /all/me.tar.gz 644 ':' '/home/pi/firewalla/scripts/install_view_asset.sh me'
 /home/pi/.firewalla/run/assets/ca-certificates_all.deb /all/ca-certificates_all.deb 644 ':' '/home/pi/firewalla/scripts/update_ca_certificates.sh'
 /home/pi/.firewalla/run/assets/mozilla-ca-list.zeek /all/mozilla-ca-list.zeek 644 ':' '/home/pi/firewalla/scripts/update_zeek_ca_list.sh --restart'
