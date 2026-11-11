@@ -23,6 +23,10 @@ const Host = require('../net2/Host.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
 const Monitorable = require('../net2/Monitorable.js');
+const sysManager = require('../net2/SysManager.js');
+const HostTool = require('../net2/HostTool.js');
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const fs = require('fs');
 
 describe('test _get24HoursTopDomains', function(){
   const testMac = 'AA:BB:CC:DD:EE:FF';
@@ -421,5 +425,279 @@ describe('Host.updateHostsFileIfChanged', function() {
     fc.isFeatureOn = () => false;
     await host.updateHostsFileIfChanged();
     expect(calls).to.equal(0);
+  });
+});
+
+describe('Host._removeHostsFile', function() {
+  const testMac = 'AA:BB:CC:DD:EE:03';
+  let host, reloads, origUnlink, origReload, unlinkFails;
+
+  before(() => {
+    origUnlink = fs.unlinkAsync;
+    origReload = Dnsmasq.prototype.scheduleReloadDNSService;
+  });
+
+  after(() => {
+    fs.unlinkAsync = origUnlink;
+    Dnsmasq.prototype.scheduleReloadDNSService = origReload;
+    delete Monitorable.instances[testMac];
+  });
+
+  beforeEach(() => {
+    delete Monitorable.instances[testMac];
+    host = new Host({ mac: testMac });
+    host._lastHostfileEntries = '1.1.1.1 a.lan';
+    reloads = 0;
+    unlinkFails = false;
+    Dnsmasq.prototype.scheduleReloadDNSService = () => { reloads++; };
+    fs.unlinkAsync = async () => { if (unlinkFails) throw new Error('ENOENT'); };
+  });
+
+  it('should reload and forget the file after removing it', async() => {
+    await host._removeHostsFile();
+    expect(reloads).to.equal(1);
+    expect(host._lastHostfileEntries).to.equal(null);
+  });
+
+  it('should leave everything alone when the unlink fails and the caller did not write the file', async() => {
+    unlinkFails = true;
+    await host._removeHostsFile();
+    expect(reloads).to.equal(0);
+    expect(host._lastHostfileEntries).to.equal('1.1.1.1 a.lan');
+  });
+
+  it('should reload and forget the file when the unlink fails and the caller asks to force it', async() => {
+    unlinkFails = true;
+    await host._removeHostsFile(true);
+    expect(reloads).to.equal(1);
+    expect(host._lastHostfileEntries).to.equal(null);
+  });
+});
+
+describe('Host.hostsFileEntries', function() {
+  let origInterfaces;
+
+  before(() => {
+    origInterfaces = sysManager.getInterfaces;
+    sysManager.getInterfaces = () => [{ localDomains: ['home'] }, {}];
+  });
+
+  after(() => {
+    sysManager.getInterfaces = origInterfaces;
+  });
+
+  const addrs = [
+    { ip: '192.168.1.5', iface: { searchDomains: ['lan1'] } },
+    { ip: '192.168.2.5', iface: { searchDomains: ['lan2'] } },
+  ];
+
+  it('should name each address under the search domains of its own network', () => {
+    const entries = Host.hostsFileEntries(addrs, ['dev'], null, 'lan');
+    expect(entries.sort()).to.deep.equal([
+      '192.168.1.5 dev.home', '192.168.1.5 dev.lan', '192.168.1.5 dev.lan1',
+      '192.168.2.5 dev.home', '192.168.2.5 dev.lan', '192.168.2.5 dev.lan2',
+    ]);
+  });
+
+  it('should write an IPv6 line once per name, not once per IPv4 address', () => {
+    const entries = Host.hostsFileEntries(addrs, ['dev'], ['2001:db8::1', 'fe80::1'], 'lan');
+    expect(entries.filter(l => l.startsWith('2001:db8::1 ')).sort())
+      .to.deep.equal(['2001:db8::1 dev.home', '2001:db8::1 dev.lan', '2001:db8::1 dev.lan1', '2001:db8::1 dev.lan2']);
+    expect(entries.some(l => l.startsWith('fe80::'))).to.equal(false);
+  });
+
+  it('should write nothing for a name when there is no address', () => {
+    expect(Host.hostsFileEntries([], ['dev'], ['2001:db8::1'], 'lan')).to.deep.equal([]);
+  });
+});
+
+describe('Host hosts file of a device on several networks', function() {
+  const testMac = 'AA:BB:CC:DD:EE:04';
+  const NET1_IP = '192.168.1.5', NET2_IP = '192.168.2.5';
+  const MINUTE = 60 * 1000;
+  let host, origIfaceViaIP, origInterfaces, origIsFeatureOn, origDateNow, now;
+  let origGetMACEntry, origWriteConfig, origReload, writes, reloads;
+
+  before(() => {
+    origIfaceViaIP = sysManager.getInterfaceViaIP;
+    origInterfaces = sysManager.getInterfaces;
+    origIsFeatureOn = fc.isFeatureOn;
+    origDateNow = Date.now;
+    origGetMACEntry = HostTool.prototype.getMACEntry;
+    origWriteConfig = Dnsmasq.prototype.writeConfig;
+    origReload = Dnsmasq.prototype.scheduleReloadDNSService;
+  });
+
+  after(() => {
+    sysManager.getInterfaceViaIP = origIfaceViaIP;
+    sysManager.getInterfaces = origInterfaces;
+    fc.isFeatureOn = origIsFeatureOn;
+    Date.now = origDateNow;
+    HostTool.prototype.getMACEntry = origGetMACEntry;
+    Dnsmasq.prototype.writeConfig = origWriteConfig;
+    Dnsmasq.prototype.scheduleReloadDNSService = origReload;
+    delete Monitorable.instances[testMac];
+  });
+
+  beforeEach(() => {
+    // two monitored networks, 192.168.1.0/24 and 192.168.2.0/24, anything else is unknown
+    sysManager.getInterfaceViaIP = (ip) => {
+      if (ip.startsWith('192.168.1.')) return { uuid: 'net-1', searchDomains: ['net1'] };
+      if (ip.startsWith('192.168.2.')) return { uuid: 'net-2', searchDomains: ['net2'] };
+      return null;
+    };
+    sysManager.getInterfaces = () => [];
+    fc.isFeatureOn = (name) => name === 'local_domain' ? true : origIsFeatureOn(name);
+    now = Date.now();
+    Date.now = () => now;
+    HostTool.prototype.getMACEntry = async () => ({
+      mac: testMac, lastActiveTimestamp: String(Math.floor(now / 1000)), localDomain: 'dev'
+    });
+    writes = [];
+    reloads = 0;
+    Dnsmasq.prototype.writeConfig = async (file, entries) => { writes.push(entries.slice()); };
+    Dnsmasq.prototype.scheduleReloadDNSService = () => { reloads++; };
+
+    delete Monitorable.instances[testMac];
+    host = new Host({ mac: testMac, ipv4Addr: NET1_IP, localDomain: 'dev' });
+    host.save = async () => {};
+    host.scheduleUpdateHostData = () => {};
+    host.scheduleInvalidateHostsFile = () => {};
+  });
+
+  afterEach(() => {
+    Date.now = origDateNow;
+  });
+
+  // what FireMain does for an observation of the device on one network
+  const observe = (ip) => host.update({ ipv4: ip, ipv4Addr: ip }, true, true);
+
+  it('should list the address of every network the device was seen on', async() => {
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+    expect(host.o.ipv4Addr).to.equal(NET2_IP);
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET1_IP, NET2_IP]);
+  });
+
+  it('should not rewrite the hosts file while the stored address alternates', async() => {
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+    await host.updateHostsFileIfChanged();
+    expect(writes.length).to.equal(1);
+    expect(reloads).to.equal(1);
+    // both addresses, each under its own network's search domain
+    expect(writes[0]).to.include(`${NET1_IP} dev.net1`);
+    expect(writes[0]).to.include(`${NET2_IP} dev.net2`);
+    expect(writes[0]).to.not.include(`${NET1_IP} dev.net2`);
+
+    for (let i = 0; i < 3; i++) {
+      await observe(NET1_IP);
+      await host.updateHostsFileIfChanged();
+      await observe(NET2_IP);
+      await host.updateHostsFileIfChanged();
+    }
+    expect(writes.length).to.equal(1);
+    expect(reloads).to.equal(1);
+  });
+
+  it('should not remember an address from an update that is not saved', async() => {
+    await observe(NET1_IP);
+    // what onUpdate does with the copy another process published
+    await host.update({ ipv4: NET2_IP, ipv4Addr: NET2_IP }, true);
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET1_IP, NET2_IP]);
+    await observe(NET1_IP);
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET1_IP]);
+  });
+
+  it('should list only the stored address of its own network', async() => {
+    await observe(NET1_IP);
+    // a new lease on the same network replaces the old address
+    await observe('192.168.1.9');
+    expect(host._hostsFileIPv4s()).to.deep.equal(['192.168.1.9']);
+    // the stored address changed without a saved observation, the old one on that network is dropped
+    await host.update({ ipv4: '192.168.1.7', ipv4Addr: '192.168.1.7' }, true);
+    expect(host._hostsFileIPv4s()).to.deep.equal(['192.168.1.7']);
+  });
+
+  it('should drop the address of another network once it was not seen for 45 minutes', async() => {
+    await observe(NET1_IP);
+    now += 10 * MINUTE;
+    await observe(NET2_IP);
+
+    now += 34 * MINUTE;       // 44 minutes since net-1 was seen
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET1_IP, NET2_IP]);
+
+    now += 2 * MINUTE;        // 46 minutes
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET2_IP]);
+
+    // the stored address has no expiry of its own
+    now += 5 * 60 * MINUTE;
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET2_IP]);
+  });
+
+  it('should keep a network alive by seeing the device on it again', async() => {
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+    for (let i = 0; i < 4; i++) {
+      now += 30 * MINUTE;
+      await observe(NET1_IP);
+      await observe(NET2_IP);
+    }
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET1_IP, NET2_IP]);
+  });
+
+  it('should not list an address on a network the box does not monitor', async() => {
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+    sysManager.getInterfaceViaIP = (ip) => ip === NET1_IP ? { uuid: 'net-1', searchDomains: ['net1'] } : null;
+    await host.updateHostsFile();
+    expect(writes.length).to.equal(1);
+    expect(writes[0].every(l => l.startsWith(`${NET1_IP} `))).to.equal(true);
+  });
+
+  it('should drop a released address and keep the other networks', async() => {
+    let scheduled = 0;
+    host.scheduleUpdateHostData = () => { scheduled++; };
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+
+    // another device took the address of net-1, which is not the stored one
+    host.releaseIPv4(NET1_IP);
+    expect(host.o.ipv4Addr).to.equal(NET2_IP);
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET2_IP]);
+    expect(scheduled).to.equal(1);
+
+    // the stored one, nothing is left to list
+    host.releaseIPv4(NET2_IP);
+    expect(host.o.ipv4Addr).to.equal(undefined);
+    expect(host.o.ipv4).to.equal(undefined);
+    expect(host._hostsFileIPv4s()).to.deep.equal([]);
+    expect(scheduled).to.equal(2);
+  });
+
+  it('should not bring a released address back by seeing the device on the other network again', async() => {
+    await observe(NET1_IP);
+    await observe(NET2_IP);
+    host.releaseIPv4(NET1_IP);
+    await observe(NET2_IP);
+    expect(host._hostsFileIPv4s()).to.deep.equal([NET2_IP]);
+  });
+
+  it('should remove the hosts file when no address is left', async() => {
+    await observe(NET1_IP);
+    await host.updateHostsFile();
+    expect(writes.length).to.equal(1);
+
+    const origUnlink = fs.unlinkAsync;
+    let unlinks = 0;
+    fs.unlinkAsync = async () => { unlinks++; };
+    try {
+      host.releaseIPv4(NET1_IP);
+      await host.updateHostsFile();
+    } finally {
+      fs.unlinkAsync = origUnlink;
+    }
+    expect(unlinks).to.equal(1);
+    expect(host._lastHostfileEntries).to.equal(null);
   });
 });

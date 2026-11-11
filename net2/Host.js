@@ -87,6 +87,11 @@ let orphanSweepRunning = false;
 const IDENTIFY_RETRY_BASE = 5 * 60;
 const IDENTIFY_RETRY_MAX = 24 * 3600;
 
+// how long an address seen on another network stays in the device hosts file, well below
+// hostExpirationSecs so a device that moved does not keep its old address for hours
+const HOSTS_FILE_OTHER_NET_IP_TTL_MS = 45 * 60 * 1000;
+const HOSTS_FILE_MAX_NETWORKS = 32;
+
 class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
     if (!Monitorable.instances[obj.mac]) {
@@ -168,6 +173,7 @@ class Host extends Monitorable {
 
       // TODO: compare before saving and publishing to redis
       if (save) {
+        this._rememberNetworkIPv4();
         await this.save(updatedKeys)
         messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
       }
@@ -782,13 +788,19 @@ class Host extends Monitorable {
   }
 
   // this device just lost the IPv4 to another one, drop its stale record in the hosts file
-  // instead of waiting for the next Scan:Done. Also clear the in-memory copy, otherwise
+  // instead of waiting for the next Scan:Done. Also clear the in-memory copies, otherwise
   // it will be persisted again on the next update and unlinked on destroy
   releaseIPv4(ip) {
     if (this.o.ipv4Addr === ip)
       delete this.o.ipv4Addr;
     if (this.o.ipv4 === ip)
       delete this.o.ipv4;
+    if (this._netIPv4) {
+      this._netIPv4.forEach((slotIP, uuid) => {
+        if (slotIP === ip)
+          this._netIPv4.del(uuid);
+      });
+    }
     this.scheduleUpdateHostData();
   }
 
@@ -953,10 +965,32 @@ class Host extends Monitorable {
     this._hostsFileKey = key;
   }
 
-  // the one place that decides which IPv4 addresses the hosts file is rendered from, so the
-  // change key and the text cannot disagree
+  // last IPv4 seen on each network, in memory only, so the hosts file does not flip with the
+  // stored address. Only saved updates count, the pub/sub echo (save is false) can be a stale copy
+  _rememberNetworkIPv4() {
+    const ip = this.o.ipv4Addr;
+    const iface = ip && sysManager.getInterfaceViaIP(ip);
+    if (!iface)
+      return;
+    if (!this._netIPv4)
+      this._netIPv4 = new LRU({max: HOSTS_FILE_MAX_NETWORKS, maxAge: HOSTS_FILE_OTHER_NET_IP_TTL_MS});
+    this._netIPv4.set(iface.uuid, ip);
+  }
+
+  // the one list the change key and the text are both built from. The stored address wins on its
+  // own network, and the list is sorted so the order of observation changes neither
   _hostsFileIPv4s() {
-    return this.o.ipv4Addr ? [this.o.ipv4Addr] : [];
+    const stored = this.o.ipv4Addr;
+    const ips = stored ? [stored] : [];
+    if (this._netIPv4) {
+      const storedIface = stored && sysManager.getInterfaceViaIP(stored);
+      // not keys() or values(): lru-cache 4 returns expired entries from those
+      this._netIPv4.forEach((ip, uuid) => {
+        if (!storedIface || uuid !== storedIface.uuid)
+          ips.push(ip);
+      });
+    }
+    return _.uniq(ips).sort();
   }
 
   // one line per name and address, each address under the search domains of its own network
