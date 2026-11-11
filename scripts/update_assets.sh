@@ -20,6 +20,8 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 # assets.lst line: <file_path> <s3_path> <perm> [exec_pre] [exec_post] [exec_skip]
 # exec_skip is optional and runs before any request: when it exits 0 the entry is
 # skipped this round, so an entry can tell it is current without fetching its hash.
+# exec_post installs what the file is for, is eval'd as pi, and its exit status says
+# whether that worked.
 SINGLE_ENTRY=""
 SA_FILE_PATH=""; SA_S3_PATH=""; SA_PERM=""
 if [[ $# -ge 2 ]]; then
@@ -80,7 +82,8 @@ while IFS= read -r line; do
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
   signature_url="${bin_url}.sig"
-  lock_file="$(dirname "$file_path")/.$(basename "$file_path").lock"
+  dir=$(dirname "$file_path")
+  lock_file="$dir/.$(basename "$file_path").lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
     [[ -n "$SINGLE_ENTRY" ]] && exit 1
@@ -145,7 +148,12 @@ while IFS= read -r line; do
   if [[ $expected_hash != $current_hash ]]; then
     echo "Hash of $file_path mismatches with $hash_url, will fetch latest file from $bin_url"
 
-    sudo mkdir -p "$(dirname "$file_path")"
+    if [[ -n $exec_post ]]; then
+      # exec_post runs as pi, so the directory it extracts into has to be pi's
+      sudo install -d -o pi -g pi "$dir"
+    else
+      sudo mkdir -p "$dir"
+    fi
     temp_file="$file_path".download
     sudo wget --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$bin_url" -O "$temp_file"
     verify_hash=$(sha256sum "$temp_file" | awk '{print $1}')
@@ -174,7 +182,10 @@ while IFS= read -r line; do
     sudo chmod "$perm" "$file_path"
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
-    eval "$exec_post"
+    if ! eval "$exec_post"; then
+      echo "exec_post failed for $file_path"
+      logger "FIREWALLA:UPDATE_ASSETS:EXEC_POST_FAILED,$file_path"
+    fi
   fi
 done
 loop_rc=$?

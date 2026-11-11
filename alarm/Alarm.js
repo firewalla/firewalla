@@ -1726,9 +1726,9 @@ const CATEGORY_BLOCK_TITLE_SUBTYPES = new Set(['nrd', 'lookalike_domain']);
 
 // informational, the category rule has already blocked the flow. Never set p.action.block or
 // p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
-class CategoryBlockAlarm extends Alarm {
+class CategoryAlarm extends Alarm {
   constructor(timestamp, device, info) {
-    super('ALARM_CATEGORY_BLOCK', timestamp, device, info);
+    super('ALARM_CATEGORY', timestamp, device, info);
   }
 
   // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
@@ -1849,7 +1849,7 @@ const classMapping = {
   ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_FW_APC: FwApcAlarm.prototype,
-  ALARM_CATEGORY_BLOCK: CategoryBlockAlarm.prototype,
+  ALARM_CATEGORY: CategoryAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
@@ -1860,7 +1860,7 @@ const classMapping = {
 module.exports = {
   Alarm,
   FwApcAlarm,
-  CategoryBlockAlarm,
+  CategoryAlarm,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,

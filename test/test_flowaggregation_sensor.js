@@ -29,6 +29,9 @@ let flowAggrSensor = new FlowAggregationSensor();
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 function toInt(n){ return Math.floor(Number(n)); };
 
 function getIntervalEnd(ts) {
@@ -207,4 +210,48 @@ describe.skip('Test Flow Aggregation Sensor', () => {
     })
   })
 
+});
+
+describe('FlowAggregationSensor security category', () => {
+  const mac = '00:00:5E:00:53:04'
+  let sensor
+
+  beforeEach(() => {
+    sensor = new FlowAggregationSensor({keySpan: 3600})
+    for (const cache of ['trafficCache', 'categoryFlowCache', 'appFlowCache', 'ipBlockCache', 'dnsBlockCache', 'ifBlockCache'])
+      sensor[cache] = {}
+  })
+
+  // members of the device's own bucket, in insertion order
+  const members = cache => Object.values(cache[Object.keys(cache).find(k => k.startsWith(mac + '@'))])
+
+  it('should carry cc of an intel flow into its sumflow member', async () => {
+    const now = Date.now() / 1000
+    const flow = {fd: 'in', _ts: now, ts: now, mac, ob: 100, rb: 200, dp: 443, du: 1}
+    await sensor.processEnrichedFlow(Object.assign({ip: '203.0.113.50', host: 'phish.example.com',
+      intel: {category: 'intel', cc: '["attackpage","phishing"]'}}, flow))
+    await sensor.processEnrichedFlow(Object.assign({ip: '203.0.113.51', host: 'porn.example.com',
+      intel: {category: 'porn', cc: '["phishing"]'}}, flow))
+    const [intel, other] = members(sensor.trafficCache)
+    expect(intel.cc).to.equal('phishing')
+    expect(other.cc).to.be.undefined
+  })
+
+  it('should take cc from the flow that supplied c', async () => {
+    const now = Date.now() / 1000
+    const flow = {fd: 'in', _ts: now, ts: now, mac, ob: 100, rb: 200, dp: 443, du: 1, ip: '203.0.113.53', host: 'www.example.com'}
+    await sensor.processEnrichedFlow(Object.assign({intel: {category: 'porn'}}, flow))
+    await sensor.processEnrichedFlow(Object.assign({intel: {category: 'intel', cc: '["phishing"]'}}, flow))
+    const [t] = members(sensor.trafficCache)
+    expect(t.c).to.equal(await intelTool.categoryToNumber('porn'))
+    expect(t.cc).to.be.undefined
+  })
+
+  it('should carry cc of a block record into ipB and dnsB members', () => {
+    const _ts = Date.now() / 1000
+    sensor.processBlockFlow({type: 'ip', mac, _ts, fd: 'out', dp: 443, sh: '203.0.113.52', dh: '192.168.1.10', ct: 1, c: 1, cc: 'phishing'})
+    sensor.processBlockFlow({type: 'dns', mac, _ts, dn: 'phish.example.com', ct: 1, c: 1, cc: 'phishing'})
+    expect(members(sensor.ipBlockCache)[0].cc).to.equal('phishing')
+    expect(members(sensor.dnsBlockCache)[0].cc).to.equal('phishing')
+  })
 });

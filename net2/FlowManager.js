@@ -617,15 +617,16 @@ module.exports = class FlowManager {
     return sorted;
   }
 
-  async removeFlowsAll(mac) {
+  // macs: a mac or guid, or an array of them
+  async removeFlowsAll(macs) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
-    let keys = [
+    const keys = [].concat(macs).flatMap(mac => [
       'flow:conn:in:' + mac,
       'flow:conn:out:' + mac,
       'audit:drop:' + mac,
       'audit:accept:' + mac
-    ];
+    ]);
 
     await rclient.unlinkAsync(keys);
     return;

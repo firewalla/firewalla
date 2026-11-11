@@ -345,11 +345,18 @@ class BonjourSensor extends Sensor {
         break
       case '_mqtt':
         if (txt && txt.irobotmcs) {
-          const irobotmcs = JSON.parse(txt.irobotmcs)
-          detect.brand = 'iRobot'
-          detect.type = 'appliance'
-          detect.name = irobotmcs.robotname
-          if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
+          let irobotmcs = null
+          try {
+            irobotmcs = JSON.parse(txt.irobotmcs)
+          } catch (err) {
+            log.warn("Failed to parse irobotmcs", err.message)
+          }
+          if (irobotmcs && typeof irobotmcs === 'object') {
+            detect.brand = 'iRobot'
+            detect.type = 'appliance'
+            detect.name = irobotmcs.robotname
+            if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
+          }
         }
         break
       case '_arduino':
@@ -478,7 +485,7 @@ class BonjourSensor extends Sensor {
       txt: service.txt,
     };
 
-    this.processService(s);
+    this.processService(s).catch(err => log.error("Failed to process bonjour service", err));
   }
 }
 

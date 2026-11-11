@@ -65,6 +65,18 @@ class DapSensor extends Sensor {
     }
   }
 
+  // a no-op while DAP is off, as fwdap is stopped then
+  async resetDap(mac) {
+    if (!Config.isFeatureOn(this.featureName))
+      return true;
+    const result = await this.apiCall("POST", `/reset-dap/${mac}`);
+    if (result.code !== 200) {
+      log.warn(`Failed to reset DAP for ${mac}`, result.msg || result.code);
+      return false;
+    }
+    return true;
+  }
+
   async getCheckInData() {
     log.debug('Getting checkin data');
     const result = await this.apiCall("GET", "/checkin");

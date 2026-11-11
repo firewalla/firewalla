@@ -22,6 +22,11 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const sysManager = require('../net2/SysManager.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const IdentityManager = require('../net2/IdentityManager.js');
 const net = require('net')
 const { execFile } = require('child-process-promise');
 
@@ -89,6 +94,13 @@ class AuthLogPlugin extends Sensor {
         alarmPayload["p.device.name"] = await f.getBoxName() || "Firewalla";
         alarmPayload["p.local_is_client"] = "0";
       } else {
+        // fail open, a failed check must not hide the alarm
+        try {
+          const monitorable = (fam == 4 ? hostManager.getHostFast(ip) : hostManager.getHostFast6(ip)) || IdentityManager.getIdentityByIP(ip)
+          if (!await hostTool.isRecordingOn(monitorable, intf.uuid)) return
+        } catch (err) {
+          log.error('Failed to check monitor state of', ip, err.message)
+        }
         alarmPayload["p.device.ip"] = ip;
         alarmPayload["p.dest.ip"] = fam == 4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
         alarmPayload["p.dest.name"] = await f.getBoxName() || "Firewalla";

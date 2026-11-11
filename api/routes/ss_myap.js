@@ -30,9 +30,8 @@ const router = express.Router();
 
 const log = require('../../net2/logger.js')(__filename);
 const fwapc = require('../../net2/fwapc.js');
-const sysManager = require('../../net2/SysManager.js');
 const rclient = require('../../util/redis_manager.js').getRedisClient();
-const { Address4 } = require('ip-address');
+const { isValidIp4, apIpInDeviceSubnet } = require('./apAddr.js');
 
 const AP_UI_PORT = 8833;
 const AP_UI_PATH = '/ss/';
@@ -72,36 +71,19 @@ async function apUidForStation(mac) {
   return (resp.body.info || {}).assetUID || null;
 }
 
-// resolve the CIDR subnet(s) of the box network the client ip belongs to.
-// box networks are cached in sysManager, sourced from fwapc GET /v1/config/active,
-// so this honours any valid prefix length (/16, /23, /25, ...) rather than a /24 guess.
-function clientSubnets(clientAddr) {
-  const intf = sysManager.getInterfaceViaIP4(clientAddr, false);
-  if (intf && Array.isArray(intf.ip4_subnets) && intf.ip4_subnets.length) return intf.ip4_subnets;
-  if (intf && intf.subnet) return [intf.subnet];
-  return [];
-}
-
-function isValidIp4(ip) {
-  return typeof ip === 'string' && new Address4(ip).isValid();
-}
-
 async function apIpForUid(uid, clientAddr) {
   const resp = await fwapc.apiCall('GET', `/status/ap/${uid}`).catch(() => null);
   if (!resp || resp.code !== 200 || !resp.body) return null;
   const addrs = (resp.body.info || {}).addrs || {};
-  // only keep syntactically valid ipv4 candidates so we never build a malformed redirect
-  const ips = Object.values(addrs).map(a => a && a.ip4).filter(isValidIp4);
 
   // prefer the AP address that is actually reachable within the client's own subnet
-  const subnets = clientSubnets(clientAddr).map(s => new Address4(s)).filter(s => s.isValid());
-  if (subnets.length) {
-    const same = ips.find(ip => subnets.some(s => new Address4(ip).isInSubnet(s)));
-    if (same) return same;
-  }
+  const same = apIpInDeviceSubnet(addrs, clientAddr);
+  if (same) return same;
 
   const br0 = (addrs['br-lan0'] || {}).ip4;
   if (isValidIp4(br0)) return br0;
+  // only keep syntactically valid ipv4 candidates so we never build a malformed redirect
+  const ips = Object.values(addrs).map(a => a && a.ip4).filter(isValidIp4);
   return ips[0] || null;
 }
 

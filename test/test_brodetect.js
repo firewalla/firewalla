@@ -115,6 +115,38 @@ describe('test process conn data', function(){
     expect(JSON.parse(flows).rpid).to.be.undefined;
   });
 
+  it('should bake the security category onto the flow', async() => {
+    const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
+    const appendNewFlow = DestIPFoundHook.prototype.appendNewFlow;
+    const intf = sysManager.getInterface("eth0");
+    const key = `flow:conn:in:${intf.mac_address.toUpperCase()}`;
+    const newest = async () => JSON.parse((await rclient.zrevrangeAsync(key, 0, 0))[0]);
+    const conn = (dest, port) => `{"ts":${Date.now()/1000},"uid":"CUnitTestIntelCat","id.orig_h":"${intf.ip_address}","id.orig_p":${port},"id.resp_h":"${dest}","id.resp_p":443,"proto":"tcp","service":"ssl","duration":0.3,"orig_bytes":79,"resp_bytes":674,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":6,"orig_ip_bytes":403,"resp_pkts":4,"resp_ip_bytes":890,"orig_l2_addr":"${intf.mac_address}","resp_l2_addr":"00:00:5e:00:53:01"}`;
+    intf.uuid = "fake"
+    sysManager.ipIntfCache.set(intf.ip_address, intf)
+
+    try {
+      // with no conn entry the flow is taken as blocked and not written
+      await conntrack.setConnEntries(intf.ip_address, 57910, "203.0.113.20", "443", "tcp", {proto: 'ssl'}, 600);
+      await conntrack.setConnEntries(intf.ip_address, 57911, "203.0.113.21", "443", "tcp", {proto: 'ssl'}, 600);
+
+      DestIPFoundHook.prototype.appendNewFlow = async () => ({category: 'intel', cc: '["attackpage","phishing"]'});
+      await bro.processConnData(conn('203.0.113.20', 57910), false);
+      let flow = await newest();
+      expect(flow.dh).to.equal('203.0.113.20');
+      expect(intelTool.numberToCategory(flow.c)).to.equal('intel');
+      expect(flow.cc).to.equal('phishing');
+
+      DestIPFoundHook.prototype.appendNewFlow = async () => ({category: 'porn', cc: '["phishing"]'});
+      await bro.processConnData(conn('203.0.113.21', 57911), false);
+      flow = await newest();
+      expect(flow.dh).to.equal('203.0.113.21');
+      expect(flow.cc).to.be.undefined;
+    } finally {
+      DestIPFoundHook.prototype.appendNewFlow = appendNewFlow;
+    }
+  });
+
   it('processHttpData should remove domain info on http connect', async() => {
     const data = '{"ts":1728719301,"uid":"COBkiT1UEOCvOOKzn6","id.orig_h":"192.168.1.100","id.orig_p":50000,"id.resp_h":"192.168.2.1","id.resp_p":8888,"trans_depth":1,"method":"CONNECT","host":"www.random.org","uri":"www.random.org:443","version":"1.1","user_agent":"curl/8.10.1","request_body_len":0,"response_body_len":0,"status_code":200,"status_msg":"OK","tags":[],"proxied":["PROXY-CONNECTION -> Keep-Alive"]}'
     const ip = '192.168.2.1'
