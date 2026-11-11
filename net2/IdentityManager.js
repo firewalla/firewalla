@@ -119,25 +119,9 @@ class IdentityManager {
   async cleanUpIdentityData(identity) {
     if (!identity)
       return;
-    const PolicyManager2 = require('../alarm/PolicyManager2.js');
-    const AlarmManager2 = require('../alarm/AlarmManager2.js');
-    const ExceptionManager = require('../alarm/ExceptionManager.js');
-    const pm2 = new PolicyManager2();
-    const am2 = new AlarmManager2();
-    const em = new ExceptionManager();
-    const TypeFlowTool = require('../flow/TypeFlowTool.js');
-    const categoryFlowTool = new TypeFlowTool('category');
-    const FlowAggrTool = require('../net2/FlowAggrTool');
-    const flowAggrTool = new FlowAggrTool();
-    const FlowManager = require('../net2/FlowManager.js');
-    const flowManager = new FlowManager();
+    const { deleteRelatedData } = require('./DeviceCleanup.js');
     const guid = identity.getGUID();
-    await pm2.deleteMacRelatedPolicies(guid);
-    await em.deleteMacRelatedExceptions(guid);
-    await am2.deleteMacRelatedAlarms(guid);
-    await categoryFlowTool.delAllTypes(guid);
-    await flowAggrTool.removeAggrFlowsAll(guid);
-    await flowManager.removeFlowsAll(guid);
+    await deleteRelatedData([guid]);
     await rclient.unlinkAsync(`neighbor:${guid}`);
     await rclient.unlinkAsync(`host:user_agent2:${guid}`);
   }

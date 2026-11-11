@@ -37,7 +37,7 @@ const MAX_DEVICES = 512;
 const MAX_IN_FLIGHT = 20;
 const MAX_FAILED = 256;
 
-// Raises ALARM_CATEGORY_BLOCK for the category blocks that blockAlarmSettings selects, once per
+// Raises ALARM_CATEGORY for the category blocks that blockAlarmSettings selects, once per
 // device, domain and category per cooldown. Off by default, a non-empty cloud list turns it on
 class BlockAlarmSensor extends Sensor {
   constructor(config) {
@@ -133,11 +133,12 @@ class BlockAlarmSensor extends Sensor {
       log.verbose('No device to alarm for', device);
       return false;
     }
-    const alarm = new Alarm.CategoryBlockAlarm(new Date() / 1000, deviceFields["p.device.ip"], {
+    const alarm = new Alarm.CategoryAlarm(new Date() / 1000, deviceFields["p.device.ip"], {
       ...deviceFields,
       "p.dest.name": dest,
       "p.dest.category": bTarget,
       "p.noticeType": bTarget, // the push data carries p.noticeType, not p.dest.category
+      "p.result": "block", // what this alarm reports, the flow was blocked. Not alarm.result, which is the user's handling
       ...(pid && { "p.pid": pid }), // the rule that blocked, as in ACLAlarmLogPlugin
       "p.local_is_client": fd === 'out' ? "0" : "1", // 'out' is initiated from outside
       "p.cooldown": COOLDOWN_SECS,

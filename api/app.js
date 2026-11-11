@@ -29,6 +29,7 @@ const encipher = require('./routes/fastencipher2').router;
 
 const fs = require('fs');
 const url = require('url');
+const { execFile } = require('child_process');
 const Firewalla = require('../net2/Firewalla.js');
 
 // Mount a route module; on require() failure (missing file, syntax error) log and
@@ -100,9 +101,24 @@ app.set('query parser', 'simple');
 app.use(logger('combined'));
 app.use(bodyParser.json({ limit: '5mb' }));
 
+// update_assets.sh runs the extraction only when the tarball changed, so one that failed or was
+// interrupted is never retried and the box serves a broken or stale view for good. Install the
+// tarball on every start instead of judging whether what is on disk looks complete.
+function installViewAsset(name) {
+  const tarball = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', `${name}.tar.gz`);
+  if (!fs.existsSync(tarball)) return;
+
+  const script = path.join(Firewalla.getFirewallaHome(), 'scripts', 'install_view_asset.sh');
+  execFile(script, [name], { timeout: 60000 }, (err, stdout, stderr) => {
+    if (err) log.error(`Failed to install view ${name}:`, err.message, stderr);
+    else if (stdout.trim()) log.info(`View ${name}:`, stdout.trim());
+  });
+}
+
 function createSpaHandler(name) {
   const basePath = path.join(__dirname, 'public', name);
   const hotPatchDir = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', name);
+  installViewAsset(name);
 
   return (req, res) => {
     const parsed = spaRelativePath(req, name);
