@@ -781,6 +781,17 @@ class Host extends Monitorable {
   async shield(policy) {
   }
 
+  // this device just lost the IPv4 to another one, drop its stale record in the hosts file
+  // instead of waiting for the next Scan:Done. Also clear the in-memory copy, otherwise
+  // it will be persisted again on the next update and unlinked on destroy
+  releaseIPv4(ip) {
+    if (this.o.ipv4Addr === ip)
+      delete this.o.ipv4Addr;
+    if (this.o.ipv4 === ip)
+      delete this.o.ipv4;
+    this.scheduleUpdateHostData();
+  }
+
   onUpdate(channel, mac, id, host) {
     this.update(host, true)
 
