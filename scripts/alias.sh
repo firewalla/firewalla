@@ -103,7 +103,10 @@ export PS1='\[\e]0;\u@\h: \w\a\]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]
 
 alias powerup='source <(curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/powerup.sh)'
 
-alias addip='rc zadd ip_set_to_be_processed 0'
+# intel queue is now in-memory; inject a DestIP event for FireMain to enrich the IP
+function addip() {
+  redis-cli publish "TO.FireMain" '{"type":"DestIP","ip":"'"$1"'","skipReadLocalCache":true}'
+}
 
 function mycat () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
@@ -285,6 +288,15 @@ function lap_support() {
 
 alias dap='/home/pi/.firewalla/run/assets/dap'
 alias fwapc='/home/pi/.firewalla/run/assets/fwapc'
+
+case "$(uname -m)" in
+  x86_64)
+    alias awg='/home/pi/firewalla/platform/gold/files/awg'
+    ;;
+  aarch64)
+    alias awg='/home/pi/firewalla/platform/gse/files/awg'
+    ;;
+esac
 
 function sef() {
   local featureName=$1

@@ -114,6 +114,16 @@ timeit() {
     tlast=$tnow
 }
 
+format_ssid_display() {
+    local s=$1
+    if [[ $s == ' '* || $s == *' ' ]]; then
+        s=${s//\'/\'\\\'\'}
+        printf "'%s'" "$s"
+    else
+        printf "%s" "$s"
+    fi
+}
+
 displaytime() {
     ${FORMAT_TIME:-true} || {
         echo "$1"
@@ -134,20 +144,41 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-SSID_COLS='ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:10 tx_pwr:6 sta_count:10 intf:-10 ssid ap_name:-30'
+SSID_COLS='ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:10 tx_pwr:6 sta_count:10 intf:-10 ssid:-24 ap_name:-30'
 { print_header >&2; hl >&2; }
 lines=0
 timeit begin
-ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid' | sort | uniq)
+ssids=$(frcc | jq -r '
+  (.apc // .) as $c |
+  (($c.profile // empty) | if type == "object" then .[] else .[] end | .ssid),
+  ($c.assets_template.ap_default.mesh? | .ssid)
+  | select(type == "string") | select(gsub("^\\s+$"; "") | length > 0)
+' | sort -u)
 timeit ssids
-ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |map(select(.mode==\"ap\")) |to_entries[] |.value|[.ssid//\"x\", \$mac, .bssid,.channel,.band,.txPower,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
-ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
-while read ssid
+ssid_data=$(local_api status/ap | jq -r --arg nov "$NO_VALUE" '
+  .info|to_entries[]|.key as $mac|.value.aps
+  |map(select(.mode=="ap"))|to_entries[]|.value
+  |[(.ssid // "x"), $mac, .bssid, .channel, .band, .txPower, .maxRate // $nov, .intf // $nov]
+  | @tsv
+')
+ssid_sta_bssid=$(local_api status/station | jq -r '
+  .info|to_entries[]|select(.value.bssid != null)
+  |[(.value.ssid // ""), .key, .value.bssid] | @tsv
+')
+while IFS= read -r config_ssid
 do
-    timeit $ssid
-    while IFS=$'\t' read ssid ap_mac bssid channel band tx_power maxrate intf
+    test -n "$config_ssid" || continue
+    timeit "$config_ssid"
+    ap_rows=$(printf '%s\n' "$ssid_data" | jq -Rr --arg ssid "$config_ssid" '
+      def norm: gsub("^\\s+|\\s+$"; "");
+      select(length > 0) | split("\t") | select(.[0] | norm == ($ssid | norm)) | @tsv
+    ')
+    while IFS=$'\t' read -r ssid ap_mac bssid channel band tx_power maxrate intf
     do
-        sta_count=$(echo "$ssid_sta_bssid" | awk "\$1==\"$ssid\" && \$3==\"$bssid\"" |wc -l)
+        test -n "$ssid" || continue
+        sta_count=$(printf '%s\n' "$ssid_sta_bssid" | jq -Rr --arg ssid "$ssid" --arg bssid "$bssid" '
+          select(length > 0) | split("\t") | select(.[0] == $ssid and .[2] == $bssid)
+        ' | wc -l)
         timeit sta_count
         for ssidcp in $SSID_COLS
         do
@@ -157,7 +188,7 @@ do
                 idx) let ssidd=lines ;;
                 ap_name) ssidd=$(redis-cli --raw hget host:mac:$ap_mac name || echo "$NO_VALUE") ;;
                 ap_mac) ssidd=$ap_mac ;;
-                ssid) ssidd=$ssid ;;
+                ssid) ssidd=$(format_ssid_display "$ssid") ;;
                 intf) ssidd=$intf ;;
                 bssid) ssidd=$bssid ;;
                 channel) ssidd=$channel ;;
@@ -168,7 +199,7 @@ do
                 *) ssidd=$NO_VALUE ;;
             esac
             ssidcla=${ssidcl#-}
-            test -t 1 || ssidd=$(echo "$ssidd" | sed -e "s/ /_/g")
+            test -t 1 || { [[ $ssidc != ssid ]] && ssidd=$(echo "$ssidd" | sed -e "s/ /_/g"); }
             ssidd=$(echo "$ssidd" | sed -e "s/[‘’]/'/g")
             ssiddl=${#ssidd}
             if [[ $ssiddl -gt $ssidcla ]]
@@ -181,8 +212,8 @@ do
         timeit for-ssidcp
         let lines++
         echo
-    done < <( echo "$ssid_data" | awk -F'\t' "\$1 == \"$ssid\"" )
-done < <(echo "$ssids")
+    done < <(echo "$ap_rows")
+done < <(printf '%s\n' "$ssids")
 timeit while-ssid
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {

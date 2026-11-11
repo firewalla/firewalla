@@ -19,7 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
-const execAsync = require('child-process-promise').exec;
+const execFile = require('child-process-promise').execFile;
 const scheduler = require('../extension/scheduler/scheduler.js');
 const f = require('../net2/Firewalla.js');
 const DomainIPTool = require('../control/DomainIPTool');
@@ -89,7 +89,7 @@ class RuleCheckSensor extends Sensor {
       return [];
     }
     if (this.ipsetCache[set] === null) {
-      this.ipsetCache[set] = await execAsync(`sudo ipset list ${set}`).then((result) => result.stdout && result.stdout.split("\n").filter(l => l && l.length > 0) || []).catch((err) => {
+      this.ipsetCache[set] = await execFile('sudo', ['ipset', 'list', set]).then((result) => result.stdout && result.stdout.split("\n").filter(l => l && l.length > 0) || []).catch((err) => {
         log.error(`Failed to read entries from ipset ${set}`, err.message);
         return [];
       });

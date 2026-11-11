@@ -47,7 +47,7 @@ FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 FIREWALLA_CANARY_SCRIPT='/home/pi/firewalla/scripts/fireupgrade_canary.sh'
 
 if [[ -e $FRFLAG ]]; then
-  $FIRELOG -t debug -m "FIREROUTER.UPGRADE NO UPGRADE"
+  $FIRELOG -t debug -m "FIREROUTER.UPGRADE NO AUTO UPGRADE"
   echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FRFLAG ======="
   exit 0
 elif [[ -e "$FIREROUTER_SCRIPT" ]]; then
@@ -58,7 +58,7 @@ elif [[ -e "$FIREROUTER_SCRIPT" ]]; then
 fi
 
 if [[ -e $FWFLAG ]]; then
-  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO AUTO UPGRADE"
   echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FWFLAG ======="
   exit 0
 fi
@@ -87,13 +87,12 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 remote_branch=$(map_target_branch $branch)
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
+git config "branch.$branch.remote" origin
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
 $MGIT fetch --tags
 
 current_hash=$(git rev-parse HEAD)
 latest_hash=$(git rev-parse origin/$remote_branch)
-
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.CHECK Starting, local hash: $current_hash, remote hash $latest_hash"
 
 if [ "$current_hash" == "$latest_hash" ]; then
   /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.DONE.NOTHING"

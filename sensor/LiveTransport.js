@@ -29,13 +29,18 @@ const deflateAsync = Promise.promisify(zlib.deflate);
 
 class LiveTransport {
   constructor(options) {
-    this.socket = options.socket;
     this.alias = options.alias;
-    this.message = options.message;
     this.mspId = options.mspId;
     this.gid = options.gid;
-    this.replyid = options.replyid;
     this.guardianAlias = options.guardianAlias;
+    this.updateSubscription(options);
+  }
+
+  // refresh per-request fields; the push loop reads them each iteration
+  updateSubscription(options) {
+    this.socket = options.socket;
+    this.message = options.message;
+    this.replyid = options.replyid;
     this.delay = options.streaming.delay || 2; // 2 seconds
     this.expire = options.streaming.expire || 1 * 60; // 1 mins
   }
@@ -61,17 +66,15 @@ class LiveTransport {
         return;
       }
       const gid = this.gid;
-      const message = this.message;
       const controller = await cw.getNetBotController(gid);
       const mspId = this.mspId;
-      const replyid = this.replyid;
       this.livetimeRunning = true;
       const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       if (controller && this.socket) {
         while (this.isLivetimeValid()) {
           try {
-            const response = await controller.msgHandlerAsync(gid, message, 'web');
-            message.message.suppressLog = true; // only log info one time then suppress
+            const response = await controller.msgHandlerAsync(gid, this.message, 'web');
+            this.message.message.suppressLog = true; // only log info one time then suppress
             response.item = this.alias;
             const input = Buffer.from(JSON.stringify(response), 'utf8');
             const output = await deflateAsync(input);
@@ -87,7 +90,7 @@ class LiveTransport {
                   message: encryptedResponse,
                   gid: gid,
                   mspId: mspId,
-                  replyid: replyid
+                  replyid: this.replyid
                 });
               }
               log.debug("response sent to back web cloud via live transport, req id:", this.replyid, this.guardianAlias);

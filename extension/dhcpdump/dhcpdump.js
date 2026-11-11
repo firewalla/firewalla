@@ -182,12 +182,12 @@ module.exports = class {
     callback = callback || function () { }
 
     //to be safe, kill all dhcpdumps
-    require('child_process').exec("sudo pkill dhcpdump", (errorCode, stdout, stderr) => {
+    require('child_process').exec("sudo pkill -x dhcpdump", (errorCode, stdout, stderr) => {
     });
   }
 
   start(force, callback) {
-    let cmdline = 'sudo pkill -f dhcpdump';
+    let cmdline = 'sudo pkill -x dhcpdump';
     let p = require('child_process').exec(cmdline, (err, stdout, stderr) => {
       // if(err) {
       //   log.error("Failed to clean up spoofing army: " + err);

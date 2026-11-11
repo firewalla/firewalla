@@ -20,15 +20,26 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const exec = require('child-process-promise').exec;
+const { spawn } = require('child_process');
+const readline = require('readline');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
 
 class DeviceSTPSensor extends Sensor {
+  constructor(config) {
+    super(config);
+    this.bridgeUuidMap = {};
+  }
+
   async run() {
     const interval = this.config.interval * 1000 || 300 * 1000;
     sem.once('IPTABLES_READY', () => {
+      // existing polling model, unchanged. It covers cold start and acts as a periodic safety net.
       setTimeout(() => {
         this.scanMacSTPPort().catch((err) => {
           log.error("Failed to scan MAC STP port", err.message);
@@ -39,8 +50,85 @@ class DeviceSTPSensor extends Sensor {
           });
         }, interval);
       }, 60000);
+
+      // supplement the poll with an event-driven bridge fdb monitor for low-latency stp port updates
+      this.updateBridgeUuidMap();
+      this.spawnBridgeMonitor();
     });
-    
+
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      this.updateBridgeUuidMap();
+    });
+  }
+
+  updateBridgeUuidMap() {
+    const map = {};
+    for (const intf of sysManager.getMonitoringInterfaces()) {
+      if (intf.name && intf.name.startsWith('br'))
+        map[intf.name] = intf.uuid;
+    }
+    this.bridgeUuidMap = map;
+  }
+
+  spawnBridgeMonitor() {
+    if (this.bridgeMonitorProc) // guard against double-spawn
+      return;
+    const proc = spawn('bridge', ['monitor', 'fdb']);
+    this.bridgeMonitorProc = proc;
+    const reader = readline.createInterface({ input: proc.stdout });
+    reader.on('line', (line) => {
+      this.processFdbLine(line).catch((err) => {
+        log.error(`Failed to process bridge fdb line: ${line}`, err.message);
+      });
+    });
+    const restart = (reason) => {
+      if (this.bridgeMonitorProc !== proc) // already handled / replaced
+        return;
+      this.bridgeMonitorProc = null;
+      log.warn(`bridge monitor fdb terminated (${reason}), will be restarted soon`);
+      setTimeout(() => {
+        this.spawnBridgeMonitor();
+      }, 3000);
+    };
+    proc.on('exit', (code, signal) => restart(`exit code=${code} signal=${signal}`));
+    proc.on('error', (err) => restart(`error ${err.message}`));
+  }
+
+  // process a single "bridge monitor fdb" event line, e.g.
+  //   00:e0:4c:68:0f:57 dev eth2 master br0            // new learning
+  //   Deleted 00:e0:4c:68:0f:57 dev eth3 master br0    // deletion (ignored)
+  async processFdbLine(line) {
+    if (!line)
+      return;
+    const tokens = line.trim().split(/\s+/);
+    if (tokens.length === 0)
+      return;
+    if (tokens[0] === 'Deleted') // only process new learning, ignore deletion
+      return;
+    if (tokens.includes('permanent')) // parity with "grep -v permanent" in the poll
+      return;
+    const mac = tokens[0];
+    const devIdx = tokens.indexOf('dev');
+    const masterIdx = tokens.indexOf('master');
+    if (devIdx < 0 || masterIdx < 0 || devIdx + 1 >= tokens.length || masterIdx + 1 >= tokens.length)
+      return; // malformed / not a bridge fdb entry
+    const dev = tokens[devIdx + 1];
+    const bridge = tokens[masterIdx + 1];
+    if (!mac || !dev || !bridge)
+      return;
+    if (!(bridge in this.bridgeUuidMap)) // ignore events from non-monitored bridges
+      return;
+    const host = hostManager.getHostFastByMAC(mac.toUpperCase()); // in-memory only, no redis read
+    if (!host) // host not loaded yet, the poll will populate it
+      return;
+    const intf = host.getNicUUID();
+    if (intf && intf !== this.bridgeUuidMap[bridge]) // do not record stp port if mac does not belong to this bridge network
+      return;
+    const stpPort = dev.split('.')[0]; // strip vlan id suffix
+    if (host.o.stpPort !== stpPort) {
+      log.info(`Update mac stp port via fdb monitor: ${mac} --> ${stpPort}`);
+      await host.update({ stpPort }, true, true);
+    }
   }
 
   async scanMacSTPPort() {
