@@ -130,6 +130,16 @@ const simpleRuleSetMap = {
 
 const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", "resolve", "address", "snat", "bypass"];
 
+// the cloud counts every policy feedback as a block, so only blocking policies report
+const intelFeedbackActions = ["block", "app_block"];
+
+function submitPolicyIntelFeedback(feedbackAction, policy) {
+  if (!intelFeedbackActions.includes(policy.action)) return;
+  Bone.submitIntelFeedback(feedbackAction, policy).catch((err) => {
+    log.error(`Failed to submit intel feedback`, feedbackAction, policy, err);
+  });
+}
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -164,6 +174,7 @@ class PolicyManager2 {
           this.policyCache.del(Number(pid));
         }
       });
+      sem.on('Policy:CacheInvalidate', () => this.invalidatePolicyCache());
     }
     return instance;
   }
@@ -532,9 +543,7 @@ class PolicyManager2 {
     await rclient.hmsetAsync(policyKey, policy.redisfy());
     await this.addToActiveQueue(policy);
     this.tryPolicyEnforcement(policy);
-    Bone.submitIntelFeedback('block', policy).catch((err) => {
-      log.error(`Failed to submit intel feedback`, policy, err);
-    });
+    submitPolicyIntelFeedback('block', policy);
     return policy;
   }
 
@@ -639,7 +648,7 @@ class PolicyManager2 {
     await this._enablePolicy(policy)
 
     this.tryPolicyEnforcement(policy, "enforce")
-    Bone.submitIntelFeedback('enable', policy)
+    submitPolicyIntelFeedback('enable', policy)
     return policy
   }
 
@@ -650,7 +659,7 @@ class PolicyManager2 {
     const oldPolicy = Object.assign(Object.create(Policy.prototype), policy);
     await this._disablePolicy(policy)
     this.tryPolicyEnforcement(oldPolicy, "unenforce")
-    Bone.submitIntelFeedback('disable', policy)
+    submitPolicyIntelFeedback('disable', policy)
   }
 
   async resetStats(policyIDs) {
@@ -758,7 +767,7 @@ class PolicyManager2 {
     // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
     await this.removeFromRefrencedBypassPolicies(policy);
 
-    Bone.submitIntelFeedback('unblock', policy);
+    submitPolicyIntelFeedback('unblock', policy);
   }
 
   getPolicyKey(pid) {
@@ -838,41 +847,46 @@ class PolicyManager2 {
   }
 
   // await all async opertions here to ensure errors are caught
-  async deleteMacRelatedPolicies(mac) {
+  // macs: a mac or guid, or an array of them
+  async deleteMacRelatedPolicies(macs) {
+    macs = [].concat(macs)
+    const macSet = new Set(macs)
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let changed = false;
 
     for (let rule of rules) {
-      if (rule.type == 'mac' && rule.target == mac) {
+      if (rule.type == 'mac' && macSet.has(rule.target)) {
         policyIds.push(rule.pid);
         policyKeys.push('policy:' + rule.pid);
         this.tryPolicyEnforcement(rule, 'unenforce');
         continue
       }
 
-      if (!_.isEmpty(rule.scope) && rule.scope.some(m => m == mac)) {
-        // rule targets only deleted device
-        if (rule.scope.length <= 1) {
+      if (!_.isEmpty(rule.scope) && rule.scope.some(m => macSet.has(m))) {
+        let reducedScope = rule.scope.filter(m => !macSet.has(m));
+        // rule targets only deleted devices
+        if (!reducedScope.length) {
           policyIds.push(rule.pid);
           policyKeys.push('policy:' + rule.pid);
 
           this.tryPolicyEnforcement(rule, 'unenforce');
         }
-        // rule targets NOT only deleted device
+        // rule targets NOT only deleted devices
         else {
-          let reducedScope = _.without(rule.scope, mac);
           await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          changed = true;
           const newRule = await this.getPolicy(rule.pid)
 
           this.tryPolicyEnforcement(newRule, 'reenforce', rule);
 
-          log.info('remove scope from policy:' + rule.pid, mac);
+          log.info('remove scope from policy:' + rule.pid, _.intersection(rule.scope, macs));
         }
         continue;
       }
 
-      if (rule.type === 'mac' && rule.guids && rule.guids[0] === mac) {
+      if (rule.type === 'mac' && rule.guids && macSet.has(rule.guids[0])) {
         policyIds.push(rule.pid);
         policyKeys.push('policy:' + rule.pid);
         this.tryPolicyEnforcement(rule, 'unenforce');
@@ -883,8 +897,12 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      changed = true;
     }
-    log.info('Deleted', mac, 'related policies:', policyKeys);
+    // FireApi answers acl:check and route:check from its own rule cache, also for removals FireMain makes
+    if (changed)
+      sem.sendEventToFireApi({ type: 'Policy:CacheInvalidate', message: 'device related policies changed', suppressEventLogging: true });
+    log.info('Deleted', macs, 'related policies:', policyKeys);
   }
 
   async deleteTagRelatedPolicies(tag) {
@@ -1349,53 +1367,31 @@ class PolicyManager2 {
       if (policy.disabled == 1) {
         const idleInfo = policy.getIdleInfo();
         if (idleInfo) {
-          const { idleTsFromNow, idleExpireSoon } = idleInfo;
-          if (idleExpireSoon) {
-            if (idleTsFromNow > 0)
-              await delay(idleTsFromNow * 1000);
-            if (await this.dropIfWindowEnded(policy))
-              return;
-            await this.enablePolicy(policy);
-            log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
-          } else {
-            const policyTimer = setTimeout(async () => {
-              if (await this.dropIfWindowEnded(policy).catch(err => {
-                log.error('Failed to check scheduled window of policy', policy.pid, err);
-                return false;
-              })) return;
-              log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
-              await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
-            }, idleTsFromNow * 1000)
-            this.invalidateExpireTimer(policy); // remove old one if exists
-            this.enabledTimers[policy.pid] = policyTimer;
-          }
+          const idleTs = Number(policy.idleTs);
+          this.setPolicyTimer(policy, idleInfo.idleTsFromNow, 'resume',
+            current => current.disabled == '1' && Number(current.idleTs) === idleTs,
+            async current => {
+              if (await this.dropIfWindowEnded(current))
+                return;
+              log.info(`Re-enable policy ${current.pid} as it's idle expired`);
+              await this.enablePolicy(current);
+            });
         } else {
           // expire (relative, one time only rule) and idleTs (pause until a specific time) used to be
           // mutually exclusive. a rule with a future start time now carries idleTs (start) together with
           // expireTs (end): idleTs is handled above and the window is applied once the rule is enabled,
           // so the two keys still never need to be timed against each other here
-          if (policy.expire || policy.expireTs) {
-            const timeout = policy.getExpireDiffFromNow();
-            if (policy.willExpireSoon()) {
-              if (timeout > 0)
-                await delay(timeout * 1000);
-              if (policy.autoDeleteWhenExpires) {
-                await this.deletePolicy(policy.pid);
-                await this.removeBypassChainForPolicy(policy);
-              }
-            } else {
-              // only need to handle timeout of a manually disabled one-time only policy here
-              // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
-              if (timeout > 0 && policy.autoDeleteWhenExpires) {
-                log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
-                const deleteTimeout = setTimeout(async () => {
-                  await this.deletePolicy(policy.pid);
-                  await this.removeBypassChainForPolicy(policy);
-                }, timeout * 1000);
-                this.invalidateExpireTimer(policy); // remove old one if exists
-                this.enabledTimers[policy.pid] = deleteTimeout;
-              }
-            }
+          // only need to handle timeout of a manually disabled one-time only policy here
+          // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
+          if ((policy.expire || policy.expireTs) && policy.autoDeleteWhenExpires) {
+            const end = policy.getWhenExpired();
+            log.info(`Will auto delete paused policy ${policy.pid} in ${Math.max(Math.floor(policy.getExpireDiffFromNow()), 0)} seconds`);
+            this.setPolicyTimer(policy, policy.getExpireDiffFromNow(), 'auto delete',
+              current => current.disabled == '1' && current.getWhenExpired() === end,
+              async current => {
+                await this.deletePolicy(current.pid);
+                await this.removeBypassChainForPolicy(current);
+              });
           }
         }
         return // ignore disabled policy rules
@@ -1414,18 +1410,24 @@ class PolicyManager2 {
         // auto unenforce if expire time is set
         if (policy.willExpireSoon()) {
           // skip enforce as it's already expired or expiring
-          await delay(policy.getExpireDiffFromNow() * 1000);
-
-          if (this.needAppTimeUsageRegister(policy)) {
-            await AppTimeUsageManager.deregisterPolicy(p);
-          } else {
-            await this._disablePolicy(policy);
-          }
-          if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await this.deletePolicy(policy.pid);
-            await this.removeBypassChainForPolicy(policy);
-          }
+          const end = policy.getWhenExpired();
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
+          this.setPolicyTimer(policy, policy.getExpireDiffFromNow(), 'expire',
+            current => current.getWhenExpired() === end,
+            async current => {
+              if (this.needAppTimeUsageRegister(current)) {
+                const q = Object.assign(Object.create(Policy.prototype), current);
+                delete q.expire;
+                delete q.expireTs;
+                await AppTimeUsageManager.deregisterPolicy(q);
+              } else {
+                await this._disablePolicy(current);
+              }
+              if (current.autoDeleteWhenExpires && current.autoDeleteWhenExpires == "1") {
+                await this.deletePolicy(current.pid);
+                await this.removeBypassChainForPolicy(current);
+              }
+            });
         } else {
           if (this.needAppTimeUsageRegister(policy)) {
             await AppTimeUsageManager.registerPolicy(p);
@@ -1698,18 +1700,13 @@ class PolicyManager2 {
     let tags = [];
     if (!_.isEmpty(unsorted)) {
       for (const tagStr of unsorted) {
-        if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-          const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          intfs.push(intfUuid);
-        } else {
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            if (tagStr.startsWith(config.ruleTagPrefix)) {
-              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-              tags.push(tagUid);
-            }
-          }
-        }
+        const parsed = Policy.parseTagStr(tagStr);
+        if (!parsed)
+          continue;
+        if (parsed.type === "intf")
+          intfs.push(parsed.uid);
+        else
+          tags.push(parsed.uid);
       }
     }
     tags = _.uniq(tags);
@@ -2409,6 +2406,30 @@ class PolicyManager2 {
       await this.updatePolicyAsync({ pid: policy.pid, idleTs: '' });
     }
     return true;
+  }
+
+  // Runs fn on a rule after a delay from a timer, never by waiting in the policy queue job: such a
+  // wait holds back every rule change queued behind it, then acts on the rule as it was when the job
+  // started. The timer sits in enabledTimers, so reenforce/unenforce replace or clear it, and fn gets
+  // the rule read back from redis, only if stillSame() says it is the one the timer was set for
+  setPolicyTimer(policy, seconds, what, stillSame, fn) {
+    const pid = policy.pid;
+    const timer = setTimeout(async () => {
+      if (this.enabledTimers[pid] === timer)
+        delete this.enabledTimers[pid];
+      try {
+        const current = await this.getPolicy(pid);
+        if (!current || !stillSame(current)) {
+          log.info(`Policy ${pid} changed since its ${what} was scheduled, skip`);
+          return;
+        }
+        await fn(current);
+      } catch (err) {
+        log.error(`Failed to ${what} policy ${pid}`, err);
+      }
+    }, Math.max(seconds, 0) * 1000);
+    this.invalidateExpireTimer(policy); // remove old one if exists
+    this.enabledTimers[pid] = timer;
   }
 
   invalidateExpireTimer(policy) {
@@ -3671,28 +3692,11 @@ class PolicyManager2 {
       let { scope, target, action = "block", tag, guids } = rule;
       rule.type = rule["i.type"] || rule["type"];
       rule.direction = rule.direction || "bidirection";
-      const intfs = [];
+      let intfs = [];
       let tags = [];
       if (!_.isEmpty(tag)) {
-        let invalid = true;
-        for (const tagStr of tag) {
-          if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-            invalid = false;
-            let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-            intfs.push(intfUuid);
-          } else {
-            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-              const config = Constants.TAG_TYPE_MAP[type];
-              if (tagStr.startsWith(config.ruleTagPrefix)) {
-                invalid = false;
-                const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-                tags.push(tagUid);
-              }
-            }
-            tags = _.uniq(tags);
-          }
-        }
-        if (invalid) {
+        ({ intfs, tags } = this.parseTags(tag));
+        if (intfs.length === 0 && tags.length === 0) {
           rule.rank = -1;
           return rule;
         }

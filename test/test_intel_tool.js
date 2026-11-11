@@ -250,3 +250,41 @@ describe('IntelTool.checkIntelFromCloud response', () => {
     expect(result).to.eql([]);
   });
 });
+
+describe('IntelTool.getIntelCategory', () => {
+  it('should take the first entry of cc', () => {
+    expect(intelTool.getIntelCategory({category: 'intel', cc: '["phishing","malware"]'})).to.equal('phishing');
+  });
+
+  it('should skip attackpage', () => {
+    expect(intelTool.getIntelCategory({category: 'intel', cc: '["attackpage","malware"]'})).to.equal('malware');
+    expect(intelTool.getIntelCategory({category: 'intel', cc: '["attackpage"]'})).to.be.undefined;
+  });
+
+  it('should return nothing for empty, malformed or non-array cc', () => {
+    for (const cc of ['[]', '', 'phishing', '{"a":1}', '"phishing"', '[1,null,""]', undefined])
+      expect(intelTool.getIntelCategory({category: 'intel', cc})).to.be.undefined;
+  });
+
+  it('should return nothing for a category other than intel', () => {
+    expect(intelTool.getIntelCategory({category: 'porn', cc: '["phishing"]'})).to.be.undefined;
+    expect(intelTool.getIntelCategory(null)).to.be.undefined;
+  });
+});
+
+describe('IntelTool.getIntel by domain', () => {
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const domain = 'phish.example.com';
+
+  after(async () => {
+    await rclient.unlinkAsync(intelTool.getDomainIntelKey(domain));
+  });
+
+  it('should carry cc of the record that supplied the category', async () => {
+    await intelTool.addDomainIntel(domain, {category: 'intel', cc: '["phishing"]'});
+
+    const intel = await intelTool.getIntel(undefined, ['www.' + domain]);
+    expect(intel.category).to.equal('intel');
+    expect(intelTool.getIntelCategory(intel)).to.equal('phishing');
+  });
+});

@@ -20,6 +20,7 @@ const _ = require('lodash');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Constants = require('../net2/Constants.js');
 const { matchFilter } = require('../sensor/BlockStatsFilter.js');
+const { checkKeySettings, resolveValues } = require('./EventKeySettings.js');
 
 /*
  * EventClassifier decides which "type" an event belongs to, so EventApi can stamp every event
@@ -119,32 +120,9 @@ class EventClassifier {
       return valid;
     }
     for (const setting of settings) {
-      if (!_.isObject(setting) || !setting.key) {
-        log.error('Ignoring event classifier setting without a key', setting);
-        continue;
-      }
-      // matchFilter() returns false for an empty node, a setting without a filter would silently
-      // never match, which is far more confusing than dropping it here
-      if (_.isEmpty(setting.filter)) {
-        log.error(`Ignoring event classifier setting ${setting.key} without a filter`);
-        continue;
-      }
-      // silently coercing a malformed list to [] would produce WRONG GROUPING rather than the
-      // "setting ignored" degradation this function is contracted to provide
-      if ((!_.isUndefined(setting.eventKeys) && !_.isArray(setting.eventKeys)) ||
-          (!_.isUndefined(setting.labelKeys) && !_.isArray(setting.labelKeys))) {
-        log.error(`Ignoring event classifier setting ${setting.key} with a non-array eventKeys/labelKeys`);
-        continue;
-      }
-      const eventKeys = setting.eventKeys || [];
-      const labelKeys = setting.labelKeys || [];
-      const isNonEmptyString = k => _.isString(k) && k.length > 0;
-      if (!eventKeys.every(isNonEmptyString) || !labelKeys.every(isNonEmptyString)) {
-        log.error(`Ignoring event classifier setting ${setting.key} with a non-string key in eventKeys/labelKeys`);
-        continue;
-      }
-      if (_.isEmpty(eventKeys) && _.isEmpty(labelKeys)) {
-        log.error(`Ignoring event classifier setting ${setting.key} without eventKeys or labelKeys`);
+      const { eventKeys, labelKeys, error } = checkKeySettings(setting);
+      if (error) {
+        log.error(`Ignoring event classifier setting ${error[0]}`, ...error.slice(1));
         continue;
       }
       valid.push(Object.assign({}, setting, { eventKeys, labelKeys }));
@@ -154,19 +132,11 @@ class EventClassifier {
 
   // Resolves setting.eventKeys against the top-level event, then setting.labelKeys against
   // event.labels, into a single ordered value list - outer first, then labels.
-  // The isNil->null matters: JSON.stringify([undefined]) is "[null]", so without it an event
-  // missing a field would land on the same key as an event whose field is literally null.
-  // A non-primitive is coerced to null as well: JSON.stringify's key order for an object is
-  // insertion-dependent, which would make the cache field name unstable for the same event.
   _resolveKeyValues(setting, event) {
     const labels = event.labels || {};
-    return setting.eventKeys.map(k => {
-      const v = event[k];
-      return (_.isNil(v) || _.isObject(v)) ? null : v;
-    }).concat(setting.labelKeys.map(k => {
-      const v = labels[k];
-      return (_.isNil(v) || _.isObject(v)) ? null : v;
-    }));
+    return resolveValues(setting.eventKeys, event, true)
+      .concat(resolveValues(setting.labelKeys, labels, true))
+      .map(f => f[1]);
   }
 
   /*

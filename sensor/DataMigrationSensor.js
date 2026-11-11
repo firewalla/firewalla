@@ -228,13 +228,19 @@ class DataMigrationSensor extends Sensor {
       case "subdomains_zset": // legacy subdomains:<suffix> set is replaced by subdomains2:<suffix> zset
         await dnsTool.migrateLegacySubDomains();
         break;
+      case "flow_inline_intel_cc":
+        // same as flow_inline_intel for the security category (cc) of 'intel' records.
+        // LogQuery waits on this one, as it is the later of the two
+        await this.backfillSumFlowCategory();
+        break;
       default:
         log.warn("Unrecognized code name: " + codeName);
     }
   }
 
   // Members written before the flow_inline_intel upgrade don't carry the coded category
-  // (c) while newly written ones do. zunionstore aggregates members by exact string, so
+  // (c) while newly written ones do, and the same goes for cc of 'intel' members after
+  // flow_inline_intel_cc. zunionstore aggregates members by exact string, so
   // the same destination would split into two entries, each ranking lower and possibly
   // trimmed off by the sumflow cap (data loss). Backfill c into existing hourly buckets
   // so old and new members of one destination merge again.
@@ -294,15 +300,24 @@ class DataMigrationSensor extends Sensor {
       } catch (err) {
         continue;
       }
-      if (!entry || entry.c || !entry.destIP && !entry.domain)
+      if (!entry || !entry.destIP && !entry.domain)
+        continue;
+      // complete once it has c, and cc too when c is 'intel'
+      if (entry.c && (entry.cc || intelTool.numberToCategory(entry.c) != 'intel'))
         continue;
       const intel = await intelTool.getIntel(entry.destIP, entry.domain ? [entry.domain] : []);
       if (!intel || !intel.category)
         continue; // no intel known for this destination, leave the member as is
-      entry.c = await intelTool.categoryToNumber(intel.category);
+      if (!entry.c)
+        entry.c = await intelTool.categoryToNumber(intel.category);
+      const cc = intelTool.getIntelCategory(intel);
+      if (cc)
+        entry.cc = cc;
       // getFlowStr keeps the member format canonical so it merges (zincrby) with newly
       // written members of the same destination
       const newMember = flowAggrTool.getFlowStr(entry.device, entry);
+      if (newMember === member)
+        continue; // nothing to add, and zrem would drop the member
       transactions.push(['zincrby', key, score, newMember]);
       transactions.push(['zrem', key, member]);
     }
