@@ -416,6 +416,14 @@ class Policy {
     }
   }
 
+  // an inbound rule only covers alarms raised for inbound flows. strict: an outbound rule only covers outbound ones
+  matchesDirection(alarm, strict = false) {
+    // default to outbound alarm
+    const outbound = (alarm["p.local_is_client"] || "1") === "1";
+    if (this.direction === "inbound") return !outbound;
+    return !strict || this.direction !== "outbound" || outbound;
+  }
+
   match(alarm) {
     log.debug(`Comparing policy:${this.pid} and alarm:${alarm.aid} ...`)
 
@@ -443,12 +451,9 @@ class Policy {
       return false;
     }
 
-    if (this.direction === "inbound") {
-      // default to outbound alarm
-      if ((alarm["p.local_is_client"] || "1") === "1") {
-        log.debug(`direction mismatch`)
-        return false;
-      }
+    if (!this.matchesDirection(alarm)) {
+      log.debug(`direction mismatch`)
+      return false;
     }
 
     if (
@@ -772,6 +777,20 @@ class Policy {
       }
     }
     return target;
+  }
+
+  // Splits a rule tag string into its type and uid. type is "intf" or a Constants.TAG_TYPE_MAP key.
+  // Returns null for an unknown prefix.
+  static parseTagStr(tagStr) {
+    if (tagStr.startsWith(Policy.INTF_PREFIX))
+      return { type: "intf", uid: tagStr.substring(Policy.INTF_PREFIX.length) };
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const prefix = Constants.TAG_TYPE_MAP[type].ruleTagPrefix;
+      if (tagStr.startsWith(prefix))
+        return { type, uid: tagStr.substring(prefix.length) };
+    }
+    return null;
   }
 
 }

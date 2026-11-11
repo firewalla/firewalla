@@ -75,7 +75,13 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
 const blockControl = require('../control/BlockControl.js');
 
+// mac => time of the last ensureCreateEnforcementEnv call
 const envCreatedMap = {};
+// sets of a removed device used more recently than this may still get an iptables rule
+const ENV_IDLE = 10 * 60 * 1000;
+const REGEX_DEVICE_SET = /^c_([0-9A-F:]{17})_(set|mac_set|ip4|ip6)$/;
+let orphanSweepCursor = null;
+let orphanSweepRunning = false;
 
 // retry delay after a failed device identify, doubled per consecutive failure
 const IDENTIFY_RETRY_BASE = 5 * 60;
@@ -185,21 +191,74 @@ class Host extends Monitorable {
   }
 
   static async ensureCreateEnforcementEnv(mac) {
-    if (envCreatedMap[mac])
+    if (envCreatedMap[mac]) {
+      envCreatedMap[mac] = Date.now();
       return;
-    // host set doesn't have many elements, leave hashsize to 128
-    await Ipset.create(Host.getIpSetName(mac, 4), 'hash:ip', false, { maxelem: 10, timeout: 900 });
-    await Ipset.create(Host.getIpSetName(mac, 6), 'hash:ip', true, { maxelem: 30, timeout: 900 });
-    await Ipset.create(Host.getMacSetName(mac), 'hash:mac', false, { maxelem: 1 });
-    await Ipset.add(Host.getMacSetName(mac), mac);
-    await Ipset.create(Host.getDeviceSetName(mac), 'list:set');
-    await Ipset.add(Host.getDeviceSetName(mac), Host.getMacSetName(mac));
-    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 4));
-    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 6));
-    envCreatedMap[mac] = 1;
+    }
+    // shared with destroyOrphanEnvs, so the sets are recreated after a sweep, not destroyed under it
+    await lock.acquire(`ENV_${mac}`, async () => {
+      if (envCreatedMap[mac]) return;
+      // host set doesn't have many elements, leave hashsize to 128
+      await Ipset.create(Host.getIpSetName(mac, 4), 'hash:ip', false, { maxelem: 10, timeout: 900 });
+      await Ipset.create(Host.getIpSetName(mac, 6), 'hash:ip', true, { maxelem: 30, timeout: 900 });
+      await Ipset.create(Host.getMacSetName(mac), 'hash:mac', false, { maxelem: 1 });
+      await Ipset.add(Host.getMacSetName(mac), mac);
+      await Ipset.create(Host.getDeviceSetName(mac), 'list:set');
+      await Ipset.add(Host.getDeviceSetName(mac), Host.getMacSetName(mac));
+      await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 4));
+      await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 6));
+      envCreatedMap[mac] = Date.now();
+    });
+  }
+
+  // destroys the sets of removed devices that are idle and unreferenced, up to limit devices per
+  // run. A rule torn down with the device recreates its sets, so they usually go a run later
+  static async destroyOrphanEnvs(limit = 200) {
+    if (orphanSweepRunning) return;
+    orphanSweepRunning = true;
+    try {
+      const setsByMac = {};
+      for (const set of await Ipset.read(null, true)) {
+        const match = set.name && set.name.match(REGEX_DEVICE_SET);
+        if (match)
+          (setsByMac[match[1]] = setsByMac[match[1]] || new Set()).add(set.name);
+      }
+      const macs = Object.keys(setsByMac).sort();
+      // start after the last device of the previous run, so the ones skipped every run can't starve the rest
+      let start = orphanSweepCursor ? macs.findIndex(mac => mac > orphanSweepCursor) : 0;
+      if (start < 0) start = 0;
+      let count = 0;
+      for (const mac of macs.slice(start).concat(macs.slice(0, start))) {
+        if (count >= limit) break;
+        await lock.acquire(`ENV_${mac}`, async () => {
+          if (await hostTool.macExists(mac)) return;
+          // checked in the same tick as the delete below, so a later ensure call takes the lock
+          if (Monitorable.instances[mac]) return;
+          count++;
+          orphanSweepCursor = mac;
+          if (Date.now() - (envCreatedMap[mac] || 0) < ENV_IDLE) return;
+          delete envCreatedMap[mac];
+
+          for (const name of [Host.getDeviceSetName(mac), Host.getMacSetName(mac), Host.getIpSetName(mac, 4), Host.getIpSetName(mac, 6)]) {
+            if (!setsByMac[mac].has(name)) continue;
+            if (Monitorable.instances[mac] || await Ipset.isReferenced(name)) {
+              log.verbose('Keeping referenced ipset of removed device', name);
+              return;
+            }
+            log.info('Destroying ipset of removed device', name);
+            await Ipset.destroy(name);
+          }
+        });
+      }
+    } finally {
+      orphanSweepRunning = false;
+    }
   }
 
   async destroyEnv() {
+    // sets this process never created were destroyed when it started
+    if (!envCreatedMap[this.o.mac])
+      return;
     log.info('Flushing ipset for', this.o.mac)
     await Ipset.flush(Host.getIpSetName(this.o.mac, 4))
     await Ipset.flush(Host.getIpSetName(this.o.mac, 6))
@@ -732,6 +791,8 @@ class Host extends Monitorable {
 
   async destroy() {
     log.info('Deleting Host', this.o.mac)
+    // read while the instance still blocks the orphan sweep, which may clear it once the instance is gone
+    const envCreated = envCreatedMap[this.o.mac]
     await super.destroy()
 
     messageBus.unsubscribe(this.constructor.getUpdateCh(), this.getGUID())
@@ -741,7 +802,16 @@ class Host extends Monitorable {
       // PolicyManager2 should be dealing with iptables entries alone
       this.destroyEnv();
 
-      await this.resetPolicies().catch(err => { log.error('Error reseting policy', err) });
+      // skip the reset if ownership can't be read, rather than spoof an address another device took
+      await this.dropUnownedIPs().then(() => this.resetPolicies())
+        .catch(err => { log.error('Error reseting policy', err) });
+      // qos has no default to reset to, and the QoS-off sets would keep the device's sets referenced.
+      // Its sets can only be members if this process created them, maybe in the reset above
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
+      if (envCreated || envCreatedMap[this.o.mac]) {
+        await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
+        await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
+      }
 
       if (this.invalidateHostsFileTask)
         clearTimeout(this.invalidateHostsFileTask);
@@ -756,10 +826,11 @@ class Host extends Monitorable {
 
       // delete redis host keys
       if (this.o.ipv4Addr) {
-        await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
+        await hostTool.deleteIPEntryIfOwner(this.o.ipv4Addr, this.o.mac)
       }
-      if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
-        await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
+      if (Array.isArray(this.ipv6Addr)) {
+        for (const ip6 of this.ipv6Addr)
+          await hostTool.deleteIPEntryIfOwner(ip6, this.o.mac)
       }
       await hostTool.deleteMac(this.o.mac)
       await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
@@ -770,6 +841,18 @@ class Host extends Monitorable {
     delete envCreatedMap[this.o.mac];
     await fwapc.deleteDeviceAcl(this.o.mac);
     delete Monitorable.instances[this.o.mac]
+  }
+
+  // DHCP may have leased a stored address to another device, whose monitor policy must win
+  async dropUnownedIPs() {
+    if (this.o.ipv4Addr && await hostTool.getIPOwner(this.o.ipv4Addr) !== this.o.mac)
+      this.o.ipv4Addr = null
+    if (Array.isArray(this.ipv6Addr)) {
+      const owned = []
+      for (const ip6 of this.ipv6Addr)
+        if (await hostTool.getIPOwner(ip6) === this.o.mac) owned.push(ip6)
+      this.ipv6Addr = owned
+    }
   }
 
   scheduleUpdateHostData() {
