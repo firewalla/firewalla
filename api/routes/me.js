@@ -24,16 +24,59 @@ const VPNProfile = require('../../net2/identity/VPNProfile.js');
 const WGPeer = require('../../net2/identity/WGPeer.js'); // AWGPeer extends WGPeer
 const IdentityManager = require('../../net2/IdentityManager.js');
 const fwapc = require('../../net2/fwapc.js');
+const FireRouter = require('../../net2/FireRouter.js');
 const firewalla = require('../../net2/Firewalla.js');
 const platform = require('../../platform/PlatformLoader').getPlatform();
 const _ = require('lodash');
 const { findPathByMac, buildHops } = require('./meTopology.js');
+const { apIpInDeviceSubnet } = require('./apAddr.js');
 const { execFile } = require('child-process-promise');
 const net = require('net');
 const LRU = require('lru-cache');
 
 
 const hostManager = new HostManager();
+
+// LAG number of each enabled bond, by bond name. The App numbers link aggregation groups by their
+// position in app.bond, so a bond is LAG<index + 1> of the app.bond entry with the same members,
+// in any order. null when no entry matches, e.g. a bond not set up from the App.
+// lanBond names the only bond when it holds every physical port of the enabled LAN interfaces
+async function getBondInfo() {
+  const config = await FireRouter.getConfig(false, false);
+  const interfaces = _.get(config, 'interface') || {};
+  const members = (intf) => Array.isArray(intf) ? [...intf].sort().join(',') : null;
+  const appBonds = _.get(config, 'app.bond');
+  const lags = Array.isArray(appBonds) ? appBonds.map(members) : [];
+  const bondLags = {};
+  for (const [name, bond] of Object.entries(interfaces.bond || {})) {
+    if (!bond || bond.enabled === false) continue;
+    const key = members(bond.intf);
+    const index = key ? lags.indexOf(key) : -1;
+    bondLags[name] = index >= 0 ? index + 1 : null;
+  }
+
+  let lanBond = null;
+  const bonds = Object.keys(bondLags);
+  if (bonds.length === 1) {
+    // physical ports under an interface, through bridges, bonds and VLANs
+    const ports = (name, depth = 0) => {
+      if (_.has(interfaces, ['phy', name])) return [name];
+      if (depth > 4) return [];
+      for (const type of ['bridge', 'bond', 'vlan']) {
+        const intf = _.get(interfaces, [type, name, 'intf']);
+        if (intf) return [].concat(intf).flatMap(i => ports(i, depth + 1));
+      }
+      return [];
+    };
+    const lanPorts = Object.values(interfaces).flatMap(byName => Object.entries(byName || {}))
+      .filter(([, i]) => i && i.enabled !== false && _.get(i, 'meta.type') === 'lan')
+      .flatMap(([name]) => ports(name));
+    const bondPorts = ports(bonds[0]);
+    if (lanPorts.length > 0 && lanPorts.every(p => bondPorts.includes(p)))
+      lanBond = bonds[0];
+  }
+  return { bondLags, lanBond };
+}
 
 // cache of topology info (device + hops + topologyError) keyed by device IP, latency excluded
 const topologyCache = new LRU({ max: 20, maxAge: 60 * 1000 }); // 1 minute
@@ -155,6 +198,8 @@ async function buildTopology(target) {
     if (!switchStatus || !_.isObject(switchStatus) ) {
       topologyError = 'Failed to fetch network topology';
     }
+    // a VPN client located in the LAN reaches the APs from its real device's network
+    const subnetIp = vpnRealMac ? connIp : target;
     const hopList = Array.isArray(hops) ? hops : [];
     for (let index = 0; index < hopList.length; index++) {
       const hop = hopList[index];
@@ -168,6 +213,11 @@ async function buildTopology(target) {
             const boxName = await firewalla.getBoxName();
             if (boxName) hop.name = boxName;
             hop.model = platform.getName();
+            // bond ports are shown by their LAG number on the App's link aggregation page
+            Object.assign(hop, await getBondInfo().catch((err) => {
+              log.error('Failed to get bond LAG numbers', err.message);
+              return { bondLags: {}, lanBond: null };
+            }));
             // hop.interfaceSpec = getModelInterfaceSpec('box', hop.model);
           }
           break;
@@ -177,6 +227,8 @@ async function buildTopology(target) {
             if (assetInfo.model) {
               hop.model = assetInfo.model;
             }
+            const ip = apIpInDeviceSubnet(assetInfo.addrs, subnetIp);
+            if (ip) hop.ip = ip;
             if (hmac == mac) {
               device.type = hop.type;
               device.model = hop.model;

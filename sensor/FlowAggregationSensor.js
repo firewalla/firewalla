@@ -196,6 +196,7 @@ class FlowAggregationSensor extends Sensor {
     // so top-flow queries can decode it instead of resolving intel:ip at read time
     const categoryCode = !local && flow.intel && flow.intel.category ?
       await intelTool.categoryToNumber(flow.intel.category) : undefined;
+    const cc = !local && intelTool.getIntelCategory(flow.intel);
     const key = `${mac}:${local ? dmac : ip}:${fd}${dp ? `:${dp}` : ""}${domain ? `:${domain}` : ""}`;
     for (const uidTickKey of uidTickKeys) {
       if (!this.trafficCache[uidTickKey])
@@ -231,8 +232,12 @@ class FlowAggregationSensor extends Sensor {
 
         this.trafficCache[uidTickKey][key] = t;
       }
-      if (categoryCode && !t.c)
+      // cc belongs to the record that supplied c
+      if (categoryCode && !t.c) {
         t.c = categoryCode;
+        if (cc)
+          t.cc = cc;
+      }
       t.upload += (fd === "out" ? rb : ob);
       t.download += (fd === "out" ? ob : rb);
 
@@ -343,6 +348,8 @@ class FlowAggregationSensor extends Sensor {
               }
               if (flow.c)
                 t.c = flow.c;
+              if (flow.cc)
+                t.cc = flow.cc;
               this.ipBlockCache[uidTickKey][key] = t;
             }
             t.count += flow.ct;
@@ -366,6 +373,8 @@ class FlowAggregationSensor extends Sensor {
               t.reason = reason;
             if (flow.c)
               t.c = flow.c;
+            if (flow.cc)
+              t.cc = flow.cc;
             this.dnsBlockCache[uidTickKey][key] = t;
           }
           t.count += flow.ct;

@@ -28,6 +28,7 @@ const dnsmasq = new DNSMASQ();
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
+const scheduler = require('../util/scheduler.js');
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
 
 const _ = require('lodash');
@@ -38,6 +39,9 @@ class NetworkProfileManager {
     this.subscriber = new c("info");
     this.networkProfiles = {};
     this.prefixMap = {}
+    // with no args the job keeps at most one refresh pending behind the one in progress, so a slow
+    // refresh on a busy box no longer queues one more refresh per network info reload
+    this.refreshJob = new scheduler.UpdateJob(this._refresh.bind(this), 3000);
 
     this.scheduleRefresh();
 
@@ -82,30 +86,32 @@ class NetworkProfileManager {
   }
 
   scheduleRefresh() {
-    if (this.refreshTask)
-      clearTimeout(this.refreshTask);
-    this.refreshTask = setTimeout(() => {
-      lock.acquire(LOCK_REFRESH, async () => {
-        await sysManager.waitTillInitialized();
-        await this.updatePrefixMap()
-        await this.refreshNetworkProfiles();
-        if (f.isMain()) {
-          if (sysManager.isIptablesReady()) {
-            for (let uuid in this.networkProfiles) {
-              const networkProfile = this.networkProfiles[uuid];
-              await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-              networkProfile.scheduleApplyPolicy();
-            }
-            sem.sendEventToFireMain({
-              type: Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED,
-              message: ""
-            });
+    this.refreshJob.exec().catch((err) => {
+      log.error("Failed to refresh network profiles", err);
+    });
+  }
+
+  async _refresh() {
+    await lock.acquire(LOCK_REFRESH, async () => {
+      await sysManager.waitTillInitialized();
+      await this.updatePrefixMap()
+      await this.refreshNetworkProfiles();
+      if (f.isMain()) {
+        if (sysManager.isIptablesReady()) {
+          for (let uuid in this.networkProfiles) {
+            const networkProfile = this.networkProfiles[uuid];
+            await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+            networkProfile.scheduleApplyPolicy();
           }
+          sem.sendEventToFireMain({
+            type: Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED,
+            message: ""
+          });
         }
-      }).catch((err) => {
-        log.error("Failed to refresh network profiles", err);
-      });
-    }, 3000);
+      }
+    }).catch((err) => {
+      log.error("Failed to refresh network profiles", err);
+    });
   }
 
   async toJson() {

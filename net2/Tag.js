@@ -48,7 +48,8 @@ const envCreatedMap = {};
 // they are reset to the value in Monitorable.defaultPolicy(). Keys deliberately left out:
 // - tags/userTags/deviceTags: destroyEnv() still needs them to detach this tag from the ipsets
 //   of its parent tags, and Tag.tags() would write the policy back to redis
-// - monitor/acl/dnsmasq: no-op on a tag, acl of a group is handled by fwapc
+// - monitor: kept on the Tag object, a removed tag no longer affects anything
+// - acl/dnsmasq: no-op on a tag, acl of a group is handled by fwapc
 // - weak_password_scan: system level only
 // - extraTimeLimit: plain data read on demand, nothing is enforced
 const RESET_POLICY_KEYS = [
@@ -250,7 +251,12 @@ class Tag extends Monitorable {
   }
 
   async spoof(state) {
-    // do nothing for spoof on tag
+    this.monitoring = state;
+  }
+
+  // a tag whose policy is not applied yet counts as monitored
+  isMonitoring() {
+    return this.monitoring !== false;
   }
 
   async shield(policy) {

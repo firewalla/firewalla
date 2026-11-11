@@ -241,29 +241,32 @@ class HttpFlow {
       }
 
 
-      const code = obj.status_code
-      if (host && uri && code && code < 400) {
-        sem.emitEvent({
-          type: 'DestURLFound', // to have DestURLHook to get intel for this url
-          url: `${host}${uri}`,
-          mac: mac,
-          suppressEventLogging: true
-        });
-      }
+      // the user agent above is still kept for unmonitored devices, it identifies the device type
+      if (await hostTool.isRecordingOn(hostTool.getMonitorableFast(mac), intf.uuid)) {
+        const code = obj.status_code
+        if (host && uri && code && code < 400) {
+          sem.emitEvent({
+            type: 'DestURLFound', // to have DestURLHook to get intel for this url
+            url: `${host}${uri}`,
+            mac: mac,
+            suppressEventLogging: true
+          });
+        }
 
-      const flowKey = `flow:http:${flowDirection}:${mac}`;
-      const strdata = JSON.stringify(obj);
-      const redisObj = [flowKey, obj.ts, strdata];
-      log.debug("HTTP:Save", redisObj);
+        const flowKey = `flow:http:${flowDirection}:${mac}`;
+        const strdata = JSON.stringify(obj);
+        const redisObj = [flowKey, obj.ts, strdata];
+        log.debug("HTTP:Save", redisObj);
 
-      try {
-        const expireTime = config.get('http.expires')
-        await rclient.zaddAsync(redisObj);
-        await rclient.expireAsync(flowKey, expireTime);
+        try {
+          const expireTime = config.get('http.expires')
+          await rclient.zaddAsync(redisObj);
+          await rclient.expireAsync(flowKey, expireTime);
 
-        flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
-      } catch (err) {
-        log.error(`Failed to save http flow, err: ${err}`);
+          flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
+        } catch (err) {
+          log.error(`Failed to save http flow, err: ${err}`);
+        }
       }
 
       /* this piece of code uses http to map dns */
