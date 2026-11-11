@@ -818,11 +818,7 @@ class Host extends Monitorable {
       // otherwise a pending task will re-add ipset entries and re-create the hosts file below
       if (this.updateHostDataTask)
         clearTimeout(this.updateHostDataTask);
-      const hostsFile = Host.getHostsFilePath(this.o.mac);
-      await fs.unlinkAsync(hostsFile).then(() => {
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }).catch((err) => {});
+      await this._removeHostsFile();
 
       // delete redis host keys
       if (this.o.ipv4Addr) {
@@ -955,11 +951,8 @@ class Host extends Monitorable {
       const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
       if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
         // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
         return;
       }
       const ipv4Addr = macEntry && macEntry.ipv4Addr;
@@ -967,11 +960,8 @@ class Host extends Monitorable {
       const localDomain = macEntry.localDomain || "";
       const userLocalDomain = macEntry.userLocalDomain || "";
       if (!ipv4Addr) {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
         return;
       }
       let ipv6Addr = null;
@@ -983,11 +973,8 @@ class Host extends Monitorable {
       })
       const iface = sysManager.getInterfaceViaIP(ipv4Addr);
       if (!iface) {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
         return;
       }
       const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
@@ -1021,11 +1008,8 @@ class Host extends Monitorable {
           this._lastHostfileEntries = entries.sort().join("\n");
         }
       } else {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
       }
       this.scheduleInvalidateHostsFile();
     });
@@ -1046,11 +1030,18 @@ class Host extends Monitorable {
     this.invalidateHostsFileTask = setTimeout(() => {
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       log.info(`Host ${this.o.mac} remains inactive for three days, removing hosts file ${hostsFile} ...`);
-      fs.unlinkAsync(hostsFile).then(() => {
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }).catch((err) => {});
+      this._removeHostsFile();
     }, 86400 * 3 * 1000);
+  }
+
+  // `force` reloads and resets even when the unlink fails, for callers that have written the file
+  // themselves; the others only do it once a file was really removed
+  async _removeHostsFile(force = false) {
+    const removed = await fs.unlinkAsync(Host.getHostsFilePath(this.o.mac)).then(() => true, () => false);
+    if (removed || force) {
+      dnsmasq.scheduleReloadDNSService();
+      this._lastHostfileEntries = null;
+    }
   }
 
   static getHostsFilePath(mac) {
