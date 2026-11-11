@@ -43,6 +43,7 @@ const sem = require('./SensorEventManager.js').getInstance();
 const extensionManager = require('../sensor/ExtensionManager.js')
 const delay = require('../util/util.js').delay;
 const AsyncLock = require('../vendor_lib/async-lock');
+const scheduler = require('../util/scheduler.js');
 const lock = new AsyncLock();
 const mode = require('../net2/Mode.js');
 
@@ -66,6 +67,10 @@ class DataUsageSensor extends Sensor {
         this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
         this.hookFeature();
         this.planJobs = {};
+        // with no args the job keeps at most one reload pending behind the one in progress, so a slow
+        // reload on a busy box no longer queues one more reload per network info reload
+        this.reloadCleanNeeded = false;
+        this.reloadJob = new scheduler.UpdateJob(this._reloadDataUsageAndJobs.bind(this), 0);
         sclient.on("message", async (channel, message) => {
           if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
             log.info(`System timezone is reloaded, will reload data usage statistics and jobs ...`, message);
@@ -364,7 +369,17 @@ class DataUsageSensor extends Sensor {
         return dataPlan
     }
 
+    // a call that finds a reload already pending is merged into it and returns without waiting for it
     async reloadDataUsageAndJobs(clean = false) {
+      if (clean)
+        this.reloadCleanNeeded = true;
+      await this.reloadJob.exec();
+    }
+
+    async _reloadDataUsageAndJobs() {
+      // read and cleared before the run, so a request that comes in during it is kept for the next one
+      const clean = this.reloadCleanNeeded;
+      this.reloadCleanNeeded = false;
       await lock.acquire("LOCK_RELOAD_DATA_USAGE", async () => {
         const dataPlan = await this.getDataPlan();
         const timezone = sysManager.getTimezone();

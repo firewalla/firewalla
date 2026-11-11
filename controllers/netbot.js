@@ -39,17 +39,12 @@ const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 
-const TypeFlowTool = require('../flow/TypeFlowTool.js')
-const categoryFlowTool = new TypeFlowTool('category')
-
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
 const networkTool = require('../net2/NetworkTool.js')();
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
-const FlowManager = require('../net2/FlowManager.js');
-const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager();
@@ -114,9 +109,6 @@ const flowTool = require('../net2/FlowTool');
 
 const i18n = require('../util/i18n');
 
-const FlowAggrTool = require('../net2/FlowAggrTool');
-const flowAggrTool = new FlowAggrTool();
-
 const NetBotTool = require('../net2/NetBotTool');
 const netBotTool = new NetBotTool();
 
@@ -162,6 +154,7 @@ const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
+const deviceCleanup = require('../net2/DeviceCleanup.js');
 
 const Message = require('../net2/Message')
 
@@ -2589,12 +2582,13 @@ class netBot extends ControllerBot {
           return {
             policy: policy,
             otherAlarms: blockedAlarms,
-            alreadyExists: alreadyExists === "duplicated",
-            updated: alreadyExists === "duplicated_and_updated"
+            ...am2.ruleSaveFlags(alreadyExists)
           }
         } else
           return policy
       }
+      case "alarm:addRule":
+        return am2.addRuleFromAlarm(value.alarmID, value)
       case "alarm:allow": {
         const { exception, allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
         if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
@@ -3763,36 +3757,9 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
-          const dapSensor = sl.getSensor('DapSensor');
-          if (dapSensor) {
-            const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${hostMac}`);
-            if (dapResult.code !== 200) {
-              log.warn(`Failed to reset DAP for ${hostMac}`, dapResult.msg || dapResult.code);
-            }
-          }
+          await deviceCleanup.resetDap([hostMac]);
 
-          (async () => {
-            await pm2.deleteMacRelatedPolicies(hostMac);
-            await em.deleteMacRelatedExceptions(hostMac);
-            await am2.deleteMacRelatedAlarms(hostMac);
-            await dnsmasq.deleteLeaseRecord(hostMac);
-            dnsmasq.scheduleRestartDHCPService();
-
-            await categoryFlowTool.delAllTypes(hostMac);
-            await flowAggrTool.removeAggrFlowsAll(hostMac);
-            await flowManager.removeFlowsAll(hostMac);
-            await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, hostMac);
-            await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, hostMac);
-            await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, hostMac);
-
-            // TODO: delete and substract timeseries data from global/intf/tag
-
-            // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-            await rclient.unlinkAsync([
-              "monitor:flow:" + hostMac,
-              "monitor:large:" + hostMac,
-            ]);
-          })().catch((err) => {
+          deviceCleanup.deleteHostsRelatedData([hostMac]).catch((err) => {
             log.error(`Failed to delete information of host ${hostMac}`, err);
           });
           // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.

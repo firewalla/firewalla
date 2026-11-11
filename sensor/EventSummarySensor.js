@@ -26,18 +26,26 @@ const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
+const { checkKeySettings, resolveValues, isNonEmptyString } = require('../event/EventKeySettings.js');
 
 const DEFAULT_PERIOD = 86400; // 1 day, used when "period" isn't configured or is invalid
 const RETENTION_SECS = 86400 * 7; // 7 days
 const MAX_RECORDS_PER_KEY = 400; // cap on distinct records per key per bucket, to bound redis payload size
 const MAX_SEEN_STATES = 100; // cap on distinct state values tracked per record
+// (cur, v) -> the new aggregate, cur is undefined until the first value
+const AGGR_FUNCS = {
+  max: (cur, v) => (cur === undefined || v > cur) ? v : cur,
+  min: (cur, v) => (cur === undefined || v < cur) ? v : cur
+};
+const isFiniteNumber = v => typeof v === 'number' && Number.isFinite(v);
 
 /*
- * EventSummarySensor folds generated state events into per-period, per-key buckets.
+ * EventSummarySensor folds generated state and action events into per-period, per-key buckets.
  *
  * For every configured setting, an event matching "filter" is grouped into a record keyed by
- * "eventKeys" + "labelKeys", and the record tracks the state the group started in, the state it
- * ended in, every state it passed through, and how many events were folded in.
+ * "eventKeys" + "labelKeys", and the record tracks how many events were folded in and, for state
+ * events, the state the group started in, the state it ended in and every state it passed through.
+ * "aggrKeys" adds an "aggr" map holding the max/min of a numeric label and the labels seen with it.
  *
  * Buckets are aligned to LOCAL midnight, so a "day" means the user's day.
  *
@@ -97,33 +105,9 @@ class EventSummarySensor extends Sensor {
   _validateSettings(settings) {
     const valid = [];
     for (const setting of settings) {
-      if (!_.isObject(setting) || !setting.key) {
-        log.error('Ignoring event summary setting without a key', setting);
-        continue;
-      }
-      // matchFilter() returns false for an empty node, a setting without a filter would silently
-      // never match, which is far more confusing than dropping it here
-      if (_.isEmpty(setting.filter)) {
-        log.error(`Ignoring event summary setting ${setting.key} without a filter`);
-        continue;
-      }
-      // silently coercing a malformed list to [] would produce WRONG GROUPING rather than the
-      // "setting ignored" degradation this function is contracted to provide
-      if ((!_.isUndefined(setting.eventKeys) && !_.isArray(setting.eventKeys)) ||
-          (!_.isUndefined(setting.labelKeys) && !_.isArray(setting.labelKeys))) {
-        log.error(`Ignoring event summary setting ${setting.key} with a non-array eventKeys/labelKeys`);
-        continue;
-      }
-      const eventKeys = setting.eventKeys || [];
-      const labelKeys = setting.labelKeys || [];
-      // event[null] or event[''] would create a record field literally named "null"/""
-      const isNonEmptyString = k => _.isString(k) && k.length > 0;
-      if (!eventKeys.every(isNonEmptyString) || !labelKeys.every(isNonEmptyString)) {
-        log.error(`Ignoring event summary setting ${setting.key} with a non-string key in eventKeys/labelKeys`);
-        continue;
-      }
-      if (_.isEmpty(eventKeys) && _.isEmpty(labelKeys)) {
-        log.error(`Ignoring event summary setting ${setting.key} without eventKeys or labelKeys`);
+      const { eventKeys, labelKeys, error } = checkKeySettings(setting);
+      if (error) {
+        log.error(`Ignoring event summary setting ${error[0]}`, ...error.slice(1));
         continue;
       }
       // the record is a flat map, so a name in both lists could only ever store one of the two values
@@ -131,16 +115,43 @@ class EventSummarySensor extends Sensor {
         log.error(`Ignoring event summary setting ${setting.key} with a key in both eventKeys and labelKeys`);
         continue;
       }
+      const aggrKeys = this._validateAggrKeys(setting, eventKeys, labelKeys);
+      if (!aggrKeys) continue;
       const period = Number(setting.period);
       // periods must tile a local day evenly, otherwise the last bucket of each day is short
       if (!tilesLocalDay(period)) {
         log.warn(`Invalid period(${setting.period}) for event summary setting ${setting.key}, falling back to ${DEFAULT_PERIOD}`);
-        valid.push(Object.assign({}, setting, { period: DEFAULT_PERIOD, eventKeys, labelKeys }));
+        valid.push(Object.assign({}, setting, { period: DEFAULT_PERIOD, eventKeys, labelKeys, aggrKeys }));
       } else {
-        valid.push(Object.assign({}, setting, { period, eventKeys, labelKeys }));
+        valid.push(Object.assign({}, setting, { period, eventKeys, labelKeys, aggrKeys }));
       }
     }
     return valid;
+  }
+
+  // returns the normalized aggrKeys, or null (logged) when the setting has to be dropped
+  _validateAggrKeys(setting, eventKeys, labelKeys) {
+    if (_.isUndefined(setting.aggrKeys)) return [];
+    const invalid = reason => {
+      log.error(`Ignoring event summary setting ${setting.key} with ${reason}`);
+      return null;
+    };
+    if (!_.isArray(setting.aggrKeys)) return invalid('a non-array aggrKeys');
+    const aggrKeys = [];
+    for (const entry of setting.aggrKeys) {
+      if (!_.isPlainObject(entry) || !isNonEmptyString(entry.key) || !isNonEmptyString(entry.aggrLabelKey) ||
+          !Object.keys(AGGR_FUNCS).includes(entry.aggrFunc))
+        return invalid('an aggrKeys entry without a key, aggrLabelKey or a max/min aggrFunc');
+      if (!_.isUndefined(entry.labelFields) &&
+          (!_.isArray(entry.labelFields) || !entry.labelFields.every(isNonEmptyString)))
+        return invalid(`a non-string-array labelFields in aggrKeys ${entry.key}`);
+      aggrKeys.push(Object.assign({}, entry, { labelFields: entry.labelFields || [] }));
+    }
+    if (_.uniqBy(aggrKeys, 'key').length !== aggrKeys.length) return invalid('a duplicate aggrKeys key');
+    // the record is a flat map, "aggr" can't be both a key field and the aggregation map
+    if (!_.isEmpty(aggrKeys) && (eventKeys.includes('aggr') || labelKeys.includes('aggr')))
+      return invalid('"aggr" in eventKeys/labelKeys');
+    return aggrKeys;
   }
 
   // start of the period containing tsSec, pivoted on local midnight. See util/TimeSlot.js
@@ -151,17 +162,10 @@ class EventSummarySensor extends Sensor {
   // Resolves setting.eventKeys against the top-level event, then setting.labelKeys against
   // event.labels, into a single ordered [name, value] list - the outer-then-label order is the
   // single source of truth for both the joined key and the record's visible fields.
-  // The isNil->null matters: JSON.stringify([undefined]) is "[null]", so without it every record with a
-  // missing field would collapse into one group while the stored record silently dropped the field.
-  // An eventKeys value that resolves to a non-primitive (e.g. ['labels'] itself) is also coerced to
-  // null: JSON.stringify's key order for an object is insertion-dependent, which would make _k an
-  // unstable record identity. labelKeys is left as-is - untouched to keep existing settings' _k
-  // byte-identical.
+  // labelKeys objects are NOT coerced to null, to keep existing settings' _k byte-identical.
   _resolveRecordFields(setting, event, labels) {
-    return setting.eventKeys.map(k => {
-      const v = event[k];
-      return [k, (_.isNil(v) || _.isObject(v)) ? null : v];
-    }).concat(setting.labelKeys.map(k => [k, _.isNil(labels[k]) ? null : labels[k]]));
+    return resolveValues(setting.eventKeys, event, true)
+      .concat(resolveValues(setting.labelKeys, labels, false));
   }
 
   // JSON-encode the value tuple so the Map/record key is both human-readable and collision-free (a
@@ -178,7 +182,7 @@ class EventSummarySensor extends Sensor {
   }
 
   async _onEvent(event) {
-    if (!event || event.event_type !== 'state') return; // only state events are summarized for now
+    if (!event || (event.event_type !== 'state' && event.event_type !== 'action')) return;
 
     // event.ts is in MILLISECONDS (EventRequestApi defaults it to Date.now(), and event:log zset
     // scores are ms), unlike the seconds-based _ts that BlockStatsSensor buckets on
@@ -220,6 +224,7 @@ class EventSummarySensor extends Sensor {
     if (!payload || !_.isArray(payload.records))
       payload = { ts: bucketTs, du: setting.period, key: setting.key, records: [] };
 
+    const isState = event.event_type === 'state';
     const stateValue = event.state_value;
     let record = payload.records.find(r => r._k === joinedKey);
     if (!record) {
@@ -228,14 +233,16 @@ class EventSummarySensor extends Sensor {
         // unbounded; accepted accuracy tradeoff to bound the redis payload size
         return;
       }
-      const prev = Number(event.prev_state_value);
       record = { _k: joinedKey };
       for (const [k, v] of fields) record[k] = v;
-      // prev_state_value is only set on a state TRANSITION, a no_error event's very first sighting
-      // has none. Emit an explicit null rather than letting JSON.stringify drop the field
-      record.prev_state = Number.isFinite(prev) ? prev : null;
-      record.end_state = stateValue;
-      record.seen_states = [stateValue];
+      if (isState) {
+        const prev = Number(event.prev_state_value);
+        // prev_state_value is only set on a state TRANSITION, a no_error event's very first sighting
+        // has none. Emit an explicit null rather than letting JSON.stringify drop the field
+        record.prev_state = Number.isFinite(prev) ? prev : null;
+        record.end_state = stateValue;
+        record.seen_states = [stateValue];
+      }
       record.cnt = 1;
       record._firstTs = tsMs;
       record._lastTs = tsMs;
@@ -245,18 +252,21 @@ class EventSummarySensor extends Sensor {
       // processed inline, and the redis message handler doesn't serialize - so guard on ts rather
       // than assuming arrival order. This also keeps the bucket correct across a sensor restart
       if (tsMs >= record._lastTs) {
-        record.end_state = stateValue;
+        if (isState) record.end_state = stateValue;
         record._lastTs = tsMs;
       }
       if (tsMs < record._firstTs) {
-        const prev = Number(event.prev_state_value);
-        record.prev_state = Number.isFinite(prev) ? prev : null;
+        if (isState) {
+          const prev = Number(event.prev_state_value);
+          record.prev_state = Number.isFinite(prev) ? prev : null;
+        }
         record._firstTs = tsMs;
       }
-      if (!record.seen_states.includes(stateValue) && record.seen_states.length < MAX_SEEN_STATES)
+      if (isState && !record.seen_states.includes(stateValue) && record.seen_states.length < MAX_SEEN_STATES)
         record.seen_states.push(stateValue);
       record.cnt++;
     }
+    if (!_.isEmpty(setting.aggrKeys)) this._foldAggr(setting, record, event.labels || {});
 
     // expire on the bucket's own horizon rather than a flat EX from write time, otherwise a late
     // write in the bucket's day renews the TTL past the index prune and leaves an orphaned key
@@ -273,6 +283,26 @@ class EventSummarySensor extends Sensor {
       Math.floor(Date.now() / 1000) - RETENTION_SECS - 86400);
     await multi.execAsync();
   }
+
+  // a non-numeric value is still counted in cnt, it just doesn't compete; aggr is created lazily so
+  // buckets written before the setting had aggrKeys keep folding
+  _foldAggr(setting, record, labels) {
+    record.aggr = record.aggr || {};
+    for (const { key, aggrLabelKey, aggrFunc, labelFields } of setting.aggrKeys) {
+      const v = labels[aggrLabelKey];
+      if (!isFiniteNumber(v)) continue;
+      const cur = record.aggr[key];
+      const prev = cur && isFiniteNumber(cur[aggrLabelKey]) ? cur[aggrLabelKey] : undefined;
+      const next = AGGR_FUNCS[aggrFunc](prev, v);
+      // a tie keeps the stored entry along with the labels first seen with that value
+      if (prev !== undefined && next === prev) continue;
+      const entry = Object.fromEntries(resolveValues(labelFields, labels, false));
+      // the aggregate is always kept, so the next event can fold into it
+      entry[aggrLabelKey] = next;
+      record.aggr[key] = entry;
+    }
+  }
 }
 
 module.exports = EventSummarySensor;
+module.exports.AGGR_FUNCS = AGGR_FUNCS;

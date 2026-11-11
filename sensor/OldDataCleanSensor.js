@@ -31,6 +31,13 @@ const em = new ExceptionManager()
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
+const Host = require('../net2/Host.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const MessageBus = require('../net2/MessageBus.js');
+const messageBus = new MessageBus('info');
+const { deleteHostsRelatedData, resetDap } = require('../net2/DeviceCleanup.js');
 
 const _ = require('lodash');
 
@@ -50,6 +57,21 @@ const fsp = require('fs').promises;
 const f = require('../net2/Firewalla.js');
 const sysManager = require('../net2/SysManager.js');
 const Policy = require('../alarm/Policy.js');
+
+const MIN_HOST_TTL = 6 * 3600;
+const MAX_HOST_TTL_EXPIRY_PER_RUN = 200; // per network
+// a candidate stays expirable while it has not been active since it was read and has not been
+// pinned or DHCP-reserved since the exemption set was built
+const EXPIRABLE_CHECK = 'local v = redis.call("hmget", KEYS[1], "lastActiveTimestamp", "firstFoundTimestamp", "pinned") ' +
+  'if (v[1] or v[2]) ~= ARGV[1] or v[3] or redis.call("sismember", KEYS[3], ARGV[2]) == 1 ' +
+  'or redis.call("sismember", KEYS[4], ARGV[2]) == 1 then return 0 end ';
+const IS_EXPIRABLE_SCRIPT = EXPIRABLE_CHECK + 'return 1';
+// removes an expirable host:mac and returns its fields
+const UNLINK_IF_EXPIRABLE_SCRIPT = EXPIRABLE_CHECK +
+  'local h = redis.call("hgetall", KEYS[1]) ' +
+  'redis.call("unlink", KEYS[1]) redis.call("zrem", KEYS[2], ARGV[2]) return h';
+const ZADD_IF_EXISTS_SCRIPT = 'if redis.call("exists", KEYS[1]) == 0 then return 0 end ' +
+  'return redis.call("zadd", KEYS[2], ARGV[1], ARGV[2])';
 
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
@@ -139,9 +161,52 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async regularClean(fullClean = false) {
+  async buildHostTTLContext(enabled) {
+    const ctx = { ttlByIntf: {}, retained: new Set(), candidatesByIntf: {}, invalidate: [], candidates: [], otherJobExpires: !enabled };
+    if (!enabled) {
+      log.verbose('hostTTL expiry is running in the other clean job, skipped in this one');
+      return ctx;
+    }
+    try {
+      const globalTTL = this.config['host:mac'].expires;
+      for (const [uuid, np] of Object.entries(NetworkProfileManager.networkProfiles)) {
+        let ttl = np.getPolicyFast('hostTTL');
+        if (ttl === undefined || ttl === null)
+          continue;
+        if (typeof ttl === 'string' && ttl.trim() !== '')
+          ttl = Number(ttl);
+        if (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl <= 0) {
+          log.verbose(`Ignoring invalid hostTTL of network ${uuid}`, ttl);
+          continue;
+        }
+        if (ttl < MIN_HOST_TTL) {
+          log.info(`hostTTL ${ttl} of network ${uuid} is below ${MIN_HOST_TTL}, using ${MIN_HOST_TTL}`);
+          ttl = MIN_HOST_TTL;
+        }
+        ctx.ttlByIntf[uuid] = Math.min(ttl, globalTTL);
+      }
+      // an incomplete exemption set could delete a kept device, so hostTTL is skipped this run
+      if (!_.isEmpty(ctx.ttlByIntf))
+        ctx.retained = await hostManager.getAlwaysVisibleMACs(await hostManager.getPortforwardConfig(true), true, true);
+    } catch (err) {
+      log.error('Failed to read hostTTL of networks or the devices exempt from it, only the global host expiry applies', err);
+      ctx.ttlByIntf = {};
+    }
+    return ctx;
+  }
+
+  async regularClean(fullClean = false, withHostTTL = true) {
     let batch = []
     const maxMemKeys = []
+    const hostTTLCtx = await this.buildHostTTLContext(withHostTTL)
+    const execBatch = async () => {
+      await rclient.pipelineAndLog(batch)
+      batch = []
+      // only after the keys are gone, or a read in between caches them again
+      for (const mac of hostTTLCtx.invalidate)
+        hostTool.invalidateMacEntryCache(mac)
+      hostTTLCtx.invalidate = []
+    }
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
         for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc, dropTTL, limits} of this.filterFunctions) {
@@ -150,7 +215,7 @@ class OldDataCleanSensor extends Sensor {
           if (filterFunc(key)) {
             if (customCleanerFunc) {
               try {
-                await customCleanerFunc(type, key, batch)
+                await customCleanerFunc(type, key, batch, hostTTLCtx)
               } catch(err) {
                 log.error('Error executing customized clean', type, key, err)
               }
@@ -180,14 +245,13 @@ class OldDataCleanSensor extends Sensor {
           }
         }
 
-        if (batch.length > 200) {
-          await rclient.pipelineAndLog(batch)
-          batch = []
-        }
+        if (batch.length > 200)
+          await execBatch()
       }
     });
     if (batch.length)
-      await rclient.pipelineAndLog(batch)
+      await execBatch()
+    await this.expireHostTTLCandidates(hostTTLCtx)
     // add a protection to prevent memory usage from growing too large
     for (const { key, maxMem, keepCount } of maxMemKeys)
       await this.cleanByMaxMem(key, maxMem, keepCount)
@@ -258,22 +322,85 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async cleanHostData(type, key, batch) {
+  async cleanHostData(type, key, batch, hostTTLCtx) {
     const expireInterval = this.config[type] && this.config[type].expires
     const expireTS = Date.now() / 1000 - expireInterval;
-    const results = await rclient.hmgetAsync(key, 'lastActiveTimestamp', 'firstFoundTimestamp')
+    const results = await rclient.hmgetAsync(key, 'lastActiveTimestamp', 'firstFoundTimestamp', 'intf')
     if (!results) return
     const activeTS = results[0] || results[1]
     if (!activeTS) return
     if (activeTS < expireTS) {
       log.info(key, "Deleting due to timeout", activeTS);
       batch.push(['unlink', key])
-      if (type == 'host:mac')
+      if (type == 'host:mac') {
         batch.push(['zrem', Constants.REDIS_KEY_HOST_ACTIVE, key.substring(9)])
-    } else {
-      if (type == 'host:mac')
+        hostTTLCtx.invalidate.push(key.substring(9))
+      }
+    } else if (type == 'host:mac') {
+      if (await this.expireByHostTTL(key, activeTS, results[2], hostTTLCtx))
+        return
+      // the other job may expire the device before this batch runs, don't re-add it then
+      if (hostTTLCtx.otherJobExpires)
+        batch.push(['eval', ZADD_IF_EXISTS_SCRIPT, 2, key, Constants.REDIS_KEY_HOST_ACTIVE, activeTS, key.substring(9)])
+      else
         batch.push(['zadd', Constants.REDIS_KEY_HOST_ACTIVE, activeTS, key.substring(9)])
     }
+  }
+
+  // returns true when the device is left to expireHostTTLCandidates
+  async expireByHostTTL(key, activeTS, intf, ctx) {
+    const ttl = ctx.ttlByIntf[intf];
+    if (!ttl || activeTS >= Date.now() / 1000 - ttl)
+      return false;
+    const mac = key.substring(9);
+    // explicitly kept devices are left to the global expiry
+    if (ctx.retained.has(mac))
+      return false;
+    if ((ctx.candidatesByIntf[intf] || 0) >= MAX_HOST_TTL_EXPIRY_PER_RUN)
+      return false;
+
+    ctx.candidatesByIntf[intf] = (ctx.candidatesByIntf[intf] || 0) + 1;
+    ctx.candidates.push({ key, mac, activeTS, intf });
+    return true;
+  }
+
+  async expireHostTTLCandidates(ctx) {
+    if (!ctx.candidates.length)
+      return;
+    const expired = [];
+    let resetDapOn = true;
+    let noDapReset = 0;
+    for (const { key, mac, activeTS, intf } of ctx.candidates) {
+      let removed, dapReset = false
+      const keys = [key, Constants.REDIS_KEY_HOST_ACTIVE, Constants.REDIS_KEY_HOST_PINNED, Constants.REDIS_KEY_HOST_DHCPCONF];
+      try {
+        // a device active again, pinned or reserved since the scan keeps its record and its DAP state
+        if (!await rclient.evalAsync(IS_EXPIRABLE_SCRIPT, keys.length, ...keys, activeTS, mac))
+          continue;
+        // DAP looks the device up through FireApi, so it is reset while host:mac still exists
+        if (resetDapOn)
+          resetDapOn = dapReset = await resetDap([mac]);
+        removed = await rclient.evalAsync(UNLINK_IF_EXPIRABLE_SCRIPT, keys.length, ...keys, activeTS, mac);
+      } catch (err) {
+        // the device is kept and retried next run
+        log.error('Failed to expire by hostTTL', key, err);
+        continue;
+      }
+      if (!removed) // active again, pinned or reserved since the scan
+        continue;
+      expired.push(mac);
+      if (!dapReset)
+        noDapReset++;
+      log.info(key, "Deleting due to hostTTL", activeTS, intf);
+      hostTool.invalidateMacEntryCache(mac);
+      // tear down the device in every process, after its key is gone. It carries the removed fields,
+      // as FireMain may never have loaded the device, and FireApi/FireMon may hold one FireMain does not
+      messageBus.publish("DiscoveryEvent", "Device:Delete", mac, Object.assign(_.fromPairs(_.chunk(removed, 2)), { mac }));
+    }
+    if (!resetDapOn)
+      log.warn(`DAP resets stopped after a failure, ${noDapReset} devices expired by hostTTL without one`);
+    if (expired.length)
+      await deleteHostsRelatedData(expired);
   }
 
   async cleanDuplicatedPolicy() {
@@ -442,6 +569,8 @@ class OldDataCleanSensor extends Sensor {
       log.warn(`The previous ${fullClean ? "full clean" : "regular clean"} scheduled job is still running, skip this time`);
       return;
     }
+    // a regular and a full clean may overlap, only one of them expires devices by hostTTL
+    const withHostTTL = !this.hostTTLRunning;
     try {
       if (fullClean)
         this.fullCleanRunning = true;
@@ -449,7 +578,12 @@ class OldDataCleanSensor extends Sensor {
         this.regularCleanRunning = true;
       log.info(`Start ${fullClean ? "full" : "regular"} cleaning old data in redis`)
 
-      await this.regularClean(fullClean);
+      if (withHostTTL)
+        this.hostTTLRunning = true;
+      await this.regularClean(fullClean, withHostTTL);
+      await Host.destroyOrphanEnvs().catch(err => {
+        log.error('Failed to destroy ipsets of removed devices', err);
+      });
 
       await this.cleanUserAgents();
       await this.cleanupAlarmExtendedKeys();
@@ -471,6 +605,8 @@ class OldDataCleanSensor extends Sensor {
         this.fullCleanRunning = false;
       else
         this.regularCleanRunning = false;
+      if (withHostTTL)
+        this.hostTTLRunning = false;
     }
   }
 
@@ -649,6 +785,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("api_stats", (key) => key.startsWith("api:stats:"));
     this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
     this._registerFilterFunction("ntp_off_set", (key) => key === Constants.REDIS_KEY_NTP_OFF_SET);
+    this._registerFilterFunction("radius_event", (key) => key === Constants.REDIS_KEY_RADIUS_EVENTS);
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
     this._registerFilterFunction("subdomains2", (key) => key.startsWith("subdomains2:"), false, this.cleanSubdomains);
   }

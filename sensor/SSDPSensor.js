@@ -135,9 +135,9 @@ class SSDPSensor extends Sensor {
   }
 
   getElement(object, element) {
-    let array = object[element]
+    let value = object[element]
 
-    return array && (array.constructor.name === 'Array') && array.length > 0 && array[0]
+    return Array.isArray(value) ? value[0] : value
   }
 
   parseContent(content) {
