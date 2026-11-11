@@ -930,7 +930,7 @@ class Host extends Monitorable {
     if (!fc.isFeatureOn('local_domain'))
       return;
     const key = [
-      this.o.ipv4Addr,
+      this._hostsFileIPv4s().join(","),
       Host.hostsFileV6Key(this.ipv6Addr),
       this.o.localDomain,
       this.o.userLocalDomain
@@ -940,6 +940,42 @@ class Host extends Monitorable {
     await this.updateHostsFile();
     // only record on success so a failed write is retried on the next update
     this._hostsFileKey = key;
+  }
+
+  // the one place that decides which IPv4 addresses the hosts file is rendered from, so the
+  // change key and the text cannot disagree
+  _hostsFileIPv4s() {
+    return this.o.ipv4Addr ? [this.o.ipv4Addr] : [];
+  }
+
+  // one line per name and address, each address under the search domains of its own network
+  static hostsFileEntries(addrs, aliases, ipv6Addr, suffix) {
+    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+    const entries = [];
+    for (const { ip, iface } of addrs) {
+      const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
+      for (const domain of suffixes) {
+        for (const alias of aliases) {
+          const fqdn = `${alias}.${domain}`;
+          if (new Address4(ip).isValid())
+            entries.push(`${ip} ${fqdn}`);
+          // No entry at all for a family the device has no address in. :: would be an address
+          // RFC 4291 says must never be assigned to a node, and a client that picks it connects
+          // to itself. The NODATA answer this leaves behind comes from the dnsmasq build that
+          // treats a name defined in a hosts file as authoritative for every family
+          // (dnsmasq_internal#137); an older build forwards the query upstream instead.
+          if (_.isArray(ipv6Addr)) {
+            for (const addr of ipv6Addr) {
+              const addr6 = new Address6(addr);
+              if (addr6.isValid() && !addr6.isLinkLocal())
+                entries.push(`${addr} ${fqdn}`);
+            }
+          }
+        }
+      }
+    }
+    // the IPv6 lines repeat for every address that shares a name
+    return _.uniq(entries);
   }
 
   async updateHostsFile() {
@@ -955,11 +991,14 @@ class Host extends Monitorable {
           await this._removeHostsFile(true);
         return;
       }
-      const ipv4Addr = macEntry && macEntry.ipv4Addr;
       const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
       const localDomain = macEntry.localDomain || "";
       const userLocalDomain = macEntry.userLocalDomain || "";
-      if (!ipv4Addr) {
+      // an address outside the monitored networks has no search domains to be named under
+      const addrs = this._hostsFileIPv4s()
+        .map((ip) => ({ ip, iface: sysManager.getInterfaceViaIP(ip) }))
+        .filter((addr) => addr.iface);
+      if (addrs.length === 0) {
         if (this._lastHostfileEntries !== null)
           await this._removeHostsFile(true);
         return;
@@ -971,34 +1010,7 @@ class Host extends Monitorable {
       const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
         return a.indexOf(v) === i;
       })
-      const iface = sysManager.getInterfaceViaIP(ipv4Addr);
-      if (!iface) {
-        if (this._lastHostfileEntries !== null)
-          await this._removeHostsFile(true);
-        return;
-      }
-      const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
-      const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
-      const entries = [];
-      for (const suffix of suffixes) {
-        for (const alias of aliases) {
-          const fqdn = `${alias}.${suffix}`;
-          if (new Address4(ipv4Addr).isValid())
-            entries.push(`${ipv4Addr} ${fqdn}`);
-          // No entry at all for a family the device has no address in. :: would be an address
-          // RFC 4291 says must never be assigned to a node, and a client that picks it connects
-          // to itself. The NODATA answer this leaves behind comes from the dnsmasq build that
-          // treats a name defined in a hosts file as authoritative for every family
-          // (dnsmasq_internal#137); an older build forwards the query upstream instead.
-          if (_.isArray(ipv6Addr)) {
-            for (const addr of ipv6Addr) {
-              const addr6 = new Address6(addr);
-              if (addr6.isValid() && !addr6.isLinkLocal())
-                entries.push(`${addr} ${fqdn}`);
-            }
-          }
-        }
-      }
+      const entries = Host.hostsFileEntries(addrs, aliases, ipv6Addr, suffix);
       if (entries.length !== 0) {
         if (this._lastHostfileEntries !== entries.sort().join("\n")) {
           await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
