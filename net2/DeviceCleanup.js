@@ -82,11 +82,10 @@ async function resetDap(macs) {
   if (!dapSensor)
     return true;
   for (const [i, mac] of macs.entries()) {
-    const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${mac}`);
-    if (dapResult.code !== 200) {
+    if (!await dapSensor.resetDap(mac)) {
       // dap is likely down, and each call can take its full timeout
       const rest = macs.length - i - 1;
-      log.warn(`Failed to reset DAP for ${mac}` + (rest ? `, skipping ${rest} more` : ''), dapResult.msg || dapResult.code);
+      if (rest) log.warn(`Skipping DAP reset of ${rest} more devices`);
       return false;
     }
   }
