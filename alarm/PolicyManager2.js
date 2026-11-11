@@ -174,6 +174,7 @@ class PolicyManager2 {
           this.policyCache.del(Number(pid));
         }
       });
+      sem.on('Policy:CacheInvalidate', () => this.invalidatePolicyCache());
     }
     return instance;
   }
@@ -846,41 +847,46 @@ class PolicyManager2 {
   }
 
   // await all async opertions here to ensure errors are caught
-  async deleteMacRelatedPolicies(mac) {
+  // macs: a mac or guid, or an array of them
+  async deleteMacRelatedPolicies(macs) {
+    macs = [].concat(macs)
+    const macSet = new Set(macs)
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let changed = false;
 
     for (let rule of rules) {
-      if (rule.type == 'mac' && rule.target == mac) {
+      if (rule.type == 'mac' && macSet.has(rule.target)) {
         policyIds.push(rule.pid);
         policyKeys.push('policy:' + rule.pid);
         this.tryPolicyEnforcement(rule, 'unenforce');
         continue
       }
 
-      if (!_.isEmpty(rule.scope) && rule.scope.some(m => m == mac)) {
-        // rule targets only deleted device
-        if (rule.scope.length <= 1) {
+      if (!_.isEmpty(rule.scope) && rule.scope.some(m => macSet.has(m))) {
+        let reducedScope = rule.scope.filter(m => !macSet.has(m));
+        // rule targets only deleted devices
+        if (!reducedScope.length) {
           policyIds.push(rule.pid);
           policyKeys.push('policy:' + rule.pid);
 
           this.tryPolicyEnforcement(rule, 'unenforce');
         }
-        // rule targets NOT only deleted device
+        // rule targets NOT only deleted devices
         else {
-          let reducedScope = _.without(rule.scope, mac);
           await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedScope));
+          changed = true;
           const newRule = await this.getPolicy(rule.pid)
 
           this.tryPolicyEnforcement(newRule, 'reenforce', rule);
 
-          log.info('remove scope from policy:' + rule.pid, mac);
+          log.info('remove scope from policy:' + rule.pid, _.intersection(rule.scope, macs));
         }
         continue;
       }
 
-      if (rule.type === 'mac' && rule.guids && rule.guids[0] === mac) {
+      if (rule.type === 'mac' && rule.guids && macSet.has(rule.guids[0])) {
         policyIds.push(rule.pid);
         policyKeys.push('policy:' + rule.pid);
         this.tryPolicyEnforcement(rule, 'unenforce');
@@ -891,8 +897,12 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      changed = true;
     }
-    log.info('Deleted', mac, 'related policies:', policyKeys);
+    // FireApi answers acl:check and route:check from its own rule cache, also for removals FireMain makes
+    if (changed)
+      sem.sendEventToFireApi({ type: 'Policy:CacheInvalidate', message: 'device related policies changed', suppressEventLogging: true });
+    log.info('Deleted', macs, 'related policies:', policyKeys);
   }
 
   async deleteTagRelatedPolicies(tag) {

@@ -859,11 +859,13 @@ module.exports = class {
     pclient.publishAsync("alarm:removeCache", JSON.stringify({aid:alarmID}));
   }
 
-  async deleteMacRelatedAlarms(mac) {
+  // macs: a mac or guid, or an array of them
+  async deleteMacRelatedAlarms(macs) {
+    const macSet = new Set([].concat(macs).map(mac => mac.toUpperCase()))
     let alarms = await this.loadRecentAlarmsAsync(60 * 60 * 24 * 7);
     let related = alarms
       .filter(alarm => _.isString(alarm['p.device.mac']) &&
-        alarm['p.device.mac'].toUpperCase() === mac.toUpperCase())
+        macSet.has(alarm['p.device.mac'].toUpperCase()))
       .map(alarm => alarm.aid);
 
     if (related.length) {
