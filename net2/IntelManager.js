@@ -95,18 +95,8 @@ module.exports = class {
       intelObj = await this._lookupDomainInBone(domain, ip);
     } else {
       log.info("Intel for domain", domain, " exists in flowObj");
-      if (intelObj.cc) {
-        try {
-          let json = JSON.parse(intelObj.cc)
-          if(Array.isArray(json)) {
-            // HACK, excluding attackpage
-            json = json.filter(x => x !== "attackpage")
-            intelObj.cc = json[0]
-          }
-        } catch (err) {
-          log.warn("Error when parsing info.cc:", intelObj.cc, err);
-        }
-      }
+      if (intelObj.cc)
+        intelObj.cc = intelTool.getIntelCategory(intelObj)
     }
 
     if(intelObj.category === 'intel' && intelObj.s && Number(intelObj.s) === 0) {

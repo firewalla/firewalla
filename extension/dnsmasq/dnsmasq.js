@@ -123,6 +123,7 @@ const globalAllowKey = "redis_zset_match:global_allow";
 const globalAllowHighKey = "redis_zset_match:global_allow_high";
 
 const AsyncLock = require('../../vendor_lib/async-lock');
+const scheduler = require('../../util/scheduler.js');
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
 const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";
@@ -148,6 +149,10 @@ module.exports = class DNSMASQ {
       if (f.isMain())
         this.loadHostsFileHashes()
       this.writeHostsFileTask = {}
+      // start() runs through this job with no args, so it keeps at most one run pending behind the one
+      // in progress: a slow start on a busy box no longer queues one more start per reload event
+      this.startNeedsIptablesUpdate = false
+      this.startJob = new scheduler.UpdateJob(this._startJob.bind(this), 5000)
       // dnsmasq reads its lease file only at startup, so a lease record deleted from the file takes
       // effect at the next DHCP restart. Starts true, so the first DHCP check after every FireMain start
       // restarts DHCP whatever the hashes say: dnsmasq then reloads everything from disk, and nothing a
@@ -242,14 +247,10 @@ module.exports = class DNSMASQ {
   }
 
   scheduleStart() {
-    if (this.startTask)
-      clearTimeout(this.startTask);
-    this.startTask = setTimeout(() => {
-      // raw restart dnsmasq to refresh all confs and iptables
-      this.start(false).catch((err) => {
-        log.error("Failed to start dnsmasq", err.message);
-      });
-    }, 5000);
+    // raw restart dnsmasq to refresh all confs and iptables
+    this.start(false).catch((err) => {
+      log.error("Failed to start dnsmasq", err.message);
+    });
   }
 
   async install() {
@@ -2320,7 +2321,17 @@ module.exports = class DNSMASQ {
     }
   }
 
+  // a call that finds a run already pending is merged into it and returns without waiting for it
   async start(skipIptablesUpdate) {
+    if (!skipIptablesUpdate)
+      this.startNeedsIptablesUpdate = true;
+    await this.startJob.exec();
+  }
+
+  async _startJob() {
+    // read and cleared before the run, so a request that comes in during it is kept for the next one
+    const skipIptablesUpdate = !this.startNeedsIptablesUpdate;
+    this.startNeedsIptablesUpdate = false;
     await lock.acquire("LOCK_DNSMASQ_START", async () => {
       // 0. update resolv.conf
       // 1. update filter (by default only update filter once per configured interval, unless force is true)
@@ -2742,13 +2753,15 @@ module.exports = class DNSMASQ {
     }
   }
 
-  // ip could be a string of single IP or an array of IPs
+  // mac and ip could each be a string or an array
   // return deleted lines
   async deleteLeaseRecord(mac, ip) {
-    if (!mac && (!ip || !ip.length))
+    if ((!mac || !mac.length) && (!ip || !ip.length))
       return [];
     const leaseFile = platform.getDnsmasqLeaseFilePath();
-    const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    const macRegex = !mac || !mac.length ? '[0-9a-f:]{17}'
+      : Array.isArray(mac) ? `(${mac.map(m => m.toLowerCase()).join('|')})` : mac.toLowerCase()
+    const regex = `^[0-9]+ ${macRegex} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
     log.debug('lease file sed regex', regex)
     return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370

@@ -41,7 +41,12 @@ const Constants = require('../net2/Constants.js');
 const featureName = 'freeradius_server';
 const policyKeyName = 'freeradius_server';
 const LOCK_APPLY_FREERADIUS_SERVER_POLICY = "LOCK_APPLY_FREERADIUS_SERVER_POLICY";
+const LOCK_DEVICE_TAG_PREFIX = "LOCK_FREERADIUS_DEVICE_TAG_";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// radius auth failures for debug are recorded once per mac and reason in a window
+const RADIUS_EVENT_WINDOW = 15 * 1000;
+const RADIUS_EVENT_SEEN_MAX = 100;
+const radiusEventSeen = new Map(); // key -> ts of last record, oldest first
 
 class FreeRadiusSensor extends Sensor {
   constructor(config) {
@@ -209,9 +214,14 @@ class FreeRadiusSensor extends Sensor {
           await this.processAuthEvent(message);
           break;
         }
+        case 'radius_auth_failure': {
+          this.processAuthFailure(message);
+          break;
+        }
       }
     });
     sclient.subscribe("radius_auth_event");
+    sclient.subscribe("radius_auth_failure");
   }
 
   async refreshDeviceTags(options = {}) {
@@ -241,32 +251,54 @@ class FreeRadiusSensor extends Sensor {
     const keys = await rclient.scanResults(`${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}*`);
     for (const key of keys) {
       const mac = key.substring(Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE.length);
-      const autoGroup = await hostTool.getWirelessAutoGroup(mac);
-      if (!autoGroup)
-        continue;
-      let parsed;
-      try {
-        parsed = JSON.parse(autoGroup);
-      } catch (err) {
-        continue;
-      }
-      if (!parsed || parsed.auth !== "mab" || !parsed.tag)
-        continue;
-      if (!await hostManager.getHostAsync(mac))
-        continue;
-      const { tag, ssid, ts, ...options } = parsed;
-      log.info(`retry set mab device tag ${mac} to ${tag}`);
-      await this.setDeviceTagByUid(mac, tag, ssid, options);
+      await this._withDeviceTagLock(mac, async () => {
+        // a newer auth event may have removed or replaced the candidate while waiting for the lock
+        if (!await hostTool.getWirelessDeviceTagCandidate(mac))
+          return;
+        const parsed = await this._loadAutoGroup(mac);
+        if (!parsed || parsed.auth !== "mab" || !parsed.tag)
+          return;
+        if (!await hostManager.getHostAsync(mac))
+          return;
+        const { tag, ssid, ts, ...options } = parsed;
+        log.info(`retry set mab device tag ${mac} to ${tag}`);
+        await this._setDeviceTagByUid(mac, tag, ssid, options);
+      });
+    }
+  }
+
+  // serialize tag assignment and removal of one device
+  async _withDeviceTagLock(mac, fn) {
+    return await lock.acquire(`${LOCK_DEVICE_TAG_PREFIX}${mac}`, fn);
+  }
+
+  // auto group of host, or the cached one of a device not seen yet
+  async _loadAutoGroup(mac, monitorable = null) {
+    if (monitorable && monitorable.o.autoGroup)
+      return monitorable.o.autoGroup;
+    const cached = await hostTool.getWirelessAutoGroup(mac);
+    if (!cached)
+      return null;
+    try {
+      return JSON.parse(cached);
+    } catch (err) {
+      return null;
     }
   }
 
   async setDeviceTag(mac, username, ssid, options = {}) {
-    const userTag = tagManager.getTagByRadiusUser(username);
-    await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+    await this._withDeviceTagLock(mac, async () => {
+      const userTag = tagManager.getTagByRadiusUser(username);
+      await this._applyDeviceTag(mac, userTag, ssid, options, `username ${username}`);
+    });
   }
 
   // MAB: Filter-Id is the tag uid
   async setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
+    await this._withDeviceTagLock(mac, () => this._setDeviceTagByUid(mac, tagUid, ssid, options));
+  }
+
+  async _setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
     const userTag = tagManager.getTagByUid(String(tagUid));
     await this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
   }
@@ -327,6 +359,38 @@ class FreeRadiusSensor extends Sensor {
     await monitorable.setPolicyAsync(policyKey, [tagId], true);
   }
 
+  // mac no longer in any group's mab list, only undo a group that mab itself assigned
+  async removeMabAutoGroup(mac) {
+    await this._withDeviceTagLock(mac, () => this._removeMabAutoGroup(mac));
+  }
+
+  async _removeMabAutoGroup(mac) {
+    await hostTool.deleteWirelessDeviceTagCandidate(mac);
+    const monitorable = await hostManager.getHostAsync(mac);
+    const autoGroup = await this._loadAutoGroup(mac, monitorable);
+    if (!autoGroup || autoGroup.auth !== "mab")
+      return;
+    if (!monitorable) {
+      await hostTool.resetWirelessAutoGroup(mac);
+      return;
+    }
+    await monitorable.resetAutoGroupAsync();
+
+    // auto group disabled on this device, keep its group like the assignment path does
+    const wifiAutoGroup = monitorable.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    if (_.get(wifiAutoGroup, "state") === false) {
+      log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${mac}, keep its group`);
+      return;
+    }
+
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]);
+    const origPolicy = await monitorable.loadPolicyAsync();
+    if (!_.isEqual((origPolicy[policyKey] || []).map(String), [String(autoGroup.tag)]))
+      return;
+    log.info(`remove policy of ${mac} ${policyKey}:[${autoGroup.tag}]`);
+    await monitorable.setPolicyAsync(policyKey, [], true);
+  }
+
   _normalizeMac(mac) {
     if (!_.isString(mac))
       return null;
@@ -341,6 +405,62 @@ class FreeRadiusSensor extends Sensor {
     if (msg.auth_method)
       return msg.auth_method === "mab";
     return this._normalizeMac(msg.user_name) === mac;
+  }
+
+  // values of radius_auth_failure are escaped by freeradius %{escape:}, unsafe bytes as =XX
+  _unescapeRadius(value) {
+    if (!_.isString(value))
+      return value;
+    return value.replace(/(?:=[0-9A-F]{2})+/g, m => Buffer.from(m.replace(/=/g, ""), "hex").toString("utf8"));
+  }
+
+  // kept for support reference, OldDataCleanSensor trims it by radius_event config
+  async _saveRadiusEvent(event) {
+    await rclient.zaddAsync(Constants.REDIS_KEY_RADIUS_EVENTS, event.ts, JSON.stringify(event));
+  }
+
+  // false when the same key was recorded in the window
+  _isNewRadiusEvent(key, now = Date.now()) {
+    for (const [k, ts] of radiusEventSeen) {
+      if (now - ts < RADIUS_EVENT_WINDOW && radiusEventSeen.size <= RADIUS_EVENT_SEEN_MAX)
+        break;
+      radiusEventSeen.delete(k);
+    }
+    if (radiusEventSeen.has(key))
+      return false;
+    radiusEventSeen.set(key, now);
+    return true;
+  }
+
+  _recordAuthSuccess(msg, mac, ssid, auth) {
+    const vlan = msg.vlan || msg.vlan_id || "";
+    const tag = msg.tag || msg.filter_id || "";
+    const event = { type: "auth_success", ts: Number(msg.ts) || Math.floor(Date.now() / 1000), mac, auth, user: msg.user_name, ssid, nas: msg.nas_ip, vlan, tag };
+    this._saveRadiusEvent(event).catch((err) => {
+      log.warn("failed to save radius auth success event", err.message);
+    });
+  }
+
+  // debug only: log rejected auth requests
+  processAuthFailure(message) {
+    message = message.trim();
+    if (!message.startsWith("{"))
+      message = "{" + message + "}";
+    try {
+      const msg = _.mapValues(JSON.parse(message), v => this._unescapeRadius(v));
+      const mac = this._normalizeMac(msg.mac) || msg.mac;
+      const authMethod = msg.auth_method || (this._normalizeMac(msg.user_name) === mac ? "mab" : "");
+      const reason = msg.root_reason || msg.reason;
+      if (!this._isNewRadiusEvent(`${mac}|${reason}`))
+        return;
+      log.warn(`radius auth failure, mac ${mac}, auth ${authMethod}, user ${msg.user_name}, ssid ${msg.ssid}, nas ${msg.nas_ip}, reason ${reason}`);
+      const event = { type: "auth_failure", ts: Number(msg.ts) || Math.floor(Date.now() / 1000), mac, auth: authMethod, user: msg.user_name, ssid: msg.ssid, nas: msg.nas_ip, reason };
+      this._saveRadiusEvent(event).catch((err) => {
+        log.warn("failed to save radius auth failure event", err.message);
+      });
+    } catch (err) {
+      log.error("parse radius_auth_failure message error", err.message, message);
+    }
   }
 
   // supports both post-auth publish and json authlog fields
@@ -358,7 +478,10 @@ class FreeRadiusSensor extends Sensor {
           return;
         }
         const ssid = msg.ssid || msg.called_station_ssid;
-        if (this._isMabEvent(msg, mac)) {
+        const isMab = this._isMabEvent(msg, mac);
+        if (msg.result && msg.result === "Access-Accept")
+          this._recordAuthSuccess(msg, mac, ssid, isMab ? "mab" : "dot1x");
+        if (isMab) {
           if (msg.result && msg.result !== "Access-Accept")
             return;
           const tagUid = msg.tag || msg.filter_id;
@@ -367,7 +490,8 @@ class FreeRadiusSensor extends Sensor {
           if (vlan)
             options.dvlanId = String(vlan);
           if (!tagUid) {
-            log.info(`skip set device tag ${mac}, no tag in mab auth event`);
+            log.info(`no tag in mab auth event, remove mab auto group of ${mac}`);
+            await this.removeMabAutoGroup(mac);
             return;
           }
           await this.setDeviceTagByUid(mac, tagUid, ssid, options);

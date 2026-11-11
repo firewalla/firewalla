@@ -578,6 +578,9 @@ class Monitorable {
   }
 
   async _extractAllTags(tagUid, tagType, result) {
+    // already visited, also stops a cycle of parent groups from recursing forever
+    if (_.has(result, [tagType, tagUid]))
+      return;
     const TagManager = require('./TagManager.js');
     const tag = TagManager.getTagByUid(tagUid);
     if (!tag)
