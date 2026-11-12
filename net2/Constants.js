@@ -96,6 +96,12 @@ module.exports = {
   REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
   KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_ZSSIDS_CLOUD_CONFIG: "zssids_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_ZSSIDS_CONFIG: "zssids:config",
+  // the part of zssids:config for this platform and release type, read by platform.sh at early boot
+  REDIS_KEY_ZSSIDS_CLOUD_OVERRIDE: "zssids_cloud_override",
   REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
   // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
   // full key string), so readers don't have to reconstruct bucket boundaries from the current config
@@ -213,6 +219,12 @@ module.exports = {
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
+  // the pcap roles themselves: which capture / IDS work the box wants
+  FEATURE_PCAP_ZEEK: "pcap_zeek",
+  FEATURE_PCAP_SURICATA: "pcap_suricata",
+  // zssids takes the zeek / suricata role (net2/FlowEngine.js, scripts/zssids-engine.sh)
+  FEATURE_PCAP_ZEEK_ZSSIDS: "pcap_zeek_zssids",
+  FEATURE_PCAP_SURICATA_ZSSIDS: "pcap_suricata_zssids",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
