@@ -515,17 +515,9 @@ class DeviceHook extends Hook {
           // Another issue in this scenario is that this could mess up flow-device mappings
           // which could only be fix once flow is associated with mac address
           await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr, host.mac);
-          // the previous owner just lost this IPv4, drop its stale record in the hosts file
-          // instead of waiting for the next Scan:Done. Also clear the in-memory copy, otherwise
-          // it will be persisted again on the next update and unlinked on destroy
           const oldHost = Host.getInstance(event.oldMac);
-          if (oldHost) {
-            if (oldHost.o.ipv4Addr === host.ipv4Addr)
-              delete oldHost.o.ipv4Addr;
-            if (oldHost.o.ipv4 === host.ipv4Addr)
-              delete oldHost.o.ipv4;
-            oldHost.scheduleUpdateHostData();
-          }
+          if (oldHost)
+            oldHost.releaseIPv4(host.ipv4Addr);
 
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(host.mac)

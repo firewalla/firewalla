@@ -87,6 +87,11 @@ let orphanSweepRunning = false;
 const IDENTIFY_RETRY_BASE = 5 * 60;
 const IDENTIFY_RETRY_MAX = 24 * 3600;
 
+// how long an address seen on another network stays in the device hosts file, well below
+// hostExpirationSecs so a device that moved does not keep its old address for hours
+const HOSTS_FILE_OTHER_NET_IP_TTL_MS = 45 * 60 * 1000;
+const HOSTS_FILE_MAX_NETWORKS = 32;
+
 class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
     if (!Monitorable.instances[obj.mac]) {
@@ -168,8 +173,11 @@ class Host extends Monitorable {
 
       // TODO: compare before saving and publishing to redis
       if (save) {
+        this._rememberNetworkIPv4();
         await this.save(updatedKeys)
-        messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
+        // only what this update wrote: the rest of this.o can be a stale copy (FireApi builds its
+        // Host from a cache) and subscribers overwrite their own state with whatever they get
+        messageBus.publish(Host.getUpdateCh(), this.getGUID(), _.pick(this.o, updatedKeys))
       }
 
       return updatedKeys
@@ -785,6 +793,23 @@ class Host extends Monitorable {
   async shield(policy) {
   }
 
+  // this device just lost the IPv4 to another one, drop its stale record in the hosts file
+  // instead of waiting for the next Scan:Done. Also clear the in-memory copies, otherwise
+  // it will be persisted again on the next update and unlinked on destroy
+  releaseIPv4(ip) {
+    if (this.o.ipv4Addr === ip)
+      delete this.o.ipv4Addr;
+    if (this.o.ipv4 === ip)
+      delete this.o.ipv4;
+    if (this._netIPv4) {
+      this._netIPv4.forEach((slotIP, uuid) => {
+        if (slotIP === ip)
+          this._netIPv4.del(uuid);
+      });
+    }
+    this.scheduleUpdateHostData();
+  }
+
   onUpdate(channel, mac, id, host) {
     this.update(host, true)
 
@@ -822,11 +847,7 @@ class Host extends Monitorable {
       // otherwise a pending task will re-add ipset entries and re-create the hosts file below
       if (this.updateHostDataTask)
         clearTimeout(this.updateHostDataTask);
-      const hostsFile = Host.getHostsFilePath(this.o.mac);
-      await fs.unlinkAsync(hostsFile).then(() => {
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }).catch((err) => {});
+      await this._removeHostsFile();
 
       // delete redis host keys
       if (this.o.ipv4Addr) {
@@ -938,7 +959,7 @@ class Host extends Monitorable {
     if (!fc.isFeatureOn('local_domain'))
       return;
     const key = [
-      this.o.ipv4Addr,
+      this._hostsFileIPv4s().join(","),
       Host.hostsFileV6Key(this.ipv6Addr),
       this.o.localDomain,
       this.o.userLocalDomain
@@ -950,58 +971,45 @@ class Host extends Monitorable {
     this._hostsFileKey = key;
   }
 
-  async updateHostsFile() {
-    // serialize per device, _lastHostfileEntries is read and written across awaits below
-    await lock.acquire(`HOSTSFILE_${this.o.mac}`, async () => {
-      const macEntry = await hostTool.getMACEntry(this.o.mac);
-      // update hosts file in dnsmasq
-      const hostsFile = Host.getHostsFilePath(this.o.mac);
-      const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
-        // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
-        return;
-      }
-      const ipv4Addr = macEntry && macEntry.ipv4Addr;
-      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
-      const localDomain = macEntry.localDomain || "";
-      const userLocalDomain = macEntry.userLocalDomain || "";
-      if (!ipv4Addr) {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
-        return;
-      }
-      let ipv6Addr = null;
-      try {
-        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-      } catch (err) {}
-      const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-        return a.indexOf(v) === i;
-      })
-      const iface = sysManager.getInterfaceViaIP(ipv4Addr);
-      if (!iface) {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
-        return;
-      }
-      const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+  // last IPv4 seen on each network, in memory only, so the hosts file does not flip with the
+  // stored address. Only saved updates count, the pub/sub echo (save is false) can be a stale copy
+  _rememberNetworkIPv4() {
+    const ip = this.o.ipv4Addr;
+    const iface = ip && sysManager.getInterfaceViaIP(ip);
+    if (!iface)
+      return;
+    if (!this._netIPv4)
+      this._netIPv4 = new LRU({max: HOSTS_FILE_MAX_NETWORKS, maxAge: HOSTS_FILE_OTHER_NET_IP_TTL_MS});
+    this._netIPv4.set(iface.uuid, ip);
+  }
+
+  // the one list the change key and the text are both built from. The stored address wins on its
+  // own network, and the list is sorted so the order of observation changes neither
+  _hostsFileIPv4s() {
+    const stored = this.o.ipv4Addr;
+    const ips = stored ? [stored] : [];
+    if (this._netIPv4) {
+      const storedIface = stored && sysManager.getInterfaceViaIP(stored);
+      // not keys() or values(): lru-cache 4 returns expired entries from those
+      this._netIPv4.forEach((ip, uuid) => {
+        if (!storedIface || uuid !== storedIface.uuid)
+          ips.push(ip);
+      });
+    }
+    return _.uniq(ips).sort();
+  }
+
+  // one line per name and address, each address under the search domains of its own network
+  static hostsFileEntries(addrs, aliases, ipv6Addr, suffix) {
+    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+    const entries = [];
+    for (const { ip, iface } of addrs) {
       const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
-      const entries = [];
-      for (const suffix of suffixes) {
+      for (const domain of suffixes) {
         for (const alias of aliases) {
-          const fqdn = `${alias}.${suffix}`;
-          if (new Address4(ipv4Addr).isValid())
-            entries.push(`${ipv4Addr} ${fqdn}`);
+          const fqdn = `${alias}.${domain}`;
+          if (new Address4(ip).isValid())
+            entries.push(`${ip} ${fqdn}`);
           // No entry at all for a family the device has no address in. :: would be an address
           // RFC 4291 says must never be assigned to a node, and a client that picks it connects
           // to itself. The NODATA answer this leaves behind comes from the dnsmasq build that
@@ -1016,6 +1024,44 @@ class Host extends Monitorable {
           }
         }
       }
+    }
+    // the IPv6 lines repeat for every address that shares a name
+    return _.uniq(entries);
+  }
+
+  async updateHostsFile() {
+    // serialize per device, _lastHostfileEntries is read and written across awaits below
+    await lock.acquire(`HOSTSFILE_${this.o.mac}`, async () => {
+      const macEntry = await hostTool.getMACEntry(this.o.mac);
+      // update hosts file in dnsmasq
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
+      if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3) {
+        // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
+        return;
+      }
+      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
+      const localDomain = macEntry.localDomain || "";
+      const userLocalDomain = macEntry.userLocalDomain || "";
+      // an address outside the monitored networks has no search domains to be named under
+      const addrs = this._hostsFileIPv4s()
+        .map((ip) => ({ ip, iface: sysManager.getInterfaceViaIP(ip) }))
+        .filter((addr) => addr.iface);
+      if (addrs.length === 0) {
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
+        return;
+      }
+      let ipv6Addr = null;
+      try {
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+      } catch (err) {}
+      const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
+        return a.indexOf(v) === i;
+      })
+      const entries = Host.hostsFileEntries(addrs, aliases, ipv6Addr, suffix);
       if (entries.length !== 0) {
         if (this._lastHostfileEntries !== entries.sort().join("\n")) {
           await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
@@ -1025,11 +1071,8 @@ class Host extends Monitorable {
           this._lastHostfileEntries = entries.sort().join("\n");
         }
       } else {
-        if (this._lastHostfileEntries !== null) {
-          await fs.unlinkAsync(hostsFile).catch((err) => { });
-          dnsmasq.scheduleReloadDNSService();
-          this._lastHostfileEntries = null;
-        }
+        if (this._lastHostfileEntries !== null)
+          await this._removeHostsFile(true);
       }
       this.scheduleInvalidateHostsFile();
     });
@@ -1050,11 +1093,18 @@ class Host extends Monitorable {
     this.invalidateHostsFileTask = setTimeout(() => {
       const hostsFile = Host.getHostsFilePath(this.o.mac);
       log.info(`Host ${this.o.mac} remains inactive for three days, removing hosts file ${hostsFile} ...`);
-      fs.unlinkAsync(hostsFile).then(() => {
-        dnsmasq.scheduleReloadDNSService();
-        this._lastHostfileEntries = null;
-      }).catch((err) => {});
+      this._removeHostsFile();
     }, 86400 * 3 * 1000);
+  }
+
+  // `force` reloads and resets even when the unlink fails, for callers that have written the file
+  // themselves; the others only do it once a file was really removed
+  async _removeHostsFile(force = false) {
+    const removed = await fs.unlinkAsync(Host.getHostsFilePath(this.o.mac)).then(() => true, () => false);
+    if (removed || force) {
+      dnsmasq.scheduleReloadDNSService();
+      this._lastHostfileEntries = null;
+    }
   }
 
   static getHostsFilePath(mac) {
