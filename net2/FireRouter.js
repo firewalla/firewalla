@@ -126,6 +126,11 @@ async function getPowerMode() {
   return localGet("/config/power_mode");
 }
 
+// one attempt: a firerouter without the route answers 404, and init data should not wait on retries
+async function getSshdListenState() {
+  return localGet("/config/sshd/listen_state", 1);
+}
+
 async function setPowerMode(powerMode) {
   return localSet("/config/power_mode", { powerMode });
 }
@@ -1363,6 +1368,10 @@ class FireRouter {
 
   async getPowerMode() {
     return getPowerMode();
+  }
+
+  async getSshdListenState() {
+    return getSshdListenState();
   }
 
   async setPowerMode(powerMode) {

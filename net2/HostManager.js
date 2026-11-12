@@ -1323,6 +1323,10 @@ module.exports = class HostManager extends Monitorable {
         if (channel) nicStates[intf].channel = channel
       }
       json.stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
+      // sshd listens on a limited number of addresses, `dropped` are the networks SSH does not work on
+      const sshdListenState = await FireRouter.getSshdListenState().catch(() => null);
+      if (sshdListenState)
+        json.sshdListenState = sshdListenState;
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
