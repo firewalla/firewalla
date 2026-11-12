@@ -334,8 +334,9 @@ class Host extends Monitorable {
   async resetAutoGroupAsync() {
     log.debug(`Resetting auto group for ${this.o.mac}`);
     await hostTool.resetWirelessAutoGroup(this.o.mac);
-    this.o.autoGroup = null;
-    return await this.save(["autoGroup"]);
+    // delete rather than null, save() would store null as the string "null"
+    delete this.o.autoGroup;
+    await hostTool.deleteKeysInMAC(this.o.mac, ["autoGroup"]);
   }
 
   async initAutoGroup() {
@@ -355,7 +356,7 @@ class Host extends Monitorable {
     }
   }
 
-  // 1. if not connected (no staStatus), keep autoGroup until expire
+  // 1. if not connected (no staStatus), keep autoGroup until expire (10 minutes for dot1x, 30 days otherwise)
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
   // 3. otherwise (ppsk/default/mab), reset if connected on a different ssid, mab may have no ssid
   async getHostAutoGroup(staStatus) {
@@ -368,7 +369,10 @@ class Host extends Monitorable {
     }
 
     if (!staStatus) {
-      if (!autoGroup.ts || autoGroup.ts < Date.now() - 2592000 * 1000) { // 30 days
+      // ts only advances on Access-Accept or while fwapc sees the station, so an old dot1x ts
+      // means the device left Firewalla RADIUS; a later Access-Accept sets it again
+      const maxAge = autoGroup.auth === "dot1x" ? 600 : 2592000;
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - maxAge * 1000) {
         await this.resetAutoGroupAsync();
         return null;
       }
