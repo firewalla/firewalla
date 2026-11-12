@@ -26,6 +26,7 @@ const Monitorable = require('../net2/Monitorable.js');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const MessageBus = require('../net2/MessageBus.js');
 const fs = require('fs');
 
 describe('test _get24HoursTopDomains', function(){
@@ -699,5 +700,73 @@ describe('Host hosts file of a device on several networks', function() {
     }
     expect(unlinks).to.equal(1);
     expect(host._lastHostfileEntries).to.equal(null);
+  });
+});
+
+describe('Host.update publish', function() {
+  const testMac = 'AA:BB:CC:DD:EE:05';
+  const OLD_IP = '192.168.1.5', NEW_IP = '192.168.1.9';
+  const messageBus = new MessageBus('info'); // the instance Host.js publishes on
+  let published, origIfaceViaIP;
+
+  before(() => {
+    origIfaceViaIP = sysManager.getInterfaceViaIP;
+  });
+
+  after(() => {
+    sysManager.getInterfaceViaIP = origIfaceViaIP;
+    delete Monitorable.instances[testMac];
+  });
+
+  beforeEach(() => {
+    sysManager.getInterfaceViaIP = () => null;
+    published = [];
+    messageBus.publish = (...args) => { published.push(args); };
+    delete Monitorable.instances[testMac];
+  });
+
+  afterEach(() => {
+    delete messageBus.publish; // back to the prototype's
+  });
+
+  const newHost = (ip) => {
+    const host = new Host({ mac: testMac, ipv4Addr: ip, ipv4: ip, lastActiveTimestamp: '100' });
+    host.save = async () => {};
+    return host;
+  };
+
+  it('should publish only the keys the update wrote', async() => {
+    // a rename from FireApi, the rest of its copy of the device may be stale
+    const host = newHost(OLD_IP);
+    await host.update({ customizeDomainName: 'my-pc' }, true, true);
+
+    expect(published.length).to.equal(1);
+    const [channel, guid, msg] = published[0];
+    expect(channel).to.equal('Host:Updated');
+    expect(guid).to.equal(testMac);
+    expect(Object.keys(msg).sort()).to.deep.equal(['customizeDomainName', 'userLocalDomain']);
+  });
+
+  it('should publish the address when the update changes it', async() => {
+    const host = newHost(OLD_IP);
+    await host.update({ ipv4: NEW_IP, ipv4Addr: NEW_IP }, true, true);
+
+    const msg = published[0][2];
+    expect(msg.ipv4Addr).to.equal(NEW_IP);
+    expect(msg).to.not.have.property('lastActiveTimestamp');
+  });
+
+  it('should not roll back the address of a subscriber with a stale copy', async() => {
+    const sender = newHost(OLD_IP);
+    await sender.update({ customizeDomainName: 'my-pc' }, true, true);
+    const msg = published[0][2];
+
+    // FireMain already moved the device to the new address
+    delete Monitorable.instances[testMac];
+    const receiver = newHost(NEW_IP);
+    await receiver.update(msg, true); // what onUpdate does with the message
+
+    expect(receiver.o.ipv4Addr).to.equal(NEW_IP);
+    expect(receiver.o.customizeDomainName).to.equal('my-pc');
   });
 });

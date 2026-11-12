@@ -175,7 +175,9 @@ class Host extends Monitorable {
       if (save) {
         this._rememberNetworkIPv4();
         await this.save(updatedKeys)
-        messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
+        // only what this update wrote: the rest of this.o can be a stale copy (FireApi builds its
+        // Host from a cache) and subscribers overwrite their own state with whatever they get
+        messageBus.publish(Host.getUpdateCh(), this.getGUID(), _.pick(this.o, updatedKeys))
       }
 
       return updatedKeys
