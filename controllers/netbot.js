@@ -2230,6 +2230,8 @@ class netBot extends ControllerBot {
           }
           options.mac = host.o.mac;
           jsonobj = host.toJson();
+          if (platform.isFireRouterManaged())
+            await this.hostManager.validateAutoGroup(jsonobj);
         }
         break
       }

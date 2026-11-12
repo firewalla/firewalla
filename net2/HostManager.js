@@ -486,30 +486,48 @@ module.exports = class HostManager extends Monitorable {
     return _hosts
   }
 
-  async enrichSTAInfo(hosts) {
+  // if staStatus is unavailable, no changes to avoid flapping on transient failures
+  async _getAllSTAStatus() {
     const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
     });
+    return _.isObject(staStatus) ? staStatus : null;
+  }
 
-    // if staStatus is unavailable, no changes to avoid flapping on transient failures
-    if (_.isObject(staStatus)) {
-      for (const host of hosts) {
-        const mac = host.mac;
-        if (mac && staStatus[mac])
-          host.staInfo = staStatus[mac];
-        if (host.autoGroup) {
-          const hostObj = this.getHostFastByMAC(mac);
-          const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
-          if (autoGroup) {
-            host.autoGroup = autoGroup;
-            if (staStatus[mac]) // refresh autoGroup ts if still connected
-              await hostObj.touchAutoGroup(autoGroup);
-          } else {
-            delete host.autoGroup;
-          }
-        }
-      }
+  async enrichSTAInfo(hosts) {
+    const staStatus = await this._getAllSTAStatus();
+    if (!staStatus)
+      return;
+    for (const host of hosts) {
+      const mac = host.mac;
+      if (mac && staStatus[mac])
+        host.staInfo = staStatus[mac];
+      await this._validateAutoGroup(host, staStatus);
+    }
+  }
+
+  // host json of a single device, drops a stale autoGroup like enrichSTAInfo does
+  async validateAutoGroup(host) {
+    if (!host.autoGroup)
+      return;
+    const staStatus = await this._getAllSTAStatus();
+    if (staStatus)
+      await this._validateAutoGroup(host, staStatus);
+  }
+
+  async _validateAutoGroup(host, staStatus) {
+    if (!host.autoGroup)
+      return;
+    const mac = host.mac;
+    const hostObj = this.getHostFastByMAC(mac);
+    const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
+    if (autoGroup) {
+      host.autoGroup = autoGroup;
+      if (staStatus[mac]) // refresh autoGroup ts if still connected
+        await hostObj.touchAutoGroup(autoGroup);
+    } else {
+      delete host.autoGroup;
     }
   }
 
