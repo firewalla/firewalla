@@ -1128,10 +1128,19 @@ class BroDetect {
       }
 
       const isIdentityIntf = this.isIdentityLAN(intfInfo)
+      const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
 
       // local flow will be recorded twice on two different interfaces by zeek, only count the ingress flow on one interface
       // TODO: this condition check does not cover the case if both ends are VPN devices, but this rarely happens
-      if (localFlow && !reverseLocal && (origMac && sysManager.isMyMac(origMac) || isIdentityIntf && respMac))
+      if (
+        localFlow &&
+        !reverseLocal &&
+        (
+          (origMac && sysManager.isMyMac(origMac)) ||                         // egress copy, source MAC rewritten to the box
+          (isIdentityIntf && respMac) ||                                      // VPN -> LAN, egress copy on the LAN side
+          (!isIdentityIntf && isDstIdentityIntf && !origMac && !respMac)      // LAN -> VPN, egress copy on the tunnel has no MAC
+        )
+      )
         return;
 
       let localType = TYPE_MAC;
@@ -1283,7 +1292,6 @@ class BroDetect {
       let dstMonitorable = null;
       let dstRealLocal = null
       if (localFlow) {
-        const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
         if (isDstIdentityIntf) {
           dstMonitorable = await this.waitAndGetIdentity(dhost);
           if (dstMonitorable) {
