@@ -206,6 +206,62 @@ describe('Test remotePort policy protocol match', function(){
   });
 });
 
+describe('Test domain match honours domainExactMatch', function(){
+  this.timeout(30000);
+
+  function intelAlarm(destName) {
+    return new Alarm.IntelAlarm(1648018597, 'OLIVER1', 1, {
+      'p.device.mac': '98:59:7A:48:46:08',
+      'p.dest.name': destName,
+      'p.dest.ip': '1.2.3.4',
+      'p.dest.port': '443',
+    });
+  }
+
+  it('covers subdomains and the apex without the flag', () => {
+    const policy = new Policy({ type: 'dns', target: 'example.com', action: 'block' });
+    expect(policy.match(intelAlarm('evil.example.com'))).to.be.true;
+    expect(policy.match(intelAlarm('a.b.example.com'))).to.be.true;
+    expect(policy.match(intelAlarm('example.com'))).to.be.true;
+    expect(policy.match(intelAlarm('notexample.com'))).to.be.false;
+  });
+
+  it('covers only the target itself with the flag', () => {
+    const policy = new Policy({ type: 'dns', target: 'example.com', action: 'block', domainExactMatch: '1' });
+    expect(policy.match(intelAlarm('example.com'))).to.be.true;
+    expect(policy.match(intelAlarm('evil.example.com'))).to.be.false;
+    expect(policy.match(intelAlarm('a.b.example.com'))).to.be.false;
+  });
+
+  // the whole point of the fix: matching has to read the flag the same way enforcement does
+  // (alarm/PolicyManager2.js `!policy.domainExactMatch`), or a rule mutes alarms it doesn't block
+  it('reads the flag exactly as enforcement does, for every shape it arrives in', () => {
+    for (const value of ['1', 'true', true, 1, '0', 'false', false, undefined, '']) {
+      const policy = new Policy({ type: 'dns', target: 'example.com', action: 'block', domainExactMatch: value });
+      const enforcedExact = !!policy.domainExactMatch;
+      expect(policy.matchDomain('evil.example.com'), String(value)).to.equal(!enforcedExact);
+      expect(policy.matchDomain('example.com'), String(value)).to.be.true;
+    }
+  });
+
+  it('matches a *. target against subdomains only, with or without the flag', () => {
+    for (const extra of [{}, { domainExactMatch: '1' }]) {
+      const policy = new Policy(Object.assign({ type: 'dns', target: '*.example.com', action: 'allow' }, extra));
+      const label = JSON.stringify(extra);
+      expect(policy.matchDomain('evil.example.com'), label).to.be.true;
+      expect(policy.matchDomain('a.b.example.com'), label).to.be.true;
+      expect(policy.matchDomain('example.com'), label).to.be.false;
+      expect(policy.matchDomain('notexample.com'), label).to.be.false;
+    }
+  });
+
+  it('does not match an empty domain', () => {
+    const policy = new Policy({ type: 'dns', target: 'example.com', action: 'block' });
+    expect(policy.matchDomain('')).to.be.false;
+    expect(policy.matchDomain(undefined)).to.be.false;
+  });
+});
+
 describe('Test priorityCompare', function(){
   // returns <0 if `this` outranks the arg, >0 if arg wins, 0 if equal
 
