@@ -133,6 +133,11 @@ class Alarm {
     return this.type;
   }
 
+  // the action event logged to event:log when the alarm activates, null for none
+  toActionEvent() {
+    return null;
+  }
+
   getIdentitySuffix() {
     if (this["p.device.guid"]) {
       const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
@@ -882,6 +887,22 @@ class BroNoticeAlarm extends Alarm {
     if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
       return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
+  }
+
+  toActionEvent() {
+    if (this['p.noticeType'] != 'SSL::Invalid_Server_Cert')
+      return null;
+    const labels = {
+      aid: this.aid,
+      device: this['p.device.mac'],
+      deviceName: this.getDeviceNameInNotification(),
+      dest: this['p.dest.name'],
+      error: this['p.dest.ssl.validation_status'],
+    };
+    const user = this.getUserName();
+    if (user)
+      labels.user = user;
+    return { action_type: 'alarm_invalid_cert', action_value: 1, labels };
   }
 
   needPolicyMatch(){
