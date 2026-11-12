@@ -262,6 +262,7 @@ fi
 function create_bootstrap_scripts_folder() {
     logger "MAIN-START create_bootstrap_scripts_folder"
     mkdir -p $PI_HOME/scripts
+    [[ -O $PI_HOME/scripts ]] || sudo chown -R pi:pi $PI_HOME/scripts
 
     CHECKSUM_FILE=$FIREWALLA_HOME/scripts/bootstrap.sha256sum
 

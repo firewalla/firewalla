@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/05_update_logrotate_conf.sh
