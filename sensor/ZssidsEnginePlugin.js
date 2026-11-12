@@ -14,13 +14,7 @@
  */
 'use strict';
 
-// Applies the pcap_zeek_zssids / pcap_suricata_zssids features: when either
-// flips, scripts/zssids-engine.sh rewrites the systemd drop-ins beside
-// brofish.service and suricata.service (zssids in, zeek/suricata out, or the
-// reverse) and the pcap plugins are asked to restart their services, which
-// makes the change take effect and re-picks the watchdog cron template.
-// At boot main-start applies the drop-ins before any service starts; this
-// sensor only re-applies them on a live toggle.
+// On a live toggle of the pcap engine features, re-applies the systemd drop-ins and restarts the pcap services; at boot main-start does it.
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
@@ -32,130 +26,213 @@ const sem = require('./SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
 const execFile = require('child-process-promise').execFile;
 const FlowEngine = require('../net2/FlowEngine.js');
+const CloudConfigLoader = require('./CloudConfigLoader.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const fs = require('fs');
+const _ = require('lodash');
 
-// the engine selectors, plus the pcap roles themselves: switching the flow
-// role off moves the IDS from the shared brofish zssids to a zssids of its own
-// under the suricata unit, which is another apply
+// which program runs each pcap role: zssids or the original zeek / suricata
 const ENGINE_FEATURES = [Constants.FEATURE_PCAP_ZEEK_ZSSIDS, Constants.FEATURE_PCAP_SURICATA_ZSSIDS];
+// the roles themselves count too: turning the flow role off moves the IDS into its own zssids
 const FEATURES = [...ENGINE_FEATURES, Constants.FEATURE_PCAP_ZEEK, Constants.FEATURE_PCAP_SURICATA];
-// net2/config.js merges cloud, MSP and version configuration, which
-// platform.sh cannot; the effective values are written here for it to read
+// platform.sh can't merge cloud/MSP/version config, so FireMain writes the final values here for it
 const EFFECTIVE_FEATURES = '/dev/shm/zssids-engine.features';
-// zssids-engine.sh holds this from the first change it makes until verification
-// succeeds, so a failed or interrupted apply leaves it behind. While it is
-// there BroControl.restart, SuricataControl.restart and the script's own
-// restart path refuse to start the pcap services.
+// left by zssids-engine.sh when an apply fails; while it exists the pcap services are not started
 const FAILED_MARKER = FlowEngine.APPLY_FAILED_MARKER;
 
 class ZssidsEnginePlugin extends Sensor {
   async run() {
+    // runs apply() 3s after a request, one at a time, merging requests that arrive meanwhile
     this.applyJob = new scheduler.UpdateJob(this.apply.bind(this), 3000);
 
-    // Subscribe before the first apply: a feature that moves while that apply
-    // is running would never be replayed to a listener registered afterwards,
-    // leaving stale drop-ins with nothing to trigger a retry.
+    // this box's part of zssids:config from the cloud, e.g. { pcap_zeek_zssids: false }
+    this.cloudOverride = {};
+    this.cloudConfigLoader = new CloudConfigLoader({
+      cacheKey: Constants.REDIS_KEY_ZSSIDS_CLOUD_CONFIG,
+      hashsetName: Constants.KEY_ZSSIDS_CONFIG,
+      label: 'zssids',
+      apply: cloudConfig => this.applyCloudConfig(cloudConfig),
+      acceptEmpty: true   // an emptied config withdraws the override
+    });
+    this.cloudConfigStarted = false;
+    await this.cloudConfigLoader.start();
+    this.cloudConfigStarted = true;
+
+    // subscribe before the first apply, so a toggle during that apply is not missed
     for (const feature of FEATURES) {
       fc.onFeature(feature, (name, status) => {
-        if (name !== feature) return;
-        log.info(`Feature ${name} is now ${status ? 'on' : 'off'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
-        this.applyJob.exec().catch((err) => {
-          log.error('Failed to apply flow engine change', err.message);
-        });
+        if (name !== feature) {
+          return;
+        }
+        log.info(`Feature ${name} is now ${status ? 'on' : 'off'}, wanted: ${this.wantedFeatures()}`);
+        this.requestApply();
       });
     }
 
-    // Reconcile the drop-ins with the features, for the case where FireMain
-    // started without main-start (a plain `systemctl restart firemain`). The
-    // services keep running the previous engine unless they are restarted, so
-    // restart when the applied state changed, or when main-start's own apply
-    // failed and left the services held back.
-    const heldBack = fs.existsSync(FAILED_MARKER);
-    const before = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
-    const wanted = () => FEATURES.map(name => `${name}=${fc.isFeatureOn(name)}`).join(',');
-    const wantedBefore = wanted();
-    await this.apply(false).then(() => {
-      const after = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
-      if (heldBack || after !== before) {
-        log.info(`flow engine reconciled at startup: ${before} -> ${after}${heldBack ? ' (was held back)' : ''}`);
-        sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
-      }
-      // a feature that changed while that ran is applied now
-      if (wanted() !== wantedBefore) {
-        log.info('features changed during the initial apply, applying again');
-        this.applyJob.exec().catch((err) => log.error('Failed to re-apply flow engine', err.message));
-      }
-    }).catch((err) => {
-      // publishing or spawning can fail before zssids-engine.sh writes its
-      // marker; remember it so the poll below keeps retrying
-      this.applyFailed = true;
-      log.error('Initial flow engine apply failed', err.message);
-    });
+    await this.applyAtStartup();
 
-    // The binary is an asset: when it first arrives (or disappears) with a
-    // feature on, the effective engines change with no feature event, so watch
-    // for that and re-apply, which also re-picks the cron templates. A failed
-    // apply leaves the services held back, so keep retrying that too.
+    // the zssids binary is an asset that can arrive or disappear later, which changes the engines with no feature event
     this.zssidsAvailable = FlowEngine.zssidsAvailable();
-    setInterval(() => {
-      // apply() owns this flag: UpdateJob.exec() resolves even when the
-      // underlying apply threw, so clearing it here could stop the retries
-      // while the drop-ins are still stale
-      if (this.applyFailed || fs.existsSync(FAILED_MARKER)) {
-        this.applyJob.exec().catch((err) => log.error('Retrying flow engine apply', err.message));
-        return;
-      }
-      const available = FlowEngine.zssidsAvailable();
-      if (available === this.zssidsAvailable) return;
-      this.zssidsAvailable = available;
-      if (ENGINE_FEATURES.some(name => fc.isFeatureOn(name))) {
-        log.info(`zssids binary ${available ? 'arrived' : 'went missing'}: zeek role -> ${FlowEngine.zeekEngine()}, suricata role -> ${FlowEngine.suricataEngine()}`);
-        this.applyJob.exec().catch((err) => {
-          log.error('Failed to apply flow engine change', err.message);
-        });
-      }
-    }, 30000);
+    setInterval(() => this.checkEveryThirtySeconds(), 30000);
   }
 
-  // hand the shell side the effective feature values before it decides
+  // FireMain may have restarted alone (no main-start), so the drop-ins can be out of date
+  async applyAtStartup() {
+    const wasHeldBack = fs.existsSync(FAILED_MARKER);
+    const enginesBeforeApply = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
+
+    try {
+      await this.apply(false);
+    } catch (err) {
+      // apply() left applyFailed set, so the 30s check keeps retrying
+      log.error('Initial flow engine apply failed', err.message);
+      return;
+    }
+
+    // restart only when something changed, so a normal boot doesn't interrupt the services main-start just started
+    const enginesAfterApply = `${FlowEngine.appliedZeekEngine()}/${FlowEngine.appliedSuricataEngine()}`;
+    const enginesChanged = enginesAfterApply !== enginesBeforeApply;
+    if (enginesChanged || wasHeldBack) {
+      log.info(`flow engine reconciled at startup: ${enginesBeforeApply} -> ${enginesAfterApply}${wasHeldBack ? ' (was held back)' : ''}`);
+      sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+    }
+  }
+
+  checkEveryThirtySeconds() {
+    // a failed apply leaves the services held back, so keep retrying until one succeeds
+    if (this.applyFailed || fs.existsSync(FAILED_MARKER)) {
+      this.requestApply();
+      return;
+    }
+
+    // fc only calls back when its own value changes, so an app value that now hides or reveals the cloud override goes unnoticed
+    if (this.wantedFeatures() !== this.publishedFeatures) {
+      log.info(`features changed without an event, wanted: ${this.wantedFeatures()}`);
+      this.requestApply();
+      return;
+    }
+
+    const available = FlowEngine.zssidsAvailable();
+    if (available === this.zssidsAvailable) {
+      return;
+    }
+    this.zssidsAvailable = available;
+
+    const anyEngineFeatureOn = ENGINE_FEATURES.some(name => this.featureOn(name));
+    if (!anyEngineFeatureOn) {
+      return;
+    }
+    log.info(`zssids binary ${available ? 'arrived' : 'went missing'}, wanted: ${this.wantedFeatures()}`);
+    this.requestApply();
+  }
+
+  requestApply() {
+    this.applyJob.exec().catch((err) => {
+      log.error('Failed to apply flow engine change', err.message);
+    });
+  }
+
+  // a value set from the app (sys:features) wins over the cloud override, which wins over the config files
+  featureOn(name) {
+    const dynamicFeatures = fc.getDynamicFeatures() || {};
+    if (name in dynamicFeatures) {
+      return fc.isFeatureOn(name);
+    }
+    if (name in this.cloudOverride) {
+      return this.cloudOverride[name];
+    }
+    return fc.isFeatureOn(name);
+  }
+
+  // e.g. "pcap_zeek_zssids=true,pcap_suricata_zssids=false,...", compared to tell whether anything changed
+  wantedFeatures() {
+    return FEATURES.map(name => `${name}=${this.featureOn(name)}`).join(',');
+  }
+
+  async applyCloudConfig(cloudConfig) {
+    const platformName = platform.getName();
+    const releaseType = f.getReleaseType();
+    const section = _.get(cloudConfig, [platformName, releaseType]) || {};
+    const override = {};
+    for (const name of ENGINE_FEATURES) {
+      if (typeof section[name] === 'boolean') {
+        override[name] = section[name];
+      }
+    }
+
+    // platform.sh reads this at early boot, before FireMain publishes the effective features
+    try {
+      if (_.isEmpty(override)) {
+        await rclient.unlinkAsync(Constants.REDIS_KEY_ZSSIDS_CLOUD_OVERRIDE);
+      } else {
+        await rclient.setAsync(Constants.REDIS_KEY_ZSSIDS_CLOUD_OVERRIDE, JSON.stringify(override));
+      }
+    } catch (err) {
+      log.error('Failed to save the zssids cloud override for early boot', err.message);
+    }
+
+    const featuresBeforeCloud = this.wantedFeatures();
+    this.cloudOverride = override;
+    const featuresAfterCloud = this.wantedFeatures();
+
+    // start() only applies the cache; run() does the first apply right after it
+    if (!this.cloudConfigStarted) {
+      return;
+    }
+    // e.g. a value set from the app hides the cloud change
+    if (featuresAfterCloud === featuresBeforeCloud) {
+      return;
+    }
+    log.info(`zssids cloud config for ${platformName}/${releaseType} is now ${JSON.stringify(override)}, wanted: ${featuresAfterCloud}`);
+    this.requestApply();
+  }
+
+  // a stale or truncated file would make the shell side pick the opposite engine, so this throws instead
   publishFeatures() {
     const state = {};
-    for (const name of FEATURES) state[name] = fc.isFeatureOn(name);
-    // atomically: a shell reader must never see a truncated document, or it
-    // would fall through to the config files and pick different roles
-    const tmp = `${EFFECTIVE_FEATURES}.${process.pid}`;
+    for (const name of FEATURES) {
+      state[name] = this.featureOn(name);
+    }
+
+    const tmpFile = `${EFFECTIVE_FEATURES}.${process.pid}`;
     try {
-      fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o644 });
-      fs.renameSync(tmp, EFFECTIVE_FEATURES);
+      fs.writeFileSync(tmpFile, JSON.stringify(state), { mode: 0o644 });
+      fs.renameSync(tmpFile, EFFECTIVE_FEATURES);
+      this.publishedFeatures = this.wantedFeatures();
     } catch (err) {
-      try { fs.unlinkSync(tmp); } catch (e) {}
-      // the shell side would fall back to a stale file, or to the config
-      // files, and could apply the opposite engine: do not apply at all
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch (e) {
+        // the temp file may not exist
+      }
       throw new Error(`publishing the effective flow engine features failed: ${err.message}`);
     }
   }
 
   async apply(restart = true) {
-    // any failure below leaves this set, and only a completed apply clears it
+    // stays set unless the whole apply succeeds, so the 30s check keeps retrying
     this.applyFailed = true;
-    // the shell side reads these; a stale file would make it apply the
-    // opposite engine, so this throws rather than continue
     this.publishFeatures();
+
     const script = `${f.getFirewallaHome()}/scripts/zssids-engine.sh`;
-    let applied = false;
-    await execFile('sudo', [script, 'apply']).then((r) => {
-      applied = true;   // zssids-engine.sh cleared its hold on success
-      if (r.stdout && r.stdout.trim()) log.info('zssids-engine:', r.stdout.trim().replace(/\n/g, '; '));
-    }).catch((err) => {
-      // the drop-ins are not what the features say: restarting now would
-      // apply stale ones, so leave the services alone and try again next time
+    let result;
+    try {
+      result = await execFile('sudo', [script, 'apply']);
+    } catch (err) {
+      // restarting now would run the stale drop-ins, so the services are left alone
       log.error('zssids-engine.sh apply failed, services left as they are', err.message);
-    });
-    this.applyFailed = !applied;
-    if (restart && applied) {
+      throw new Error('zssids-engine.sh apply failed');
+    }
+    this.applyFailed = false;
+
+    const output = result.stdout && result.stdout.trim();
+    if (output) {
+      log.info('zssids-engine:', output.replace(/\n/g, '; '));
+    }
+    if (restart) {
       sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
     }
-    if (!applied) throw new Error('zssids-engine.sh apply failed');
   }
 }
 
