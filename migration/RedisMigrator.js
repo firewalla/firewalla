@@ -22,6 +22,7 @@
 
  const bclient = require('../util/redis_manager.js').getBufferRedisClient();
  const readline = require('readline');
+ const { gc } = require('../util/util.js');
 
  const partitionKeyMap = {
   "devices": [
@@ -145,8 +146,7 @@ class RedisMigrator extends DataMigrator {
             outputStream.write(Buffer.from(serializedData));
           }));
         }
-        if (global.gc)
-          global.gc();
+        gc();
       }
     }
     outputStream.end();
@@ -161,8 +161,7 @@ class RedisMigrator extends DataMigrator {
         this._deserializeRedisKey(line);
       });
       lineReader.on('close', () => {
-        if (global.gc)
-          global.gc();
+        gc();
         resolve();
       })
     })
