@@ -2393,7 +2393,9 @@ module.exports = class {
     if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
       // device is the router itself, fill in from interface info directly,
       // host:* records of the box itself may be missing or polluted by other devices
-      const mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      let mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      // the app shows a MAC it doesn't list as a removed device, e.g. a VPN interface's placeholder or a WAN port
+      if (mac && !await hostTool.getMACEntry(mac)) mac = null;
       alarm["p.device.name"] = "Firewalla";
       if (mac) {
         Object.assign(alarm, {
@@ -2401,6 +2403,9 @@ module.exports = class {
           "p.device.mac": mac,
           "p.device.macVendor": await this.getSelfMacVendor(mac) || "Unknown",
         });
+      } else {
+        // a caller may have filled in the interface MAC already, e.g. AuthLogPlugin for a WAN port
+        for (const key of ["p.device.id", "p.device.mac", "p.device.macVendor"]) delete alarm[key];
       }
       return alarm;
     }
