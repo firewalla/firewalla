@@ -31,8 +31,10 @@ const RETRY_MAX_MS = 30 * 60 * 1000;
 // once a day. apply(cloudConfig) is called with the cached or fetched config, null when there's none.
 // A failed fetch backs off and gives up after MAX_ATTEMPTS, so a cloud outage isn't amplified by the fleet
 class CloudConfigLoader {
-  constructor({ cacheKey, hashsetName, label, apply }) {
+  // acceptEmpty: an empty config from the cloud is cached and applied too, e.g. a list emptied to withdraw it
+  constructor({ cacheKey, hashsetName, label, apply, acceptEmpty = false }) {
     this.cacheKey = cacheKey;
+    this.acceptEmpty = acceptEmpty;
     this.hashsetName = hashsetName;
     this.label = label;
     this.apply = apply;
@@ -103,7 +105,7 @@ class CloudConfigLoader {
     } catch (err) {
       log.warn(`Invalid ${this.label} cloud config, keeping the current one`, err.message);
     }
-    if (!_.isEmpty(cfg) && _.isObject(cfg)) {
+    if (_.isObject(cfg) && (this.acceptEmpty || !_.isEmpty(cfg))) {
       await rclient.setAsync(this.cacheKey, JSON.stringify(cfg));
       this.cloudConfig = cfg;
       await this.apply(cfg);
