@@ -159,20 +159,31 @@ class DNSCrypt {
   // fixed in the binary and resolves the mark itself on every dial (throttled),
   // exactly as unbound does with "unbound:markkey". Nothing about the VPN
   // client reaches dnscrypt.toml, so selecting a client, switching between
-  // clients or turning one off never rewrites the config and never restarts
-  // the proxy; a client that has published no mark yet simply leaves the
-  // queries on the default route until it does.
+  // clients or turning one off never rewrites the config; a client that has
+  // published no mark yet simply leaves the queries on the default route
+  // until it does.
+  //
+  // It does have to restart the proxy though, which is why this reports
+  // whether the key changed. The mark is set on the socket when a connection
+  // is dialled, so connections that are already open keep leaving through the
+  // previous client until they close - and a DoH connection is kept alive by
+  // the queries themselves, so that can be minutes. If the previous client
+  // goes down in that window, every DNS query times out until the proxy
+  // re-dials. Switching is a rare manual action, so the few seconds of
+  // restart cost less than that risk.
   async setOutgoingFWMarkKey(vpnClientConfig) {
     const profileId = vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId;
+    const previous = await rclient.getAsync(DNSCRYPT_FWMARK_KEY);
     if (typeof profileId !== 'string' || !profileId) {
       await rclient.unlinkAsync(DNSCRYPT_FWMARK_KEY);
-      return;
+      return Boolean(previous);
     }
     const markKey = profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)
       ? VirtWanGroup.getRouteMarkKey(profileId.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length))
       : VPNClient.getRouteMarkKey(profileId);
     log.info("Set DoH markkey to", markKey);
     await rclient.setAsync(DNSCRYPT_FWMARK_KEY, markKey);
+    return previous !== markKey;
   }
 
   async prepareConfig(config = {}, reCheckConfig = false) {
@@ -180,7 +191,9 @@ class DNSCrypt {
     const template = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
 
     const settings = await this.getSettings();
-    await this.setOutgoingFWMarkKey(settings.vpnClient);
+    // A changed VPN client is a reason to restart on its own, even when
+    // nothing in the config file moves - see setOutgoingFWMarkKey().
+    const markKeyChanged = await this.setOutgoingFWMarkKey(settings.vpnClient);
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
     const usableServers = this.filterUsableServers(allServers);
@@ -188,7 +201,7 @@ class DNSCrypt {
     let content = this.renderConfig(template, config, usableServers, selected);
 
     if (reCheckConfig && await this.isRuntimeConfig(content))
-      return false;
+      return markKeyChanged;
 
     // filterUsableServers() can only reject what is obviously not a stamp;
     // whether a payload decodes into one is dnscrypt-proxy's business, and it
@@ -212,10 +225,12 @@ class DNSCrypt {
 
     if (verdict === false) {
       // There is nothing left to drop. Whatever is running now is better than
-      // a config dnscrypt-proxy has just said it will not load.
+      // a config dnscrypt-proxy has just said it will not load. A changed VPN
+      // client still has to restart though: the config it reloads is the one
+      // it is already running, and the point of the restart is the re-dial.
       if (await existsAsync(runtimePath)) {
         log.error("dnscrypt rejected the config with every objectionable server dropped; keeping the running one");
-        return false;
+        return markKeyChanged;
       }
       log.error("dnscrypt rejected the config and there is none to keep; writing it anyway");
     }
@@ -223,7 +238,7 @@ class DNSCrypt {
     // Dropping entries can land on exactly what is already running, and
     // rewriting that would restart a healthy proxy on every refresh.
     if (reCheckConfig && await this.isRuntimeConfig(content))
-      return false;
+      return markKeyChanged;
 
     await fs.writeFileAsync(runtimePath, content);
     return true;
