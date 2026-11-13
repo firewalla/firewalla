@@ -58,6 +58,10 @@ const notificationResendKey = "notification:resend";
 const notificationResendDuration = fConfig.timing['notification.resend.duration'] || 86400
 const notificationResendMaxCount = fConfig.timing['notification.resend.maxcount'] || 50
 
+// pre-decryption cap on unauthenticated encrypted-message input (chars of
+// base64); the API body parser allows 5mb, this bounds crypto/parse work.
+const MAX_ENCRYPTED_MSG_LEN = 5 * 1024 * 1024;
+
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
@@ -902,34 +906,136 @@ let legoEptCloud = class {
     }
   }
 
+  // Whether this group has ever completed a successful GCM request on the
+  // unauthenticated API path. Once true, unauthenticated CBC envelopes for the
+  // group are rejected (trust-on-first-use anti-downgrade). Cached in memory,
+  // persisted in redis so it survives restarts. Clear with:
+  //   redis-cli hdel sys:ept:gcmGids <gid>
+  async isGcmMigrated(gid) {
+    if (this._gcmGids && this._gcmGids[gid]) return true;
+    const ts = await rclient.hgetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid).catch(() => null);
+    if (ts) {
+      this._gcmGids = this._gcmGids || {};
+      this._gcmGids[gid] = true;
+      return true;
+    }
+    return false;
+  }
+
+  // Persist-then-cache: the in-memory flag is only set after the redis write
+  // succeeds, so a persistence failure is visible to the caller (throws) and a
+  // later call retries the write instead of silently running memory-only,
+  // which would lose the migration state on restart.
+  async markGcmMigrated(gid) {
+    this._gcmGids = this._gcmGids || {};
+    if (this._gcmGids[gid]) return;
+    await rclient.hsetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid, Math.floor(Date.now() / 1000));
+    this._gcmGids[gid] = true;
+    log.info(`Group ${gid} migrated to GCM, unauthenticated CBC requests will be rejected for it`);
+  }
+
   // Request decryption for the netbot req/response path. Parses the envelope
-  // once and resolves { decrypted, usedIv } — usedIv tells the caller whether
-  // the request carried an IV so the reply can mirror it (avoids re-parsing).
-  decryptRequest(gid, msg) {
+  // once and resolves { decrypted, scheme } — scheme tells the caller how the
+  // request was encrypted so the reply can mirror it (avoids re-parsing).
+  //
+  // Every failure after key lookup rejects with the same opaque "decrypt_error":
+  // bad envelope, bad padding, GCM auth failure, oversized input and
+  // post-decrypt JSON parse failure are externally indistinguishable, so the
+  // endpoint cannot be used as a CBC padding oracle (invalid padding vs valid
+  // padding + garbage plaintext must not be observable). Details are logged
+  // locally only.
+  //
+  // opts.enforceGcmPolicy: set by the unauthenticated local API path. Applies
+  // the trust-on-first-use downgrade protection: after the first successful GCM
+  // request for a gid, CBC/legacy envelopes for that gid are rejected. Paths
+  // with an authenticated transport (e.g. Guardian over TLS to MSP) leave it
+  // off, since other legitimate clients of the same group may still be on CBC.
+  decryptRequest(gid, msg, opts = {}) {
     return new Promise((resolve, reject) => {
-      this.getKey(gid, false, (err, key) => {
-        if (key == null) {
-          reject(err || new Error("key not found, invalid group?"));
-          return;
-        }
-        const env = this._parseEnvelope(msg);
-        if (env.invalid) {
-          reject(new Error("decrypt_error"));
-          return;
-        }
-        let decrypted;
+      this.getKey(gid, false, async (err, key) => {
         try {
-          decrypted = this._decryptWithEnvelope(env, key);
+          if (key == null) {
+            reject(err || new Error("key not found, invalid group?"));
+            return;
+          }
+          // pre-decryption resource limit: bound work done on unauthenticated
+          // input before any crypto/parse. The API body parser allows 5mb.
+          const approxLen = typeof msg === 'string' ? msg.length :
+            (msg && typeof msg.message === 'string' ? msg.message.length : 0);
+          if (approxLen > MAX_ENCRYPTED_MSG_LEN) {
+            log.error(`Rejecting oversized encrypted message (${approxLen} chars) for group ${gid}`);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const env = this._parseEnvelope(msg);
+          if (env.invalid) {
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          // bound every accepted envelope field before any crypto work. The
+          // string-input length check above cannot see inside an already-parsed
+          // object envelope, whose individual fields could be oversized while
+          // the ciphertext alone stays under the cap. (iv is 24 chars base64
+          // for CBC, 16 for a GCM nonce; tag 24; alg is "gcm".)
+          if (typeof env.ct !== 'string' || env.ct.length > MAX_ENCRYPTED_MSG_LEN ||
+            (env.iv != null && !Buffer.isBuffer(env.iv) && (typeof env.iv !== 'string' || env.iv.length > 64)) ||
+            (env.tag != null && (typeof env.tag !== 'string' || env.tag.length > 64)) ||
+            (env.alg != null && (typeof env.alg !== 'string' || env.alg.length > 16))) {
+            log.error(`Rejecting envelope with out-of-bounds field for group ${gid}`);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const scheme = this._schemeOf(env);
+          if (opts.enforceGcmPolicy && scheme !== 'gcm' && await this.isGcmMigrated(gid)) {
+            // gcm_downgrade_protection gates enforcement: off (default) is
+            // monitor-only — log the would-be rejection but accept the request,
+            // so mixed groups (an updated GCM app alongside an older CBC-only
+            // app) keep working while the fleet migrates. Turn the feature on
+            // to enforce and actually reject the downgrade.
+            if (config.isFeatureOn("gcm_downgrade_protection")) {
+              log.error(`Rejecting ${scheme} request for GCM-migrated group ${gid}`);
+              reject(new Error("decrypt_error"));
+              return;
+            } else {
+              log.warn(`Monitor: ${scheme} request for GCM-migrated group ${gid} would be rejected if gcm_downgrade_protection were enforced`);
+            }
+          }
+          let decrypted;
+          try {
+            decrypted = this._decryptWithEnvelope(env, key);
+          } catch (e) {
+            log.error("Failed to decrypt message, err:", e.message);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const msgJson = this._parseJsonSafe(decrypted);
+          if (msgJson == null) {
+            // decrypted but not JSON: externally identical to a decrypt failure
+            log.error("Decrypted message is not valid JSON");
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          if (opts.enforceGcmPolicy && scheme === 'gcm') {
+            try {
+              await this.markGcmMigrated(gid);
+            } catch (e) {
+              log.error("Failed to persist GCM migration flag for group", gid, e.message);
+              if (config.isFeatureOn("gcm_downgrade_protection")) {
+                // fail closed under enforcement: without durable migration
+                // state, accepting this request would let a restart re-enable
+                // the CBC downgrade window.
+                reject(new Error("decrypt_error"));
+                return;
+              }
+              // monitor mode: accept the request; the next GCM request retries
+              // the write since the in-memory flag was not set.
+            }
+          }
+          resolve({ decrypted: msgJson, scheme });
         } catch (e) {
-          log.error("Failed to decrypt message, err:", e);
+          log.error("Unexpected error decrypting request", e.message);
           reject(new Error("decrypt_error"));
-          return;
         }
-        const msgJson = this._parseJsonSafe(decrypted);
-        if (msgJson != null)
-          resolve({ decrypted: msgJson, scheme: this._schemeOf(env) });
-        else
-          reject(new Error("Malformed JSON"));
       });
     });
   }
