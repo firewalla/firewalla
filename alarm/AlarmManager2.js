@@ -84,6 +84,7 @@ const Queue = require('bee-queue')
 const LRU = require('lru-cache');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const era = require('../event/EventRequestApi.js');
 
 const alarmDetailPrefix = "_alarmDetail:";
 
@@ -1265,9 +1266,16 @@ module.exports = class {
     const result  = await this._activateAlarm(alarm, unarchive);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue.
+    const activated = result && result[1] == 1;
     const mspDecided = _.get(options, 'origin.state') == Constants.ST_PENDING && options['p.msp.decision'] != 'timeout';
-    if (result && result[1] == 1 && !mspDecided) {
+    if (activated && !mspDecided) {
       pclient.publishAsync("alarm:activated", JSON.stringify({aid: alarm.aid}));
+    }
+    // keyed on the transition, not alarm:activated, so MSP-decided and pending-timeout activations log it too
+    if (activated) {
+      this._addActionEvent(alarm).catch((err) => {
+        log.error(`Failed to add action event for alarm ${alarm.aid}`, err);
+      });
     }
 
     // check alarm state change results
@@ -1319,6 +1327,19 @@ module.exports = class {
     } finally {
       this.notifAlarm(alarm.aid);
     }
+  }
+
+  async _addActionEvent(alarm) {
+    const proto = Alarm.mapping[alarm.type];
+    if (!proto || proto.toActionEvent === Alarm.Alarm.prototype.toActionEvent)
+      return;
+    const event = this.jsonToAlarm(alarm).toActionEvent();
+    if (!event)
+      return;
+    // one event per alarm, an MSP re-decision re-activates the same aid
+    if (await rclient.hsetnxAsync(alarmPrefix + alarm.aid, 'eventLogged', 1) != 1)
+      return;
+    await era.addActionEvent(event.action_type, event.action_value, event.labels, Math.round(parseFloat(alarm.alarmTimestamp) * 1000));
   }
 
   _genAlarm(a = {}) {
