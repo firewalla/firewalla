@@ -145,11 +145,11 @@ class BlockControl {
       this.queuingTimer = null;
     }
     
-    // Call all registered modules to process their own queued rules
-    // Each module manages its own queue and processes it when called
+    // one snapshot of every queue before any module restores, see ModuleControl.takeQueue
+    const batches = this.modules.map(module => [module, module.takeQueue()]);
     // Process modules in order to avoid races (e.g. iptables referencing ipset before it's created)
-    for (const module of this.modules) try {
-      await module.processRules(fromInitialization);
+    for (const [module, batch] of batches) try {
+      await module.processRules(batch, fromInitialization);
     } catch (err) {
       log.error('Error processing rules', module.name, err);
     }

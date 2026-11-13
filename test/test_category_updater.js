@@ -1089,3 +1089,74 @@ describe('Test CategoryUpdater.updateDomain', function() {
     expect(captured.options.connSet).to.equal(categoryUpdater.getConnectionIPSetName(category));
   });
 });
+
+describe('Test CategoryUpdater.activateTLSCategory', function() {
+  this.timeout(10000);
+
+  // default_c skips the wait for category data, so the call reaches the refresh at once
+  const CAT = 'default_c';
+  const categoryUpdater = new CategoryUpdater();
+  const tlsc = require('../control/TLSSetControl.js');
+  const domainBlock = require('../control/DomainBlock.js');
+  const platform = require('../platform/PlatformLoader.js').getPlatform();
+  const sem = require('../sensor/SensorEventManager.js').getInstance();
+  const saved = {};
+  let refreshed;
+
+  before(() => {
+    // a running FireMain answers BlockControl's phase request on this channel, which would change
+    // the phase in the middle of a case; the listeners go back when the suite is done
+    saved.listeners = sem.rawListeners('Control:StateChanged');
+    sem.clearEventType('Control:StateChanged');
+    saved.refresh = domainBlock.refreshTLSCategory;
+    saved.pending = tlsc.isRefreshPending;
+    saved.tcp = platform.isTLSBlockSupport;
+    saved.udp = platform.isUdpTLSBlockSupport;
+    saved.phase = tlsc.phase;
+    domainBlock.refreshTLSCategory = async () => { refreshed++; };
+    platform.isTLSBlockSupport = () => true;
+    platform.isUdpTLSBlockSupport = () => true;
+  });
+
+  beforeEach(() => {
+    refreshed = 0;
+    tlsc.deactivateTLSSet(Block.getTLSHostSet(CAT));
+    tlsc.isRefreshPending = () => false;
+  });
+
+  afterEach(() => {
+    tlsc.setPhase('init'); // stops the refresh timer a case may have started
+  });
+
+  after(() => {
+    tlsc.deactivateTLSSet(Block.getTLSHostSet(CAT));
+    domainBlock.refreshTLSCategory = saved.refresh;
+    tlsc.isRefreshPending = saved.pending;
+    platform.isTLSBlockSupport = saved.tcp;
+    platform.isUdpTLSBlockSupport = saved.udp;
+    tlsc.setPhase(saved.phase);
+    for (const listener of saved.listeners) sem.on('Control:StateChanged', listener);
+  });
+
+  it('queues the domains again for a category already active in the init phase', async () => {
+    tlsc.setPhase('init');
+    await categoryUpdater.activateTLSCategory(CAT);
+    await categoryUpdater.activateTLSCategory(CAT);
+    expect(refreshed).to.equal(2);
+  });
+
+  it('writes nothing again for a category already active in the autonomous phase', async () => {
+    tlsc.setPhase('autonomous');
+    await categoryUpdater.activateTLSCategory(CAT);
+    await categoryUpdater.activateTLSCategory(CAT);
+    expect(refreshed).to.equal(1);
+  });
+
+  it('writes the domains again while an unenforce refresh is pending in the autonomous phase', async () => {
+    tlsc.setPhase('autonomous');
+    await categoryUpdater.activateTLSCategory(CAT);
+    tlsc.isRefreshPending = () => true;
+    await categoryUpdater.activateTLSCategory(CAT);
+    expect(refreshed).to.equal(2);
+  });
+});

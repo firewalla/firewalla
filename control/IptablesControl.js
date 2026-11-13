@@ -125,14 +125,14 @@ class IptablesControl extends ModuleControl {
     });
   }
 
+  emptyQueue() {
+    return this._emptyState(true);
+  }
+
   /**
    * Process queued rules (called by BlockControl when ready)
    */
-  async processRules(fromInitialization = false) {
-    // snapshot & clear queue early (new requests will be handled in next round)
-    const queued = this.queuedRules;
-    this.queuedRules = this._emptyState(true);
-
+  async processRules(queued, fromInitialization = false) {
     // the setup script skeleton seeds the desired FW_ state, aggregatedRules is
     // maintained incrementally after that and never re-derived from the kernel. The
     // chain dump is only needed for the reap, which only runs at initialization.

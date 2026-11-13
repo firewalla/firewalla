@@ -41,6 +41,19 @@ class ModuleControl {
     this.phase = phase;
   }
 
+  // what addRule appends to in the init phase; a module with another queue shape overrides it
+  emptyQueue() {
+    return [];
+  }
+
+  // the batch of one processing round. BlockControl takes every module's queue before the round
+  // starts, so a rule enqueued during the round waits for the next one together with the sets it names
+  takeQueue() {
+    const queued = this.queuedRules;
+    this.queuedRules = this.emptyQueue();
+    return queued;
+  }
+
   addRule(rule) {
     // Emit in-process event via SensorEventManager (no Redis for same-process events)
     sem.sendEventToFireMain({
