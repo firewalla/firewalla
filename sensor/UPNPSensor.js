@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,7 +40,7 @@ const UPNP = require('../extension/upnp/upnp.js');
 const upnp = new UPNP();
 
 const cfg = require('../net2/config.js');
-
+const { delay } = require('../util/util.js');
 const sysManager = require('../net2/SysManager.js');
 const Message = require('../net2/Message.js');
 const Alarm = require('../alarm/Alarm.js');
@@ -119,25 +119,35 @@ class UPNPSensor extends Sensor {
         if (iface.name && iface.name.endsWith(":0"))
           continue;
         const leaseFile = `/var/run/upnp.${iface.name}.leases`;
-        await exec(`sudo touch ${leaseFile}`).then(() => {
-          const watcher = fs.watch(leaseFile, {}, (e, filename) => {
-            if (e === "change") {
-              log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
-              this.scheduleCheckUPnPLeases();
-            }
-            if (e === "rename") {
-              log.info(`UPnP lease file ${leaseFile} is renamed, schedule reload UPNPSensor ...`);
-              this.scheduleReload();
-            }
-          });
-          log.info(`Watching UPnP lease file change on ${leaseFile} ...`);
-          this.upnpLeaseFileWatchers.push(watcher);
-        }).catch((err) => {
-          log.error(`Failed to watch file change ${leaseFile}`, err.message);
-        });
+        await this._watchLeaseFile(leaseFile);
       }
       this.scheduleCheckUPnPLeases();
     }, 5000);
+  }
+
+  async _watchLeaseFile(leaseFile) {
+    try {
+      await exec(`sudo touch ${leaseFile}`);
+      const watcher = fs.watch(leaseFile, {}, (e) => {
+        if (e === "change") {
+          log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
+          this.scheduleCheckUPnPLeases();
+        }
+        if (e === "rename") {
+          log.info(`UPnP lease file ${leaseFile} is renamed, schedule reload UPNPSensor ...`);
+          this.scheduleReload();
+        }
+      });
+      log.verbose(`Watching UPnP lease file change on ${leaseFile} ...`);
+      this.upnpLeaseFileWatchers.push(watcher);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        await delay(5000);
+        await this._watchLeaseFile(leaseFile);
+      } else {
+        log.error(`Failed to watch file change ${leaseFile}`, err.message);
+      }
+    }
   }
 
   scheduleCheckUPnPLeases() {
@@ -176,6 +186,7 @@ class UPNPSensor extends Sensor {
 
           if (!firewallaRegistered) {
             const now = Math.ceil(Date.now() / 1000);
+            const deviceIface = sysManager.getInterfaceViaIP(current.private.host);
             let alarm = new Alarm.UpnpAlarm(
               now,
               current.private.host,
@@ -193,7 +204,8 @@ class UPNPSensor extends Sensor {
                 'p.upnp.expire': current.expire ? current.expire.toString() : null,
                 'p.upnp.local': current.local.toString(),
                 'p.device.port': current.private.port.toString(),
-                'p.protocol': current.protocol
+                'p.protocol': current.protocol,
+                ...(deviceIface && deviceIface.uuid && { 'p.intf.id': deviceIface.uuid })
               }
             );
             am2.enqueueAlarm(alarm);

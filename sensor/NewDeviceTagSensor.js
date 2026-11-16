@@ -34,6 +34,7 @@ const TagManager = require('../net2/TagManager.js');
 const delay = require('../util/util.js').delay;
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const era = require('../event/EventRequestApi.js');
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -107,6 +108,8 @@ class NewDeviceTagSensor extends Sensor {
       }
 
       let policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
+      // new device quarantine is on as long as either level is on, attribute it to system level first
+      const policyLvl = systemPolicy.state ? 'system' : 'intf'
 
       log.debug(networkPolicy)
 
@@ -143,6 +146,17 @@ class NewDeviceTagSensor extends Sensor {
             const tagExists = await TagManager.tagUidExists(policy.tag);
             if (tagExists) {
               isQuarantine = 1
+              // fire an action event on new_device_quarantine with device info
+              const tag = TagManager.getTagByUid(policy.tag);
+              await era.addActionEvent("new_device_quarantine", 1, {
+                "mac": host.mac,
+                "deviceName": getPreferredBName(host) || "Unknown",
+                "ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+                "intf": host.intf || "",
+                "tag": String(policy.tag),
+                "tagName": tag && tag.getTagName() || "",
+                "policyLvl": policyLvl
+              });
             }
           }
         }

@@ -63,16 +63,22 @@ class Unbound {
   getDefaultConfig() {
     return {
       upstream: "udp",
-      dnssec: true
+      dnssec: true,
+      killSwitch: true
     };
   }
 
   async getUserConfig() {
     const config = await rclient.hgetallAsync(configKey) || {};
-    Object.keys(config).map((key) => {
-      config[key] = JSON.parse(config[key]);
+    const parsedConfig = {};
+    Object.keys(config).forEach((key) => {
+      try {
+        parsedConfig[key] = JSON.parse(config[key]);
+      } catch (err) {
+        log.error(`Failed to parse unbound config key ${key}`, err);
+      }
     });
-    return config;
+    return parsedConfig;
   }
 
   async getConfig() {
@@ -80,10 +86,18 @@ class Unbound {
   }
 
   async updateUserConfig(newConfig) {
+    const currentConfig = await this.getUserConfig();
+    const nextConfig = Object.assign({}, currentConfig, newConfig || {});
+    for (const key of Object.keys(nextConfig)) {
+      if (typeof nextConfig[key] === 'undefined') {
+        delete nextConfig[key];
+      }
+    }
+
     let multi = rclient.multi();
     multi.unlink(configKey);
-    for (const key in newConfig) {
-      multi.hset(configKey, key, JSON.stringify(newConfig[key]));
+    for (const key in nextConfig) {
+      multi.hset(configKey, key, JSON.stringify(nextConfig[key]));
     }
     await multi.execAsync();
   }

@@ -26,7 +26,7 @@ const _ = require('lodash');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 
 const f = require('../../net2/Firewalla.js');
 
@@ -37,6 +37,15 @@ const ip = require('ip');
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+
+function isValidIntf(intf) {
+  return typeof intf === 'string' && /^[A-Za-z0-9_-]{1,15}$/.test(intf);
+}
+
+function isValidCIDR(cidr) {
+  // allow IPv4 CIDR (10.0.0.0/24) or IPv6 CIDR (fd00::/8); reject shell metacharacters
+  return typeof cidr === 'string' && /^[0-9a-fA-F.:]+\/\d{1,3}$/.test(cidr);
+}
 
 class WireGuard {
   constructor() {
@@ -101,12 +110,17 @@ class WireGuard {
     const config = this.getConfig();
     if (!config || !config.intf)
       return;
+    if (!isValidIntf(config.intf)) {
+      log.error(`Invalid wireguard interface name: ${config.intf}`);
+      return;
+    }
+    const mtu = Number.isInteger(config.mtu) && config.mtu > 0 ? config.mtu : 1412;
     log.info(`Starting wireguard on interface ${config.intf}`);
-    await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
+    await execFile('sudo', ['ip', 'link', 'add', 'dev', config.intf, 'type', 'wireguard']).catch(() => undefined);
     const localAddressCIDR = ip.cidrSubnet(config.subnet).firstAddress + "/" + ip.cidrSubnet(config.subnet).subnetMaskLength;
-    await exec(`sudo ip addr replace ${localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
-    await exec(`sudo ip link set ${config.intf} mtu ${config.mtu || 1412}`);
-    await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
+    await execFile('sudo', ['ip', 'addr', 'replace', localAddressCIDR, 'dev', config.intf]).catch(() => undefined);
+    await execFile('sudo', ['ip', 'link', 'set', config.intf, 'mtu', String(mtu)]);
+    await execFile('sudo', ['ip', 'link', 'set', 'up', 'dev', config.intf]).catch(() => undefined);
     await this._applySNATAndRoutes();
     await this._applyConfig();
 
@@ -117,17 +131,25 @@ class WireGuard {
     const config = this.getConfig();
     const peers = await this.getPeers();
     await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').src(config.subnet).jmp('MASQUERADE'));
-    await exec(`sudo ip r add ${config.subnet} dev ${config.intf}`).catch((err) => {});
+    await execFile('sudo', ['ip', 'r', 'add', config.subnet, 'dev', config.intf]).catch((err) => {});
     for (const peer of peers) {
       const allowedIPs = peer.allowedIPs || [];
       for (const allowedIP of allowedIPs) {
-        await exec(`sudo ip r add ${allowedIP} dev ${config.intf}`).catch((err) => {});
+        if (!isValidCIDR(allowedIP)) {
+          log.warn(`Skipping invalid allowedIP: ${allowedIP}`);
+          continue;
+        }
+        await execFile('sudo', ['ip', 'r', 'add', allowedIP, 'dev', config.intf]).catch((err) => {});
       }
     }
   }
 
   async _applyConfig() {
     const config = this.getConfig();
+    if (!config || !config.intf || !isValidIntf(config.intf)) {
+      log.error(`Invalid wireguard config or interface name: ${config && config.intf}`);
+      return;
+    }
     const peers = await this.getPeers();
     const entries = ["[Interface]"];
     entries.push(`PrivateKey = ${config.privateKey}`);
@@ -148,8 +170,9 @@ class WireGuard {
         entries.push(`PersistentKeepalive = ${peer.persistentKeepalive}`);
       entries.push('\n');
     }
-    await fs.writeFileAsync(`${f.getUserConfigFolder()}/${config.intf}.conf`, entries.join('\n'), {encoding: 'utf8'});
-    await exec(`sudo wg setconf ${config.intf} ${f.getUserConfigFolder()}/${config.intf}.conf`).catch((err) => {
+    const confPath = `${f.getUserConfigFolder()}/${config.intf}.conf`;
+    await fs.writeFileAsync(confPath, entries.join('\n'), {encoding: 'utf8'});
+    await execFile('sudo', ['wg', 'setconf', config.intf, confPath]).catch((err) => {
       log.error(`Failed to set config on ${config.intf}`, err.message);
     });
   }
@@ -158,10 +181,14 @@ class WireGuard {
     const config = this.getConfig();
     if (!config || !config.intf)
       return;
+    if (!isValidIntf(config.intf)) {
+      log.error(`Invalid wireguard interface name: ${config.intf}`);
+      return;
+    }
     log.info(`Stopping wireguard ${config.intf}...`);
     await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').opr('-F'));
-    await exec(`sudo ip link set down dev ${config.intf}`).catch(() => undefined);
-    await exec(`sudo ip link del dev ${config.intf}`).catch(() => undefined);
+    await execFile('sudo', ['ip', 'link', 'set', 'down', 'dev', config.intf]).catch(() => undefined);
+    await execFile('sudo', ['ip', 'link', 'del', 'dev', config.intf]).catch(() => undefined);
     log.info(`Wireguard ${config.intf} is stopped successfully.`);
   }
 

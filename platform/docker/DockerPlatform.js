@@ -49,6 +49,10 @@ class DockerPlatform extends Platform {
     return; // do nothing for red
   }
 
+  async getWpaCliBinPath() {
+    return null;
+  }
+
   getSubnetCapacity() {
     return 24;
   }

@@ -23,8 +23,6 @@ const fc = require('../net2/config.js');
 const f = require('./Firewalla.js');
 const _ = require('lodash');
 
-const Block = require('../control/Block.js');
-
 const VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
@@ -44,8 +42,6 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
 const blockControl = require('../control/BlockControl.js');
 const iptc = require('../control/IptablesControl.js');
 
@@ -73,12 +69,15 @@ class PolicyManager {
     })
 
     // ======= default iptables =======
+
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
       await iptc.addRule(overlayMasquerade);
     }
-    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').icmp6('redirect').jmp('DROP');
+    // lives in FW_OUTPUT rather than OUTPUT itself so that iptables-restore --noflush
+    // never has to rewrite a builtin chain shared with firerouter
+    const icmpv6Redirect = new Rule().fam(6).chn('FW_OUTPUT').icmp6('redirect').jmp('DROP');
     await iptc.addRule(icmpv6Redirect);
 
     // setup global blocking redis match rule
