@@ -94,7 +94,66 @@ const ETH_COUNTERS = {
       { agg: 'first', names: ['tx_pause_frames', 'pause_frames_tx'] },
     ],
   },
+
+  // Frames the port could not receive, and frames it could not send. The kernel keeps a
+  // driver-independent total of both in /sys/class/net/<nic>/statistics/, the numbers
+  // `ip -s link` prints, so unlike the PAUSE frames above these need no per-driver rule to be
+  // readable at all. A driver that only counts in its own registers and never feeds the netdev
+  // statistics still reports through the ethtool rules: the two count the same frames, so the
+  // larger of the two sources is the one that saw them. firecommit#11022
+  rxError: {
+    key: 'rx_error', source: 'statistics', statistic: 'rx_errors', cumulative: true, nicStates: true,
+    rules: [
+      { agg: 'max', names: ['rx_errors'] },
+    ],
+  },
+
+  txError: {
+    key: 'tx_error', source: 'statistics', statistic: 'tx_errors', cumulative: true, nicStates: true,
+    rules: [
+      { agg: 'max', names: ['tx_errors'] },
+    ],
+  },
+
+  // Frames dropped for a bad frame check sequence - a bad cable, a duplex mismatch or a dying
+  // port. SysInfo already reports <nic>_crc, but that is a live reading of the driver register
+  // that goes back to 0 whenever the driver resets it, so the lifetime total keeps its own key.
+  // The frame check sequence is the CRC, drivers name it either way, and stmmac counts it in
+  // the one MMC register that does populate. Not align_errors, which is frame alignment, nor
+  // rx_crc_align_errors, which mixes the two
+  crcError: {
+    key: 'crc_error', source: 'statistics', statistic: 'rx_crc_errors', cumulative: true, nicStates: true,
+    rules: [
+      { agg: 'max', names: ['rx_crc_errors', 'rx_fcs_errors', 'mmc_rx_crc_error'] },
+    ],
+  },
+
+  // Link flaps and transmit watchdog timeouts. NicStateSensor.updateCounter already keeps these
+  // totals, from /sys/class/net/<nic>/carrier_down_count, carrier_up_count and
+  // queues/tx-*/tx_timeout, and does it for every nic rather than only the ethernet ports. They
+  // are listed here to be exposed and reset with the rest, not to be collected again: collect()
+  // reads a counter only when its source is one of COLLECTED_SOURCES
+  linkDown: { key: 'link_down', source: 'carrier', cumulative: true, nicStates: true },
+
+  linkUp: { key: 'link_up', source: 'carrier', cumulative: true, nicStates: false },
+
+  txTimeout: { key: 'tx_timeout', source: 'queues', cumulative: true, nicStates: false },
 };
+
+// what collect() reads off the NIC itself. A cumulative counter from any other source is
+// collected elsewhere, so NicStateSensor must not store it from collect() - it would read as
+// missing every round and get pinned to the -1 "driver cannot count it" sentinel
+const COLLECTED_SOURCES = ['ethtool', 'statistics'];
+
+function isCollected(metric) {
+  const spec = ETH_COUNTERS[metric];
+  return Boolean(spec) && COLLECTED_SOURCES.includes(spec.source);
+}
+
+// field in redis sys:ethInfo, <nic>_stats_since, seconds. Written only when the app resets a
+// port's counters, so the absence of it means the totals have never been reset and the app has
+// no "counting since" time to show
+const STATS_SINCE_KEY = 'stats_since';
 
 // some drivers put spaces or brackets in a counter name, e.g. "Queue[0] InErrors" of atlantic
 // becomes Queue_0_InErrors
@@ -163,40 +222,69 @@ async function getDriver(nic) {
   return driver;
 }
 
-// Every registered counter of one NIC, from a single `ethtool -S` call.
-//   an object  what the NIC reports. A counter the driver cannot report is left out rather than
-//              set to 0, so that the caller can tell the two apart - NicStateSensor stores it
-//              as -1. {} means the driver has statistics but none of the counters, e.g. atlantic
-//   null       the NIC could not be read this round, which says nothing about what its driver
-//              supports: the ethtool fork can fail on its own, e.g. EAGAIN under memory
+// one counter out of /sys/class/net/<nic>/statistics/.
+//   a number    what the kernel has counted
+//   undefined   the kernel does not keep this one for this NIC, the file is not there
+//   null        the file is there but could not be read this round, e.g. the NIC is mid-reset.
+//               That says nothing about whether the counter exists, so the caller must not
+//               record it as unsupported
+async function readStatistic(nic, name) {
+  return fsp.readFile(`/sys/class/net/${nic}/statistics/${name}`, {encoding: 'utf8'})
+    .then(content => {
+      const value = Number(content.trim());
+      return isNaN(value) ? null : value;
+    })
+    .catch(err => err && err.code === 'ENOENT' ? undefined : null);
+}
+
+// Every registered counter of one NIC, from a single `ethtool -S` call plus, for a counter the
+// kernel keeps itself, /sys/class/net/<nic>/statistics/. Per counter:
+//   a number   what the NIC reports
+//   null       that counter could not be read this round, which says nothing about what the
+//              driver supports: the ethtool fork can fail on its own, e.g. EAGAIN under memory
 //              pressure, and the NIC may be mid-reset. The caller must leave what it stored
-//              alone, not record the counters as unsupported
+//              alone, not record it as unsupported
+//   absent     the driver cannot report it at all, so the caller stores it as -1. It is left
+//              out rather than set to 0, which would claim the port has seen none
+// null instead of an object means nothing could be read off the NIC at all.
 async function collect(nic) {
   const output = await execFile("ethtool", ["-S", nic]).then(result => result.stdout).catch(() => null);
-  if (!output)
-    return null;
-
-  const stats = parseEthtoolStats(output);
+  const stats = output ? parseEthtoolStats(output) : {};
   // without the driver every driver-specific rule is skipped and a NIC that does support the
-  // counter would look like one that does not, so treat it as a NIC that could not be read
-  const driver = await getDriver(nic);
-  if (!driver)
-    return null;
+  // counter would look like one that does not, so the ethtool counters are unreadable too
+  const driver = output ? await getDriver(nic) : "";
+  const ethtoolRead = Boolean(output && driver);
 
   const result = {};
+  let read = false;
   for (const metric in ETH_COUNTERS) {
-    if (ETH_COUNTERS[metric].source !== 'ethtool')
+    if (!isCollected(metric))
       continue;
-    const value = resolve(metric, driver, stats);
+    let value = ethtoolRead ? resolve(metric, driver, stats) : null;
+    if (ETH_COUNTERS[metric].source === 'statistics') {
+      // the kernel keeps this one itself, so it does not depend on ethtool at all. Its total
+      // and the driver's own register count the same frames, and a driver may feed one of them
+      // and not the other - stmmac counts CRC errors in its MMC block, igb in both - so the
+      // larger is the one that actually saw them
+      const kernel = await readStatistic(nic, ETH_COUNTERS[metric].statistic);
+      if (typeof kernel === 'number')
+        value = typeof value === 'number' ? Math.max(value, kernel) : kernel;
+      else if (kernel === null && typeof value !== 'number')
+        value = null; // the file is there but unreadable, so this round knows nothing
+    }
     if (value !== undefined)
       result[metric] = value;
+    if (value !== null)
+      read = true;
   }
-  return result;
+  return read ? result : null;
 }
 
 module.exports = {
   ETH_COUNTERS,
+  STATS_SINCE_KEY,
   collect,
+  isCollected,
   // exported for the tests, which feed captured `ethtool -S` outputs through them without
   // needing an actual NIC
   parseEthtoolStats,

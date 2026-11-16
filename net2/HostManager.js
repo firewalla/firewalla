@@ -1353,7 +1353,48 @@ module.exports = class HostManager extends Monitorable {
         if (value !== undefined && !isNaN(value))
           nicStates[intf][metric] = Number(value);
       }
+      // when the counters above last restarted, in seconds. Absent until the port's counters
+      // have been reset at least once, i.e. the totals go back to when the box was first seen
+      const since = ethInfo[`${intf}_${ethCounters.STATS_SINCE_KEY}`];
+      if (since !== undefined && !isNaN(since))
+        nicStates[intf].statsSinceTs = Number(since);
     }
+  }
+
+  // Zero the lifetime counter totals of ethernet ports and stamp when the counting restarted,
+  // the box side of the app's Reset Stats. NicStateSensor keeps its own last reading per
+  // counter, so the next round adds only what the port has seen since, rather than the
+  // hardware's own lifetime count. A counter stored as -1 is left alone: that port cannot count
+  // it, and a 0 would claim it has seen none. firecommit#11022
+  async resetNicCounters(nics) {
+    const statsSince = Math.floor(Date.now() / 1000);
+    for (const nic of nics) {
+      // the timestamp goes in first: it is what tells NicStateSensor that a counter it has not
+      // stored yet starts at 0 rather than at the hardware's own lifetime count, which matters
+      // when the port is reset before the first collection round has stored it
+      await rclient.hsetAsync(Constants.REDIS_KEY_ETH_INFO, `${nic}_${ethCounters.STATS_SINCE_KEY}`, statsSince);
+      for (const metric in ethCounters.ETH_COUNTERS) {
+        if (!ethCounters.ETH_COUNTERS[metric].cumulative)
+          continue;
+        const key = `${nic}_${ethCounters.ETH_COUNTERS[metric].key}`;
+        // Replace the raw sample the sensor diffs against with a marker, so that what the port
+        // counted between the last round and this reset is not added on top of the zero. A
+        // marker rather than no sample at all: an absent one means the total has never been
+        // diffed and still carries the floor the version before this one kept it at
+        await rclient.hsetAsync(Constants.REDIS_KEY_ETH_INFO_RAW, key, 'reset');
+        const stored = await rclient.hgetAsync(Constants.REDIS_KEY_ETH_INFO, key);
+        // nothing stored yet - leave it absent, so that a counter this port cannot count can
+        // still become -1 on the next round rather than being pinned to a 0 it never saw. The
+        // timestamp written above is what makes that counter start at 0 when it does arrive
+        if (stored === null || Number(stored) < 0)
+          continue;
+        // last, so that a collection round running right now ends with the zero rather than on
+        // top of it: its one atomic step either sees the marker and leaves the total alone, or
+        // ran before this write
+        await rclient.hsetAsync(Constants.REDIS_KEY_ETH_INFO, key, 0);
+      }
+    }
+    return { statsSinceTs: statsSince };
   }
 
   async getGuessedRouters(json) {

@@ -58,6 +58,10 @@ module.exports = {
   REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
+  // the last raw sample of each counter in sys:ethInfo, kept out of it because sysInfo ships
+  // that hash as it stands. Persisted rather than held in memory so that a FireMain restart
+  // does not lose what the port counted while it was down
+  REDIS_KEY_ETH_INFO_RAW: "sys:ethInfo:raw",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
   REDIS_KEY_RUN_REBOOT: "run:reboot",

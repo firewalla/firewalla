@@ -3171,6 +3171,17 @@ class netBot extends ControllerBot {
         log.info("Resetting link on ethernet ports", ports);
         return await networkTool.resetEthernetPorts(ports);
       }
+      case "resetPortStats": {
+        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
+          throw { code: 400, msg: "'ports' should be a non-empty array" };
+        const ports = _.uniq(value.ports);
+        const legal = platform.getEthernetNicNames();
+        const illegal = ports.filter(p => !legal.includes(p));
+        if (!_.isEmpty(illegal))
+          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        log.info("Resetting counters on ethernet ports", ports);
+        return await this.hostManager.resetNicCounters(ports);
+      }
       case "joinBeta":
         await this.switchBranch("beta")
         return

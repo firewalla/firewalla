@@ -165,6 +165,50 @@ describe('EthCounters pause frames', function () {
   });
 });
 
+describe('EthCounters error counters', function () {
+
+  it('should read the CRC errors of a driver that counts them in its own register', () => {
+    // stmmac counts into the MMC block and also into rx_crc_errors, with different values -
+    // the frames are the same frames, so the larger register is the one that saw them
+    expect(resolve('st_gmac', 'crcError')).to.equal(137);
+    expect(resolve('igb', 'crcError')).to.equal(12);
+    expect(resolve('mtk_soc_eth', 'crcError')).to.equal(1); // named rx_fcs_errors here
+  });
+
+  it('should not read frame alignment errors as CRC errors', () => {
+    // align_errors of the realtek drivers is frame alignment, not the frame check sequence
+    expect(resolve('r8125', 'crcError')).to.be.undefined;
+    expect(resolve('r8152', 'crcError')).to.be.undefined;
+    expect(resolve('r8168', 'crcError')).to.be.undefined;
+  });
+
+  it('should read the error totals a driver reports under the kernel names', () => {
+    expect(resolve('r8152', 'txError')).to.equal(3);
+    expect(resolve('r8152', 'rxError')).to.be.undefined; // not in this driver's statistics
+  });
+
+  it('should report nothing from ethtool for a driver with no error counter of its own', () => {
+    // collect() still reports these three for such a port, from the kernel's own totals under
+    // /sys/class/net/<nic>/statistics, which every driver feeds
+    for (const metric of ['rxError', 'txError', 'crcError'])
+      expect(resolve('atlantic', metric), metric).to.be.undefined;
+  });
+
+  it('should take the error counters off the NIC and the link counters from elsewhere', () => {
+    // linkDown is kept by NicStateSensor.updateCounter, for every nic rather than only the
+    // ethernet ports, and is in the registry only to be exposed to the app and reset
+    expect(ethCounters.isCollected('rxError')).to.be.true;
+    expect(ethCounters.isCollected('crcError')).to.be.true;
+    expect(ethCounters.isCollected('linkDown')).to.be.false;
+    expect(ethCounters.isCollected('txTimeout')).to.be.false;
+  });
+
+  it('should expose the error and link drop counters to the app', () => {
+    for (const metric of ['rxPause', 'txPause', 'rxError', 'txError', 'crcError', 'linkDown'])
+      expect(ethCounters.ETH_COUNTERS[metric].nicStates, metric).to.be.true;
+  });
+});
+
 describe('EthCounters registry', function () {
 
   it('should not apply a driver-scoped rule to another driver', () => {
@@ -177,9 +221,13 @@ describe('EthCounters registry', function () {
       const spec = ethCounters.ETH_COUNTERS[metric];
       expect(spec.key, metric).to.be.a('string').and.not.empty;
       expect(spec.source, metric).to.be.a('string').and.not.empty;
-      if (spec.source !== 'ethtool')
+      if (!ethCounters.isCollected(metric))
         continue;
+      // a counter read off the NIC needs the rules that build it, and one the kernel keeps
+      // itself needs the file under /sys/class/net/<nic>/statistics to read
       expect(spec.rules, metric).to.be.an('array').and.not.empty;
+      if (spec.source === 'statistics')
+        expect(spec.statistic, metric).to.be.a('string').and.not.empty;
       for (const rule of spec.rules) {
         expect(rule.names, metric).to.be.an('array').and.not.empty;
         expect(rule.agg, metric).to.be.oneOf(['sum', 'first', 'max']);
@@ -197,21 +245,32 @@ describe('EthCounters registry', function () {
     }
   });
 
-  it('should only mark a counter cumulative when collect() actually reads it', () => {
+  it('should only mark a counter cumulative when something actually collects it', () => {
     // NicStateSensor persists the cumulative counters out of collect(), which only fills the
-    // ethtool-sourced ones. A cumulative counter from another source would read as missing
-    // every round and get pinned to the -1 "driver cannot count it" sentinel
+    // ones it reads off the NIC. A cumulative counter from another source would read as missing
+    // every round and get pinned to the -1 "driver cannot count it" sentinel, so it has to be
+    // one of the counters updateCounter keeps under that same key instead
+    const updateCounterKeys = ['link_up', 'link_down', 'tx_timeout'];
     for (const metric in ethCounters.ETH_COUNTERS) {
       const spec = ethCounters.ETH_COUNTERS[metric];
-      if (spec.cumulative)
-        expect(spec.source, metric).to.equal('ethtool');
+      if (!spec.cumulative || ethCounters.isCollected(metric))
+        continue;
+      expect(updateCounterKeys, metric).to.include(spec.key);
     }
   });
 
   it('should not collide with the counter keys the cloud already reads', () => {
-    const keys = Object.keys(ethCounters.ETH_COUNTERS).map(m => ethCounters.ETH_COUNTERS[m].key);
-    for (const existing of ['crc', 'speed', 'link_up', 'link_down', 'tx_timeout'])
-      expect(keys, existing).to.not.include(existing);
+    for (const metric in ethCounters.ETH_COUNTERS) {
+      const spec = ethCounters.ETH_COUNTERS[metric];
+      // SysInfo writes these two itself, from a live reading rather than a lifetime total
+      expect(spec.key, metric).to.not.be.oneOf(['crc', 'speed']);
+      // the counters updateCounter keeps may be listed, to be exposed and reset, but must not
+      // be collected a second time under the same key
+      if (ethCounters.isCollected(metric))
+        expect(spec.key, metric).to.not.be.oneOf(['link_up', 'link_down', 'tx_timeout']);
+    }
+    expect(ethCounters.STATS_SINCE_KEY).to.not.be.oneOf(
+      Object.keys(ethCounters.ETH_COUNTERS).map(m => ethCounters.ETH_COUNTERS[m].key));
   });
 });
 
