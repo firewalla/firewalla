@@ -25,9 +25,7 @@ let sc = require('../lib/SystemCheck.js');
 
 const delay = require('../../util/util.js').delay;
 
-const util = require('util')
-const jsonfile = require('jsonfile');
-const jsReadFile = util.promisify(jsonfile.readFile)
+const getGid = require('../lib/getGid.js')
 
 router.post('/message/:gid',
 
@@ -156,7 +154,7 @@ const simple = async (req, res, next) => {
       res.is_closed = true;
     });
 
-    const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid
+    const gid = await getGid()
 
     if(streaming) {
       res.set({
@@ -192,7 +190,8 @@ const simple = async (req, res, next) => {
     }
   } catch(err) {
     log.error(err);
-    res.status(err.code || 500).send({
+    const code = !isNaN(err.code) ? err.code : 500;
+    res.status(code).send({
       error: err.message,
       stack: err.stack
     })
@@ -245,7 +244,7 @@ router.post('/complex', async (req, res, next) => {
   }
 
   try {
-    const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+    const gid = await getGid();
 
     let controller = await cloudWrapper.getNetBotController(gid)
     let response = await controller.msgHandlerAsync(gid, body)

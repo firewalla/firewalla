@@ -40,6 +40,11 @@ const tm = require('../net2/TagManager')
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager();
+
 const sysManager = require('../net2/SysManager.js');
 
 const flowUtil = require('../net2/FlowUtil.js');
@@ -49,16 +54,21 @@ const LRU = require('lru-cache');
 const _ = require('lodash');
 const Constants = require("../net2/Constants.js");
 
+// alarm class -> feature flag. 'intel' is the only security class: all active cloud
+// feeds normalize threats to c='intel' with the fine-grained type in cc (subclass)
 const intelFeatureMapping = {
   av: "video",
   games: "game",
   porn: "porn",
   vpn: "vpn",
   intel: "cyber_security",
-  spam: "cyber_security",
-  phishing: "cyber_security",
-  piracy: "cyber_security",
-  suspicious: "cyber_security"
+}
+// threshold-based alarm classes, checked before the security (intel) classes
+const intelClassAlarmMap = {
+  av: Alarm.VideoAlarm,
+  porn: Alarm.PornAlarm,
+  games: Alarm.GameAlarm,
+  vpn: Alarm.VpnAlarm,
 }
 const alarmFeatures = [ 'video', 'game', 'porn', 'vpn', 'cyber_security', 'large_upload', 'large_upload_2', 'insane_mode' ]
 const profileAlarmMap = {
@@ -196,67 +206,22 @@ module.exports = class FlowMonitor {
     }
   }
 
-  isFlowIntelInClass(intel, classes) {
-    if (!intel || !classes) {
+  // whether the flow belongs to alarm class `cls` (av/porn/games/vpn/intel), matching
+  // on the primary category only — c is the cloud's trust-weighted verdict. Works on
+  // both the baked snapshot category (flow.category) and the full intel record
+  // (flow.intel, only set during flow_inline_intel migration)
+  isFlowIntelInClass(flow, cls) {
+    const featureName = intelFeatureMapping[cls];
+    if (!featureName || !fc.isFeatureOn(featureName))
       return false;
-    }
 
-    if (!Array.isArray(classes)) {
-      classes = [classes];
-    }
-
-    let enabled = classes.map(c => {
-      const featureName = intelFeatureMapping[c];
-      if (!featureName) {
-        return false;
-      }
-      if (!fc.isFeatureOn(featureName)) {
-        return false;
-      }
-      return true;
-    }).reduce((acc, cur) => acc || cur);
-
-    if (!enabled) {
-      return false;
-    }
-
-    if (classes.includes(intel.category)) {
-      return true;
-    } else {
-      if (classes.includes("intel")) { // for security alarm, category must equal to 'intel'
-        return false;
-      }
-    }
-
-    if (classes.includes(intel.c)) {
-      return true;
-    }
-
-    function isMatch(_classes, v) {
-      let matched;
-      try {
-        let _v = new Set(Array.isArray(v) ? v : JSON.parse(v));
-        matched = _classes.filter(x => _v.has(x)).length > 0;
-      } catch (err) {
-        log.warn("Error when match classes", _classes, "with value", v, err);
-      }
-      return matched;
-    }
-
-    if (intel.cs && isMatch(classes, intel.cs)) {
-      return true;
-    }
-
-    if (intel.cc && isMatch(classes, intel.cc)) {
-      return true;
-    }
-
-    return false;
+    const category = flow.intel && flow.intel.category || flow.category;
+    return category === cls;
   }
 
   checkAlarmThreshold(flow, type, profile) {
     const p = profile[intelFeatureMapping[type]]
-    return this.isFlowIntelInClass(flow['intel'], type) &&
+    return this.isFlowIntelInClass(flow, type) &&
       flow.fd === 'in' &&
       p && (
         p.duMin && p.rbMin && flow.du > p.duMin && flow.rb > p.rbMin ||
@@ -264,26 +229,36 @@ module.exports = class FlowMonitor {
       )
   }
 
-  checkFlowIntel(flows, host, profile) {
+  async checkFlowIntel(flows, host, profile) {
     const mac = host.getGUID()
     for (const flow of flows) try {
-      if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
+      const category = flow.intel && flow.intel.category || flow.category;
+      if (category && !flowUtil.checkFlag(flow, 'l')) {
         log.silly("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
-        if (this.checkAlarmThreshold(flow, 'av', profile)) {
-          const alarm = alarmBootstrap(flow, mac, Alarm.VideoAlarm)
-          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.av]);
+        const alarmClass = Object.keys(intelClassAlarmMap)
+          .find(type => this.checkAlarmThreshold(flow, type, profile));
+        if (alarmClass) {
+          const alarm = alarmBootstrap(flow, mac, intelClassAlarmMap[alarmClass])
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping[alarmClass]]);
         }
-        else if (this.checkAlarmThreshold(flow, 'porn', profile)) {
-          const alarm = alarmBootstrap(flow, mac, Alarm.PornAlarm)
-          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.porn]);
-        }
-        else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
+        else if (this.isFlowIntelInClass(flow, 'intel')) {
           // ignore partial flows initiated from outside.  They are blocked by firewall and we
           // see the packet before that due to how libpcap works
 
           if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
             log.info("Intel:On:Partial:Flows", flow);
           } else {
+            // the alarm decision is made on the baked snapshot category; fetch the full
+            // intel record on demand only for the alarm payload (action/cc/...). Flows
+            // enriched before the flow_inline_intel migration already carries it
+            if (!flow.intel) {
+              const ip = flow.fd == 'in' ? flow.dh : flow.sh;
+              flow.intel = await intelTool.getIntel(ip, flow.appHosts) || {};
+              dnsManager.enrichHttpFlow(flow);
+              if (!flow.intel.category && category)
+                flow.intel.category = category;
+            }
+
             const intelobj = Object.assign({}, _.pick(flow, [
               'ts', 'fd', 'intel', 'shname', 'dhname', 'mac', 'appr', 'org',
               'sh', 'dh', 'lh', 'sp', 'dp', 'urls', 'pr', 'guid', 'rl',
@@ -311,14 +286,6 @@ module.exports = class FlowMonitor {
             // Process intel to generate Alarm about it
             this.processIntelFlow(intelobj);
           }
-        }
-        else if (this.checkAlarmThreshold(flow, 'games', profile)) {
-          const alarm = alarmBootstrap(flow, mac, Alarm.GameAlarm)
-          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.games]);
-        }
-        else if (this.checkAlarmThreshold(flow, 'vpn', profile)) {
-          const alarm = alarmBootstrap(flow, mac, Alarm.VpnAlarm)
-          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.vpn]);
         }
       }
     } catch(err) {
@@ -420,10 +387,10 @@ module.exports = class FlowMonitor {
     let start = end - period; // in seconds
     //log.info("Detect",listip);
     const inFlows = await flowManager.summarizeConnections(mac, "in", end, start);
-    this.checkFlowIntel(inFlows.connections, host, profile);
+    await this.checkFlowIntel(inFlows.connections, host, profile);
 
     const outFlows = await flowManager.summarizeConnections(mac, "out", end, start);
-    this.checkFlowIntel(outFlows.connections, host, profile);
+    await this.checkFlowIntel(outFlows.connections, host, profile);
 
     await this.summarizeNeighbors(host, [... inFlows.connections, ... outFlows.connections]);
 

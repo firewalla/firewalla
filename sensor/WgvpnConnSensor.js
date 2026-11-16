@@ -16,7 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const Sensor = require('./Sensor.js').Sensor;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const FireRouter = require('../net2/FireRouter.js');
@@ -94,13 +94,16 @@ class WgvpnConnSensor extends Sensor {
 
     if (_.isArray(peers)) {
       const pubKeys = peers.map(peer => peer.publicKey);
-      const results = await exec(`sudo ${this.wgCmd} show all latest-handshakes`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-        log.error(`Failed to show latest-handshakes using ${this.wgCmd} command`, err.message);
+      const dumpLines = await execFile('sudo', [this.wgCmd, 'show', 'all', 'dump']).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.error(`Failed to show dump using ${this.wgCmd} command`, err.message);
         return [];
       });
 
-      for (const result of results) {
-        const [intf, pubKey, latestHandshake] = result.split(/\s+/g);
+      for (const line of dumpLines) {
+        const fields = line.split(/\s+/g);
+        if (fields.length < 9) // the interface's own device line has fewer fields than a peer line
+          continue;
+        const [intf, pubKey, , endpoint, , latestHandshake] = fields;
         if (!pubKeys.includes(pubKey))
           continue;
         if (latestHandshake && latestHandshake != '0') {
@@ -121,26 +124,14 @@ class WgvpnConnSensor extends Sensor {
           }
           let remoteIP = null;
           let remotePort = null;
-          const endpointsResults = (await exec(`sudo ${this.wgCmd} show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-            log.error(`Failed to show endpoints using ${this.wgCmd} command`, err.message);
-            return [];
-          })).map(result => result.split(/\s+/g));
-          if (!Array.isArray(endpointsResults) || endpointsResults.length === 0) {
-            continue;
-          }
-          for (const endpointsResult of endpointsResults) {
-            if (endpointsResult[0] === pubKey) {
-              let endpoint = endpointsResult[1];
-              if (endpoint !== "(none)") {
-                remoteIP = endpoint.includes(":") ? endpoint.substring(0, endpoint.lastIndexOf(":")) : endpoint;
-                remotePort = endpoint.includes(":") ? endpoint.substring(endpoint.lastIndexOf(":") + 1) : 0;
-                // remove leading and trailing brackets if it is an IPv6 address
-                if (remoteIP.startsWith("["))
-                  remoteIP = remoteIP.substring(1);
-                if (remoteIP.endsWith("]"))
-                  remoteIP = remoteIP.substring(0, remoteIP.length - 1);
-              }
-            }
+          if (endpoint && endpoint !== "(none)") {
+            remoteIP = endpoint.includes(":") ? endpoint.substring(0, endpoint.lastIndexOf(":")) : endpoint;
+            remotePort = endpoint.includes(":") ? endpoint.substring(endpoint.lastIndexOf(":") + 1) : 0;
+            // remove leading and trailing brackets if it is an IPv6 address
+            if (remoteIP.startsWith("["))
+              remoteIP = remoteIP.substring(1);
+            if (remoteIP.endsWith("]"))
+              remoteIP = remoteIP.substring(0, remoteIP.length - 1);
           }
           if (!remoteIP || !remotePort || this.constructor.peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
             continue;

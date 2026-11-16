@@ -182,6 +182,11 @@ class CountryUpdater extends CategoryUpdaterBase {
     await fsp.writeFile(countFile, addresses.length);
   }
 
+  async updatePersistentIPSets(category, ip6 = false, options) {
+    if (this.isActivated(category))
+      await this.updateIpset(category, ip6, options);
+  }
+
   async checkActivationStatus(category) {
     const v4Active = await Ipset.isReferenced(this.getIPSetName(category))
     const v6Active = await Ipset.isReferenced(this.getIPSetNameForIPV6(category))
@@ -210,7 +215,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await this.swapIpset(category, true);
 
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
@@ -249,10 +254,10 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       // add ipset right away to enforce policies
       // as v6 spaces is already standardized to CIDR
-      CIDRs.forEach(entry => Ipset.add(ipset, entry))
+      CIDRs.forEach(entry => Ipset.add(ipset, entry, {}, true))
     } else {
       await rclient.zremAsync(key, CIDRs)
-      CIDRs.forEach(entry => Ipset.del(ipset, entry))
+      CIDRs.forEach(entry => Ipset.del(ipset, entry, true))
     }
   }
 }

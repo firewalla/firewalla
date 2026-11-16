@@ -6,10 +6,10 @@ logger "FIREWALLA REBOOT NORMAL FORCED"
 #sudo sh -c 'echo V > /dev/watchdog'
 sync
 crontab -r
-sudo pkill fire-ping
+sudo pkill -f fire-ping.sh
 sudo pkill -x sleep
-sudo pkill fire-ping
-sudo pkill fire-watchdog
+sudo pkill -f fire-ping.sh
+sudo pkill -f fire-watchdog.sh
 #sudo sh -c 'echo V > /dev/watchdog'
 #sudo sh -c 'echo V > /dev/watchdog'
 sudo /home/pi/firewalla/scripts/fake-hwclock

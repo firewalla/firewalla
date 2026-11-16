@@ -134,6 +134,9 @@ async function rrWithErrHandling(options, usePool = false, compress = false, thr
     const error = new Error(msg + `\n` + respSummary)
     error.statusCode = response.statusCode
     error.body = response.body
+    // seconds form only, so callers that back off on their own can honour it
+    const retryAfter = Number(response.headers && response.headers['retry-after'])
+    if (retryAfter > 0) error.retryAfter = retryAfter
 
     log.verbose(uid, msg)
     log.debug(JSON.stringify(options.body || options.json))

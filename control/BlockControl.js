@@ -24,6 +24,7 @@ const SensorEventManager = require('../sensor/SensorEventManager.js').getInstanc
 const sysManager = require('../net2/SysManager.js');
 
 const { exec } = require('child-process-promise');
+const { spawnQuiet } = require('../util/util.js');
 
 // BlockControl class coordinates multiple modules (ipset, iptables, tlsset) to apply networking rules efficiently.
 // It maintains a state machine to align changes across modules
@@ -51,7 +52,7 @@ class BlockControl {
     if (f.isMain()) {
       SensorEventManager.on('Control:RuleAdded', (event) => {
         const { module, rule, fromProcess } = event;
-        
+
         log.debug(`Rule:Added ${module}${fromProcess ? ` (from ${fromProcess})` : ''} ${rule}`);
 
         // Only call addRule if event is coming from another process
@@ -73,10 +74,43 @@ class BlockControl {
         }
         // If in 'processing' or 'initializing' state, rules will be processed when state changes
       });
+
+      // Broadcast initial phase so non-main processes reset their submodule phase
+      // when FireMain (re)starts — they should route rules via SEM until FireMain is autonomous.
+      this.broadcastPhase('init');
+
+      // Respond to non-main processes asking for current phase (e.g. they restarted
+      // and missed the original broadcast).
+      SensorEventManager.on('Control:StateRequest', () => {
+        this.broadcastPhase(this.state);
+      });
+    } else {
+      // Non-main: don't maintain a state machine. Just mirror FireMain's phase onto submodules
+      // so addRule() can choose between inline _execOne (autonomous) and SEM routing (init).
+      SensorEventManager.on('Control:StateChanged', (event) => {
+        const { phase } = event;
+        log.info(`Control:StateChanged received: phase=${phase}`);
+        this.setPhase(phase);
+      });
+
+      // Ask FireMain for its current phase in case it's already autonomous
+      // and we missed the original broadcast.
+      SensorEventManager.sendEventToFireMain({
+        type: 'Control:StateRequest',
+        suppressEventLogging: true,
+      });
     }
 
     // start in 'initializing' state so rules queued before startInitialization() are preserved
     this.state = 'initializing';
+  }
+
+  broadcastPhase(phase) {
+    SensorEventManager.sendEventToAll({
+      type: 'Control:StateChanged',
+      phase,
+      suppressEventLogging: true,
+    });
   }
 
   /**
@@ -203,6 +237,7 @@ class BlockControl {
       log.verbose('Entering autonomous state');
       this.state = 'autonomous';
       this.setPhase('autonomous');
+      this.broadcastPhase('autonomous');
       if (this.needRefreshConnmark) {
         log.verbose('Refreshing connmark after transferring to autonomous state');
         this.refreshConnmark().catch((err) => {
@@ -231,36 +266,6 @@ class BlockControl {
     };
   }
 
-  /**
-   * Force flush rules immediately (for testing or emergency)
-   */
-  async forceFlush() {
-    log.info('Force flushing rules');
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    await this.enterProcessingState();
-  }
-
-  /**
-   * Clean up resources
-   */
-  flush() {
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    
-    // Reset processing state
-    this.processingPromise = null;
-    
-    // Clean up all modules
-    this.modules.forEach(module => {
-      if (module.flush) {
-        module.flush();
-      }
-    });
-  }
-
   scheduleRefreshConnmark() {
     if (this.state === 'autonomous') {
       if (this.connmarkRefreshTimer) {
@@ -279,10 +284,10 @@ class BlockControl {
 
   async refreshConnmark() {
     // use conntrack to clear the first bit of connmark on existing connections
-    await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
     });
-    await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-f', 'ipv6', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
     });
   }

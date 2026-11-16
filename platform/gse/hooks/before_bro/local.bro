@@ -114,6 +114,8 @@ redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port
 @load /home/pi/.firewalla/run/zeek/scripts/dns-mac-logging.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/http-fast-logging.zeek
 @load /home/pi/.firewalla/run/zeek/scripts/ssl-alpn-logging.zeek
+@load /home/pi/.firewalla/run/zeek/scripts/vlan-logging.zeek
+@load /home/pi/.firewalla/run/zeek/scripts/conn-worker-id.zeek
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;

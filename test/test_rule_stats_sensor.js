@@ -23,6 +23,7 @@ const LRU = require('lru-cache');
 const Policy = require('../alarm/Policy.js');
 
 const RuleStatsPlugin = require('../sensor/RuleStatsPlugin.js');
+const PolicyManager2 = require('../alarm/PolicyManager2');
 
 describe('test rule stats policy cache', function(){
   this.timeout(3000);
@@ -71,5 +72,28 @@ describe('test rule stats policy cache', function(){
     pids = await this.plugin.getMatchedPids(record);
     expect(pids).to.eql([]);
 
+  });
+
+  it('should exclude network/tag-scoped rules from the global block list (issue #9361)', async () => {
+    const globalPolicy = new Policy({type: "domain", action: "block", target: "doubleclick.net", pid: 100});
+    const networkScopedPolicy = new Policy({type: "domain", action: "block", target: "doubleclick.net",
+      tag: ["intf:e1eea2bd-7afd-4da4-b0d6-691778a92b60"], pid: 101});
+    const tagScopedPolicy = new Policy({type: "domain", action: "block", target: "other-domain.com",
+      tag: ["tag:5"], pid: 102});
+
+    const origLoadActive = PolicyManager2.prototype.loadActivePoliciesAsync;
+    PolicyManager2.prototype.loadActivePoliciesAsync = async () => [globalPolicy, networkScopedPolicy, tagScopedPolicy];
+    const plugin = new RuleStatsPlugin({});
+    plugin.on = true; // bypass globalOn()'s redis-touching first-time-init, only the filter is under test
+    try {
+      await plugin.loadBlockAllowGlobalRules();
+    } finally {
+      PolicyManager2.prototype.loadActivePoliciesAsync = origLoadActive;
+    }
+
+    const blockPids = plugin.policyRulesMap.get("block").map(p => p.pid);
+    expect(blockPids).to.include(100);
+    expect(blockPids).to.not.include(101);
+    expect(blockPids).to.not.include(102);
   });
 });

@@ -204,6 +204,12 @@ class ResourcePlugin extends Sensor {
     }
   }
 
+  validateResId(resId) {
+    if (!resId || !/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(resId)) {
+      throw new Error(`ERR_INVALID_RESID`);
+    }
+  }
+
   getResourcePath(resId) {
     return path.join(RESOURCES_DIR, resId);
   }
@@ -265,10 +271,7 @@ class ResourcePlugin extends Sensor {
 
   async updateResource(resId, base64) {
     await this.ensureDirectory();
-    
-    if (!resId) {
-      throw new Error('resId is required');
-    }
+    this.validateResId(resId);
 
     const resourcePath = this.getResourcePath(resId);
 
@@ -333,10 +336,7 @@ class ResourcePlugin extends Sensor {
 
   async getResource(resId, withContent = true) {
     await this.ensureDirectory();
-    
-    if (!resId) {
-      throw new Error('resId is required');
-    }
+    this.validateResId(resId);
 
     try {
       const resourcePath = this.getResourcePath(resId);

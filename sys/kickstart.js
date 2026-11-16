@@ -353,7 +353,17 @@ async function inviteAdmin(gid) {
 
 
 async function launchService2(gid) {
-  await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
+  // atomic write: temp file + fsync + rename, so a crash/power-loss mid-write can never leave a truncated ui.conf
+  const uiConfPath = '/home/pi/.firewalla/ui.conf';
+  const tmpPath = `${uiConfPath}.tmp`;
+  const fh = await fs.promises.open(tmpPath, 'w');
+  try {
+    await fh.writeFile(JSON.stringify({gid:gid}), 'utf8');
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+  await fs.promises.rename(tmpPath, uiConfPath);
   
   /* bro is taken care of in FireMain now
   // don't start bro until app is linked
@@ -403,7 +413,9 @@ async function login() {
     process.exit();
   }
 
-  // NOTE: This should be the only code to update sys:ept to avoid race condition
+  // NOTE: FireKick is the primary writer of sys:ept. Token-only refreshers also
+  // write it (FWCloudWrapper.refreshToken, encipherio.rrWithEptRelogin) to heal
+  // expiry on long-uptime boxes.
   log.info("Storing Firewalla Cloud Token info to redis");
   // log.info("EID:", eptcloud.eid);
   // log.info("GID:", gid);

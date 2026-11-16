@@ -23,7 +23,18 @@ let fConfig = require('../../net2/config.js').getConfig();
 
 router.post("/run/:sensor",
            (req, res, next) => {
-             let sensor = req.params.sensor;
+             const sensor = req.params.sensor;
+
+             // Whitelist: only plain alphanumeric/underscore names — no dots, slashes or traversal
+             if (!sensor || !/^[A-Za-z0-9_]+$/.test(sensor)) {
+               return res.status(400).json({ error: 'Invalid sensor name' });
+             }
+
+             // Whitelist: sensor must exist in the configured sensors list
+             if (!fConfig.sensors || !fConfig.sensors[sensor]) {
+               return res.status(404).json({ error: 'Sensor not found' });
+             }
+
              let TheSensor = require(`../../sensor/${sensor}.js`);
              let s = new TheSensor(fConfig.sensors[sensor]);
              s.run()

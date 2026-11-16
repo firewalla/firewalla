@@ -83,6 +83,19 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
 
+    // ipOnly defaults to true in enforcement, only rules that explicitly opt out carry it.
+    // keep it undefined when absent so old rules are not treated as changed
+    if (raw.ipOnly === undefined || raw.ipOnly === "") {
+      delete this.ipOnly;
+    } else {
+      try {
+        this.ipOnly = !!JSON.parse(raw.ipOnly);
+      } catch (e) {
+        log.error("Failed to parse policy ipOnly:", raw.ipOnly, e);
+        delete this.ipOnly;
+      }
+    }
+
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
@@ -169,7 +182,7 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
       "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
 
     for (const field of compareFields) {
@@ -203,17 +216,33 @@ class Policy {
       return (this.seq || Constants.RULE_SEQ_REG) - (policy.seq || Constants.RULE_SEQ_REG)
     }
 
+    // specificity level, smaller is more specific: device=1, group=2, network=3, all=4
+    const DEVICE_LEVEL = 1, TAG_LEVEL = 2, NETWORK_LEVEL = 3, ALL_LEVEL = 4;
+
+    // specificity of the "apply to" dimension (scope / guids / tag)
     const scopeLevel = (policy) => {
-      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return 1
-      if (!_.isEmpty(policy.tags)) {
-        if (policy.tags.some(tag => tag.startsWith(Policy.TAG_PREFIX))) return 2
-        if (policy.tags.some(tag => tag.startsWith(Policy.INTF_PREFIX))) return 3
+      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return DEVICE_LEVEL
+      if (!_.isEmpty(policy.tag)) {
+        if (policy.tag.some(t => t.startsWith(Policy.TAG_PREFIX))) return TAG_LEVEL
+        if (policy.tag.some(t => t.startsWith(Policy.INTF_PREFIX))) return NETWORK_LEVEL
       }
-      return 4
+      return ALL_LEVEL
     }
 
-    const levelThis = scopeLevel(this)
-    const levelThat = scopeLevel(policy)
+    // specificity of the "target" dimension; only local network types add specificity,
+    // others fall through to ALL_LEVEL so the scope dimension decides
+    const targetLevel = (policy) => {
+      switch (policy.type) {
+        case "device": return DEVICE_LEVEL
+        case "tag": return TAG_LEVEL
+        case "network": return NETWORK_LEVEL
+        default: return ALL_LEVEL
+      }
+    }
+
+    // follow the more specific (smaller) one of either scope or target
+    const levelThis = Math.min(scopeLevel(this), targetLevel(this))
+    const levelThat = Math.min(scopeLevel(policy), targetLevel(policy))
     if (levelThis != levelThat)
       return levelThis - levelThat
 
@@ -260,6 +289,10 @@ class Policy {
     return this.getWhenExpired() - new Date() / 1000
   }
 
+  isAutoBlockPolicy() {
+    return this.method == 'auto' && this.category == 'intel';
+  }
+
   isSecurityBlockPolicy() {
     if (this.action !== 'block') {
       return false;
@@ -268,8 +301,7 @@ class Policy {
     const alarm_type = this.alarm_type;
 
     const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
-    const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
-    return isSecurityPolicy || isAutoBlockPolicy;
+    return isSecurityPolicy || this.isAutoBlockPolicy();
   }
 
   // x is the rule being checked
@@ -450,6 +482,14 @@ class Policy {
     if (this.remotePort && alarm['p.dest.port']) {
       const notInRange = this.portInRange(this.remotePort, alarm['p.dest.port']);
       if (!notInRange) return false;
+    }
+
+    // a port-based rule only applies to the protocol it specifies
+    if (this.protocol && alarm['p.protocol'] &&
+      String(this.protocol).toLowerCase() !== String(alarm['p.protocol']).toLowerCase()
+    ) {
+      log.debug(`protocol doesn't match`)
+      return false;
     }
 
     if (alarm instanceof Alarm.BroNoticeAlarm &&
@@ -667,6 +707,7 @@ class Policy {
         allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
         if (!allInRange) return false;
       }
+      return allInRange;
     } else {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
