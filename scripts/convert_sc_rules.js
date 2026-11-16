@@ -1,9 +1,13 @@
 'use strict';
 
-const fsp = require('fs').promises;
+const fs = require('fs');
+const fsp = fs.promises;
 
 const path = process.argv[2];
+// optional csv of reviewed rules, its first two columns are class and sid
+const classTablePath = process.argv[3];
 const newPath = "./sc_converted.rules";
+const autoBlockClass = "6 auto block";
 
 const observationCategories = ["INFO", "POLICY", "HUNTING", "RETIRED"];
 const disabledSids = [
@@ -84,6 +88,19 @@ function isDnsLookupRule(line) {
     return line.startsWith("alert dns ");
 }
 
+function loadAutoBlockSids(tablePath) {
+    const sids = new Set();
+    if (!tablePath)
+        return sids;
+    const rows = fs.readFileSync(tablePath, {encoding: "utf8"}).split("\n");
+    for (const row of rows) {
+        const [ruleClass, sid] = row.split(",", 2);
+        if (ruleClass === autoBlockClass)
+            sids.add(Number(sid));
+    }
+    return sids;
+}
+
 function getSid(line) {
     const match = line.match(/[;(]\s*sid:\s*(\d+)\s*;/);
     return match ? Number(match[1]) : 0;
@@ -91,7 +108,9 @@ function getSid(line) {
 
 fsp.readFile(path, {encoding: "utf8"}).then(content => {
     const lines = content.trim().split("\n");
+    const autoBlockSids = loadAutoBlockSids(classTablePath);
     const newLines = [];
+    let dropCount = 0;
     let observationCount = 0;
     let disabledCount = 0;
     let indicatorCount = 0;
@@ -298,9 +317,15 @@ fsp.readFile(path, {encoding: "utf8"}).then(content => {
             continue;
         }
         const newMsg = `{\\"description\\":\\"{{${srcOrig ? "SRC" : "DST"}}} accessed site {{${srcOrig ? "DST" : "SRC"}}}, which is identified as ${classtypeDesc}.\\",\\"srcOrig\\": ${srcOrig},\\"alarmData\\": {\\"classtype\\":\\"${classtype}\\",\\"classtypeDesc\\":\\"${classtypeDesc}\\",\\"cause\\":\\"${msg}\\"}}`;
-        const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
+        let header = line.substring(0, i1);
+        if (autoBlockSids.has(sid)) {
+            // the remote side is the attacker's own server, so the connection can be dropped
+            header = `drop ${header.substring("alert ".length)}`;
+            dropCount++;
+        }
+        const newRule = `${header}msg:"${newMsg}";${line.substring(i2 + 2)}`;
         newLines.push(newRule);
     }
-    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules, ${noisyCount} noisy rules, ${dnsCount} dns lookup rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}`);
+    console.log(`Skipped ${observationCount} observation rules, ${disabledCount} disabled rules, ${noisyCount} noisy rules, ${dnsCount} dns lookup rules and ${indicatorCount} pure IP/domain rules, kept ${newLines.length}, ${dropCount} of them as drop`);
     fsp.writeFile(newPath, newLines.join("\n"));
 });
