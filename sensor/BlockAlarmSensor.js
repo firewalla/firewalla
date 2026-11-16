@@ -97,7 +97,7 @@ class BlockAlarmSensor extends Sensor {
     const setting = this.settings.find(setting => matchFilter(setting.filter, event));
     if (!setting) return;
     // a client appends its search domain to a blocked name, and the bare name has its own alarm
-    if (sysManager.isSearchDomain(dest) || sysManager.isLocalDomain(dest)) return;
+    if (sysManager.isLocalOrSearchDomain(dest)) return;
 
     const key = `${device}|${dest}|${bTarget}`;
     if (this.alarmed.has(key) || this.inFlight.has(key)) return;

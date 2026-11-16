@@ -49,8 +49,7 @@ describe('test block alarm sensor', function () {
   const origs = {};
   let enqueued, saved, now, cyberSecurity, searchDomains, localDomains;
   const realNow = Date.now;
-  const realSearchDomain = sysManager.isSearchDomain;
-  const realLocalDomain = sysManager.isLocalDomain;
+  const realLocalOrSearchDomain = sysManager.isLocalOrSearchDomain;
 
   before(() => {
     for (const name of ['getDeviceAlarmFields', 'enrichDeviceInfo', 'enqueueAlarm', 'isCyberSecurityEnabled'])
@@ -63,8 +62,8 @@ describe('test block alarm sensor', function () {
     cyberSecurity = true;
     searchDomains = [];
     localDomains = [];
-    sysManager.isSearchDomain = d => searchDomains.some(sd => d.endsWith(`.${sd}`));
-    sysManager.isLocalDomain = d => localDomains.some(ld => d.endsWith(`.${ld}`));
+    sysManager.isLocalOrSearchDomain = d =>
+      searchDomains.some(sd => d.endsWith(`.${sd}`)) || localDomains.some(ld => d.endsWith(`.${ld}`));
     now = realNow();
     Date.now = () => now;
     AlarmManager2.prototype.getDeviceAlarmFields = async ({ mac }) =>
@@ -76,8 +75,7 @@ describe('test block alarm sensor', function () {
 
   afterEach(() => {
     Date.now = realNow;
-    sysManager.isSearchDomain = realSearchDomain;
-    sysManager.isLocalDomain = realLocalDomain;
+    sysManager.isLocalOrSearchDomain = realLocalOrSearchDomain;
     for (const name of Object.keys(origs)) AlarmManager2.prototype[name] = origs[name];
   });
 
@@ -270,7 +268,7 @@ describe('test block alarm sensor', function () {
     it('only checks the suffixes for a flow that a setting selected', async () => {
       const sensor = newSensor();
       let checked = 0;
-      sysManager.isSearchDomain = () => { checked++; return false; };
+      sysManager.isLocalOrSearchDomain = () => { checked++; return false; };
       await feed(sensor, blockEvent({ bTarget: 'porn' }));
       expect(checked).to.equal(0);
       await feed(sensor, blockEvent());

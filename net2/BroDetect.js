@@ -584,7 +584,7 @@ class BroDetect {
     if (!(obj["id.orig_h"] && obj.answers && obj.answers.length && obj.query && obj.query.length))
       return
 
-    if (sysManager.isSearchDomain(obj.query) || sysManager.isLocalDomain(obj.query)) return
+    if (sysManager.isLocalOrSearchDomain(obj.query)) return
 
     await this.saveDNSFlow(obj)
 
@@ -616,7 +616,7 @@ class BroDetect {
           if (domains.length == 0)
             return;
           for (const domain of domains) {
-            if (sysManager.isLocalDomain(domain) || sysManager.isSearchDomain(domain))
+            if (sysManager.isLocalOrSearchDomain(domain))
               continue;
             await dnsTool.addReverseDns(domain, [address]);
             await dnsTool.addDns(address, domain, config.dns.expires);
@@ -649,7 +649,7 @@ class BroDetect {
         const cnames = obj['answers']
           .filter(answer => !net.isIP(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
 
-        if (sysManager.isSearchDomain(query) || sysManager.isLocalDomain(query))
+        if (sysManager.isLocalOrSearchDomain(query))
           return;
         // record reverse dns as well for future reverse lookup
         await dnsTool.addReverseDns(query, answers);
