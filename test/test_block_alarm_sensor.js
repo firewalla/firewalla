@@ -26,6 +26,7 @@ const HostTool = require('../net2/HostTool.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const IntelTool = require('../net2/IntelTool.js');
 const fc = require('../net2/config.js');
+const sysManager = require('../net2/SysManager.js');
 const BlockAlarmSensor = require('../sensor/BlockAlarmSensor.js');
 
 const am2 = new AlarmManager2();
@@ -46,8 +47,10 @@ describe('test block alarm sensor', function () {
   this.timeout(10000);
 
   const origs = {};
-  let enqueued, saved, now, cyberSecurity;
+  let enqueued, saved, now, cyberSecurity, searchDomains, localDomains;
   const realNow = Date.now;
+  const realSearchDomain = sysManager.isSearchDomain;
+  const realLocalDomain = sysManager.isLocalDomain;
 
   before(() => {
     for (const name of ['getDeviceAlarmFields', 'enrichDeviceInfo', 'enqueueAlarm', 'isCyberSecurityEnabled'])
@@ -58,6 +61,10 @@ describe('test block alarm sensor', function () {
     enqueued = [];
     saved = true;
     cyberSecurity = true;
+    searchDomains = [];
+    localDomains = [];
+    sysManager.isSearchDomain = d => searchDomains.some(sd => d.endsWith(`.${sd}`));
+    sysManager.isLocalDomain = d => localDomains.some(ld => d.endsWith(`.${ld}`));
     now = realNow();
     Date.now = () => now;
     AlarmManager2.prototype.getDeviceAlarmFields = async ({ mac }) =>
@@ -69,6 +76,8 @@ describe('test block alarm sensor', function () {
 
   afterEach(() => {
     Date.now = realNow;
+    sysManager.isSearchDomain = realSearchDomain;
+    sysManager.isLocalDomain = realLocalDomain;
     for (const name of Object.keys(origs)) AlarmManager2.prototype[name] = origs[name];
   });
 
@@ -230,6 +239,42 @@ describe('test block alarm sensor', function () {
       cyberSecurity = true;
       await feed(sensor, blockEvent());
       expect(enqueued).to.have.length(1);
+    });
+
+    it('skips a domain under a search domain, whose bare name has its own alarm', async () => {
+      const sensor = newSensor();
+      searchDomains = ['lan.test'];
+      await feed(sensor, blockEvent({ dest: 'foo.xn--x.de.lan.test' }));
+      expect(enqueued).to.have.length(0);
+      expect(sensor.deviceCounts.has(MAC)).to.be.false;
+      await feed(sensor, blockEvent({ dest: 'foo.xn--x.de' }));
+      expect(enqueued.map(a => a['p.dest.name'])).to.eql(['foo.xn--x.de']);
+    });
+
+    it('does not skip a domain outside every search domain', async () => {
+      const sensor = newSensor();
+      searchDomains = ['lan.test'];
+      localDomains = ['lan'];
+      await feed(sensor, blockEvent({ dest: 'foo.xn--x.de' }));
+      await feed(sensor, blockEvent({ dest: 'foo.xn--x.de.example.org' }));
+      expect(enqueued).to.have.length(2);
+    });
+
+    it('skips a domain under the local domain suffix', async () => {
+      const sensor = newSensor();
+      localDomains = ['lan'];
+      await feed(sensor, blockEvent({ dest: 'foo.xn--x.de.lan' }));
+      expect(enqueued).to.have.length(0);
+    });
+
+    it('only checks the suffixes for a flow that a setting selected', async () => {
+      const sensor = newSensor();
+      let checked = 0;
+      sysManager.isSearchDomain = () => { checked++; return false; };
+      await feed(sensor, blockEvent({ bTarget: 'porn' }));
+      expect(checked).to.equal(0);
+      await feed(sensor, blockEvent());
+      expect(checked).to.equal(1);
     });
 
     it('does not start a second build for a key that is being built', async () => {

@@ -23,6 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
 const CloudConfigLoader = require('./CloudConfigLoader.js');
+const sysManager = require('../net2/SysManager.js');
 const { matchFilter, isValidFilter } = require('./BlockStatsFilter.js');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
@@ -95,6 +96,8 @@ class BlockAlarmSensor extends Sensor {
     if (device.startsWith(`${Constants.NS_INTERFACE}:`) || net.isIP(dest)) return;
     const setting = this.settings.find(setting => matchFilter(setting.filter, event));
     if (!setting) return;
+    // a client appends its search domain to a blocked name, and the bare name has its own alarm
+    if (sysManager.isSearchDomain(dest) || sysManager.isLocalDomain(dest)) return;
 
     const key = `${device}|${dest}|${bTarget}`;
     if (this.alarmed.has(key) || this.inFlight.has(key)) return;
