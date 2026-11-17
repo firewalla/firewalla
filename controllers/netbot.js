@@ -141,7 +141,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid, gc } = require('../util/util.js');
 const { localDayStart } = require('../util/TimeSlot.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -587,9 +587,7 @@ class netBot extends ControllerBot {
 
     setInterval(() => {
       try {
-        if (global.gc) {
-          global.gc();
-        }
+        gc();
       } catch (e) {
       }
     }, 1000 * 60);
@@ -4690,8 +4688,7 @@ process.on('uncaughtException', (err) => {
 setInterval(() => {
   let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
   try {
-    if (global.gc) {
-      global.gc();
+    if (gc()) {
       log.info("GC executed ", memoryUsage, " RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
     }
   } catch (e) {
