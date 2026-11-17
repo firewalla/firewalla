@@ -1343,7 +1343,8 @@ module.exports = class {
   }
 
   _genAlarm(a = {}) {
-    let proto = Alarm.mapping[Alarm.alias2alarmType(a.type)];
+    const alarmType = Alarm.alias2alarmType(a.type);
+    let proto = Alarm.mapping[alarmType];
     if (!proto) {
       return null
     }
@@ -1364,6 +1365,10 @@ module.exports = class {
         }
         case 'IntelAlarm': {
           alarm = new proto.constructor(ts, a.device, a['p.severity'],  _.omit(a, ['type', 'device', 'p.severity']));
+          break;
+        }
+        case 'CategoryAlarm': {
+          alarm = new proto.constructor(alarmType, ts, a.device, _.omit(a, ['type', 'device']));
           break;
         }
         default: {

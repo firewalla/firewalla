@@ -1742,19 +1742,24 @@ class FwApcAlarm extends Alarm {
   }
 }
 
-// the categories come from the cloud, one without a title in the app would show as a raw key
-const CATEGORY_BLOCK_TITLE_SUBTYPES = new Set(['nrd', 'lookalike_domain']);
+// one type per category the cloud alarms on, so each can be muted on its own
+const CATEGORY_ALARM_TYPES = ['ALARM_CATEGORY_NRD', 'ALARM_CATEGORY_LOOKALIKE_DOMAIN'];
 
 // informational, the category rule has already blocked the flow. Never set p.action.block or
 // p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
 class CategoryAlarm extends Alarm {
-  constructor(timestamp, device, info) {
-    super('ALARM_CATEGORY', timestamp, device, info);
-  }
-
   // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
   needCloudArbitration() {
     return false;
+  }
+
+  // Send Alarm Only and the ALARM_INTEL exception are the switches of the security alarms
+  getNotifPolicyKey() {
+    return 'ALARM_INTEL';
+  }
+
+  isSecurityAlarm() {
+    return true;
   }
 
   keysToCompareForDedup() {
@@ -1767,12 +1772,6 @@ class CategoryAlarm extends Alarm {
 
   getExpirationTime() {
     return this['p.cooldown'] || super.getExpirationTime();
-  }
-
-  localizedNotificationTitleKey() {
-    const key = super.localizedNotificationTitleKey();
-    const subtype = this['p.noticeType'];
-    return CATEGORY_BLOCK_TITLE_SUBTYPES.has(subtype) ? `${key}.${subtype}` : key;
   }
 
   localizedNotificationContentArray() {
@@ -1870,7 +1869,7 @@ const classMapping = {
   ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_FW_APC: FwApcAlarm.prototype,
-  ALARM_CATEGORY: CategoryAlarm.prototype,
+  ...Object.fromEntries(CATEGORY_ALARM_TYPES.map(type => [type, CategoryAlarm.prototype])),
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
@@ -1882,6 +1881,7 @@ module.exports = {
   Alarm,
   FwApcAlarm,
   CategoryAlarm,
+  CATEGORY_ALARM_TYPES,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,
