@@ -224,7 +224,7 @@ check "restart records a failure and returns it" 'grep -q "rc=1" "$ENGINE" && gr
 
 echo "== the pcap roles are respected"
 check "the roles share one process only when both are zssids and both enabled" 'sed -n "/^shared_roles()/,/^}/p" "$ENGINE" | grep -q "pcap_zeek_enabled && pcap_suricata_enabled"'
-check "the shared process is not told to skip the rules" 'sed -n "/One process for both roles/,/^    fi/p" "$ENGINE" | grep -q "opts=[\"][\"]"'
+check "the shared process is not told to skip the rules" 'sed -n "/One process for both roles/,/^    fi/p" "$ENGINE" | grep -qF "opts=\"\$block_opts\""'
 check "the ids launcher takes suricata's interface list" 'grep -q "listen_interfaces.rc" "$FIREWALLA_HOME/scripts/zssids-ids-run"'
 check "the ids launcher refuses an absent interface list" '! FIREWALLA_HIDDEN="$T/no-interfaces" ZSSIDS_BIN="$ZSSIDS_BIN" bash "$FIREWALLA_HOME/scripts/zssids-ids-run" >/dev/null 2>&1'
 check "main-start guards the later zeekctl cron" 'grep -q "zssids-engine.failed" "$FIREWALLA_HOME/scripts/main-start"'
@@ -433,6 +433,20 @@ check "brofish is told not to evaluate the rules" 'grep -q "^ExecStart=$RUNNER .
 printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "zssids test";; esac\n' > "$T/zssids"; chmod 755 "$T/zssids"
 "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
 check "a capable zssids folds them into one" 'grep -q "^ConditionPathExists=" "$S" && ! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--no-suricata"'
+
+echo "== behaviour: a zssids that can block from the capture is given the block set"
+printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only; echo capture-block;; *) echo "zssids test";; esac\n' > "$T/zssids"; chmod 755 "$T/zssids"
+setf 1 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "the process serving both roles blocks from the capture" 'grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--block-set zssids_block_set"'
+setf 0 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "the ids-only unit blocks from the capture" 'grep "^ExecStart=$IDS_RUNNER " "$S" | grep -q -- "--block-set zssids_block_set"'
+check "the block timeout is passed, not left to the binary" 'grep "^ExecStart=$IDS_RUNNER " "$S" | grep -q -- "--block-timeout 3600"'
+setf 1 0; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "brofish without the IDS role does not block" '! grep "^ExecStart=$RUNNER " "$B" | grep -q -- "--block-set"'
+printf '#!/bin/sh\ncase "$1" in --capabilities) echo shared-roles; echo ids-only;; *) echo "zssids test";; esac\n' > "$T/zssids"; chmod 755 "$T/zssids"
+setf 0 1; "${SANDBOX[@]}" "$ENGINE" apply >/dev/null 2>&1
+check "a zssids without capture-block is not given the option" '! grep "^ExecStart=$IDS_RUNNER " "$S" | grep -q -- "--block-set"'
+check "the ids-only unit keeps no placeholder" '! grep -q "@ZSSIDS_OPTS@" "$S"'
 
 echo "== behaviour: an in-place upgrade from the pre-rename engine"
 # what a box running the engine as fleet carries: both drop-ins (the suricata
