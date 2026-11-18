@@ -34,6 +34,7 @@ const _ = require('lodash');
 const fc = require('./config.js');
 const LRU = require('lru-cache');
 const HostTool = require('./HostTool.js');
+
 const hostTool = new HostTool();
 
 // Cache for rate limiting alarm generation - 5 minutes TTL
@@ -56,7 +57,9 @@ class SuricataDetect {
       try {
         const obj = JSON.parse(line);
         switch (obj.event_type) {
-          case "alert": {
+          case "alert":
+          // an inline drop record is the same hit as its alert, the rate limit below keeps one alarm for the two
+          case "drop": {
             // add a timeout before processing alert event for syncing contextual information to redis, e.g., hostname from ssl/http connections
             setTimeout(() => {
               this.processAlertEvent(obj).catch((err) => {
@@ -83,29 +86,14 @@ class SuricataDetect {
     const alert = e && e.alert;
     if (!alert)
       return;
-    const {signature, signature_id, rev, gid, category, severity, metadata} = alert;
-    const srcIp = e.src_ip;
-    const dstIp = e.dest_ip;
-    if (!srcIp || !dstIp || !signature)
+
+    const {signature, signature_id, rev, gid, category, severity, metadata, action} = alert; // action: "blocked" or "allowed"
+    if (!e.src_ip || !e.dest_ip || !signature)
       return;
     let description = signature;
     let alarmData = null;
-    let srcOrig = true;
-    if (e.direction) {
-      switch (e.direction) {
-        case "to_server":
-        case "from_client": {
-          srcOrig = true;
-          break;
-        }
-        case "to_client":
-        case "from_server": {
-          srcOrig = false;
-          break;
-        }
-        default:
-      }
-    }
+    // the rule may say which side of the matched packet opened the connection, overriding e.direction
+    let signatureSrcOrig = undefined;
     try {
       // try to parse signature as a JOSN object
       const signatureObj = JSON.parse(signature);
@@ -113,70 +101,18 @@ class SuricataDetect {
       if (signatureObj.hasOwnProperty("alarmData") && _.isObject(signatureObj.alarmData))
         alarmData = signatureObj.alarmData
       if (signatureObj.hasOwnProperty("srcOrig"))
-        srcOrig = signatureObj.srcOrig;
+        signatureSrcOrig = signatureObj.srcOrig;
     } catch (err) {}
-    const sport = e.src_port;
-    const dport = e.dest_port;
-    const proto = e.proto;
-    const appProto = e.app_proto;
+    const proto = e.proto; // "TCP", "UDP" or "ICMP"
+    const appProto = e.app_proto; // e.g. "http", "tls"
     const ts = e.timestamp && (Date.parse(e.timestamp) / 1000);
-    let hostname = srcOrig ? await conntrack.getConnEntry(srcIp, sport, dstIp, dport, proto, Constants.REDIS_HKEY_CONN_HOST) : await conntrack.getConnEntry(dstIp, dport, srcIp, sport, proto, Constants.REDIS_HKEY_CONN_HOST);
-    let srcName = srcIp;
-    let dstName = dstIp;
-    let localIP, remoteIP, remoteName, localPort, remotePort;
-    let srcLocal = true;
-    let dstLocal = false;
-    let intfId = null;
-    if (sysManager.isLocalIP(srcIp)) {
-      localIP = srcIp;
-      localPort = sport;
-      const host = await hostManager.getIdentityOrHost(srcIp);
-      if (host) {
-        srcName = host.getReadableName();
-        intfId = host.getNicUUID();
-        if (!await hostTool.isRecordingOn(host, intfId))
-          return;
-      }
-    } else {
-      srcLocal = false;
-      remoteIP = srcIp;
-      remotePort = sport;
-      const host = hostname || await dnsTool.getDns(srcIp);
-      if (host) {
-        srcName = host;
-        remoteName = host;
-      }
-    }
-    if (sysManager.isLocalIP(dstIp)) {
-      dstLocal = true;
-      if (srcLocal) {
-        remoteIP = dstIp;
-        remotePort = dport;
-      } else {
-        localIP = dstIp;
-        localPort = dport;
-      }
-      const host = await hostManager.getIdentityOrHost(dstIp);
-      if (host) {
-        dstName = host.getReadableName();
-        intfId = host.getNicUUID();
-        if (!await hostTool.isRecordingOn(host, intfId))
-          return;
-      }
-    } else {
-      if (!srcLocal) {
-        log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);
-        return;
-      }
-      remoteIP = dstIp;
-      remotePort = dport;
-      const host = hostname || await dnsTool.getDns(dstIp);
-      if (host) {
-        dstName = host;
-        remoteName = host;
-      }
-    }
-    const alertDedupKey = `${localIP}:${remoteIP}:${signature_id}`;
+
+    const ends = await this.resolveEnds(e, signatureSrcOrig);
+    if (!ends)
+      return;
+    const { localIP, localPort, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig } = ends;
+
+    const alertDedupKey = `${localIP}:${remoteIP}:${signature_id}`; // one alarm per device, server and rule in 5 minutes
     
     // Rate limiting: check if we've recently generated an alarm for this key
     if (alarmRateLimitCache.has(alertDedupKey)) {
@@ -186,17 +122,11 @@ class SuricataDetect {
     
     // Add to cache to prevent future alarms for 5 minutes
     alarmRateLimitCache.set(alertDedupKey, Date.now());
-    
-    let localOrig;
-    if (srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig)
-      localOrig = true;
-    else
-      localOrig = false;
     const variableMap = {
       "SRC": srcName,
       "DST": dstName,
-      "SPORT": sport,
-      "DPORT": dport,
+      "SPORT": e.src_port,
+      "DPORT": e.dest_port,
       "PROTO": proto,
       "APP_PROTO": appProto,
       "FD": localOrig ? "outbound" : "inbound" 
@@ -222,6 +152,9 @@ class SuricataDetect {
         alarmPayload[`p.suricata.extra.${key}`] = alarmData[key];
       }
     }
+    // "blocked" when the engine has already cut the connection (only informational)
+    if (action)
+      alarmPayload["p.ips.action"] = action;
     if (intfId)
       alarmPayload["p.intf.id"] = intfId;
     if (localPort)
@@ -238,6 +171,86 @@ class SuricataDetect {
     
     const alarm = new Alarm.SuricataNoticeAlarm(ts, localIP, alarmPayload);
     am2.enqueueAlarm(alarm);
+  }
+
+  // eve's src and dest are the sender and receiver of the packet the rule matched, which is the server's
+  // reply for a to_client rule; this works out our device, the other side, and who opened the connection.
+  // Returns null when the alert should be dropped: no local end, or recording is off for the device
+  async resolveEnds(e, signatureSrcOrig) {
+    const srcIp = e.src_ip;
+    const dstIp = e.dest_ip;
+    const sport = e.src_port;
+    const dport = e.dest_port;
+    const proto = e.proto;
+
+    // whether the sender of the matched packet opened the connection
+    let srcOrig = true;
+    if (e.direction === "to_client" || e.direction === "from_server")
+      srcOrig = false;
+    if (signatureSrcOrig !== undefined)
+      srcOrig = signatureSrcOrig;
+
+    // domain of the connection (HTTP host, TLS SNI), if any
+    let hostname = srcOrig ? await conntrack.getConnEntry(srcIp, sport, dstIp, dport, proto, Constants.REDIS_HKEY_CONN_HOST) : await conntrack.getConnEntry(dstIp, dport, srcIp, sport, proto, Constants.REDIS_HKEY_CONN_HOST);
+    let srcName = srcIp; // shown in the message: device name or domain
+    let dstName = dstIp;
+    let localIP, remoteIP, remoteName, localPort, remotePort;
+    let srcLocal = true;
+    let dstLocal = false;
+    let intfId = null; // network of the local device
+    if (sysManager.isLocalIP(srcIp)) {
+      localIP = srcIp;
+      localPort = sport;
+      const host = await hostManager.getIdentityOrHost(srcIp);
+      if (host) {
+        srcName = host.getReadableName();
+        intfId = host.getNicUUID();
+        if (!await hostTool.isRecordingOn(host, intfId))
+          return null;
+      }
+    } else {
+      srcLocal = false;
+      remoteIP = srcIp;
+      remotePort = sport;
+      const host = hostname || await dnsTool.getDns(srcIp);
+      if (host) {
+        srcName = host;
+        remoteName = host;
+      }
+    }
+    if (sysManager.isLocalIP(dstIp)) {
+      dstLocal = true;
+      if (srcLocal) {
+        remoteIP = dstIp;
+        remotePort = dport;
+      } else {
+        localIP = dstIp;
+        localPort = dport;
+      }
+      const host = await hostManager.getIdentityOrHost(dstIp);
+      if (host) {
+        dstName = host.getReadableName();
+        intfId = host.getNicUUID();
+        if (!await hostTool.isRecordingOn(host, intfId))
+          return null;
+      }
+    } else {
+      if (!srcLocal) {
+        log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);
+        return null;
+      }
+      remoteIP = dstIp;
+      remotePort = dport;
+      const host = hostname || await dnsTool.getDns(dstIp);
+      if (host) {
+        dstName = host;
+        remoteName = host;
+      }
+    }
+
+    // our device opened the connection, whether the matched packet was its request or the reply to it
+    const localOrig = srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig;
+    return { localIP, localPort, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig };
   }
 }
 
