@@ -34,6 +34,12 @@ const _ = require('lodash');
 const fc = require('./config.js');
 const LRU = require('lru-cache');
 const HostTool = require('./HostTool.js');
+const Policy = require('../alarm/Policy.js');
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+const AsyncLock = require('../vendor_lib/async-lock');
+// the drop record and the alert of one hit arrive together, one rule must come out of the two
+const ruleLock = new AsyncLock();
 
 const hostTool = new HostTool();
 
@@ -110,7 +116,13 @@ class SuricataDetect {
     const ends = await this.resolveEnds(e, signatureSrcOrig);
     if (!ends)
       return;
-    const { localIP, localPort, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig } = ends;
+    const { localIP, localPort, localHost, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig, bothLocal } = ends;
+
+    // every blocked server gets its rule, also when the alarm below is rate limited or deduplicated
+    let blockRule = null; // rule standing for the server zssids blocked, null if none
+    if (action === "blocked" && localOrig && !bothLocal) {
+      blockRule = await this.saveZssidsBlockRule(localHost, localIP, remoteIP, remotePort, proto);
+    }
 
     const alertDedupKey = `${localIP}:${remoteIP}:${signature_id}`; // one alarm per device, server and rule in 5 minutes
     
@@ -155,6 +167,12 @@ class SuricataDetect {
     // "blocked" when the engine has already cut the connection (only informational)
     if (action)
       alarmPayload["p.ips.action"] = action;
+    // the same result an auto block from the cloud leaves, so the app shows it and can undo it
+    if (blockRule) {
+      alarmPayload["result"] = "block";
+      alarmPayload["result_method"] = "auto";
+      alarmPayload["result_policy"] = blockRule.pid;
+    }
     if (intfId)
       alarmPayload["p.intf.id"] = intfId;
     if (localPort)
@@ -198,10 +216,12 @@ class SuricataDetect {
     let srcLocal = true;
     let dstLocal = false;
     let intfId = null; // network of the local device
+    let localHost = null;
     if (sysManager.isLocalIP(srcIp)) {
       localIP = srcIp;
       localPort = sport;
       const host = await hostManager.getIdentityOrHost(srcIp);
+      localHost = host;
       if (host) {
         srcName = host.getReadableName();
         intfId = host.getNicUUID();
@@ -228,6 +248,9 @@ class SuricataDetect {
         localPort = dport;
       }
       const host = await hostManager.getIdentityOrHost(dstIp);
+      if (!srcLocal) {
+        localHost = host;
+      }
       if (host) {
         dstName = host.getReadableName();
         intfId = host.getNicUUID();
@@ -250,7 +273,56 @@ class SuricataDetect {
 
     // our device opened the connection, whether the matched packet was its request or the reply to it
     const localOrig = srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig;
-    return { localIP, localPort, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig };
+    return { localIP, localPort, localHost, intfId, remoteIP, remotePort, remoteName, srcName, dstName, localOrig, bothLocal: srcLocal && dstLocal };
+  }
+
+  // saves the rule standing for the block set entry zssids added, null when zssids adds none (not TCP/UDP, DNS, no device)
+  async saveZssidsBlockRule(localHost, localIP, remoteIP, remotePort, proto) {
+    const protocol = String(proto || "").toLowerCase(); // "tcp" or "udp", as rules and ipset spell it
+    if (!["tcp", "udp"].includes(protocol) || !remotePort || Number(remotePort) === 53)
+      return null;
+    // without the device the rule would read as a block for every device
+    if (!localHost) {
+      log.warn(`No device for ${localIP}, no rule for its block of ${remoteIP}:${remotePort}`);
+      return null;
+    }
+
+    try {
+      const policy = new Policy({
+        type: "ip",
+        target: remoteIP,
+        remotePort: String(remotePort),
+        protocol: protocol,
+        direction: "outbound",
+        scope: [localHost.getGUID()],
+        action: "block",
+        method: "auto",
+        alarm_type: "ALARM_SURICATA_NOTICE",
+        reason: "ALARM_SURICATA_NOTICE",
+        zssidsBlock: "1",
+        // the device IPs zssids added entries for, comma separated; undo lifts each of them
+        zssidsDeviceIPs: localIP
+      });
+      // one rule per device, server and port: the drop record and the alert of a hit, and hits from another IP of the device
+      const lockKey = `${localHost.getGUID()},${protocol}:${remotePort},${remoteIP}`;
+      const result = await ruleLock.acquire(lockKey, async () => {
+        const saved = await pm2.checkAndSaveAsync(policy);
+        // a repeat hit after the device changed its IP: zssids added an entry for the new IP too
+        if (saved.alreadyExists && saved.policy.isZssidsBlock()) {
+          const ips = String(saved.policy.zssidsDeviceIPs || "").split(",").filter(ip => ip);
+          if (!ips.includes(localIP)) {
+            ips.push(localIP);
+            await pm2.updatePolicyAsync({ pid: saved.policy.pid, zssidsDeviceIPs: ips.join(",") });
+          }
+        }
+        return saved;
+      });
+      log.info(`Rule ${result.policy.pid} stands for the block of ${remoteIP}:${remotePort} from ${localIP}`, result.alreadyExists || "");
+      return result.policy;
+    } catch (err) {
+      log.error(`Failed to save the rule for the block of ${remoteIP}:${remotePort} from ${localIP}`, err.message);
+      return null;
+    }
   }
 }
 

@@ -17,10 +17,15 @@
 const { expect } = require('chai');
 
 const LAN_DEVICE = '192.168.1.10';
+// the same device after it changed its IP
+const LAN_DEVICE_NEW_IP = '192.168.1.11';
 const REMOTE = '203.0.113.5';
+const DEVICE_MAC = 'AA:BB:CC:DD:EE:01';
 
 // alarms SuricataDetect handed to the alarm manager
 let alarms = [];
+// rules SuricataDetect saved for blocked servers
+let savedRules = [];
 // the callback SuricataDetect registered for new eve.json lines
 let onLine;
 let mock;
@@ -36,10 +41,10 @@ function setupMocks() {
     on(event, callback) { onLine = callback; }
     watch() {}
   });
-  mock('../net2/SysManager.js', { isLocalIP: (ip) => ip === LAN_DEVICE });
+  mock('../net2/SysManager.js', { isLocalIP: (ip) => ip === LAN_DEVICE || ip === LAN_DEVICE_NEW_IP });
   mock('../net2/HostManager.js', class HostManager {
     async getIdentityOrHost() {
-      return { getReadableName: () => 'Test Laptop', getNicUUID: () => 'intf-1' };
+      return { getReadableName: () => 'Test Laptop', getNicUUID: () => 'intf-1', getGUID: () => DEVICE_MAC };
     }
   });
   mock('../net2/DNSTool.js', class DNSTool {
@@ -48,6 +53,25 @@ function setupMocks() {
   mock('../alarm/Alarm.js', {
     SuricataNoticeAlarm: class SuricataNoticeAlarm {
       constructor(timestamp, device, payload) { Object.assign(this, payload); }
+    }
+  });
+  mock('../alarm/Policy.js', class Policy {
+    constructor(raw) { Object.assign(this, raw); }
+    isZssidsBlock() { return this.zssidsBlock == "1"; }
+  });
+  mock('../alarm/PolicyManager2.js', class PolicyManager2 {
+    // like the real one: looks for the same rule (Policy.isEqual compares no device IP), then saves after a round trip to redis
+    async checkAndSaveAsync(policy) {
+      const same = savedRules.find(r => r.target === policy.target && r.remotePort === policy.remotePort &&
+        r.protocol === policy.protocol && String(r.scope) === String(policy.scope) && r.zssidsBlock === policy.zssidsBlock);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      if (same) return { policy: same, alreadyExists: 'duplicated' };
+      savedRules.push(policy);
+      policy.pid = String(100 + savedRules.length);
+      return { policy };
+    }
+    async updatePolicyAsync(update) {
+      Object.assign(savedRules.find(r => r.pid === update.pid), update);
     }
   });
   mock('../alarm/AlarmManager2.js', class AlarmManager2 {
@@ -83,7 +107,7 @@ function eveRecord(options) {
     alert: { action: options.action, gid: 1, signature_id: options.sid, rev: 1, signature, category: 'A Network Trojan was detected', severity: 1 }
   };
   if (options.deviceIsClient) {
-    record.src_ip = LAN_DEVICE;
+    record.src_ip = options.deviceIP || LAN_DEVICE;
     record.src_port = 51000;
     record.dest_ip = REMOTE;
     record.dest_port = options.serverPort || 80;
@@ -91,7 +115,7 @@ function eveRecord(options) {
   } else {
     record.src_ip = REMOTE;
     record.src_port = 51000;
-    record.dest_ip = LAN_DEVICE;
+    record.dest_ip = options.deviceIP || LAN_DEVICE;
     record.dest_port = options.serverPort || 80;
     record.direction = 'to_server';
   }
@@ -110,6 +134,7 @@ describe('SuricataDetect', function () {
 
   beforeEach(() => {
     alarms = [];
+    savedRules = [];
   });
 
   it('reports an allowed alert as allowed', async () => {
@@ -117,23 +142,82 @@ describe('SuricataDetect', function () {
     expect(alarms.length).to.equal(1);
     expect(alarms[0]['p.ips.action']).to.equal('allowed');
     expect(alarms[0]['p.dest.ip']).to.equal(REMOTE);
+    expect(savedRules.length).to.equal(0);
+    expect(alarms[0]).to.not.have.property('result');
   });
 
-  it('reports that the engine blocked the connection, without asking for a block rule', async () => {
+  it('saves a rule for the server the engine blocked and links it on the alarm as an auto block', async () => {
     await suricataDetect.processAlertEvent(eveRecord({ sid: 1002, action: 'blocked', deviceIsClient: true }));
+    expect(savedRules.length).to.equal(1);
+    const rule = savedRules[0];
+    expect(rule).to.include({
+      type: 'ip', target: REMOTE, remotePort: '80', protocol: 'tcp', direction: 'outbound', action: 'block',
+      method: 'auto', zssidsBlock: '1', zssidsDeviceIPs: LAN_DEVICE
+    });
+    // kept until the user undoes it
+    expect(rule).to.not.have.property('expire');
+    expect(rule).to.not.have.property('autoDeleteWhenExpires');
+    expect(rule.scope).to.deep.equal([DEVICE_MAC]);
+
     expect(alarms.length).to.equal(1);
     expect(alarms[0]['p.ips.action']).to.equal('blocked');
+    expect(alarms[0]).to.include({ result: 'block', result_method: 'auto', result_policy: rule.pid });
+    // not the cloud auto block, which would turn into a global rule for the domain
     expect(alarms[0]).to.not.have.property('p.action.block');
     expect(alarms[0]['p.local_is_client']).to.equal('1');
   });
 
-  it('reports a blocked inbound connection the same way', async () => {
-    await suricataDetect.processAlertEvent(eveRecord({ sid: 1004, action: 'blocked', deviceIsClient: false }));
+  it('works out that the device opened the connection when the rule matched the server reply', async () => {
+    // a to_client rule: eve's src is the server that sent the reply, the signature does not say srcOrig
+    const record = eveRecord({ sid: 1013, action: 'blocked', deviceIsClient: false });
+    const signature = JSON.parse(record.alert.signature);
+    delete signature.srcOrig;
+    record.alert.signature = JSON.stringify(signature);
+    record.direction = 'to_client';
+
+    await suricataDetect.processAlertEvent(record);
     expect(alarms.length).to.equal(1);
-    expect(alarms[0]['p.ips.action']).to.equal('blocked');
-    expect(alarms[0]).to.not.have.property('p.action.block');
-    expect(alarms[0]['p.local_is_client']).to.equal('0');
+    expect(alarms[0]).to.include({ 'p.device.ip': LAN_DEVICE, 'p.dest.ip': REMOTE, 'p.local_is_client': '1' });
+    expect(savedRules.length).to.equal(1);
+    expect(savedRules[0]).to.include({ target: REMOTE, zssidsDeviceIPs: LAN_DEVICE });
   });
+
+  it('saves no rule for a blocked inbound connection or a DNS server, as zssids blocks neither server', async () => {
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1004, action: 'blocked', deviceIsClient: false }));
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1010, action: 'blocked', deviceIsClient: true, serverPort: 53 }));
+    expect(savedRules.length).to.equal(0);
+    expect(alarms.length).to.equal(2);
+    expect(alarms[0]['p.local_is_client']).to.equal('0');
+    expect(alarms[0]).to.not.have.property('result');
+    expect(alarms[1]).to.not.have.property('result');
+  });
+
+  it('saves the rule of every blocked server, also when the alarm is rate limited', async () => {
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1011, action: 'blocked', deviceIsClient: true, serverPort: 80 }));
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1011, action: 'blocked', deviceIsClient: true, serverPort: 8080 }));
+    expect(alarms.length).to.equal(1);
+    expect(savedRules.map(r => r.remotePort)).to.deep.equal(['80', '8080']);
+  });
+
+  it('records a new IP of the device on its rule, so undo lifts the entry zssids added for that IP too', async () => {
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1015, action: 'blocked', deviceIsClient: true, serverPort: 83 }));
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1016, action: 'blocked', deviceIsClient: true, serverPort: 83, deviceIP: LAN_DEVICE_NEW_IP }));
+    // the same IP again is not recorded twice
+    await suricataDetect.processAlertEvent(eveRecord({ sid: 1017, action: 'blocked', deviceIsClient: true, serverPort: 83, deviceIP: LAN_DEVICE_NEW_IP }));
+    expect(savedRules.length).to.equal(1);
+    expect(savedRules[0].zssidsDeviceIPs).to.equal(`${LAN_DEVICE},${LAN_DEVICE_NEW_IP}`);
+  });
+
+  it('saves one rule when the drop record and the alert of a hit are processed at the same time', async () => {
+    await Promise.all([
+      suricataDetect.processAlertEvent(eveRecord({ sid: 1012, action: 'blocked', deviceIsClient: true, serverPort: 81, eventType: 'drop' })),
+      suricataDetect.processAlertEvent(eveRecord({ sid: 1012, action: 'blocked', deviceIsClient: true, serverPort: 81, eventType: 'alert' }))
+    ]);
+    expect(savedRules.length).to.equal(1);
+    expect(alarms.length).to.equal(1);
+    expect(alarms[0].result_policy).to.equal(savedRules[0].pid);
+  });
+
 
   it('raises one alarm when a hit is written as a drop record and an alert', async () => {
     await suricataDetect.processAlertEvent(eveRecord({ sid: 1005, action: 'blocked', deviceIsClient: true, eventType: 'drop' }));
@@ -156,8 +240,8 @@ describe('SuricataDetect', function () {
     }
     expect(pending.length).to.equal(1);
     pending[0]();
-    await new Promise(resolve => setImmediate(resolve));
-    await new Promise(resolve => setImmediate(resolve));
+    // processing awaits the rule save of the blocked hit before the alarm goes out
+    await new Promise(resolve => setTimeout(resolve, 50));
     expect(alarms.length).to.equal(1);
     expect(alarms[0]['p.suricata.signatureId']).to.equal(1006);
   });

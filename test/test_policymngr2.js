@@ -1195,6 +1195,15 @@ describe('Test one time rule with a future start time', function() {
   describe('isEqual', () => {
     const base = { type: 'dns', target: 'a.com', timestamp: 1761000000 };
 
+    it('never takes a rule the user made for the rule of an IDS engine block', () => {
+      const block = { type: 'ip', target: '203.0.113.5', remotePort: '80', protocol: 'tcp', direction: 'outbound' };
+      const engine = new Policy(Object.assign({ zssidsBlock: '1' }, block));
+      const manual = new Policy(Object.assign({}, block));
+      expect(engine.isEqual(manual)).to.equal(false);
+      expect(manual.isEqual(engine)).to.equal(false);
+      expect(engine.isEqual(new Policy(Object.assign({ zssidsBlock: '1' }, block)))).to.equal(true);
+    });
+
     it('tells two windows apart', () => {
       const a = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761100200 }));
       const b = new Policy(Object.assign({}, base, { idleTs: 1761098400, expireTs: 1761103800 }));

@@ -198,7 +198,9 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch",
+      // the rule saved for an IDS engine block is never the same as one the user made
+      "zssidsBlock"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -315,6 +317,11 @@ class Policy {
 
   isAutoBlockPolicy() {
     return this.method == 'auto' && this.category == 'intel';
+  }
+
+  // saved for a connection zssids blocked on its own; enforced like any rule, and removing it also lifts the entry zssids added
+  isZssidsBlock() {
+    return this.zssidsBlock == "1";
   }
 
   isSecurityBlockPolicy() {

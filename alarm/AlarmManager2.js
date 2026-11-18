@@ -1165,7 +1165,11 @@ module.exports = class {
       && systemPolicy.acl != false
       && alarm.type !== "ALARM_CUSTOMIZED"
     ) {
-      const policyMatch = await pm2.match(alarm)
+      // an IDS alarm carrying the rule of its own block would be covered by that very rule; the user's own rules still count
+      let ownRule = null;
+      if (alarm["p.ips.action"] === "blocked" && alarm.result_policy)
+        ownRule = alarm.result_policy;
+      const policyMatch = await pm2.match(alarm, ownRule)
 
       if (policyMatch) {
         // already matched some policy
