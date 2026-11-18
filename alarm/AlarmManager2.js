@@ -110,10 +110,13 @@ function resultRefOf(alarm) {
   }
 }
 
-// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
+// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read.
+// result_revoked keeps what the alarm was handled as, so a reader can tell "revoked" from "never handled"
 const CLEAR_RESULT_LUA = `
 if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1], 'result') == ARGV[3] then
-  return redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+  local n = redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+  redis.call('HSET', KEYS[1], 'result_revoked', ARGV[3])
+  return n
 end
 return 0`;
 
@@ -2319,14 +2322,17 @@ module.exports = class {
     const withRef = alarms.filter(a => a[ref] && resultRefOf(a) === ref);
     if (withRef.length === 0) return;
 
-    await rclient.pipelineAndLog(withRef.map(a =>
+    const replies = await rclient.pipelineAndLog(withRef.map(a =>
       ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], a.result]));
 
-    for (const a of withRef) {
+    // a 0 or an Error reply: the alarm in redis was not cleared, so the copy in hand is left as read
+    withRef.forEach((a, i) => {
+      if (!(replies[i] > 0)) return;
+      a.result_revoked = a.result;
       delete a.result;
       delete a[ref];
       delete a.result_method;
-    }
+    });
   }
 
   async _alignAlarmInfo(alarm) { // alarm object
