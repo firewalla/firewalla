@@ -812,6 +812,7 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
+    "KernelCrashReportSensor": {},
     "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
