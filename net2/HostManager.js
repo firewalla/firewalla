@@ -1338,22 +1338,78 @@ module.exports = class HostManager extends Monitorable {
     json.customizedCategories = customizedCategories;
   }
 
-  // the driver counters NicStateSensor collects every minute, taken from redis instead of the
-  // NIC so that building init data costs no ethtool call. A counter reads -1 on a NIC whose
-  // driver cannot count it, e.g. atlantic reports no PAUSE frames at all, which is not the same
-  // as a 0 from a port that has seen none. It is absent only before the first round has run
+  // the counters NicStateSensor collects every minute, taken from redis instead of the NIC so
+  // that building init data costs no ethtool call. A counter reads -1 on a NIC that cannot
+  // count it, e.g. atlantic counts neither PAUSE frames nor CRC errors, which is not the same
+  // as a 0 from a port that has seen none. It is absent only before the first round has run.
+  // What the app gets is the total since that port's last Reset Stats, see resetNicCounters
   async nicCountersForInit(nicStates) {
-    const ethInfo = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO).catch(() => null);
+    const [ethInfo, resetAt] = await Promise.all([
+      rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO).catch(() => null),
+      rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO_BASE).catch(() => null),
+    ]);
     if (!ethInfo) return;
+    // hgetall of a key that is not there answers null, and a null read as a number is a 0 -
+    // which would date every port's counters to 1970 instead of leaving the field out
+    const baseline = resetAt || {};
     for (const intf in nicStates) {
       for (const metric in ethCounters.ETH_COUNTERS) {
-        if (!ethCounters.ETH_COUNTERS[metric].nicStates)
+        const spec = ethCounters.ETH_COUNTERS[metric];
+        if (!spec.nicStates)
           continue;
-        const value = ethInfo[`${intf}_${ethCounters.ETH_COUNTERS[metric].key}`];
+        const value = ethInfo[`${intf}_${spec.key}`];
         if (value !== undefined && !isNaN(value))
-          nicStates[intf][metric] = Number(value);
+          nicStates[intf][metric] = ethCounters.sinceReset(Number(value), baseline[`${intf}_${spec.key}`]);
       }
+      // when this port started counting, in seconds. Absent until it has been reset at least
+      // once, where the app shows the Reset Stats button without a "counting since" line
+      const since = baseline[`${intf}_${ethCounters.STATS_SINCE}`];
+      if (since !== undefined && !isNaN(since))
+        nicStates[intf].statsSinceTs = Number(since);
     }
+  }
+
+  // Zero an ethernet port's counters as far as the app is concerned, the box side of Reset
+  // Stats. The lifetime totals keep running - the checkin and SysInfo still carry what the port
+  // has counted over its life - and what this stores is where the app's numbers start from, so
+  // a reset cannot lose a count or be undone by a collection round landing on top of it. A
+  // counter stored as -1 is left out: that port cannot count it, and a 0 would claim it has
+  // seen none. firecommit#11022
+  async resetNicCounters(nics) {
+    const statsSince = Math.floor(Date.now() / 1000);
+    // not caught on purpose: a reset that cannot read the lifetime totals cannot put them aside,
+    // and baselining what the NIC reports now instead would hand the app the whole lifetime
+    // count of a port whose hardware counter has been through a reboot since. Fail the command
+    // and let the app ask again, rather than acknowledge a reset that did not take
+    const totals = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO) || {};
+    for (const nic of nics) {
+      const baseline = {};
+      let context = null;
+      for (const metric in ethCounters.ETH_COUNTERS) {
+        const spec = ethCounters.ETH_COUNTERS[metric];
+        // what the app sees, which is what it asked to reset. The lifetime counters the cloud
+        // reads out of the checkin are not part of a port's stats in the app and keep running
+        if (!spec.nicStates)
+          continue;
+        const key = `${nic}_${spec.key}`;
+        const stored = totals[key];
+        if (stored !== undefined) {
+          if (!isNaN(stored) && Number(stored) >= 0)
+            baseline[key] = Number(stored);
+          continue;
+        }
+        // nothing stored yet, i.e. the first collection round has not run on this box. Read the
+        // NIC now, so that the port starts at 0 rather than at what the hardware has counted
+        // over its life, which is what that first round will seed the total with
+        context = context || ethCounters.nicContext(nic);
+        const value = await ethCounters.read(metric, context).catch(() => null);
+        if (typeof value === 'number' && !isNaN(value))
+          baseline[key] = value;
+      }
+      baseline[`${nic}_${ethCounters.STATS_SINCE}`] = statsSince;
+      await rclient.hmsetAsync(Constants.REDIS_KEY_ETH_INFO_BASE, baseline);
+    }
+    return { statsSinceTs: statsSince };
   }
 
   async getGuessedRouters(json) {

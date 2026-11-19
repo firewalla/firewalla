@@ -171,6 +171,20 @@ const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
 const SENDLOG_TIMEOUT_SEC = 300;
 const WIFI_SWITCH_ERR_IDS = ["WRONG_KEY", "AUTH_FAILED"];
 
+// the ethernet ports a port command was asked to act on, or a 400. Shared by resetPort and
+// resetPortStats so that what a port is called, and which of them can be reset, cannot drift
+// apart between the two commands. firecommit#11022
+function resettableEthernetPorts(value) {
+  if (!_.isArray(_.get(value, "ports")) || _.isEmpty(value.ports))
+    throw { code: 400, msg: "'ports' should be a non-empty array" };
+  const ports = _.uniq(value.ports);
+  const legal = platform.getEthernetNicNames();
+  const illegal = ports.filter(p => !legal.includes(p));
+  if (!_.isEmpty(illegal))
+    throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+  return ports;
+}
+
 class netBot extends ControllerBot {
 
   _enqueueInitRequest(req) {
@@ -3159,15 +3173,14 @@ class netBot extends ControllerBot {
         await f.resetBootingComplete()
         return
       case "resetPort": {
-        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
-          throw { code: 400, msg: "'ports' should be a non-empty array" };
-        const ports = _.uniq(value.ports);
-        const legal = platform.getEthernetNicNames();
-        const illegal = ports.filter(p => !legal.includes(p));
-        if (!_.isEmpty(illegal))
-          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        const ports = resettableEthernetPorts(value);
         log.info("Resetting link on ethernet ports", ports);
         return await networkTool.resetEthernetPorts(ports);
+      }
+      case "resetPortStats": {
+        const ports = resettableEthernetPorts(value);
+        log.info("Resetting counters on ethernet ports", ports);
+        return await this.hostManager.resetNicCounters(ports);
       }
       case "joinBeta":
         await this.switchBranch("beta")
