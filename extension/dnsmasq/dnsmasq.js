@@ -1995,10 +1995,13 @@ module.exports = class DNSMASQ {
 
     await execFile("mkdir", ["-p", HOSTFILE_PATH])
     const staleFiles = new Set(await fsp.readdir(HOSTFILE_PATH).catch(err => { log.error('Error listing', HOSTFILE_PATH, err.message); return []; }))
+    // read once for the loop, not per reservation. A cleanup in the loop only deletes lines, so this copy
+    // going stale can at most repeat a cleanup
+    const leases = _.groupBy((await this.readLeaseFileLines()).map(line => line.split(' ')), column => column[2])
 
     for (const h of hosts) try {
       staleFiles.delete(h.o.mac)
-      await this.writeHostsFile(h, true)
+      await this.writeHostsFile(h, true, leases)
     } catch(err) {
       log.error('Error write hosts file for', h.o.mac, err)
     }
@@ -2010,8 +2013,9 @@ module.exports = class DNSMASQ {
     }
   }
 
-  // bulk: called from writeAllHostsFiles(), whose caller applies the whole set with one DHCP action
-  async writeHostsFile(host, bulk = false) {
+  // bulk: called from writeAllHostsFiles(), whose caller applies the whole set with one DHCP action,
+  // with the lease file it read once for the loop
+  async writeHostsFile(host, bulk = false, leases) {
     await this.loadHostsFileHashes()
     const mac = host.o.mac
     const p = host.policy.ipAllocation || {}
@@ -2082,7 +2086,7 @@ module.exports = class DNSMASQ {
 
       // an unchanged reservation keeps its file and its leases, except that writeAllHostsFiles() still
       // frees a reserved IP that another MAC holds in the lease file
-      if (this.lastHostsFileHash[mac] == _hostsHash && !(bulk && await this.leaseHeldByOtherMac(mac, reservedIPs))) {
+      if (this.lastHostsFileHash[mac] == _hostsHash && !(bulk && this.leaseHeldByOtherMac(mac, reservedIPs, leases))) {
         log.verbose("No need to update hosts file, skipped", mac);
         return
       }
@@ -2761,7 +2765,9 @@ module.exports = class DNSMASQ {
     const leaseFile = platform.getDnsmasqLeaseFilePath();
     const macRegex = !mac || !mac.length ? '[0-9a-f:]{17}'
       : Array.isArray(mac) ? `(${mac.map(m => m.toLowerCase()).join('|')})` : mac.toLowerCase()
-    const regex = `^[0-9]+ ${macRegex} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    // dots escaped and the space after the address required, so 192.0.2.1 cannot match 192.0.2.10
+    const ipRegex = !ip || !ip.length ? '' : `(${[].concat(ip).map(i => i.replace(/\./g, '\\.')).join('|')}) `
+    const regex = `^[0-9]+ ${macRegex} ${ipRegex}`
     log.debug('lease file sed regex', regex)
     return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
@@ -2784,13 +2790,9 @@ module.exports = class DNSMASQ {
     })
   }
 
-  // whether the lease file gives any of these IPs to a MAC other than this one
-  async leaseHeldByOtherMac(mac, ips) {
-    const lines = await this.readLeaseFileLines();
-    return lines.some(line => {
-      const column = line.split(' ')
-      return ips.includes(column[2]) && column[1].toUpperCase() !== mac.toUpperCase()
-    })
+  // whether the lease file, as columns grouped by IP, gives any of these IPs to a MAC other than this one
+  leaseHeldByOtherMac(mac, ips, leases) {
+    return ips.some(ip => (leases[ip] || []).some(column => column[1].toUpperCase() !== mac.toUpperCase()))
   }
 
   async readLeaseFileLines() {
