@@ -12,6 +12,8 @@
     }
   },
   "userFeatures": {
-    "local_flow": true
+    "local_flow": true,
+    "pcap_zeek_zssids": true,
+    "pcap_suricata_zssids": true
   }
 }

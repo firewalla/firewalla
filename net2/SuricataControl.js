@@ -29,6 +29,9 @@ const BASIC_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_basi
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
 const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const FlowEngine = require('./FlowEngine.js');
+const fc = require('./config.js');
+const Constants = require('./Constants.js');
 
 class SuricataControl {
   constructor() {
@@ -60,7 +63,13 @@ class SuricataControl {
     });
     log.info("Adding suricata related cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    // zssids runs the IDS under this unit only when it does not already run it
+    // inside the brofish process; with one process for both roles that unit is
+    // held off and crontab.zssids's watchdog covers the IDS too
+    const idsOnlyZssids = FlowEngine.appliedSuricataEngine() === 'zssids'
+      && !(FlowEngine.appliedZeekEngine() === 'zssids' && fc.isFeatureOn(Constants.FEATURE_PCAP_ZEEK));
+    const crontab = idsOnlyZssids ? 'crontab.zssids-ids' : 'crontab';
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/${crontab}`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh`, err.message);
     })
@@ -91,6 +100,10 @@ class SuricataControl {
 
   async tryUpdateSuricataBinary() {
     try {
+      if (FlowEngine.appliedSuricataEngine() === 'zssids') {
+        log.info("Suricata rules are evaluated by zssids, not updating the suricata binary");
+        return;
+      }
       // Check if the current platform supports suricata from assets
       
       const isSupported = await platform.isSuricataFromAssetsSupported();
@@ -169,6 +182,12 @@ class SuricataControl {
   }
 
   async restart() {
+    if (FlowEngine.applyHeld()) {
+      log.warn('Flow engine configuration is not applied, not starting suricata');
+      // false: refused because of the hold, so the caller can try again once
+      // an apply in progress is over (the retry below returns this too)
+      return false;
+    }
     if (this.restarting) {
       // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
       if (!this.pendingRestart) {
