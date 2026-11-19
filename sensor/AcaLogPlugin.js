@@ -127,28 +127,25 @@ class AcaLogPlugin extends Sensor {
       side = 'dst';
     }
 
-    let ip = null;
+    let ip = finding.src;
     let mac = null;
     if (side === 'dst') {
-      // aca.log carries no MAC for the destination, so it comes from the box's own address records
       ip = finding.dst;
-      let macEntry = null;
-      if (ip) {
-        macEntry = await hostTool.getMacEntryByIPRecord(ip);
-      }
-      if (macEntry && macEntry.mac) {
-        mac = macEntry.mac.toUpperCase();
-      }
-    } else {
-      ip = finding.src;
+    } else if (finding.src_l2_addr) {
       // aca.log writes MACs in lower case, the box stores them in upper case
-      if (finding.src_l2_addr) {
-        mac = finding.src_l2_addr.toUpperCase();
-      }
+      mac = finding.src_l2_addr.toUpperCase();
     }
     if (!ip) {
       log.verbose(`Skip ${finding.type}, it has no ${side} address`);
       return null;
+    }
+
+    // aca.log has no MAC for the destination, nor for a routed or tunneled source, so it comes from the box's address records
+    if (!mac) {
+      const macEntry = await hostTool.getMacEntryByIPRecord(ip);
+      if (macEntry && macEntry.mac) {
+        mac = macEntry.mac.toUpperCase();
+      }
     }
 
     const deviceFields = await am2.getDeviceAlarmFields({ ip: ip, mac: mac, withIntf: true });
@@ -311,7 +308,10 @@ class AcaLogPlugin extends Sensor {
 
     // only logged for the app's event list, ACA events are not pushed to the phone
     log.info(`Event ${finding.type} of ${context.device.id} by rule ${rule.name}`);
-    await era.addActionEvent(EVENT_TYPE, 1, labels, Math.round(finding.ts * 1000));
+    const published = await era.addActionEvent(EVENT_TYPE, 1, labels, Math.round(finding.ts * 1000));
+    if (!published) {
+      throw new Error(`Failed to publish ${finding.type} event of ${context.device.id}`);
+    }
   }
 }
 

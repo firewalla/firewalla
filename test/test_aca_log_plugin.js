@@ -27,6 +27,7 @@ const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const HostManager = require('../net2/HostManager.js');
 const HostTool = require('../net2/HostTool.js');
 const AcaLogPlugin = require('../sensor/AcaLogPlugin.js');
+const LogReader = require('../util/LogReader.js');
 
 const DEFAULT_CONFIG = require('../net2/config.json').sensors.AcaLogPlugin;
 
@@ -57,7 +58,7 @@ describe('AcaLogPlugin', function () {
   this.timeout(10000);
 
   const originals = {};
-  let plugin, features, cyberSecurity, recordingOn, enqueueResult;
+  let plugin, features, cyberSecurity, recordingOn, enqueueResult, publishResult;
   let alarms, events, cooldowns, fireApiEvents;
 
   before(() => {
@@ -80,6 +81,7 @@ describe('AcaLogPlugin', function () {
     cyberSecurity = true;
     recordingOn = true;
     enqueueResult = true;
+    publishResult = true;
     alarms = [];
     events = [];
     cooldowns = new Map();
@@ -103,6 +105,7 @@ describe('AcaLogPlugin', function () {
     sem.sendEventToFireApi = (event) => { fireApiEvents.push(event); };
     era.addActionEvent = async (type, value, labels, ts) => {
       events.push({ type, value, labels, ts });
+      return publishResult;
     };
 
     AlarmManager2.prototype.getDeviceAlarmFields = async ({ ip, mac }) => {
@@ -188,8 +191,8 @@ describe('AcaLogPlugin', function () {
 
     it('drops plain DNS to an outside resolver', async () => {
       await plugin.processLine(findingLine(COMPUTER_MAC, {
-        type: 'dns_bypass', msg: 'DNS to 114.114.114.114 instead of the local resolver',
-        evidence: { method: 'dns', resolvers: ['114.114.114.114'] },
+        type: 'dns_bypass', msg: 'DNS to 198.51.100.53 instead of the local resolver',
+        evidence: { method: 'dns', resolvers: ['198.51.100.53'] },
       }));
 
       expect(alarms).to.have.length(0);
@@ -427,6 +430,50 @@ describe('AcaLogPlugin', function () {
       expect(cooldowns.size).to.equal(1);
     });
 
+    it('clears the cooldown when the event could not be published, so the next finding retries', async () => {
+      const contactLine = findingLine(COMPUTER_MAC, {
+        type: 'lan_new_contact', msg: 'first connection from 192.168.1.10 to 192.168.1.11:22',
+        dst: '192.168.1.11', dst_p: 22, proto: 'tcp', evidence: {},
+      });
+
+      publishResult = false;
+      let error = null;
+      try {
+        await plugin.processLine(contactLine);
+      } catch (err) {
+        error = err;
+      }
+      expect(error).to.be.an('error');
+      expect(cooldowns.size).to.equal(0);
+
+      publishResult = true;
+      await plugin.processLine(contactLine);
+      expect(events).to.have.length(2);
+      expect(cooldowns.size).to.equal(1);
+    });
+
+    it('finds a known host by its address when the finding has no source MAC', async () => {
+      await plugin.processLine(JSON.stringify({
+        ts: 1763371200.5, type: 'c2_destination', src: DEVICES[PRINTER_MAC].ip,
+        msg: 'tunnel destination a.trycloudflare.com (dns)', evidence: { category: 'tunnel', matched: 'trycloudflare.com' },
+      }));
+
+      expect(alarms).to.have.length(1);
+      expect(alarms[0]['p.device.mac']).to.equal(PRINTER_MAC);
+    });
+
+    it('starts reading the configured log file', async () => {
+      const originalWatch = LogReader.prototype.watch;
+      let watched = null;
+      LogReader.prototype.watch = function () { watched = this.file; };
+      try {
+        await new AcaLogPlugin({ logFile: '/tmp/aca-test.log' }).run();
+      } finally {
+        LogReader.prototype.watch = originalWatch;
+      }
+      expect(watched).to.equal('/tmp/aca-test.log');
+    });
+
     it('ignores lines that are not findings', async () => {
       await plugin.processLine('');
       await plugin.processLine('not json');
@@ -465,6 +512,31 @@ describe('AcaLogPlugin', function () {
     it('is rebuilt from its type by the alarm mapping', () => {
       expect(Alarm.mapping.ALARM_ACA).to.equal(Alarm.AcaAlarm.prototype);
       expect(Alarm.alias2alarmType(Alarm.alarmType2alias('ALARM_ACA'))).to.equal('ALARM_ACA');
+    });
+
+    it('stays on the box and is checked against existing rules', () => {
+      const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.11', payload);
+      expect(alarm.needCloudArbitration()).to.be.false;
+      expect(alarm.needPolicyMatch()).to.be.true;
+    });
+
+    it('is muted by destination, or by device and detector when it has none', async () => {
+      const am2 = new AlarmManager2();
+      const withDestination = new Alarm.AcaAlarm(1763371200, '192.168.1.11', Object.assign({}, payload, {
+        'p.dest.ip': '172.182.252.133', 'p.dest.name': '172.182.252.133',
+      }));
+      const byDestination = await am2.createException(withDestination, {});
+      expect(byDestination['if.type']).to.equal('ip');
+      expect(byDestination['p.dest.ip']).to.equal('172.182.252.133');
+
+      const scan = new Alarm.AcaAlarm(1763371200, '192.168.1.11', Object.assign({}, payload, {
+        'p.aca.type': 'fan_out', 'p.aca.message': 'failed connections to 25 destinations in 300s',
+      }));
+      const byDetector = await am2.createException(scan, {});
+      expect(byDetector['if.type']).to.equal('acaType');
+      expect(byDetector['p.aca.type']).to.equal('fan_out');
+      expect(byDetector['p.device.mac']).to.equal(PRINTER_MAC);
+      expect(byDetector.type).to.equal('ALARM_ACA');
     });
   });
 

@@ -640,7 +640,17 @@ class AcaAlarm extends Alarm {
     this["p.showMap"] = false;
   }
 
-  // muted and notified together with the other security alarms, like suricata notice alarms
+  // the evidence can list LAN addresses, which must not go to the cloud
+  needCloudArbitration() {
+    return false;
+  }
+
+  // a flow that a user or DAP rule already blocks raises no alarm, as with the other IDS alarms
+  needPolicyMatch() {
+    return true;
+  }
+
+  // muted and notified together with the other security alarms, like the IDS alarms
   isSecurityAlarm() {
     return true;
   }

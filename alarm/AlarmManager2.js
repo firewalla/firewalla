@@ -2626,6 +2626,14 @@ module.exports = class {
         i_type = 'broNotice'
         i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
+      case "ALARM_ACA":
+        // a finding without a destination, like a scan of many hosts, is muted for its device and detector
+        if (!alarm["p.dest.ip"] && !alarm["p.dest.name"]) {
+          i_type = "acaType";
+          i_target = alarm["p.aca.type"];
+          break;
+        }
+        // falls through: one with a destination is muted by it, like the other alarms
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
           i_type = "ip";
@@ -2687,6 +2695,12 @@ module.exports = class {
     });
     switch (i_type) {
       case "mac":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        e["target_name"] = alarm["p.device.name"];
+        e["target_ip"] = alarm["p.device.ip"];
+        break;
+      case "acaType":
+        e["p.aca.type"] = alarm["p.aca.type"];
         e["p.device.mac"] = alarm["p.device.mac"];
         e["target_name"] = alarm["p.device.name"];
         e["target_ip"] = alarm["p.device.ip"];

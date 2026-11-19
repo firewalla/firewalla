@@ -569,9 +569,10 @@ describe('test block alarm sensor', function () {
       });
     });
 
-    it('are the only types that skip the cloud arbitration', () => {
+    it('are the only types that skip the cloud arbitration, with ALARM_ACA', () => {
+      const skipping = Alarm.CATEGORY_ALARM_TYPES.concat(['ALARM_ACA']);
       for (const [type, proto] of Object.entries(Alarm.mapping))
-        expect(proto.needCloudArbitration(), type).to.equal(!Alarm.CATEGORY_ALARM_TYPES.includes(type));
+        expect(proto.needCloudArbitration(), type).to.equal(!skipping.includes(type));
     });
   });
 });
