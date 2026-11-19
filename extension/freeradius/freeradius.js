@@ -86,9 +86,16 @@ class FreeRadius {
   }
 
   async getFreeRadiusDataForInit(options = {}) {
-    return {
-      certHash: await this.getCertsHash(false),
-    };
+    const [certHash, image] = await Promise.all([
+      this.getCertsHash(false),
+      this.getImageInfo().catch((e) => {
+        log.warn("Failed to get freeradius image info,", e.message);
+        return null;
+      }),
+    ]);
+    const data = { certHash };
+    if (image) data.image = image;
+    return data;
   }
 
   async _prepare(options = {}) {
@@ -1055,13 +1062,61 @@ class FreeRadius {
     return result && result.includes("freeradius");
   }
 
-  // running image (repo:tag) of the freeradius container by compose service label, or null
-  async _getContainerImage(options = {}) {
-    const raw = await execFile("sudo", ["docker", "ps", "--filter", "label=com.docker.compose.service=freeradius", "--format", "{{.Image}}"]).then(r => r.stdout.trim()).catch((e) => {
-      log.warn("Failed to get freeradius container image,", e.message);
+  // running freeradius container {id, image} by compose service label, or null
+  async _getContainer() {
+    const raw = await execFile("sudo", ["docker", "ps", "--filter", "label=com.docker.compose.service=freeradius", "--format", "{{.ID}} {{.Image}}"]).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get freeradius container,", e.message);
       return "";
     });
-    return raw.split("\n").map(i => i.trim()).find(Boolean) || null;
+    const line = raw.split("\n").map(i => i.trim()).find(Boolean);
+    if (!line) return null;
+    const [id, image] = line.split(" ");
+    return { id, image };
+  }
+
+  // running image (repo:tag) of the freeradius container, or null
+  async _getContainerImage(options = {}) {
+    const container = await this._getContainer();
+    return container ? container.image : null;
+  }
+
+  // image info of the running container, cached per container id since init data is polled often
+  async getImageInfo() {
+    if (!await this.ready()) return null;
+    const container = await this._getContainer();
+    if (!container) return null;
+    if (this.imageInfo && this.imageInfo.containerId === container.id) return this.imageInfo.info;
+
+    // inspect the container's image id, the tag may already point to a newer pulled image
+    const inspect = await execFile("sudo", ["docker", "inspect", "--format", "{{.Image}}", container.id])
+      .then(r => execFile("sudo", ["docker", "image", "inspect", r.stdout.trim(), "--format", "{{json .}}"]))
+      .then(r => JSON.parse(r.stdout)).catch((e) => {
+        log.warn(`Failed to inspect freeradius image ${container.image},`, e.message);
+        return null;
+      });
+    if (!inspect) return null;
+    const labels = (inspect.Config && inspect.Config.Labels) || {};
+    const repoDigest = (inspect.RepoDigests || [])[0];
+    // OCI labels are set by the image build; older images only carry the VERSION file
+    let version = labels["org.opencontainers.image.version"];
+    if (!version) {
+      version = await execFile("sudo", ["docker", "exec", container.id, "cat", "/root/freeradius/VERSION"])
+        .then(r => r.stdout.trim()).catch((e) => {
+          log.warn("Failed to read freeradius VERSION,", e.message);
+          return null;
+        });
+      if (!version) return null; // e.g. container restarting, retry on next init
+    }
+    const info = {
+      name: container.image,
+      digest: repoDigest ? repoDigest.split("@")[1] : undefined,
+      created: inspect.Created,
+      version,
+      branch: labels["org.opencontainers.image.ref.name"],
+      revision: labels["org.opencontainers.image.revision"],
+    };
+    this.imageInfo = { containerId: container.id, info };
+    return info;
   }
 
   async recoverImageMismatch(options = {}) {
