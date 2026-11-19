@@ -538,6 +538,7 @@
       "featureName": "ntp_redirect",
       "policyName": "ntp_redirect"
     },
+    "CaptivePortalPlugin": {},
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
