@@ -28,11 +28,15 @@ const sysTool = new SysTool();
 const NM = require('../ui/NotifyManager.js');
 const nm = new NM();
 const { execFile } = require('child-process-promise');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 const fsp = require('fs').promises;
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const SCHEDULE_FILE = '/dev/shm/ota_reboot_schedule.json';
+// every read-modify-write of the schedule file and its timer, so the app and the daily run don't overwrite each other
+const LOCK_SCHEDULE = 'ota_reboot_schedule';
 // let FireApi finish starting before a run can send a notification
 const MIN_START_DELAY = 120;
 const PAST_TIME_DELAY = 60;
@@ -63,9 +67,11 @@ class OtaSensor extends Sensor {
     });
 
     try {
-      const schedule = await this.readSchedule();
-      if (schedule)
-        await this.armRebootTimer(schedule);
+      await lock.acquire(LOCK_SCHEDULE, async () => {
+        const schedule = await this.readSchedule();
+        if (schedule)
+          await this.armRebootTimer(schedule);
+      });
     } catch (err) {
       log.error('Failed to restore OTA state', err.message);
     }
@@ -164,19 +170,21 @@ class OtaSensor extends Sensor {
     }
     await this.writeMarker(image);
 
-    let schedule = await this.readSchedule();
-    if (!schedule) {
-      const { time } = this.rebootWindowTime(Date.now() / 1000 + settings.grace_period);
-      schedule = { time, before: Math.ceil((time + settings.max_delay) / 3600) * 3600, image };
-      await this.writeSchedule(schedule);
-      log.info(`OTA reboot for ${image.build} scheduled`, schedule.time, schedule.before);
-      this.notifyScheduled(image.build, schedule);
-    } else {
-      // a newer build may have been written since, the app shows the one that will boot
-      schedule = Object.assign({}, schedule, { image });
-      await this.writeSchedule(schedule);
-    }
-    await this.armRebootTimer(schedule);
+    await lock.acquire(LOCK_SCHEDULE, async () => {
+      let schedule = await this.readSchedule();
+      if (!schedule) {
+        const { time } = this.rebootWindowTime(Date.now() / 1000 + settings.grace_period);
+        schedule = { time, before: Math.ceil((time + settings.max_delay) / 3600) * 3600, image };
+        await this.writeSchedule(schedule);
+        log.info(`OTA reboot for ${image.build} scheduled`, schedule.time, schedule.before);
+        this.notifyScheduled(image.build, schedule);
+      } else {
+        // a newer build may have been written since, the app shows the one that will boot
+        schedule = Object.assign({}, schedule, { image });
+        await this.writeSchedule(schedule);
+      }
+      await this.armRebootTimer(schedule);
+    });
   }
 
   notifyScheduled(build, schedule) {
@@ -258,18 +266,20 @@ class OtaSensor extends Sensor {
   }
 
   async setSchedule(data) {
-    const schedule = await this.readSchedule();
-    if (!schedule)
-      throw new Error('No OTA reboot schedule');
-    const time = data && data.time;
-    if (!Number.isFinite(time) || time <= Date.now() / 1000 || time > schedule.before)
-      throw new Error(`time must be between now and ${schedule.before}`);
-    const updated = Object.assign({}, schedule, { time });
-    await this.writeSchedule(updated);
-    // with clearTimeout in the same tick, a run already past its timer sees the change
-    this.scheduleGen++;
-    await this.armRebootTimer(updated);
-    return updated;
+    return lock.acquire(LOCK_SCHEDULE, async () => {
+      const schedule = await this.readSchedule();
+      if (!schedule)
+        throw new Error('No OTA reboot schedule');
+      const time = data && data.time;
+      if (!Number.isFinite(time) || time <= Date.now() / 1000 || time > schedule.before)
+        throw new Error(`time must be between now and ${schedule.before}`);
+      const updated = Object.assign({}, schedule, { time });
+      await this.writeSchedule(updated);
+      // with clearTimeout in the same tick, a run already past its timer sees the change
+      this.scheduleGen++;
+      await this.armRebootTimer(updated);
+      return updated;
+    });
   }
 
   // read by SystemRebootSensor on the next boot to tell an OTA reboot from any other
