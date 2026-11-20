@@ -24,7 +24,14 @@ Promise.promisifyAll(fs);
 const era = require('../event/EventRequestApi.js');
 const { execFile } = require('child-process-promise');
 const f = require('../net2/Firewalla.js');
+const Config = require('../net2/config.js');
+const localApi = require('../util/localApi.js');
+const otaRebootMarker = require('../util/otaRebootMarker.js');
+const { delay } = require('../util/util.js');
 const HB_FILE = `${f.getRuntimeInfoFolder()}/heartbeat`;
+// vulcan.service is started by main-run's prep, which may not have run yet
+const OTA_TRIES = 10;
+const OTA_RETRY_INTERVAL = 60000;
 
 class SystemRebootSensor extends Sensor {
   async checkReboot() {
@@ -33,10 +40,12 @@ class SystemRebootSensor extends Sensor {
       log.debug("system reboot processed before, NO more action event needed");
     } else {
       log.debug("system reboot not processed yet, sending action event");
-      const last = await this.getLastHeartbeatTime();
-      const dur = last && Date.now() - os.uptime()*1000 - Number(last);
-      if (dur && dur  > 300000){ // do not generate event if the box has been offline for less than 5 minutes
-        era.addActionEvent("system_reboot", 1, {last: last, duration: dur});
+      if (!await this.checkOtaReboot()) {
+        const last = await this.getLastHeartbeatTime();
+        const dur = last && Date.now() - os.uptime()*1000 - Number(last);
+        if (dur && dur  > 300000){ // do not generate event if the box has been offline for less than 5 minutes
+          era.addActionEvent("system_reboot", 1, {last: last, duration: dur});
+        }
       }
     }
     // use sudo to generate file in /dev/shm, IPC objects of system users will not be removed even if RemoveIPC=yes in /etc/systemd/logind.conf
@@ -44,6 +53,44 @@ class SystemRebootSensor extends Sensor {
     await execFile("sudo", ["touch", REBOOT_FLAG_FILE]).catch((err) => {
       log.error(`Failed to touch ${REBOOT_FLAG_FILE}`, err.message);
     });
+  }
+
+  // true if this boot finished an OTA image upgrade and ota_reboot_complete was sent
+  async checkOtaReboot() {
+    const marker = await otaRebootMarker.read();
+    if (!marker)
+      return false;
+    const done = await this.waitOtaImage(marker.build);
+    if (done) {
+      await era.addActionEvent('ota_reboot_complete', 1, marker);
+      log.info(`OTA reboot for ${marker.build} complete`);
+    }
+    await otaRebootMarker.remove();
+    return done;
+  }
+
+  // whether vulcan reports the build as running, asking a few times while it starts up
+  async waitOtaImage(build) {
+    const baseUrl = Config.getConfig().apiSensors.OtaSensor.baseUrl;
+    for (let i = 0; i < OTA_TRIES; i++) {
+      if (i > 0)
+        await delay(OTA_RETRY_INTERVAL);
+      const resp = await localApi.call(baseUrl, 'GET', '/ota/image', null, { timeout: 10000, errorCode: localApi.gatewayErrorCode });
+      const image = resp.code === 200 && resp.body && resp.body.image;
+      if (!image) {
+        log.info('OTA reboot check: vulcan not ready', resp.code, resp.msg);
+      } else if (image.build !== build) {
+        log.warn(`OTA reboot for ${build} not complete, vulcan reports ${image.build}`);
+        return false;
+      } else if (image.reboot_required) {
+        // vulcan may answer before its startup clears the flag for this boot
+        log.info(`OTA reboot check: vulcan still reports a reboot required for ${build}`);
+      } else {
+        return true;
+      }
+    }
+    log.warn(`OTA reboot for ${build} not confirmed by vulcan after ${OTA_TRIES} tries`);
+    return false;
   }
 
   async getLastHeartbeatTime() {
