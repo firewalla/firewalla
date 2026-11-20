@@ -7,6 +7,8 @@
   "NOTIF_UPGRADE_COMPLETE": "Firewalla has updated to {{{version}}}",
   "NOTIF_REBOOT_COMPLETE": "Firewalla reboot completed",
   "NOTIF_REBOOT_COMPLETE_TITLE": "Firewalla Reboot",
+  "NOTIF_OTA_REBOOT_SCHEDULED": "Firewalla will reboot between {0} and {1} on {2} to apply a {3}",
+  "NOTIF_OTA_REBOOT_SCHEDULED_TITLE": "System Update",
   "NOTIF_AWAKES": "🔥 Firewalla Awakes!",
   "NOTIF_AWAKES_BODY": "Firewalla service is restarted.",
   "NOTIF_TITLE_ALARM_VIDEO": "Video Alarm",

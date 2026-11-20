@@ -227,26 +227,21 @@ class netBot extends ControllerBot {
           const json = {};
           await sysManager.updateAsync();
 
-          // fwapcOps and dapOps are optional; individual .catch(() => null) already absorbs failures.
-          const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
-          const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
-          const optionalTasks = fwapcOps.map(async (op) => {
+          // fwapcOps, dapOps and vulcanOps are optional; individual .catch(() => null) already absorbs failures.
+          const runOps = (ops, getDaemon) => (Array.isArray(ops) ? ops : []).map(async (op) => {
             if (!op || typeof op !== 'object') return;
+            const daemon = getDaemon();
+            if (!daemon) return;
             const { key, method, path, body } = op;
-            const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
+            const result = await daemon.apiCall(method || "GET", path, body).catch(() => null);
             if (result && result.code == 200)
               json[key] = result.body;
           });
-          optionalTasks.push(...dapOps.map(async (op) => {
-            if (!op || typeof op !== 'object') return;
-            const { key, method, path, body } = op;
-            const dapSensor = sl.getSensor('DapSensor');
-            if (dapSensor) {
-              const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
-              if (result && result.code == 200)
-                json[key] = result.body;
-            }
-          }));
+          const optionalTasks = [
+            ...runOps(data.fwapcOps, () => fwapc),
+            ...runOps(data.dapOps, () => sl.getSensor('DapSensor')),
+            ...runOps(data.vulcanOps, () => sl.getSensor('OtaSensor')),
+          ];
           await Promise.all(optionalTasks).catch((err) => {
             log.error("Failed to run optional tasks in init", err.message);
             log.debug(err.stack);
@@ -296,6 +291,16 @@ class netBot extends ControllerBot {
             log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
           }
         }));
+
+        // per request, outside the init cache, so a schedule set in between is not served stale
+        const otaSensor = sl.getSensor('OtaSensor');
+        if (otaSensor) {
+          try {
+            json.otaRebootSchedule = await otaSensor.getSchedule();
+          } catch (err) {
+            log.warn("Failed to read OTA reboot schedule for init:", err.message);
+          }
+        }
 
         // rkey and volatile runtime fields are always set per-request.
         if (this.eptcloud) {

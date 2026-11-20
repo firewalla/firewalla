@@ -100,6 +100,13 @@
   },
   "apiSensors": {
     "DigitalFenceSensor": {},
+    "OtaSensor": {
+      "baseUrl": "http://localhost:8844",
+      "checkWindowStartHour": 1,
+      "checkWindowEndHour": 3,
+      "rebootWindowStartHour": 3,
+      "rebootWindowEndHour": 5
+    },
     "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
