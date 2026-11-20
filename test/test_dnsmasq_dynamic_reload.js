@@ -688,6 +688,7 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     const { dnsmasq, commands, fileWrites } = loadDNSMASQ({
       fireRouterManaged: true,
       monitoringInterfaces: [lan],
+      hosts: [reservedHost()],
       files: {
         [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT,
         [LEASE_FILE]: `1792000000 ${RESERVED_MAC.toLowerCase()} 192.0.2.10 test-device *\n`,
@@ -695,7 +696,7 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     });
     this.test.ctx.dnsmasq = dnsmasq;
 
-    await dnsmasq.writeHostsFile(reservedHost(), true);
+    await dnsmasq.writeAllHostsFiles();
 
     expect(fileWrites.length).to.equal(0);
     expect(commands.some(cmd => cmd.includes('sed'))).to.equal(false);
@@ -817,6 +818,7 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     const { dnsmasq, commands } = loadDNSMASQ({
       fireRouterManaged: true,
       monitoringInterfaces: [lan],
+      hosts: [reservedHost()],
       files: {
         [HOSTS_DIR + RESERVED_MAC]: RESERVED_CONTENT,
         [LEASE_FILE]: '1792000000 00:00:5e:00:53:99 192.0.2.10 other-device *\n',
@@ -825,9 +827,9 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     this.test.ctx.dnsmasq = dnsmasq;
     dnsmasq.leaseCleanupPending = false;
 
-    await dnsmasq.writeHostsFile(reservedHost(), true);
+    await dnsmasq.writeAllHostsFiles();
 
-    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192\\.0\\.2\\.10'))).to.equal(true);
     expect(dnsmasq.leaseCleanupPending).to.equal(true);
   });
 
@@ -846,18 +848,66 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     expect(dnsmasq.leaseCleanupPending).to.equal(false);
   });
 
+  it('a lease cleanup deletes only the exact IPs, not addresses that start with them', async function() {
+    const { dnsmasq, commands } = loadDNSMASQ({ fireRouterManaged: true });
+    this.test.ctx.dnsmasq = dnsmasq;
+    const leases = [
+      '1792000000 00:00:5e:00:53:01 192.0.2.1 device-a *',
+      '1792000000 00:00:5e:00:53:02 192.0.2.10 device-b *',
+      '1792000000 00:00:5e:00:53:03 192.0.2.100 device-c *',
+      '1792000000 00:00:5e:00:53:04 192.0.2.104 device-d *',
+      '1792000000 00:00:5e:00:53:05 192.0.211.0 device-e *',
+    ];
+
+    await dnsmasq.deleteLeaseRecord(null, ['192.0.2.10', '192.0.2.1']);
+
+    // the sed address, applied here as the same extended regular expression
+    const address = commands.find(cmd => cmd.includes('sed')).match(/ -e \/(.*)\/\{w \/dev\/stdout/)[1];
+    expect(leases.filter(line => new RegExp(address).test(line))).to.deep.equal(leases.slice(0, 2));
+  });
+
+  it('the full rewrite reads the lease file once, however many reservations it checks', async function() {
+    const hosts = [1, 2, 3].map(n => ({
+      o: { mac: `00:00:5E:00:53:2${n}` },
+      policy: { ipAllocation: { allocations: { lan1: { type: 'static', ipv4: `192.0.2.2${n}` } } } },
+    }));
+    const files = {};
+    for (const h of hosts) {
+      const ip = h.policy.ipAllocation.allocations.lan1.ipv4;
+      files[HOSTS_DIR + h.o.mac] = `${h.o.mac},tag:br0,${ip}\n`;
+      files[LEASE_FILE] = (files[LEASE_FILE] || '') + `1792000000 ${h.o.mac.toLowerCase()} ${ip} device *\n`;
+    }
+    const { dnsmasq, commands, fileWrites } = loadDNSMASQ({
+      fireRouterManaged: true,
+      monitoringInterfaces: [lan],
+      hosts,
+      files,
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    let reads = 0;
+    const readLeaseFileLines = dnsmasq.readLeaseFileLines.bind(dnsmasq);
+    dnsmasq.readLeaseFileLines = () => { reads++; return readLeaseFileLines(); };
+
+    await dnsmasq.writeAllHostsFiles();
+
+    expect(reads).to.equal(1);
+    expect(fileWrites.length).to.equal(0);
+    expect(commands.some(cmd => cmd.includes('sed'))).to.equal(false);
+  });
+
   it('a bulk write rewrites a changed reservation file and clears the lease on its IP', async function() {
     const { dnsmasq, commands, fileWrites } = loadDNSMASQ({
       fireRouterManaged: true,
       monitoringInterfaces: [lan],
+      hosts: [reservedHost()],
       files: { [HOSTS_DIR + RESERVED_MAC]: `${RESERVED_MAC},tag:br0,192.0.2.20\n` },
     });
     this.test.ctx.dnsmasq = dnsmasq;
 
-    await dnsmasq.writeHostsFile(reservedHost(), true);
+    await dnsmasq.writeAllHostsFiles();
 
     expect(fileWrites).to.deep.equal([[HOSTS_DIR + RESERVED_MAC, RESERVED_CONTENT]]);
-    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192\\.0\\.2\\.10'))).to.equal(true);
   });
 
   it('rawStart reloads, not restarts, DHCP when only the reservations differ from what dnsmasq last loaded', async function() {
@@ -927,7 +977,7 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     await dnsmasq.rawStart();
     await runPendingTimers(timers);
 
-    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192\\.0\\.2\\.10'))).to.equal(true);
     expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
   });
 
@@ -952,7 +1002,7 @@ describe('dnsmasq bulk hosts-file refresh', function() {
     await dnsmasq.rawStart();
     await runPendingTimers(timers);
 
-    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192.0.2.10'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('sed') && cmd.includes('192\\.0\\.2\\.10'))).to.equal(true);
     expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp')).length).to.equal(1);
   });
 
