@@ -57,7 +57,7 @@ class OtaSensor extends Sensor {
 
   async apiRun() {
     extensionManager.onSet('otaRebootSchedule', async (msg, data) => this.setSchedule(data));
-    extensionManager.onGet('otaRebootSchedule', async () => (await this.readSchedule()) || {});
+    extensionManager.onGet('otaRebootSchedule', async () => this.getSchedule());
     extensionManager.onCmd('vulcan', async (msg, data) => {
       if (!data || !data.path)
         throw new Error('invalid input');
@@ -300,6 +300,10 @@ class OtaSensor extends Sensor {
       releaseNotes: image.release_notes ? image.release_notes.url : undefined,
       releaseType: this.releaseType(image)
     });
+  }
+
+  async getSchedule() {
+    return (await this.readSchedule()) || {};
   }
 
   async readSchedule() {
