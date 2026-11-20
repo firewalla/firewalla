@@ -1,0 +1,302 @@
+/*    Copyright 2026 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict';
+
+const log = require('../net2/logger.js')(__filename);
+const Sensor = require('./Sensor.js').Sensor;
+const extensionManager = require('./ExtensionManager.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const sysManager = require('../net2/SysManager.js');
+const f = require('../net2/Firewalla.js');
+const localApi = require('../util/localApi.js');
+const otaRebootMarker = require('../util/otaRebootMarker.js');
+const SysTool = require('../net2/SysTool.js');
+const sysTool = new SysTool();
+const NM = require('../ui/NotifyManager.js');
+const nm = new NM();
+const { execFile } = require('child-process-promise');
+const fsp = require('fs').promises;
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
+
+const SCHEDULE_FILE = '/dev/shm/ota_reboot_schedule.json';
+// let FireApi finish starting before a run can send a notification
+const MIN_START_DELAY = 120;
+const PAST_TIME_DELAY = 60;
+const TIMEOUTS = { '/ota/image/check': 30000, '/ota/image/upgrade': 600000 };
+
+class OtaSensor extends Sensor {
+  constructor(config) {
+    super(config);
+    this.dailyTimer = null;
+    this.rebootTimer = null;
+    this.upgrading = null;
+    this.rebooting = false;
+    this.rebootSeq = 0;
+    this.scheduleGen = 0;
+    this.lastWindowEnd = 0;
+  }
+
+  async apiRun() {
+    extensionManager.onSet('otaRebootSchedule', async (msg, data) => this.setSchedule(data));
+    extensionManager.onGet('otaRebootSchedule', async () => (await this.readSchedule()) || {});
+    extensionManager.onCmd('vulcan', async (msg, data) => {
+      if (!data || !data.path)
+        throw new Error('invalid input');
+      const result = await this.apiCall(data.method || 'GET', data.path, data.body);
+      if (result.code == 200)
+        return result.body;
+      throw new Error(`vulcan API call failed: ${result.msg || result.code}`);
+    });
+
+    try {
+      const schedule = await this.readSchedule();
+      if (schedule)
+        await this.armRebootTimer(schedule);
+    } catch (err) {
+      log.error('Failed to restore OTA state', err.message);
+    }
+    this.scheduleDailyRun();
+  }
+
+  apiCall(method, path, body) {
+    return localApi.call(this.config.baseUrl, method, path, body, { timeout: TIMEOUTS[path] || 10000, errorCode: localApi.gatewayErrorCode });
+  }
+
+  // a random time in the first local [startHour, endHour) window that ends after notBefore, never before notBefore
+  windowTime(notBefore, startHour, endHour) {
+    const tz = sysManager.getTimezone();
+    const day = (tz ? moment.unix(notBefore).tz(tz) : moment.unix(notBefore)).startOf('day');
+    for (let i = 0; ; i++) {
+      const d = day.clone().add(i, 'days');
+      const start = this.atLocalHour(d, startHour);
+      const end = this.atLocalHour(d, endHour);
+      if (end > notBefore) {
+        const from = Math.max(start, notBefore);
+        return { time: from + Math.floor(Math.random() * (end - from)), end };
+      }
+    }
+  }
+
+  // set the wall clock, not add minutes to midnight, which shifts by an hour on DST days
+  atLocalHour(day, hour) {
+    return day.clone().set({ hour: Math.floor(hour), minute: Math.round((hour % 1) * 60) }).unix();
+  }
+
+  checkWindowTime(notBefore) {
+    return this.windowTime(notBefore, this.config.checkWindowStartHour, this.config.checkWindowEndHour);
+  }
+
+  // after the check window, so an upgrade has finished before the reboot it schedules
+  rebootWindowTime(notBefore) {
+    return this.windowTime(notBefore, this.config.rebootWindowStartHour, this.config.rebootWindowEndHour);
+  }
+
+  scheduleDailyRun() {
+    const now = Date.now() / 1000;
+    // after a run, skip the rest of the window it ran in
+    const { time, end } = this.checkWindowTime(Math.max(now + MIN_START_DELAY, this.lastWindowEnd));
+    log.info(`Next OTA check at ${new Date(time * 1000).toISOString()}`);
+    clearTimeout(this.dailyTimer);
+    this.dailyTimer = setTimeout(async () => {
+      this.lastWindowEnd = end;
+      try {
+        await this.dailyRun();
+      } catch (err) {
+        log.error('OTA daily run failed', err.message);
+      }
+      this.scheduleDailyRun();
+    }, (time - now) * 1000);
+  }
+
+  async dailyRun() {
+    const image = await this.checkAndUpgrade();
+    if (!image)
+      return;
+    if (image.write_failed) {
+      log.error(`OTA image ${image.build} write failed:`, image.write_error);
+      return;
+    }
+    if (image.reboot_required)
+      await this.onRebootRequired(image);
+  }
+
+  // check, upgrade if needed, and always end with vulcan's current image, or null if unreachable
+  async checkAndUpgrade() {
+    const check = await this.apiCall('POST', '/ota/image/check');
+    if (check.code !== 200 || !check.body) {
+      log.error('OTA check failed', check.code, check.msg);
+    } else if (check.body.need_upgrade === true && !this.rebooting) {
+      log.info(`OTA upgrade ${check.body.current_build} -> ${check.body.latest_build}`);
+      this.upgrading = this.apiCall('POST', '/ota/image/upgrade');
+      const resp = await this.upgrading;
+      this.upgrading = null;
+      if (resp.code === 200 && resp.body && resp.body.image)
+        return resp.body.image;
+      log.error('OTA upgrade failed', resp.code, resp.msg);
+    }
+
+    const resp = await this.apiCall('GET', '/ota/image');
+    if (resp.code === 200 && resp.body && resp.body.image)
+      return resp.body.image;
+    log.error('Failed to get OTA image', resp.code, resp.msg);
+    return null;
+  }
+
+  async onRebootRequired(image) {
+    const settings = image.reboot_settings;
+    if (!settings || !Number.isFinite(settings.grace_period) || !Number.isFinite(settings.max_delay)) {
+      log.error(`OTA image ${image.build} needs a reboot but has no reboot_settings`);
+      return;
+    }
+    await this.writeMarker(image);
+
+    let schedule = await this.readSchedule();
+    if (!schedule) {
+      const { time } = this.rebootWindowTime(Date.now() / 1000 + settings.grace_period);
+      schedule = { time, before: Math.ceil((time + settings.max_delay) / 3600) * 3600, image };
+      await this.writeSchedule(schedule);
+      log.info(`OTA reboot for ${image.build} scheduled`, schedule.time, schedule.before);
+      this.notifyScheduled(image.build, schedule);
+    } else {
+      // a newer build may have been written since, the app shows the one that will boot
+      schedule = Object.assign({}, schedule, { image });
+      await this.writeSchedule(schedule);
+    }
+    await this.armRebootTimer(schedule);
+  }
+
+  notifyScheduled(build, schedule) {
+    if (nm.canNotify() != true)
+      return;
+    const tz = sysManager.getTimezone();
+    const t = (tz ? moment.unix(schedule.time).tz(tz) : moment.unix(schedule.time)).startOf('hour');
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'NOTIF_OTA_REBOOT_SCHEDULED_TITLE',
+      bodyKey: 'NOTIF_OTA_REBOOT_SCHEDULED',
+      titleLocalKey: 'OTA_REBOOT_SCHEDULED',
+      bodyLocalKey: 'OTA_REBOOT_SCHEDULED',
+      bodyLocalArgs: [t.format('HH:00'), t.clone().add(1, 'hour').format('HH:00'), t.format('MMM D')],
+      payload: { build, time: schedule.time, before: schedule.before }
+    });
+  }
+
+  async armRebootTimer(schedule) {
+    const now = Date.now() / 1000;
+    if (schedule.time <= now) {
+      if (now < schedule.before) {
+        schedule = { time: now + PAST_TIME_DELAY, before: schedule.before };
+      } else {
+        // missed the whole range (FireApi down past it): move to the next window, same allowed delay
+        const { time } = this.rebootWindowTime(now + PAST_TIME_DELAY);
+        schedule = { time, before: Math.ceil((time + schedule.before - schedule.time) / 3600) * 3600, image: schedule.image };
+        await this.writeSchedule(schedule);
+      }
+    }
+    log.info(`OTA reboot timer armed for ${new Date(schedule.time * 1000).toISOString()}`);
+    clearTimeout(this.rebootTimer);
+    this.rebootTimer = setTimeout(() => {
+      this.reboot().catch((err) => log.error('OTA reboot failed', err.message));
+    }, (schedule.time - now) * 1000);
+  }
+
+  async reboot() {
+    // a check can still overlap a reboot (moved by the app, or after a FireApi restart):
+    // don't start an upgrade the reboot would cut short
+    this.rebooting = true;
+    const seq = ++this.rebootSeq;
+    const gen = this.scheduleGen;
+    const stop = () => {
+      // an older run must not clear the flag for a newer one still waiting
+      if (seq === this.rebootSeq)
+        this.rebooting = false;
+    };
+    let resp;
+    if (this.upgrading) {
+      log.info('OTA reboot waits for the in-flight upgrade');
+      resp = await this.upgrading;
+    } else {
+      // a write may have failed after the timer was armed, in an earlier daily run
+      resp = await this.apiCall('GET', '/ota/image');
+    }
+    if (gen !== this.scheduleGen) {
+      // the app moved the reboot while this run waited, the new timer owns it now
+      log.info('OTA reboot superseded by a new schedule');
+      stop();
+      return;
+    }
+    const image = resp.code === 200 && resp.body && resp.body.image;
+    if (!image || image.write_failed) {
+      // the kernel may not boot, or vulcan can't confirm it will
+      log.error('OTA reboot skipped', resp.code, resp.msg || (image && image.write_error));
+      stop();
+      return;
+    }
+    try {
+      // a newer build may have been written since the schedule was made
+      await this.writeMarker(image);
+      log.info(`Rebooting for OTA image ${image.build}`);
+      await sysTool.rebootSystem();
+    } catch (err) {
+      stop();
+      throw err;
+    }
+  }
+
+  async setSchedule(data) {
+    const schedule = await this.readSchedule();
+    if (!schedule)
+      throw new Error('No OTA reboot schedule');
+    const time = data && data.time;
+    if (!Number.isFinite(time) || time <= Date.now() / 1000 || time > schedule.before)
+      throw new Error(`time must be between now and ${schedule.before}`);
+    const updated = Object.assign({}, schedule, { time });
+    await this.writeSchedule(updated);
+    // with clearTimeout in the same tick, a run already past its timer sees the change
+    this.scheduleGen++;
+    await this.armRebootTimer(updated);
+    return updated;
+  }
+
+  // read by SystemRebootSensor on the next boot to tell an OTA reboot from any other
+  async writeMarker(image) {
+    await otaRebootMarker.write({
+      build: image.build,
+      releaseNotes: image.release_notes ? image.release_notes.url : undefined
+    });
+  }
+
+  async readSchedule() {
+    try {
+      return JSON.parse(await fsp.readFile(SCHEDULE_FILE, 'utf8')).rebootSchedule;
+    } catch (err) {
+      if (err.code === 'ENOENT')
+        return null;
+      throw err;
+    }
+  }
+
+  // root-owned, or systemd RemoveIPC deletes it when pi logs out
+  async writeSchedule(schedule) {
+    const tmp = `${f.getRuntimeInfoFolder()}/ota_reboot_schedule.json`;
+    await fsp.writeFile(tmp, JSON.stringify({ rebootSchedule: schedule }));
+    await execFile('sudo', ['cp', tmp, SCHEDULE_FILE]);
+    await fsp.unlink(tmp);
+  }
+}
+
+module.exports = OtaSensor;

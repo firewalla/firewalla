@@ -227,7 +227,7 @@ class netBot extends ControllerBot {
           const json = {};
           await sysManager.updateAsync();
 
-          // fwapcOps and dapOps are optional; individual .catch(() => null) already absorbs failures.
+          // fwapcOps, dapOps and vulcanOps are optional; individual .catch(() => null) already absorbs failures.
           const runOps = (ops, getDaemon) => (Array.isArray(ops) ? ops : []).map(async (op) => {
             if (!op || typeof op !== 'object') return;
             const daemon = getDaemon();
@@ -240,6 +240,7 @@ class netBot extends ControllerBot {
           const optionalTasks = [
             ...runOps(data.fwapcOps, () => fwapc),
             ...runOps(data.dapOps, () => sl.getSensor('DapSensor')),
+            ...runOps(data.vulcanOps, () => sl.getSensor('OtaSensor')),
           ];
           await Promise.all(optionalTasks).catch((err) => {
             log.error("Failed to run optional tasks in init", err.message);
