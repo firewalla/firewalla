@@ -119,6 +119,9 @@ function create(name, type, v6 = false, options = {}) {
     cmd += ` timeout ${timeout}`;
   if (options.skbinfo) cmd += ' skbinfo';
   if (comment) cmd += ` comment`;
+  // inline: for a set that others fill. A create queued during initialization replaces
+  // an existing set with an empty one
+  if (options.inline) return execFile('sudo', ['ipset', '-!', ...cmd.split(' ')]);
   return ipsetControl.addRule(cmd);
 }
 
