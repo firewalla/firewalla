@@ -20,7 +20,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const extensionManager = require('./ExtensionManager.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const sysManager = require('../net2/SysManager.js');
-const f = require('../net2/Firewalla.js');
 const localApi = require('../util/localApi.js');
 const otaRebootMarker = require('../util/otaRebootMarker.js');
 const SysTool = require('../net2/SysTool.js');
@@ -52,6 +51,7 @@ class OtaSensor extends Sensor {
     this.rebootSeq = 0;
     this.scheduleGen = 0;
     this.lastWindowEnd = 0;
+    this.tmpSeq = 0;
   }
 
   async apiRun() {
@@ -306,12 +306,18 @@ class OtaSensor extends Sensor {
     }
   }
 
-  // root-owned, or systemd RemoveIPC deletes it when pi logs out
+  // root-owned, or systemd RemoveIPC deletes it when pi logs out;
+  // renamed into place so a concurrent get never reads a partial file
   async writeSchedule(schedule) {
-    const tmp = `${f.getRuntimeInfoFolder()}/ota_reboot_schedule.json`;
-    await fsp.writeFile(tmp, JSON.stringify({ rebootSchedule: schedule }));
-    await execFile('sudo', ['cp', tmp, SCHEDULE_FILE]);
-    await fsp.unlink(tmp);
+    const tmp = `${SCHEDULE_FILE}.${process.pid}.${++this.tmpSeq}.tmp`;
+    try {
+      await fsp.writeFile(tmp, JSON.stringify({ rebootSchedule: schedule }));
+      await execFile('sudo', ['chown', 'root:root', tmp]);
+      await execFile('sudo', ['mv', '-f', tmp, SCHEDULE_FILE]);
+    } catch (err) {
+      await execFile('sudo', ['rm', '-f', tmp]).catch(() => {});
+      throw err;
+    }
   }
 }
 
