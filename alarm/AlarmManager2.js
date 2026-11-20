@@ -1374,10 +1374,6 @@ module.exports = class {
           alarm = new proto.constructor(ts, a.device, a['p.severity'],  _.omit(a, ['type', 'device', 'p.severity']));
           break;
         }
-        case 'CategoryAlarm': {
-          alarm = new proto.constructor(alarmType, ts, a.device, _.omit(a, ['type', 'device']));
-          break;
-        }
         default: {
           alarm = new proto.constructor(ts, a.device, _.omit(a, ['type', 'device']));
           break;
