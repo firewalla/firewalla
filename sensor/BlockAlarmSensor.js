@@ -38,8 +38,8 @@ const MAX_DEVICES = 512;
 const MAX_IN_FLIGHT = 20;
 const MAX_FAILED = 256;
 
-// Raises the alarm type of each setting for the category blocks it selects, once per device,
-// domain and category per cooldown. Off by default, a non-empty cloud list turns it on
+// Raises ALARM_CATEGORY, tagged with the group of the setting, for the category blocks the settings
+// select, once per device, domain and category per cooldown. Off by default, a non-empty cloud list turns it on
 class BlockAlarmSensor extends Sensor {
   constructor(config) {
     super(config);
@@ -72,8 +72,8 @@ class BlockAlarmSensor extends Sensor {
   _validateSettings(settings) {
     if (!_.isArray(settings)) return [];
     return settings.filter(setting => {
-      if (_.isPlainObject(setting) && isValidFilter(setting.filter) && Alarm.CATEGORY_ALARM_TYPES.includes(setting.alarmType)) return true;
-      log.error('Ignoring block alarm setting without a usable filter or alarmType', setting);
+      if (_.isPlainObject(setting) && isValidFilter(setting.filter) && _.isString(setting.group) && setting.group) return true;
+      log.error('Ignoring block alarm setting without a usable filter or group', setting);
       return false;
     });
   }
@@ -107,7 +107,7 @@ class BlockAlarmSensor extends Sensor {
     }
 
     this.inFlight.add(key);
-    this._raiseAlarm(event, setting.alarmType)
+    this._raiseAlarm(event, setting.group)
       // set after the job is saved, so a failure is retried by the next event
       .then(saved => saved && this.alarmed.set(key, true))
       .catch(err => {
@@ -133,16 +133,18 @@ class BlockAlarmSensor extends Sensor {
   }
 
   // resolves to whether the alarm job was saved
-  async _raiseAlarm({ device, dest, bTarget, pid, fd }, alarmType) {
+  async _raiseAlarm({ device, dest, bTarget, pid, fd }, group) {
     const deviceFields = await am2.getDeviceAlarmFields({ mac: device, withIntf: true });
     if (!deviceFields) {
       log.verbose('No device to alarm for', device);
       return false;
     }
-    const alarm = new Alarm.CategoryAlarm(alarmType, new Date() / 1000, deviceFields["p.device.ip"], {
+    const alarm = new Alarm.CategoryAlarm(new Date() / 1000, deviceFields["p.device.ip"], {
       ...deviceFields,
       "p.dest.name": dest,
       "p.dest.category": bTarget,
+      "p.noticeType": bTarget, // same value as p.dest.category, which the push data does not carry
+      "p.group": group,
       "p.result": "block", // what this alarm reports, the flow was blocked. Not alarm.result, which is the user's handling
       ...(pid && { "p.pid": pid }), // the rule that blocked, as in ACLAlarmLogPlugin
       "p.local_is_client": fd === 'out' ? "0" : "1", // 'out' is initiated from outside

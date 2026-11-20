@@ -1789,12 +1789,24 @@ class FwApcAlarm extends Alarm {
   }
 }
 
-// one type per category the cloud alarms on, so each can be muted on its own
-const CATEGORY_ALARM_TYPES = ['ALARM_CATEGORY_NRD', 'ALARM_CATEGORY_LOOKALIKE_DOMAIN'];
-
 // informational, the category rule has already blocked the flow. Never set p.action.block or
 // p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
 class CategoryAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_CATEGORY', timestamp, device, info);
+  }
+
+  // the category, such as nrd, tells the blocks apart in the push strings
+  getNotifKeyPrefix() {
+    const prefix = super.getNotifKeyPrefix();
+    return this['p.dest.category'] ? `${prefix}.${this['p.dest.category']}` : prefix;
+  }
+
+  localizedNotificationTitleKey() {
+    const key = super.localizedNotificationTitleKey();
+    return this['p.dest.category'] ? `${key}.${this['p.dest.category']}` : key;
+  }
+
   // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
   needCloudArbitration() {
     return false;
@@ -1916,7 +1928,7 @@ const classMapping = {
   ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_FW_APC: FwApcAlarm.prototype,
-  ...Object.fromEntries(CATEGORY_ALARM_TYPES.map(type => [type, CategoryAlarm.prototype])),
+  ALARM_CATEGORY: CategoryAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
@@ -1929,7 +1941,6 @@ module.exports = {
   Alarm,
   FwApcAlarm,
   CategoryAlarm,
-  CATEGORY_ALARM_TYPES,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,

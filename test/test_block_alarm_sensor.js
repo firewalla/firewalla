@@ -33,9 +33,9 @@ const am2 = new AlarmManager2();
 const MAC = 'AA:BB:CC:DD:EE:01';
 const NRD = { and: [{ field: 'bType', value: 'category' }, { field: 'bTarget', value: 'nrd' }] };
 const LOOKALIKE = { and: [{ field: 'bType', value: 'category' }, { field: 'bTarget', value: 'lookalike_domain' }] };
-const NRD_TYPE = 'ALARM_CATEGORY_NRD';
-const LOOKALIKE_TYPE = 'ALARM_CATEGORY_LOOKALIKE_DOMAIN';
-const SETTINGS = [{ key: 'nrd', filter: NRD, alarmType: NRD_TYPE }, { key: 'lookalike_domain', filter: LOOKALIKE, alarmType: LOOKALIKE_TYPE }];
+const TYPE = 'ALARM_CATEGORY';
+const GROUP = 'threat_filtering';
+const SETTINGS = [{ key: 'nrd', filter: NRD, group: GROUP }, { key: 'lookalike_domain', filter: LOOKALIKE, group: GROUP }];
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
@@ -101,7 +101,7 @@ describe('test block alarm sensor', function () {
 
     it('replaces the local settings with a non-empty cloud list', async () => {
       const sensor = newSensor();
-      sensor.applyConfig({ blockAlarmSettings: [{ key: 'nrd', filter: NRD, alarmType: NRD_TYPE }] });
+      sensor.applyConfig({ blockAlarmSettings: [{ key: 'nrd', filter: NRD, group: GROUP }] });
       await feed(sensor, blockEvent({ bTarget: 'lookalike_domain' }));
       expect(enqueued).to.have.length(0);
       await feed(sensor, blockEvent());
@@ -117,7 +117,7 @@ describe('test block alarm sensor', function () {
 
     it('drops only the settings with a malformed filter tree', async () => {
       const bad = [{ and: ['x'] }, { or: [] }, { and: [{ field: 'bType', value: 'category' }, null] }, { or: [{ and: [1] }] }];
-      const sensor = newSensor([...bad.map((filter, i) => ({ key: `bad${i}`, filter, alarmType: NRD_TYPE })), { key: 'nrd', filter: NRD, alarmType: NRD_TYPE }]);
+      const sensor = newSensor([...bad.map((filter, i) => ({ key: `bad${i}`, filter, group: GROUP })), { key: 'nrd', filter: NRD, group: GROUP }]);
       expect(sensor.settings).to.have.length(1);
       await feed(sensor, blockEvent());
       expect(enqueued).to.have.length(1);
@@ -126,7 +126,7 @@ describe('test block alarm sensor', function () {
     it('drops a leaf that would match every block', async () => {
       const bad = [{ field: null }, { field: 'bTarget' }, { field: '', value: 'x' }, { field: 5, value: 'x' },
         { and: [{ field: 'bType', value: 'category' }, { field: 'bTargte' }] }];
-      const sensor = newSensor(bad.map((filter, i) => ({ key: `bad${i}`, filter, alarmType: NRD_TYPE })));
+      const sensor = newSensor(bad.map((filter, i) => ({ key: `bad${i}`, filter, group: GROUP })));
       expect(sensor.settings).to.have.length(0);
       await feed(sensor, blockEvent({ bTarget: 'porn' }));
       expect(enqueued).to.have.length(0);
@@ -134,18 +134,18 @@ describe('test block alarm sensor', function () {
 
     it('drops settings without a filter object', () => {
       const sensor = newSensor([]);
-      sensor.applyConfig({ blockAlarmSettings: [null, 'nrd', { key: 'a' }, { key: 'b', filter: 'nrd' }, { key: 'c', filter: {} }, { key: 'nrd', filter: NRD, alarmType: NRD_TYPE }] });
+      sensor.applyConfig({ blockAlarmSettings: [null, 'nrd', { key: 'a' }, { key: 'b', filter: 'nrd' }, { key: 'c', filter: {} }, { key: 'nrd', filter: NRD, group: GROUP }] });
       expect(sensor.settings).to.have.length(1);
     });
 
-    it('drops settings without a known alarm type', async () => {
+    it('drops settings without a group', async () => {
       const sensor = newSensor([]);
       sensor.applyConfig({ blockAlarmSettings: [
         { key: 'nrd', filter: NRD },
-        { key: 'nrd', filter: NRD, alarmType: 'ALARM_CATEGORY' },
-        { key: 'nrd', filter: NRD, alarmType: 'ALARM_INTEL' },
-        { key: 'nrd', filter: NRD, alarmType: ['ALARM_CATEGORY_NRD'] },
-        { key: 'lookalike_domain', filter: LOOKALIKE, alarmType: LOOKALIKE_TYPE }
+        { key: 'nrd', filter: NRD, group: '' },
+        { key: 'nrd', filter: NRD, group: [GROUP] },
+        { key: 'nrd', filter: NRD, alarmType: TYPE },
+        { key: 'lookalike_domain', filter: LOOKALIKE, group: GROUP }
       ] });
       expect(sensor.settings).to.have.length(1);
       await feed(sensor, blockEvent());
@@ -171,11 +171,13 @@ describe('test block alarm sensor', function () {
       expect(enqueued).to.have.length(1);
       const alarm = enqueued[0];
       expect(alarm).to.be.instanceof(Alarm.CategoryAlarm);
-      expect(alarm.type).to.equal(NRD_TYPE);
+      expect(alarm.type).to.equal(TYPE);
       expect(alarm['p.device.ip']).to.equal('192.168.1.10');
       expect(alarm['p.device.mac']).to.equal(MAC);
       expect(alarm['p.dest.name']).to.equal('new.example.org');
       expect(alarm['p.dest.category']).to.equal('nrd');
+      expect(alarm['p.noticeType']).to.equal('nrd');
+      expect(alarm['p.group']).to.equal(GROUP);
       expect(alarm['p.result']).to.equal('block');
       expect(alarm.result).to.be.undefined; // the handling result stays empty until the user acts
       expect(alarm['p.pid']).to.equal(12);
@@ -213,17 +215,19 @@ describe('test block alarm sensor', function () {
       expect(enqueued).to.have.length(4);
     });
 
-    it('raises the alarm type of the setting that matches', async () => {
-      const sensor = newSensor();
+    it('raises one type, with the group and category of the setting that matches', async () => {
+      const sensor = newSensor([{ key: 'a', filter: NRD, group: 'g1' }, { key: 'b', filter: LOOKALIKE, group: 'g2' }]);
       await feed(sensor, blockEvent());
       await feed(sensor, blockEvent({ bTarget: 'lookalike_domain' }));
-      expect(enqueued.map(a => a.type)).to.eql([NRD_TYPE, LOOKALIKE_TYPE]);
+      expect(enqueued.map(a => a.type)).to.eql([TYPE, TYPE]);
+      expect(enqueued.map(a => a['p.group'])).to.eql(['g1', 'g2']);
+      expect(enqueued.map(a => a['p.dest.category'])).to.eql(['nrd', 'lookalike_domain']);
     });
 
-    it('takes the type of the first setting that matches', async () => {
-      const sensor = newSensor([{ key: 'a', filter: NRD, alarmType: LOOKALIKE_TYPE }, { key: 'b', filter: NRD, alarmType: NRD_TYPE }]);
+    it('takes the group of the first setting that matches', async () => {
+      const sensor = newSensor([{ key: 'a', filter: NRD, group: 'g1' }, { key: 'b', filter: NRD, group: 'g2' }]);
       await feed(sensor, blockEvent());
-      expect(enqueued.map(a => a.type)).to.eql([LOOKALIKE_TYPE]);
+      expect(enqueued.map(a => a['p.group'])).to.eql(['g1']);
     });
 
     it('is silent while cyber security is off and resumes when it is on', async () => {
@@ -458,7 +462,7 @@ describe('test block alarm sensor', function () {
   describe('alarm', () => {
     const data = { 'p.device.mac': MAC, 'p.dest.name': 'new.example.org', 'p.dest.category': 'nrd', 'p.device.name': 'sim1', 'p.device.id': MAC };
 
-    const category = (info, type = NRD_TYPE) => new Alarm.CategoryAlarm(type, Date.now() / 1000, '192.168.1.10', info);
+    const category = info => new Alarm.CategoryAlarm(Date.now() / 1000, '192.168.1.10', info);
 
     it('dedups on device, domain and category', () => {
       const a = category(data);
@@ -474,68 +478,72 @@ describe('test block alarm sensor', function () {
     });
 
     it('follows the switches of the security alarms, with its own type for the exception', () => {
-      for (const type of Alarm.CATEGORY_ALARM_TYPES) {
-        const a = category(data, type);
-        expect(a.type).to.equal(type);
-        expect(a.getNotifPolicyKey()).to.equal('ALARM_INTEL');
-        expect(a.isSecurityAlarm()).to.be.true;
-        expect(a.getExceptionAlarmType()).to.equal(type);
-        // the host security alarm counter keeps its own list
-        expect(Alarm.isSecurityAlarm(type)).to.be.false;
-      }
+      const a = category(data);
+      expect(a.type).to.equal(TYPE);
+      expect(a.getNotifPolicyKey()).to.equal('ALARM_INTEL');
+      expect(a.isSecurityAlarm()).to.be.true;
+      expect(a.getExceptionAlarmType()).to.equal(TYPE);
+      // the host security alarm counter keeps its own list
+      expect(Alarm.isSecurityAlarm(TYPE)).to.be.false;
     });
 
     it('is muted by an ALARM_INTEL exception, and not by one of another type', () => {
-      const intel = new Exception({ type: 'ALARM_INTEL' });
-      const video = new Exception({ type: 'ALARM_VIDEO' });
-      for (const type of Alarm.CATEGORY_ALARM_TYPES) {
-        const a = category(data, type);
-        expect(intel.match(a), type).to.be.true;
-        expect(video.match(a), type).to.be.false;
-      }
+      const a = category(data);
+      expect(new Exception({ type: 'ALARM_INTEL' }).match(a)).to.be.true;
+      expect(new Exception({ type: 'ALARM_VIDEO' }).match(a)).to.be.false;
     });
 
-    it('maps both types, and no longer ALARM_CATEGORY, to the category alarm', () => {
-      expect(Alarm.CATEGORY_ALARM_TYPES).to.eql([NRD_TYPE, LOOKALIKE_TYPE]);
-      for (const type of Alarm.CATEGORY_ALARM_TYPES)
-        expect(Alarm.mapping[type]).to.equal(Alarm.CategoryAlarm.prototype);
-      expect(Alarm.mapping).to.not.have.property('ALARM_CATEGORY');
+    it('is muted by an exception on its group, whatever the category', () => {
+      const e = new Exception({ type: TYPE, 'p.group': GROUP });
+      expect(e.match(category(Object.assign({ 'p.group': GROUP }, data)))).to.be.true;
+      expect(e.match(category(Object.assign({ 'p.group': GROUP }, data, { 'p.dest.category': 'lookalike_domain' })))).to.be.true;
+      expect(e.match(category(Object.assign({ 'p.group': 'other' }, data)))).to.be.false;
+      expect(e.match(category(data))).to.be.false;
     });
 
-    it('is created with its own type from an alias', () => {
-      for (const type of Alarm.CATEGORY_ALARM_TYPES) {
-        const alarm = am2._genAlarm(Object.assign({ type: Alarm.alarmType2alias(type), device: '192.168.1.10', timestamp: 1700000000 }, data));
-        expect(alarm).to.be.instanceof(Alarm.CategoryAlarm);
-        expect(alarm.type).to.equal(type);
-        expect(alarm.device).to.equal('192.168.1.10');
-        expect(alarm.timestamp).to.equal(1700000000);
-        expect(alarm['p.dest.name']).to.equal('new.example.org');
-      }
+    it('maps ALARM_CATEGORY, and no split type, to the category alarm', () => {
+      expect(Alarm.mapping[TYPE]).to.equal(Alarm.CategoryAlarm.prototype);
+      expect(Alarm.mapping).to.not.have.property('ALARM_CATEGORY_NRD');
+      expect(Alarm.mapping).to.not.have.property('ALARM_CATEGORY_LOOKALIKE_DOMAIN');
+    });
+
+    it('is created with its type from an alias', () => {
+      const alarm = am2._genAlarm(Object.assign({ type: Alarm.alarmType2alias(TYPE), device: '192.168.1.10', timestamp: 1700000000 }, data));
+      expect(alarm).to.be.instanceof(Alarm.CategoryAlarm);
+      expect(alarm.type).to.equal(TYPE);
+      expect(alarm.device).to.equal('192.168.1.10');
+      expect(alarm.timestamp).to.equal(1700000000);
+      expect(alarm['p.dest.name']).to.equal('new.example.org');
     });
 
     it('renders the message and the push arguments', () => {
-      const alarm = am2.jsonToAlarm(Object.assign({ type: NRD_TYPE }, data));
+      const alarm = am2.jsonToAlarm(Object.assign({ type: TYPE }, data));
       expect(alarm.message).to.equal('sim1 was blocked from accessing new.example.org');
       expect(alarm.localizedNotificationContentArray()).to.eql(['sim1', 'new.example.org']);
     });
 
-    it('keys the title, content and strings by its own type', () => {
-      for (const type of Alarm.CATEGORY_ALARM_TYPES) {
-        const alarm = am2.jsonToAlarm(Object.assign({ type }, data));
-        expect(alarm.localizedNotificationTitleKey()).to.equal(`notif.title.${type}`);
-        expect(alarm.localizedNotificationContentKey()).to.equal(`notif.content.${type}`);
-        expect(alarm.getNotifType()).to.equal(`NOTIF_TITLE_${type}`);
-        expect(alarm.getNotificationCategory()).to.equal(`NOTIF_${type}`);
-        expect(alarm.getInfoCategory()).to.equal(`INFO_${type}`);
+    it('adds the category to the title and content keys, and keeps the strings by type', () => {
+      for (const category of ['nrd', 'lookalike_domain']) {
+        const alarm = am2.jsonToAlarm(Object.assign({ type: TYPE, 'p.group': GROUP }, data, { 'p.dest.category': category }));
+        expect(alarm.localizedNotificationTitleKey()).to.equal(`notif.title.${TYPE}.${category}`);
+        expect(alarm.localizedNotificationContentKey()).to.equal(`notif.content.${TYPE}.${category}`);
+        expect(alarm.getNotifType()).to.equal(`NOTIF_TITLE_${TYPE}`);
+        expect(alarm.getNotificationCategory()).to.equal(`NOTIF_${TYPE}`);
+        expect(alarm.getInfoCategory()).to.equal(`INFO_${TYPE}`);
       }
     });
 
-    it('has a title, a push text and an info text for each type in en.json', () => {
+    it('keys by type alone without a category', () => {
+      const alarm = am2.jsonToAlarm({ type: TYPE, 'p.device.name': 'sim1' });
+      expect(alarm.localizedNotificationTitleKey()).to.equal(`notif.title.${TYPE}`);
+      expect(alarm.localizedNotificationContentKey()).to.equal(`notif.content.${TYPE}`);
+    });
+
+    it('has a title, a push text and an info text in en.json', () => {
       const en = require('../locales/en.json');
-      for (const type of Alarm.CATEGORY_ALARM_TYPES)
-        for (const key of [`NOTIF_TITLE_${type}`, `NOTIF_${type}`, `INFO_${type}`])
-          expect(en[key], key).to.be.a('string').that.is.not.empty;
-      expect(en).to.not.have.property('NOTIF_TITLE_ALARM_CATEGORY');
+      for (const key of [`NOTIF_TITLE_${TYPE}`, `NOTIF_${TYPE}`, `INFO_${TYPE}`])
+        expect(en[key], key).to.be.a('string').that.is.not.empty;
+      expect(en).to.not.have.property('NOTIF_TITLE_ALARM_CATEGORY_NRD');
     });
 
     describe('auto block', () => {
@@ -569,8 +577,8 @@ describe('test block alarm sensor', function () {
       });
     });
 
-    it('are the only types that skip the cloud arbitration, with ALARM_ACA', () => {
-      const skipping = Alarm.CATEGORY_ALARM_TYPES.concat(['ALARM_ACA']);
+    it('is the only type that skips the cloud arbitration, with ALARM_ACA', () => {
+      const skipping = [TYPE, 'ALARM_ACA'];
       for (const [type, proto] of Object.entries(Alarm.mapping))
         expect(proto.needCloudArbitration(), type).to.equal(!skipping.includes(type));
     });
