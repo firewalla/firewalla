@@ -183,9 +183,11 @@ ipset create -exist zssids_block_set6 hash:ip,port,ip family inet6 hashsize 1638
 
 reset_ip_rules() {
   for fam in "-4" "-6"; do
-    ip rule list |
+    ip $fam rule list |
       grep -vE "^(499|500|501|1001|2001|3000|3001|4001|5001|5002|5999|6001|7001|8001|9001|10001):" |
-      cut -d: -f2- |
+      # keep the priority: without it the delete takes the first rule with the same selector,
+      # which can be one of the priorities excluded above
+      sed 's/^\([0-9]*\):/pref \1 /' |
       while IFS= read -r line; do
         ip $fam rule del $line
       done
