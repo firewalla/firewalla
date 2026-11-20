@@ -47,6 +47,8 @@ class OtaSensor extends Sensor {
     this.dailyTimer = null;
     this.rebootTimer = null;
     this.upgrading = null;
+    // the check/upgrade run in flight, from the timer or the app
+    this.running = null;
     // false, 'waiting' while reboot() checks the image, 'started' once it reboots
     this.rebooting = false;
     this.rebootSeq = 0;
@@ -66,6 +68,7 @@ class OtaSensor extends Sensor {
         return result.body;
       throw new Error(`vulcan API call failed: ${result.msg || result.code}`);
     });
+    extensionManager.onCmd('otaCheckUpgrade', async () => this.checkUpgrade());
 
     try {
       await lock.acquire(LOCK_SCHEDULE, async () => {
@@ -120,17 +123,42 @@ class OtaSensor extends Sensor {
     clearTimeout(this.dailyTimer);
     this.dailyTimer = setTimeout(async () => {
       this.lastWindowEnd = end;
-      try {
-        await this.dailyRun();
-      } catch (err) {
-        log.error('OTA daily run failed', err.message);
-      }
+      if (this.running)
+        log.info('OTA daily run skipped, a run requested by the app is in progress');
+      else
+        await this.runOnce().catch((err) => log.error('OTA daily run failed', err.message));
       this.scheduleDailyRun();
     }, (time - now) * 1000);
   }
 
-  async dailyRun() {
-    const image = await this.checkAndUpgrade();
+  // one check/upgrade run at a time, so vulcan never sees two upgrades
+  runOnce(onCheck) {
+    if (!this.running)
+      this.running = this.dailyRun(onCheck).finally(() => { this.running = null; });
+    return this.running;
+  }
+
+  // the app's check: answer once vulcan's check is known, an upgrade can take minutes, longer than a request waits
+  async checkUpgrade() {
+    if (this.rebooting === 'started')
+      throw new Error('OTA reboot in progress');
+    if (this.running)
+      throw new Error('OTA check already in progress');
+    log.info('OTA check requested by the app');
+    let checked;
+    const result = new Promise((resolve) => { checked = resolve; });
+    this.runOnce(checked).catch((err) => {
+      log.error('OTA run failed', err.message);
+      checked(null);
+    });
+    const check = await result;
+    if (!check)
+      throw new Error('OTA check failed');
+    return check;
+  }
+
+  async dailyRun(onCheck) {
+    const image = await this.checkAndUpgrade(onCheck);
     if (!image)
       return;
     if (image.write_failed) {
@@ -142,18 +170,24 @@ class OtaSensor extends Sensor {
   }
 
   // check, upgrade if needed, and always end with vulcan's current image, or null if unreachable
-  async checkAndUpgrade() {
+  async checkAndUpgrade(onCheck = () => {}) {
     const check = await this.apiCall('POST', '/ota/image/check');
     if (check.code !== 200 || !check.body) {
       log.error('OTA check failed', check.code, check.msg);
-    } else if (check.body.need_upgrade === true && !this.rebooting) {
-      log.info(`OTA upgrade ${check.body.current_build} -> ${check.body.latest_build}`);
-      this.upgrading = this.apiCall('POST', '/ota/image/upgrade');
-      const resp = await this.upgrading;
-      this.upgrading = null;
-      if (resp.code === 200 && resp.body && resp.body.image)
-        return resp.body.image;
-      log.error('OTA upgrade failed', resp.code, resp.msg);
+      onCheck(null);
+    } else {
+      const { current_build, latest_build, need_upgrade } = check.body;
+      const upgrade = need_upgrade === true && !this.rebooting;
+      onCheck({ current_build, latest_build, need_upgrade: need_upgrade === true, upgrade_started: upgrade });
+      if (upgrade) {
+        log.info(`OTA upgrade ${current_build} -> ${latest_build}`);
+        this.upgrading = this.apiCall('POST', '/ota/image/upgrade');
+        const resp = await this.upgrading;
+        this.upgrading = null;
+        if (resp.code === 200 && resp.body && resp.body.image)
+          return resp.body.image;
+        log.error('OTA upgrade failed', resp.code, resp.msg);
+      }
     }
 
     const resp = await this.apiCall('GET', '/ota/image');
