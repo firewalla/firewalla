@@ -285,12 +285,6 @@ class OtaSensor extends Sensor {
       // a write may have failed after the timer was armed, in an earlier daily run
       resp = await this.apiCall('GET', '/ota/image');
     }
-    if (gen !== this.scheduleGen) {
-      // the app moved the reboot while this run waited, the new timer owns it now
-      log.info('OTA reboot superseded by a new schedule');
-      stop();
-      return;
-    }
     const image = resp.code === 200 && resp.body && resp.body.image;
     if (!image || image.write_failed) {
       // the kernel may not boot, or vulcan can't confirm it will
@@ -298,7 +292,19 @@ class OtaSensor extends Sensor {
       stop();
       return;
     }
-    this.rebooting = 'started';
+    // under the schedule lock: a set either lands first and supersedes this run, or is refused after
+    const committed = await lock.acquire(LOCK_SCHEDULE, async () => {
+      if (gen !== this.scheduleGen)
+        return false;
+      this.rebooting = 'started';
+      return true;
+    });
+    if (!committed) {
+      // the app moved the reboot while this run waited, the new timer owns it now
+      log.info('OTA reboot superseded by a new schedule');
+      stop();
+      return;
+    }
     try {
       // a newer build may have been written since the schedule was made
       await this.writeMarker(image);
@@ -312,6 +318,8 @@ class OtaSensor extends Sensor {
 
   async setSchedule(data) {
     return lock.acquire(LOCK_SCHEDULE, async () => {
+      if (this.rebooting === 'started')
+        throw new Error('OTA reboot in progress');
       const schedule = await this.readSchedule();
       if (!schedule)
         throw new Error('No OTA reboot schedule');
