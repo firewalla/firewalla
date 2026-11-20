@@ -24,6 +24,8 @@ const fsp = require('fs').promises;
 
 const DIR = f.getHiddenFolder();
 const FILE = `${DIR}/ota_reboot_pending.json`;
+// when vulcan's release notes carry no type
+const DEFAULT_RELEASE_TYPE = 'firmware update';
 let tmpSeq = 0;
 
 async function syncPath(path, flags) {
@@ -63,4 +65,4 @@ async function remove() {
   });
 }
 
-module.exports = { FILE, write, read, remove };
+module.exports = { FILE, DEFAULT_RELEASE_TYPE, write, read, remove };

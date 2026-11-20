@@ -5,7 +5,7 @@
   "NOTIF_BRANCH_CHANGE": "Successfully switched {branchChanged, select, 1 {back to stable} 2 {to beta} 3 {to development} other {to unofficial}} release {version}",
   "NOTIF_UPGRADE_COMPLETE": "Firewalla se actualizo hasta {{{version}}}",
   "NOTIF_REBOOT_COMPLETE": "Firewalla reinicio completo",
-  "NOTIF_OTA_REBOOT_SCHEDULED": "Firewalla se reiniciará entre {0} y {1} el {2} para completar una actualización del sistema",
+  "NOTIF_OTA_REBOOT_SCHEDULED": "Firewalla se reiniciará entre {0} y {1} el {2} para aplicar: {3}",
   "NOTIF_OTA_REBOOT_SCHEDULED_TITLE": "Actualización del sistema",
   "NOTIF_AWAKES": "🔥 Firewalla Levanta!",
   "NOTIF_TITLE_ALARM_VIDEO": "Video Alerta",

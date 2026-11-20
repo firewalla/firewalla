@@ -62,7 +62,12 @@ class SystemRebootSensor extends Sensor {
       return false;
     const done = await this.waitOtaImage(marker.build);
     if (done) {
-      await era.addActionEvent('ota_reboot_complete', 1, marker);
+      await era.addActionEvent('ota_reboot_complete', 1, {
+        build: marker.build,
+        releaseNotes: marker.releaseNotes,
+        // a marker written before the type was recorded
+        releaseType: marker.releaseType || otaRebootMarker.DEFAULT_RELEASE_TYPE
+      });
       log.info(`OTA reboot for ${marker.build} complete`);
     }
     await otaRebootMarker.remove();

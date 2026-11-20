@@ -177,7 +177,7 @@ class OtaSensor extends Sensor {
         schedule = { time, before: Math.ceil((time + settings.max_delay) / 3600) * 3600, image };
         await this.writeSchedule(schedule);
         log.info(`OTA reboot for ${image.build} scheduled`, schedule.time, schedule.before);
-        this.notifyScheduled(image.build, schedule);
+        this.notifyScheduled(image, schedule);
       } else {
         // a newer build may have been written since, the app shows the one that will boot
         schedule = Object.assign({}, schedule, { image });
@@ -187,20 +187,25 @@ class OtaSensor extends Sensor {
     });
   }
 
-  notifyScheduled(build, schedule) {
+  notifyScheduled(image, schedule) {
     if (nm.canNotify() != true)
       return;
     const tz = sysManager.getTimezone();
     const t = (tz ? moment.unix(schedule.time).tz(tz) : moment.unix(schedule.time)).startOf('hour');
+    const releaseType = this.releaseType(image);
     sem.sendEventToFireApi({
       type: 'FW_NOTIFICATION',
       titleKey: 'NOTIF_OTA_REBOOT_SCHEDULED_TITLE',
       bodyKey: 'NOTIF_OTA_REBOOT_SCHEDULED',
       titleLocalKey: 'OTA_REBOOT_SCHEDULED',
       bodyLocalKey: 'OTA_REBOOT_SCHEDULED',
-      bodyLocalArgs: [t.format('HH:00'), t.clone().add(1, 'hour').format('HH:00'), t.format('MMM D')],
-      payload: { build, time: schedule.time, before: schedule.before }
+      bodyLocalArgs: [t.format('HH:00'), t.clone().add(1, 'hour').format('HH:00'), t.format('MMM D'), releaseType],
+      payload: { build: image.build, time: schedule.time, before: schedule.before, releaseType }
     });
+  }
+
+  releaseType(image) {
+    return image.release_notes && image.release_notes.type || otaRebootMarker.DEFAULT_RELEASE_TYPE;
   }
 
   async armRebootTimer(schedule) {
@@ -286,7 +291,8 @@ class OtaSensor extends Sensor {
   async writeMarker(image) {
     await otaRebootMarker.write({
       build: image.build,
-      releaseNotes: image.release_notes ? image.release_notes.url : undefined
+      releaseNotes: image.release_notes ? image.release_notes.url : undefined,
+      releaseType: this.releaseType(image)
     });
   }
 
