@@ -267,6 +267,11 @@ class OtaSensor extends Sensor {
   }
 
   async reboot() {
+    // a timer re-armed while an earlier run waited must not reopen a reboot already started
+    if (this.rebooting === 'started') {
+      log.info('OTA reboot already started');
+      return;
+    }
     // a check can still overlap a reboot (moved by the app, or after a FireApi restart):
     // don't start an upgrade the reboot would cut short
     this.rebooting = 'waiting';
