@@ -292,6 +292,16 @@ class netBot extends ControllerBot {
           }
         }));
 
+        // per request, outside the init cache, so a schedule set in between is not served stale
+        const otaSensor = sl.getSensor('OtaSensor');
+        if (otaSensor) {
+          try {
+            json.otaRebootSchedule = await otaSensor.getSchedule();
+          } catch (err) {
+            log.warn("Failed to read OTA reboot schedule for init:", err.message);
+          }
+        }
+
         // rkey and volatile runtime fields are always set per-request.
         if (this.eptcloud) {
           json.rkey = this.eptcloud.getMaskedRKey(gid);
