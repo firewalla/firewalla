@@ -47,6 +47,7 @@ class OtaSensor extends Sensor {
     this.dailyTimer = null;
     this.rebootTimer = null;
     this.upgrading = null;
+    // false, 'waiting' while reboot() checks the image, 'started' once it reboots
     this.rebooting = false;
     this.rebootSeq = 0;
     this.scheduleGen = 0;
@@ -209,6 +210,10 @@ class OtaSensor extends Sensor {
   }
 
   async armRebootTimer(schedule) {
+    if (this.rebooting === 'started') {
+      log.info('OTA reboot in progress, reboot timer not re-armed');
+      return;
+    }
     const now = Date.now() / 1000;
     if (schedule.time <= now) {
       if (now < schedule.before) {
@@ -230,7 +235,7 @@ class OtaSensor extends Sensor {
   async reboot() {
     // a check can still overlap a reboot (moved by the app, or after a FireApi restart):
     // don't start an upgrade the reboot would cut short
-    this.rebooting = true;
+    this.rebooting = 'waiting';
     const seq = ++this.rebootSeq;
     const gen = this.scheduleGen;
     const stop = () => {
@@ -259,6 +264,7 @@ class OtaSensor extends Sensor {
       stop();
       return;
     }
+    this.rebooting = 'started';
     try {
       // a newer build may have been written since the schedule was made
       await this.writeMarker(image);
