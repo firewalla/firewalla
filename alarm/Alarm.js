@@ -633,6 +633,53 @@ class SuricataNoticeAlarm extends Alarm {
   }
 }
 
+// an abnormal connection finding of zssids (aca.log) that a rule of AcaLogPlugin turned into an alarm
+class AcaAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_ACA", timestamp, device, info);
+    this["p.showMap"] = false;
+  }
+
+  // the evidence can list LAN addresses, which must not go to the cloud
+  needCloudArbitration() {
+    return false;
+  }
+
+  // a blocked flow raises no alarm, but a scan has no destination and a device-wide internet block misses its LAN targets
+  needPolicyMatch() {
+    if (this["p.dest.ip"] || this["p.dest.name"]) {
+      return true;
+    }
+    return false;
+  }
+
+  // muted and notified together with the other security alarms, like the IDS alarms
+  isSecurityAlarm() {
+    return true;
+  }
+
+  getNotifPolicyKey() {
+    return "ALARM_INTEL";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.aca.dedup"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.aca.type", "p.aca.message", "p.aca.dedup"];
+  }
+
+  // the rule's own cooldown runs in AcaLogPlugin, this only stops repeats within the hour
+  getExpirationTime() {
+    return 3600;
+  }
+
+  localizedNotificationContentArray() {
+    return [this.getDeviceNameInNotification(), this["p.aca.message"]];
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -1873,6 +1920,7 @@ const classMapping = {
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
+  ALARM_ACA: AcaAlarm.prototype,
   ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
   ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
@@ -1902,6 +1950,7 @@ module.exports = {
   VPNDisconnectAlarm,
   BroNoticeAlarm,
   SuricataNoticeAlarm,
+  AcaAlarm,
   IntelAlarm,
   VulnerabilityAlarm,
   IntelReportAlarm,
