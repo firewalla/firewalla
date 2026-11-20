@@ -24,6 +24,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
+const Policy = require('../alarm/Policy.js');
 const HostManager = require('../net2/HostManager.js');
 const HostTool = require('../net2/HostTool.js');
 const AcaLogPlugin = require('../sensor/AcaLogPlugin.js');
@@ -514,10 +515,25 @@ describe('AcaLogPlugin', function () {
       expect(Alarm.alias2alarmType(Alarm.alarmType2alias('ALARM_ACA'))).to.equal('ALARM_ACA');
     });
 
-    it('stays on the box and is checked against existing rules', () => {
+    it('stays on the box', () => {
       const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.11', payload);
       expect(alarm.needCloudArbitration()).to.be.false;
-      expect(alarm.needPolicyMatch()).to.be.true;
+    });
+
+    it('is covered by an internet block only when it has a destination', () => {
+      const blockInternet = new Policy({ pid: 99, type: 'mac', target: PRINTER_MAC, action: 'block' });
+      const ssh = new Alarm.AcaAlarm(1763371200, '192.168.1.11', Object.assign({}, payload, {
+        'p.dest.ip': '172.182.252.133', 'p.dest.name': '172.182.252.133',
+      }));
+      const scan = new Alarm.AcaAlarm(1763371200, '192.168.1.11', Object.assign({}, payload, {
+        'p.aca.type': 'fan_out', 'p.aca.message': 'failed connections to 25 destinations in 300s',
+      }));
+
+      expect(ssh.needPolicyMatch()).to.be.true;
+      expect(blockInternet.match(ssh)).to.be.true;
+      // the block leaves LAN traffic alone, so the scan, which may target LAN hosts, still raises its alarm
+      expect(scan.needPolicyMatch()).to.be.false;
+      expect(blockInternet.match(scan)).to.be.false;
     });
 
     it('is muted by destination, or by device and detector when it has none', async () => {

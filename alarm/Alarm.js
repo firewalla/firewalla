@@ -645,9 +645,12 @@ class AcaAlarm extends Alarm {
     return false;
   }
 
-  // a flow that a user or DAP rule already blocks raises no alarm, as with the other IDS alarms
+  // a blocked flow raises no alarm, but a scan has no destination and a device-wide internet block misses its LAN targets
   needPolicyMatch() {
-    return true;
+    if (this["p.dest.ip"] || this["p.dest.name"]) {
+      return true;
+    }
+    return false;
   }
 
   // muted and notified together with the other security alarms, like the IDS alarms
