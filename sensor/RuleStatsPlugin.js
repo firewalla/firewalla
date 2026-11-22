@@ -229,16 +229,22 @@ class RuleStatsPlugin extends Sensor {
   static cachekeyRecord(record) {
     // use cache to reduce computation and redis operation.
     const hash = crypto.createHash("md5");
-    hash.update(String(record.ac));
-    hash.update(String(record.type));
-    hash.update(String(record.fd));
-    hash.update(String(record.sec));
+    // \x1f (unit separator) between fields so e.g. dh="10.0.0.11",sh="1.1.1.1" can't
+    // hash the same as dh="10.0.0.1",sh="11.1.1.1" (plain concatenation collides)
+    hash.update(String(record.ac)); hash.update('\x1f');
+    hash.update(String(record.type)); hash.update('\x1f');
+    hash.update(String(record.fd)); hash.update('\x1f');
+    hash.update(String(record.sec)); hash.update('\x1f');
     if (record.type == 'dns') {
       hash.update(String(record.dn));
     } else {
-      hash.update(String(record.dh));
+      hash.update(String(record.dh)); hash.update('\x1f');
+      hash.update(String(record.sh));
     }
-    hash.update(String(record.qmark));
+    hash.update('\x1f'); hash.update(String(record.qmark));
+    // af carries hostname context that changes domain/dns rule matching; a hostless
+    // lookup must not share a cache entry with a later hostful lookup on the same dh
+    if (record.af) { hash.update('\x1f'); hash.update(Object.keys(record.af).sort().join(',')); }
     return hash.digest("hex");
   }
 
@@ -371,7 +377,8 @@ class RuleStatsPlugin extends Sensor {
         if (!this.policyRulesMap.has(action)) {
           return [];
         }
-
+        
+        let sourceIp, srcAddr4, srcAddr6;
         if (record.type === "dns") {
           recordDomain = record.dn;
         } else {
@@ -379,8 +386,13 @@ class RuleStatsPlugin extends Sensor {
           addr4 = new Address4(recordIp);
           addr6 = new Address6(recordIp);
           connHost = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, 'host')
-        }
 
+          if (record.sh) {
+            sourceIp = record.sh;
+            srcAddr4 = new Address4(sourceIp);
+            srcAddr6 = new Address6(sourceIp);
+          }
+        }
 
         for (const policy of this.policyRulesMap.get(action)) {
           if (record.sec ^ policy.isSecurityBlockPolicy()) {
@@ -388,6 +400,8 @@ class RuleStatsPlugin extends Sensor {
           }
 
           const target = policy.target;
+          const matchDest = policy.direction !== 'inbound';
+          const matchSource = policy.direction !== 'outbound';
 
           switch (policy.type) {
             case 'dns':
@@ -400,22 +414,28 @@ class RuleStatsPlugin extends Sensor {
               }
               break
             case 'ip':
-              if (recordIp && recordIp === target) {
+              if ((matchDest && recordIp && recordIp === target) || (matchSource && sourceIp && sourceIp === target)) {
                 return [policy.pid];
               }
               break
-            case 'net':
-              if (!recordIp) break
-              if (addr4.isValid()) {
-                const targetNet4 = new Address4(target);
-                if (targetNet4.isValid() && addr4.isInSubnet(targetNet4))
+            case 'net': {
+              if (!recordIp && !sourceIp) break
+              const targetNet4 = new Address4(target);
+              const targetNet6 = new Address6(target);
+              if (matchDest && recordIp) {
+                if (addr4.isValid() && targetNet4.isValid() && addr4.isInSubnet(targetNet4))
                   return [policy.pid];
-              } else if (addr6.isValid()) {
-                const targetNet6 = new Address6(target);
-                if (targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                if (addr6.isValid() && targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                  return [policy.pid];
+              }
+              if (matchSource && sourceIp) {
+                if (srcAddr4.isValid() && targetNet4.isValid() && srcAddr4.isInSubnet(targetNet4))
+                  return [policy.pid];
+                if (srcAddr6.isValid() && targetNet6.isValid() && srcAddr6.isInSubnet(targetNet6))
                   return [policy.pid];
               }
               break
+            }
           }
 
           const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only)
