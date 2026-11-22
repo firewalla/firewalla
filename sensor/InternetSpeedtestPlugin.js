@@ -35,6 +35,8 @@ const Constants = require('../net2/Constants.js');
 const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
+const RUN_LOCK_KEY = "internet_speedtest_run_lock";
+const RUN_LOCK_TTL_SEC = 1800;
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -91,9 +93,13 @@ class InternetSpeedtestPlugin extends Sensor {
         if (this.manualRunTsCache.keys().length >= MAX_DAILY_MANUAL_TESTS) {
           throw {msg: `Manual tests has exceeded ${MAX_DAILY_MANUAL_TESTS} times in the last 24 hours`, code: 429};
         }
+        let lockToken = null;
         try {
           this.runningCache.set(msgid, {state: 0}); // mark 0 for init
           this.running = true;
+          lockToken = await this.acquireRunLock();
+          if (!lockToken)
+            throw {msg: "Another speed test is still running", code: 429};
           let uuid = data.wanUUID;
           if (!uuid) {
             const wanIntf = sysManager.getDefaultWanInterface();
@@ -138,9 +144,47 @@ class InternetSpeedtestPlugin extends Sensor {
           throw {msg: err.msg || err.message, code: err.code || 500};
         } finally {
           this.running = false;
+          if (lockToken)
+            await this.releaseRunLock(lockToken);
         }
       }
     });
+  }
+
+  async acquireRunLock() {
+    const token = `${process.pid}:${Date.now()}`;
+    const result = await rclient.setAsync(RUN_LOCK_KEY, token, 'NX', 'EX', RUN_LOCK_TTL_SEC);
+    return result === 'OK' ? token : null;
+  }
+
+  async releaseRunLock(token) {
+    const releaseLockLua = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    try {
+      await rclient.evalAsync(releaseLockLua, 1, RUN_LOCK_KEY, token);
+    } catch (err) {
+      log.warn("Failed to release speed test run lock:", err.message);
+    }
+  }
+
+  withRunLock(job) {
+    return async () => {
+      const lockToken = await this.acquireRunLock();
+      if (!lockToken) {
+        log.warn("Another speed test is still running, skip scheduled speed test");
+        return;
+      }
+      try {
+        await job();
+      } finally {
+        await this.releaseRunLock(lockToken);
+      }
+    };
   }
 
   async waitRunningResult(msgid, timeout=90000) {
@@ -228,7 +272,7 @@ class InternetSpeedtestPlugin extends Sensor {
           log.error(`Invalid cron expression: ${cron}`);
           return;
         }
-        this.speedtestJob = new CronJob(cron, async () => {
+        this.speedtestJob = new CronJob(cron, this.withRunLock(async () => {
           const lastRunTs = this.lastRunTs || 0;
           const now = Date.now() / 1000;
           if (now - lastRunTs < MIN_CRON_INTERVAL) {
@@ -287,7 +331,7 @@ class InternetSpeedtestPlugin extends Sensor {
             if (wanResult.success && uuid)
               await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
           }
-        }, () => {}, true, tz);
+        }), () => {}, true, tz);
       }
     }).catch((err) => {
       log.error(`Failed to apply ${featureName} policy`, err.message);
