@@ -398,8 +398,7 @@ fi
 cd ..
 cd net2
 
-# this config is necessary for forwarding DNS requests to dnsmasq
-sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null
+sudo sysctl -w net.ipv4.conf.all.route_localnet=0 >/dev/null
 
 
 if [[ -f /.dockerenv ]]; then

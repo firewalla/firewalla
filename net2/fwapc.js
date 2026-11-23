@@ -23,6 +23,7 @@ const platform = PlatformLoader.getPlatform()
 const Config = require('./config.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
+const localApi = require('../util/localApi.js');
 
 const util = require('util')
 const querystring = require('querystring');
@@ -394,32 +395,7 @@ class FWAPC {
   }
 
   async apiCall(method, path, body) {
-    const options = {
-      method: method,
-      headers: {
-        "Accept": "application/json"
-      },
-      timeout: this.get_timeout(path),
-      url: fwapcInterface + path,
-      json: true
-    };
-
-    if(body) {
-      options.body = body;
-    }
-    try {
-      const resp = await rp(options);
-      let r =  {code: resp.statusCode, body: resp.body};
-      if (resp.statusCode === 500) {
-        r.msg = resp.body;
-      }
-      return r;
-    } catch (e) {
-      if (e.message === 'ESOCKETTIMEDOUT' || e.message === 'ETIMEDOUT') {
-        return {code: 504, msg: e.message}; // 504 Gateway Timeout
-      }
-      return {code: 503, msg: e.message};
-    }
+    return localApi.call(fwapcInterface, method, path, body, { timeout: this.get_timeout(path), errorCode: localApi.gatewayErrorCode });
   }
 
   async setGroup(groupId, data) {

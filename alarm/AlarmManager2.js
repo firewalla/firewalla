@@ -84,6 +84,7 @@ const Queue = require('bee-queue')
 const LRU = require('lru-cache');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const era = require('../event/EventRequestApi.js');
 
 const alarmDetailPrefix = "_alarmDetail:";
 
@@ -109,10 +110,13 @@ function resultRefOf(alarm) {
   }
 }
 
-// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read
+// compares before deleting: a newer block or allow may have rewritten the alarm since the pointer was read.
+// result_revoked keeps what the alarm was handled as, so a reader can tell "revoked" from "never handled"
 const CLEAR_RESULT_LUA = `
 if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] and redis.call('HGET', KEYS[1], 'result') == ARGV[3] then
-  return redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+  local n = redis.call('HDEL', KEYS[1], 'result', ARGV[1], 'result_method')
+  redis.call('HSET', KEYS[1], 'result_revoked', ARGV[3])
+  return n
 end
 return 0`;
 
@@ -1164,7 +1168,11 @@ module.exports = class {
       && systemPolicy.acl != false
       && alarm.type !== "ALARM_CUSTOMIZED"
     ) {
-      const policyMatch = await pm2.match(alarm)
+      // an IDS alarm carrying the rule of its own block would be covered by that very rule; the user's own rules still count
+      let ownRule = null;
+      if (alarm["p.ips.action"] === "blocked" && alarm.result_policy)
+        ownRule = alarm.result_policy;
+      const policyMatch = await pm2.match(alarm, ownRule)
 
       if (policyMatch) {
         // already matched some policy
@@ -1265,9 +1273,16 @@ module.exports = class {
     const result  = await this._activateAlarm(alarm, unarchive);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue.
+    const activated = result && result[1] == 1;
     const mspDecided = _.get(options, 'origin.state') == Constants.ST_PENDING && options['p.msp.decision'] != 'timeout';
-    if (result && result[1] == 1 && !mspDecided) {
+    if (activated && !mspDecided) {
       pclient.publishAsync("alarm:activated", JSON.stringify({aid: alarm.aid}));
+    }
+    // keyed on the transition, not alarm:activated, so MSP-decided and pending-timeout activations log it too
+    if (activated) {
+      this._addActionEvent(alarm).catch((err) => {
+        log.error(`Failed to add action event for alarm ${alarm.aid}`, err);
+      });
     }
 
     // check alarm state change results
@@ -1321,8 +1336,22 @@ module.exports = class {
     }
   }
 
+  async _addActionEvent(alarm) {
+    const proto = Alarm.mapping[alarm.type];
+    if (!proto || proto.toActionEvent === Alarm.Alarm.prototype.toActionEvent)
+      return;
+    const event = this.jsonToAlarm(alarm).toActionEvent();
+    if (!event)
+      return;
+    // one event per alarm, an MSP re-decision re-activates the same aid
+    if (await rclient.hsetnxAsync(alarmPrefix + alarm.aid, 'eventLogged', 1) != 1)
+      return;
+    await era.addActionEvent(event.action_type, event.action_value, event.labels, Math.round(parseFloat(alarm.alarmTimestamp) * 1000));
+  }
+
   _genAlarm(a = {}) {
-    let proto = Alarm.mapping[Alarm.alias2alarmType(a.type)];
+    const alarmType = Alarm.alias2alarmType(a.type);
+    let proto = Alarm.mapping[alarmType];
     if (!proto) {
       return null
     }
@@ -2293,14 +2322,17 @@ module.exports = class {
     const withRef = alarms.filter(a => a[ref] && resultRefOf(a) === ref);
     if (withRef.length === 0) return;
 
-    await rclient.pipelineAndLog(withRef.map(a =>
+    const replies = await rclient.pipelineAndLog(withRef.map(a =>
       ['eval', CLEAR_RESULT_LUA, 1, alarmPrefix + a.aid, ref, a[ref], a.result]));
 
-    for (const a of withRef) {
+    // a 0 or an Error reply: the alarm in redis was not cleared, so the copy in hand is left as read
+    withRef.forEach((a, i) => {
+      if (!(replies[i] > 0)) return;
+      a.result_revoked = a.result;
       delete a.result;
       delete a[ref];
       delete a.result_method;
-    }
+    });
   }
 
   async _alignAlarmInfo(alarm) { // alarm object
@@ -2372,7 +2404,9 @@ module.exports = class {
     if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
       // device is the router itself, fill in from interface info directly,
       // host:* records of the box itself may be missing or polluted by other devices
-      const mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      let mac = net.isIPv4(deviceIP) ? sysManager.myMACViaIP4(deviceIP) : sysManager.myMACViaIP6(deviceIP);
+      // the app shows a MAC it doesn't list as a removed device, e.g. a VPN interface's placeholder or a WAN port
+      if (mac && !await hostTool.getMACEntry(mac)) mac = null;
       alarm["p.device.name"] = "Firewalla";
       if (mac) {
         Object.assign(alarm, {
@@ -2380,6 +2414,9 @@ module.exports = class {
           "p.device.mac": mac,
           "p.device.macVendor": await this.getSelfMacVendor(mac) || "Unknown",
         });
+      } else {
+        // a caller may have filled in the interface MAC already, e.g. AuthLogPlugin for a WAN port
+        for (const key of ["p.device.id", "p.device.mac", "p.device.macVendor"]) delete alarm[key];
       }
       return alarm;
     }
@@ -2585,6 +2622,14 @@ module.exports = class {
         i_type = 'broNotice'
         i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
+      case "ALARM_ACA":
+        // a finding without a destination, like a scan of many hosts, is muted for its device and detector
+        if (!alarm["p.dest.ip"] && !alarm["p.dest.name"]) {
+          i_type = "acaType";
+          i_target = alarm["p.aca.type"];
+          break;
+        }
+        // falls through: one with a destination is muted by it, like the other alarms
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
           i_type = "ip";
@@ -2646,6 +2691,12 @@ module.exports = class {
     });
     switch (i_type) {
       case "mac":
+        e["p.device.mac"] = alarm["p.device.mac"];
+        e["target_name"] = alarm["p.device.name"];
+        e["target_ip"] = alarm["p.device.ip"];
+        break;
+      case "acaType":
+        e["p.aca.type"] = alarm["p.aca.type"];
         e["p.device.mac"] = alarm["p.device.mac"];
         e["target_name"] = alarm["p.device.name"];
         e["target_ip"] = alarm["p.device.ip"];

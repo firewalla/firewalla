@@ -100,6 +100,13 @@
   },
   "apiSensors": {
     "DigitalFenceSensor": {},
+    "OtaSensor": {
+      "baseUrl": "http://localhost:8844",
+      "checkWindowStartHour": 1,
+      "checkWindowEndHour": 3,
+      "rebootWindowStartHour": 3,
+      "rebootWindowEndHour": 5
+    },
     "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
@@ -812,6 +819,7 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
+    "KernelCrashReportSensor": {},
     "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
@@ -826,6 +834,93 @@
       "localCacheTtl": 300
     },
     "ACLAlarmLogPlugin": {},
+    "AcaLogPlugin": {
+      "logFile": "/blog/current/aca.log",
+      "defaultCooldown": 3600,
+      "deviceFromDst": ["brute_force"],
+      "rules": [
+        {
+          "name": "dns_bypass_firewalla",
+          "match": { "finding.type": "dns_bypass", "device.isFirewalla": true },
+          "action": "drop"
+        },
+        {
+          "name": "dns_bypass_encrypted",
+          "match": { "finding.type": "dns_bypass", "finding.evidence.method": ["doh", "dot"] },
+          "action": "alarm",
+          "cooldown": 2592000,
+          "dedupBy": ["device.id"]
+        },
+        {
+          "name": "c2_tunnel_or_mining",
+          "match": { "finding.type": "c2_destination", "finding.evidence.category": ["tunnel", "mining"] },
+          "action": "alarm",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
+        },
+        {
+          "name": "c2_messaging_from_iot",
+          "match": {
+            "finding.type": "c2_destination",
+            "finding.evidence.category": "messaging_api",
+            "device.type": ["camera", "tv", "printer", "smart speaker", "appliance", "iot_default"]
+          },
+          "action": "alarm",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
+        },
+        {
+          "name": "c2_messaging_other",
+          "match": { "finding.type": "c2_destination", "finding.evidence.category": "messaging_api" },
+          "action": "event",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
+        },
+        {
+          "name": "risky_port_unexpected_device",
+          "match": {
+            "finding.type": "risky_port",
+            "device.type": ["phone", "tablet", "tv", "camera", "printer", "smart speaker", "appliance", "iot_default"]
+          },
+          "action": "alarm",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.dst_p"]
+        },
+        {
+          "name": "risky_port_other",
+          "match": { "finding.type": "risky_port" },
+          "action": "event",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.dst_p"]
+        },
+        {
+          "name": "fan_out_subnet_sweep",
+          "match": { "finding.type": "fan_out", "finding.sampleInOneSubnet": true },
+          "action": "alarm",
+          "cooldown": 3600,
+          "dedupBy": ["device.id", "finding.evidence.trigger"]
+        },
+        {
+          "name": "lan_new_contact",
+          "match": { "finding.type": "lan_new_contact" },
+          "action": "event",
+          "cooldown": 2592000,
+          "dedupBy": ["device.id", "finding.dst", "finding.dst_p"]
+        },
+        {
+          "name": "beacon_bare_ip",
+          "match": { "finding.type": "beacon", "finding.hasDomain": false },
+          "action": "event",
+          "cooldown": 86400,
+          "dedupBy": ["device.id", "finding.dst", "finding.dst_p", "finding.proto"]
+        },
+        {
+          "name": "drop_others",
+          "match": {},
+          "action": "drop"
+        }
+      ]
+    },
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "DockerSensor": {},
@@ -1383,6 +1478,7 @@
     "acl_audit": true,
     "quic_log_reader": true,
     "acl_alarm": true,
+    "aca": false,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,

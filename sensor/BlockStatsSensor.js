@@ -167,8 +167,12 @@ class BlockStatsSensor extends Sensor {
     const { _ts, ct = 1, device } = event;
     if (this._isIgnoredDest(event.dest)) return;
     const bucketTs = this._slotStart(_ts);
+    let skip; // checked once, for the first matching setting
     for (const setting of this.blockStatsConfs.blockStatsSettings) {
       if (!matchFilter(setting.filter, event)) continue;
+      // a client appends its search domain to a blocked name, and the bare name is counted already
+      if (skip === undefined) skip = SysManager.isLocalOrSearchDomain(event.dest);
+      if (skip) return;
       const identity = this._getIdentity(setting.identityKey, event);
       if (!identity) continue;
       const settingKey = setting.key;
