@@ -41,10 +41,11 @@ const cannotRun = () => Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT
 const TOML_PATH = () => path.join(RUNTIME, 'dnscrypt.toml');
 
 function makeRedis(values) {
+  const store = Object.assign({}, values);
   return {
-    getAsync: async (k) => (k in values ? values[k] : null),
-    setAsync: async () => 'OK',
-    unlinkAsync: async () => 1,
+    getAsync: async (k) => (k in store ? store[k] : null),
+    setAsync: async (k, v) => { store[k] = v; return 'OK'; },
+    unlinkAsync: async (k) => (delete store[k], 1),
   };
 }
 
@@ -66,8 +67,8 @@ function loadDnscrypt(redisValues) {
     },
     '../../lib/Bone': { hashsetAsync: async () => null },
     '../../net2/Constants.js': { ACL_VIRT_WAN_GROUP_PREFIX: 'virt_wan_group:' },
-    '../vpnclient/VPNClient': { getRouteMarkKey: () => 'mark' },
-    '../../net2/VirtWanGroup.js': { getRouteMarkKey: () => 'mark' },
+    '../vpnclient/VPNClient': { getRouteMarkKey: (id) => `policy:route:mark:${id}` },
+    '../../net2/VirtWanGroup.js': { getRouteMarkKey: (id) => `virt_wan_group:route:mark:${id}` },
   });
 }
 
@@ -218,6 +219,61 @@ describe('dnscrypt toml generation', function () {
 
       expect(await dc.prepareConfig({}, true)).to.be.false;
       expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(written);
+    });
+
+    // #10789: the VPN client never reaches the config file, so switching one
+    // leaves the rendered toml identical - but the mark only applies to
+    // connections dialled after it, and the open ones keep using the client
+    // that was selected when they were dialled.
+    it('restarts when the DoH VPN client changed, though the config is identical', async function () {
+      const settings = (profileId) => JSON.stringify({ vpnClient: { state: true, profileId } });
+      dc = loadDnscrypt({ 'ext.dnscrypt.settings': settings('vpn_a') });
+      expect(await dc.prepareConfig({}, true)).to.be.true;      // first write
+      const written = fs.readFileSync(TOML_PATH(), 'utf8');
+
+      expect(await dc.prepareConfig({}, true)).to.be.false;     // nothing moved
+
+      dc.getSettings = async () => JSON.parse(settings('vpn_b'));
+      expect(await dc.prepareConfig({}, true)).to.be.true;      // restart on the switch
+      expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(written);
+
+      expect(await dc.prepareConfig({}, true)).to.be.false;     // and only once
+    });
+
+    it('restarts when the DoH VPN client is turned off', async function () {
+      dc = loadDnscrypt({ 'ext.dnscrypt.settings': JSON.stringify({ vpnClient: { state: true, profileId: 'vpn_a' } }) });
+      await dc.prepareConfig({}, true);
+      expect(await dc.prepareConfig({}, true)).to.be.false;
+
+      dc.getSettings = async () => ({ vpnClient: { state: false, profileId: 'vpn_a' } });
+      expect(await dc.prepareConfig({}, true)).to.be.true;
+      expect(await dc.prepareConfig({}, true)).to.be.false;
+    });
+
+    it('still restarts for a changed VPN client when the new config is rejected', async function () {
+      // The running config is kept, as before - but the switch is the reason
+      // for the restart, and the config it reloads is the one already running.
+      const settings = (profileId) => ({ vpnClient: { state: true, profileId } });
+      dc = loadDnscrypt({
+        'ext.dnscrypt.settings': JSON.stringify(settings('vpn_a')),
+        'ext.dnscrypt.customizedServers': JSON.stringify([{ name: 'mine', stamp: STAMP }]),
+        'ext.dnscrypt.servers': JSON.stringify(['mine']),
+      });
+      expect(await dc.prepareConfig({}, true)).to.be.true;
+      const running = fs.readFileSync(TOML_PATH(), 'utf8');
+
+      execFileImpl = async () => { throw rejects('rejected for the sake of argument'); };
+      dc.getSettings = async () => settings('vpn_b');
+      dc.getServers = async () => ['quad9', 'mine'];
+      expect(await dc.prepareConfig({}, true)).to.be.true;
+      expect(fs.readFileSync(TOML_PATH(), 'utf8')).to.equal(running);
+    });
+
+    it('does not restart when no VPN client is selected at all', async function () {
+      dc = withServers([{ name: 'mine', stamp: STAMP }], ['mine']);
+      await dc.prepareConfig({}, true);
+      expect(await dc.prepareConfig({}, true)).to.be.false;
+      expect(await dc.prepareConfig({}, true)).to.be.false;
     });
 
     it('writes a name holding $ replacement tokens literally', async function () {

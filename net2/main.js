@@ -31,6 +31,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fs = require('fs');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const { gc } = require('../util/util.js');
 
 function updateTouchFile() {
   const mainTouchFile = "/dev/shm/main.touch";
@@ -339,8 +340,7 @@ async function run() {
     const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
     log.info(`Before GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
     try {
-      if (global.gc) {
-        global.gc();
+      if (gc()) {
         const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
         log.info(`After GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
       }
@@ -356,8 +356,7 @@ async function run() {
     log.info(`Before GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
     if (rss / 1000000 >= platform.getGCMemoryForMain()) {
         try {
-          if (global.gc) {
-            global.gc();
+          if (gc()) {
             const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
             log.info(`After GC protect, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
           }

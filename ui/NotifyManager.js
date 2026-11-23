@@ -34,8 +34,10 @@ module.exports = class NotifyManager {
 
             this._obj2msg={};
             this._obj2msg['en'] = require('./obj2msg_en.js');
+            instance = this;
         }
-        instance = this;
+        // a second caller gets the loaded instance, not an object without config
+        return instance;
     }
 
     loadConfig() {

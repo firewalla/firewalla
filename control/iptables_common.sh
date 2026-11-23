@@ -171,14 +171,23 @@ if [[ "${DRY_RUN:-false}" == "false" ]]; then
 else
   echo "Would restore ipset from: $ipset_file"
 fi
+
+# the sets zssids adds "server,proto:port,device" to when a drop rule matches (its --block-set, IPv6 with
+# "6" appended). They stay out of the file above: FireMain swaps every set of that file for an empty copy
+# when it starts, which would drop the servers zssids blocked. Created here once, kept across restarts.
+# The timeout is the --block-timeout scripts/zssids-engine.sh passes zssids
+ipset create -exist zssids_block_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout 3600
+ipset create -exist zssids_block_set6 hash:ip,port,ip family inet6 hashsize 16384 maxelem 65536 timeout 3600
 }
 
 
 reset_ip_rules() {
   for fam in "-4" "-6"; do
-    ip rule list |
+    ip $fam rule list |
       grep -vE "^(499|500|501|1001|2001|3000|3001|4001|5001|5002|5999|6001|7001|8001|9001|10001):" |
-      cut -d: -f2- |
+      # keep the priority: without it the delete takes the first rule with the same selector,
+      # which can be one of the priorities excluded above
+      sed 's/^\([0-9]*\):/pref \1 /' |
       while IFS= read -r line; do
         ip $fam rule del $line
       done
@@ -708,6 +717,17 @@ cat << EOF >> "$ip6tables_file"
 EOF
 fi
 
+
+# servers zssids blocked for a device, the set is named per family so it stays out of the v6 renaming above
+cat << EOF >> "$iptables_file"
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set zssids_block_set dst,dst,src -j FW_SEC_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set zssids_block_set src,src,dst -j FW_SEC_DROP
+EOF
+
+cat << EOF >> "$ip6tables_file"
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set zssids_block_set6 dst,dst,src -j FW_SEC_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set zssids_block_set6 src,src,dst -j FW_SEC_DROP
+EOF
 
 echo 'COMMIT' >> "$iptables_file"
 echo 'COMMIT' >> "$ip6tables_file"
