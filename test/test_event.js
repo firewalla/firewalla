@@ -117,6 +117,8 @@ describe('Test event handler state event', function() {
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_state"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_speed_change"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_connect_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_stp_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"bridge_port_stp_state"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
   });
 
@@ -213,10 +215,12 @@ describe('Test latest state events', function() {
     // a switch went offline 2 days ago and came back a day ago
     all.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 86400000, 0));
     error.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 2 * 86400000, 1));
-    // 300 newer keys of every other type, 150 of them of types excluded by default
+    // 320 newer keys of every other type, 170 of them of types excluded by default
     for (let i = 0; i < 50; i++) all.push(entry("switch_port_state", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
     for (let i = 0; i < 100; i++) all.push(entry("dap_state", `AA:BB:CC:00:00:${i}`, now - 1000 * i));
     for (let i = 0; i < 50; i++) all.push(entry("switch_port_speed_change", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 10; i++) all.push(entry("switch_port_stp_state", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 10; i++) all.push(entry("bridge_port_stp_state", `br0_eth${i}`, now - 1000 * i));
     for (let i = 0; i < 100; i++) all.push(entry("ping", `fe80::${i}`, now - 1000 * i));
     hashes["event:state:cache"] = Object.fromEntries(all);
     hashes["event:state:cache:error"] = Object.fromEntries(error);
