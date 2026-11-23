@@ -82,15 +82,17 @@ var getRoundedTime = function (precision, time, skipTzCheck) {
  *
  * `timestamp` should be in seconds, and defaults to current time.
  * `increment` should be an integer, and defaults to 1
+ * `granularities` is an optional subset of this.granularities to record to, defaults to all
  */
-TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()=>{}) {
+TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()=>{}, granularities) {
   var self = this;
 
-  Object.keys(this.granularities).forEach(function(gran) {
-    var properties = self.granularities[gran],
-        keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp,true), // high prority: precision
+  (granularities || Object.keys(this.granularities)).forEach(function(gran) {
+    var properties = self.granularities[gran];
+    if (!properties) throw new Error("Unsupported granularity: " + gran);
+    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp,true), // high prority: precision
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
-      hitTimestamp = getRoundedTime(properties.duration, timestamp);
+        hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
     if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
       const pending = self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl, !self.noMulti)
