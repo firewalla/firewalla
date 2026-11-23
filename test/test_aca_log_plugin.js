@@ -31,6 +31,7 @@ const AcaLogPlugin = require('../sensor/AcaLogPlugin.js');
 const LogReader = require('../util/LogReader.js');
 
 const DEFAULT_CONFIG = require('../net2/config.json').sensors.AcaLogPlugin;
+const DEFAULT_FEATURES = require('../net2/config.json').userFeatures;
 
 const COMPUTER_MAC = 'AA:BB:CC:00:00:01';
 const PRINTER_MAC = 'AA:BB:CC:00:00:02';
@@ -78,7 +79,7 @@ describe('AcaLogPlugin', function () {
 
   beforeEach(() => {
     plugin = new AcaLogPlugin(DEFAULT_CONFIG);
-    features = { aca: true };
+    features = Object.assign({}, DEFAULT_FEATURES, { aca: true });
     cyberSecurity = true;
     recordingOn = true;
     enqueueResult = true;
@@ -223,7 +224,47 @@ describe('AcaLogPlugin', function () {
       });
     });
 
+    it('drops beacons unless their switch is turned on', async () => {
+      const line = findingLine(CAMERA_MAC, {
+        type: 'beacon', msg: '12 connections to 113.240.98.22:6101 every 1824s (jitter 0%)',
+        dst: '113.240.98.22', dst_p: 6101,
+        evidence: { interval: 1824, jitter: 0, connections: 12 },
+      });
+
+      await plugin.processLine(line);
+      expect(events).to.have.length(0);
+      // a finding dropped by its switch must not start a cooldown
+      expect(cooldowns.size).to.equal(0);
+
+      features.aca_beacon = true;
+      await plugin.processLine(line);
+      expect(events).to.have.length(1);
+    });
+
+    it('drops both the alarm and the event of a kind whose switch is off', async () => {
+      features.aca_risky_port = false;
+      await plugin.processLine(findingLine(PRINTER_MAC, {
+        type: 'risky_port', msg: 'outbound ssh to 172.182.252.133:22', dst: '172.182.252.133', dst_p: 22,
+      }));
+      await plugin.processLine(findingLine(COMPUTER_MAC, {
+        type: 'risky_port', msg: 'outbound ssh to 172.182.252.133:22', dst: '172.182.252.133', dst_p: 22,
+      }));
+
+      expect(alarms).to.have.length(0);
+      expect(events).to.have.length(0);
+    });
+
+    it('gives every rule that sends something a switch that exists', () => {
+      for (const rule of DEFAULT_CONFIG.rules) {
+        if (rule.action === 'drop') {
+          continue;
+        }
+        expect(DEFAULT_FEATURES, rule.name).to.have.property(rule.feature);
+      }
+    });
+
     it('drops a beacon to a named service but logs one to a bare address', async () => {
+      features.aca_beacon = true;
       await plugin.processLine(findingLine(COMPUTER_MAC, {
         type: 'beacon', msg: '12 connections to config.extension.grammarly.com:443 every 300s (jitter 1%)',
         dst: '34.1.2.3', dst_p: 443, domain: 'config.extension.grammarly.com',

@@ -842,12 +842,14 @@
         {
           "name": "dns_bypass_firewalla",
           "match": { "finding.type": "dns_bypass", "device.isFirewalla": true },
+          "feature": "aca_dns_bypass",
           "action": "drop"
         },
         {
           "name": "dns_bypass_encrypted",
           "match": { "finding.type": "dns_bypass", "finding.evidence.method": ["doh", "dot"] },
           "action": "alarm",
+          "feature": "aca_dns_bypass",
           "cooldown": 2592000,
           "dedupBy": ["device.id"]
         },
@@ -855,6 +857,7 @@
           "name": "c2_tunnel_or_mining",
           "match": { "finding.type": "c2_destination", "finding.evidence.category": ["tunnel", "mining"] },
           "action": "alarm",
+          "feature": "aca_c2_destination",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
         },
@@ -866,6 +869,7 @@
             "device.type": ["camera", "tv", "printer", "smart speaker", "appliance", "iot_default"]
           },
           "action": "alarm",
+          "feature": "aca_c2_destination",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
         },
@@ -873,6 +877,7 @@
           "name": "c2_messaging_other",
           "match": { "finding.type": "c2_destination", "finding.evidence.category": "messaging_api" },
           "action": "event",
+          "feature": "aca_c2_destination",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.evidence.category", "finding.evidence.matched"]
         },
@@ -883,6 +888,7 @@
             "device.type": ["phone", "tablet", "tv", "camera", "printer", "smart speaker", "appliance", "iot_default"]
           },
           "action": "alarm",
+          "feature": "aca_risky_port",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.dst_p"]
         },
@@ -890,6 +896,7 @@
           "name": "risky_port_other",
           "match": { "finding.type": "risky_port" },
           "action": "event",
+          "feature": "aca_risky_port",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.dst_p"]
         },
@@ -897,6 +904,7 @@
           "name": "fan_out_subnet_sweep",
           "match": { "finding.type": "fan_out", "finding.sampleInOneSubnet": true },
           "action": "alarm",
+          "feature": "aca_fan_out",
           "cooldown": 3600,
           "dedupBy": ["device.id", "finding.evidence.trigger"]
         },
@@ -904,6 +912,7 @@
           "name": "lan_new_contact",
           "match": { "finding.type": "lan_new_contact" },
           "action": "event",
+          "feature": "aca_lan_new_contact",
           "cooldown": 2592000,
           "dedupBy": ["device.id", "finding.dst", "finding.dst_p"]
         },
@@ -911,6 +920,7 @@
           "name": "beacon_bare_ip",
           "match": { "finding.type": "beacon", "finding.hasDomain": false },
           "action": "event",
+          "feature": "aca_beacon",
           "cooldown": 86400,
           "dedupBy": ["device.id", "finding.dst", "finding.dst_p", "finding.proto"]
         },
@@ -1479,6 +1489,12 @@
     "quic_log_reader": true,
     "acl_alarm": true,
     "aca": false,
+    "aca_dns_bypass": true,
+    "aca_c2_destination": true,
+    "aca_risky_port": true,
+    "aca_fan_out": true,
+    "aca_lan_new_contact": true,
+    "aca_beacon": false,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
