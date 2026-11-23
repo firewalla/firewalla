@@ -23,6 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
 const CloudConfigLoader = require('./CloudConfigLoader.js');
+const sysManager = require('../net2/SysManager.js');
 const { matchFilter, isValidFilter } = require('./BlockStatsFilter.js');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
@@ -37,8 +38,8 @@ const MAX_DEVICES = 512;
 const MAX_IN_FLIGHT = 20;
 const MAX_FAILED = 256;
 
-// Raises ALARM_CATEGORY for the category blocks that blockAlarmSettings selects, once per
-// device, domain and category per cooldown. Off by default, a non-empty cloud list turns it on
+// Raises ALARM_CATEGORY, tagged with the group of the setting, for the category blocks the settings
+// select, once per device, domain and category per cooldown. Off by default, a non-empty cloud list turns it on
 class BlockAlarmSensor extends Sensor {
   constructor(config) {
     super(config);
@@ -71,8 +72,8 @@ class BlockAlarmSensor extends Sensor {
   _validateSettings(settings) {
     if (!_.isArray(settings)) return [];
     return settings.filter(setting => {
-      if (_.isPlainObject(setting) && isValidFilter(setting.filter)) return true;
-      log.error('Ignoring block alarm setting without a usable filter', setting);
+      if (_.isPlainObject(setting) && isValidFilter(setting.filter) && _.isString(setting.group) && setting.group) return true;
+      log.error('Ignoring block alarm setting without a usable filter or group', setting);
       return false;
     });
   }
@@ -89,9 +90,14 @@ class BlockAlarmSensor extends Sensor {
   _handleBlockFlow(event) {
     const { device, dest, bType, bTarget } = event;
     if (bType !== 'category' || _.isEmpty(this.settings)) return;
+    // before the dedup and the device cap, so a muted flow uses none of them
+    if (!am2.isCyberSecurityEnabled()) return;
     // box level block has no device to alarm, and an IP block has no domain to show, the dns block of the domain alarms
     if (device.startsWith(`${Constants.NS_INTERFACE}:`) || net.isIP(dest)) return;
-    if (!this.settings.some(setting => matchFilter(setting.filter, event))) return;
+    const setting = this.settings.find(setting => matchFilter(setting.filter, event));
+    if (!setting) return;
+    // a client appends its search domain to a blocked name, and the bare name has its own alarm
+    if (sysManager.isLocalOrSearchDomain(dest)) return;
 
     const key = `${device}|${dest}|${bTarget}`;
     if (this.alarmed.has(key) || this.inFlight.has(key)) return;
@@ -101,7 +107,7 @@ class BlockAlarmSensor extends Sensor {
     }
 
     this.inFlight.add(key);
-    this._raiseAlarm(event)
+    this._raiseAlarm(event, setting.group)
       // set after the job is saved, so a failure is retried by the next event
       .then(saved => saved && this.alarmed.set(key, true))
       .catch(err => {
@@ -127,7 +133,7 @@ class BlockAlarmSensor extends Sensor {
   }
 
   // resolves to whether the alarm job was saved
-  async _raiseAlarm({ device, dest, bTarget, pid, fd }) {
+  async _raiseAlarm({ device, dest, bTarget, pid, fd }, group) {
     const deviceFields = await am2.getDeviceAlarmFields({ mac: device, withIntf: true });
     if (!deviceFields) {
       log.verbose('No device to alarm for', device);
@@ -137,7 +143,8 @@ class BlockAlarmSensor extends Sensor {
       ...deviceFields,
       "p.dest.name": dest,
       "p.dest.category": bTarget,
-      "p.noticeType": bTarget, // the push data carries p.noticeType, not p.dest.category
+      "p.noticeType": bTarget, // same value as p.dest.category, which the push data does not carry
+      "p.group": group,
       "p.result": "block", // what this alarm reports, the flow was blocked. Not alarm.result, which is the user's handling
       ...(pid && { "p.pid": pid }), // the rule that blocked, as in ACLAlarmLogPlugin
       "p.local_is_client": fd === 'out' ? "0" : "1", // 'out' is initiated from outside

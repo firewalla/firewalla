@@ -36,6 +36,7 @@ const Host = require('../net2/Host.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const npm = require('../net2/NetworkProfileManager')
 const tm = require('../net2/TagManager')
+const { gc } = require('../util/util.js');
 
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
@@ -195,15 +196,6 @@ module.exports = class FlowMonitor {
 
     this.recordedFlows.set(key, count);
     return false;
-  }
-
-  garbagecollect() {
-    try {
-      if (global.gc) {
-        global.gc();
-      }
-    } catch (e) {
-    }
   }
 
   // whether the flow belongs to alarm class `cls` (av/porn/games/vpn/intel), matching
@@ -558,7 +550,7 @@ module.exports = class FlowMonitor {
     } finally {
       const endTime = new Date() / 1000
       log.info(`Run ends with ${Math.round((endTime - startTime)*1000)/1000} seconds :`, service, period, runid);
-      this.garbagecollect();
+      gc();
     }
   }
   // Reslve v6 or v4 address into a local host

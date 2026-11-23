@@ -63,11 +63,15 @@ const OUTPUTS = {
      mac_tx_in_pause: 99999
      mac_tx_frame_ctrl_pause: 88888`,
 
-  // receive direction only, the driver has no transmit PAUSE counter
+  // receive direction only, the driver has no transmit PAUSE counter. rx_checksum_errors is an
+  // offload miss on a frame that did arrive, which is all its kernel rx_errors total holds
   mtk_soc_eth: `NIC statistics:
      tx_packets: 5219651
      rx_overflow: 0
      rx_fcs_errors: 1
+     rx_short_errors: 4
+     rx_long_errors: 0
+     rx_checksum_errors: 7
      rx_flow_control_packets: 512`,
 
   // no PAUSE counter in any direction
@@ -81,12 +85,15 @@ const OUTPUTS = {
      tx_packets: 1108184
      rx_missed: 0
      align_errors: 1
+     rx_errors: 9
      tx_errors: 3`,
 
   r8168: `NIC statistics:
      tx_packets: 0
      rx_missed: 0
      align_errors: 0
+     rx_errors: 0
+     tx_errors: 16
      tx_underrun: 0`,
 
   // mlx4_en, crystal's two 10G ports. The duration is microseconds and the transition is a
@@ -108,7 +115,7 @@ const OUTPUTS = {
      tx_pause_frames: 7`,
 };
 
-// resolves one metric the way collect() does, from a captured output instead of a live NIC
+// resolves the ethtool rules of one metric, from a captured output instead of a live NIC
 function resolve(driver, metric, output = OUTPUTS[driver]) {
   return ethCounters.resolve(metric, driver, ethCounters.parseEthtoolStats(output));
 }
@@ -165,6 +172,169 @@ describe('EthCounters pause frames', function () {
   });
 });
 
+describe('EthCounters error counters', function () {
+
+  // where each driver's errors have to be read from, out of the driver sources of every NIC in
+  // the fleet. 'stat' is the kernel's own total under /sys/class/net/<nic>/statistics, 'names'
+  // the driver's own registers through `ethtool -S`, undefined a port that cannot count it
+  const SOURCES = {
+    igb:         { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    igc:         { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    mlx4_en:     { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    st_gmac:     { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    atlantic:    { rxError: 'stat',  txError: 'stat',  crcError: undefined },
+    r8125:       { rxError: 'stat',  txError: 'names', crcError: 'stat' },
+    r8168:       { rxError: 'stat',  txError: 'names', crcError: 'stat' },
+    r8152:       { rxError: 'names', txError: 'names', crcError: undefined },
+    mtk_soc_eth: { rxError: 'names', txError: 'stat',  crcError: 'stat' },
+    // the x86 server NICs a Crystal may be built with, it enumerates them at runtime
+    ixgbe:       { rxError: 'stat',  txError: undefined, crcError: 'stat' },
+    i40e:        { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    ice:         { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    e1000e:      { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    mlx5_core:   { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    bnxt_en:     { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+    tg3:         { rxError: 'stat',  txError: 'stat',  crcError: 'stat' },
+  };
+
+  it('should read each driver\'s errors from where that driver keeps them', () => {
+    for (const driver in SOURCES)
+      for (const metric in SOURCES[driver]) {
+        const rule = ethCounters.ruleFor(metric, driver);
+        const source = rule && ['stat', 'names', 'path', 'queues'].find(kind => kind in rule);
+        expect(source, `${driver} ${metric}`).to.equal(SOURCES[driver][metric]);
+      }
+  });
+
+  it('should report no CRC counter for the drivers that have none', () => {
+    // atlantic (gold pro, gold max 10G) and r8152 (the PSE USB port) count CRC errors neither
+    // in their own registers nor in the kernel's totals, so those ports report -1, not 0
+    expect(ethCounters.ruleFor('crcError', 'atlantic')).to.be.undefined;
+    expect(ethCounters.ruleFor('crcError', 'r8152')).to.be.undefined;
+    expect(resolve('atlantic', 'crcError')).to.be.undefined;
+  });
+
+  it('should add up the mtk frame error registers and leave the checksum misses out', () => {
+    // the kernel total of this driver is only rx_checksum_errors, an offload miss on a frame
+    // that did arrive, so reading it would report 0 on a port that is losing frames
+    expect(resolve('mtk_soc_eth', 'rxError')).to.equal(1 + 4 + 0);
+  });
+
+  it('should read each realtek direction the way that driver keeps it', () => {
+    // these count rx in the kernel's totals but keep tx only in their own tally
+    expect(resolve('r8168', 'txError')).to.equal(16);
+    expect(resolve('r8152', 'rxError')).to.equal(9);
+    expect(ethCounters.ruleFor('rxError', 'r8125').stat).to.equal('rx_errors');
+  });
+
+  it('should report nothing rather than half a sum when a register is missing', () => {
+    const partial = OUTPUTS.mtk_soc_eth.split('\n').filter(l => !l.includes('rx_short_errors')).join('\n');
+    expect(resolve('mtk_soc_eth', 'rxError', partial)).to.be.undefined;
+  });
+
+  it('should not read error counters off a driver nobody has checked', () => {
+    // every error rule names its drivers on purpose: the files under statistics/ are there on
+    // every port whether or not the driver writes them, so an unchecked driver would report a
+    // confident 0 instead of -1
+    for (const metric of ['rxError', 'txError', 'crcError'])
+      expect(ethCounters.ruleFor(metric, 'unknown'), metric).to.be.undefined;
+  });
+
+  it('should report no transmit error counter for ixgbe', () => {
+    // it counts them neither in the kernel's totals nor in its own registers, so a Crystal
+    // built with one of these cards reports -1 for that row rather than a flat 0
+    expect(ethCounters.ruleFor('txError', 'ixgbe')).to.be.undefined;
+  });
+
+  it('should keep the link counters driver independent', () => {
+    // these come from sysfs files the kernel keeps for every netdev, there is nothing per
+    // driver about them
+    for (const metric of ['linkDown', 'carrierDown', 'carrierUp', 'txTimeout'])
+      expect(ethCounters.ruleFor(metric, 'unknown'), metric).to.be.an('object');
+  });
+});
+
+describe('EthCounters scope', function () {
+
+  it('should keep the error and pause counters to the ethernet ports', () => {
+    for (const metric of ['rxPause', 'txPause', 'rxError', 'txError', 'crcError', 'linkDown']) {
+      expect(ethCounters.appliesTo(metric, true), metric).to.be.true;
+      expect(ethCounters.appliesTo(metric, false), metric).to.be.false;
+    }
+  });
+
+  it('should keep the legacy counters on every nic', () => {
+    // wlan included, the same as the sensor has always done for them
+    for (const metric of ['carrierDown', 'carrierUp', 'txTimeout'])
+      expect(ethCounters.appliesTo(metric, false), metric).to.be.true;
+  });
+});
+
+describe('EthCounters legacy counters', function () {
+
+  it('should keep the keys the cloud already reads', () => {
+    const legacy = {};
+    for (const metric in ethCounters.ETH_COUNTERS)
+      if (ethCounters.ETH_COUNTERS[metric].legacy)
+        legacy[ethCounters.ETH_COUNTERS[metric].key] = metric;
+    expect(Object.keys(legacy).sort()).to.deep.equal(['link_down', 'link_up', 'tx_timeout']);
+  });
+
+  it('should not let an app counter take over one of those keys', () => {
+    // <nic>_crc and <nic>_speed are live readings SysInfo puts in the same payload, the other
+    // three are lifetime totals of their own. A counter of this table writing one of them would
+    // change a number the cloud has been reading for years
+    for (const metric in ethCounters.ETH_COUNTERS) {
+      const spec = ethCounters.ETH_COUNTERS[metric];
+      if (!spec.legacy)
+        expect(spec.key, metric).to.not.be.oneOf(['crc', 'speed', 'link_up', 'link_down', 'tx_timeout']);
+    }
+  });
+
+  it('should read 0 where a legacy counter has nothing to read, and -1 for the app one', async () => {
+    // the same missing file: Purple has no carrier_down_count, where the checkin kept reporting
+    // 0 and has to keep doing so, while the app must be able to tell that apart from no flaps
+    const context = ethCounters.nicContext('nosuchnic0');
+    expect(await ethCounters.read('carrierDown', context)).to.equal(0);
+    expect(await ethCounters.read('carrierUp', context)).to.equal(0);
+    expect(await ethCounters.read('txTimeout', context)).to.equal(0);
+    expect(await ethCounters.read('linkDown', context)).to.be.undefined;
+  });
+
+  it('should not be reset by the app', () => {
+    // resetNicCounters only puts aside what the app shows, which these are not part of
+    for (const metric in ethCounters.ETH_COUNTERS) {
+      const spec = ethCounters.ETH_COUNTERS[metric];
+      if (spec.legacy)
+        expect(spec.nicStates, metric).to.not.be.true;
+    }
+  });
+});
+
+describe('EthCounters.sinceReset', function () {
+
+  it('should report what the port has counted since its last reset', () => {
+    expect(ethCounters.sinceReset(1532, '1000')).to.equal(532);
+  });
+
+  it('should report the lifetime total of a port that was never reset', () => {
+    expect(ethCounters.sinceReset(1532, undefined)).to.equal(1532);
+    expect(ethCounters.sinceReset(1532, null)).to.equal(1532);
+  });
+
+  it('should keep the -1 of a port that cannot count it', () => {
+    // a reset stores no baseline for such a counter, and must not turn it into a 0 that claims
+    // the port has seen none
+    expect(ethCounters.sinceReset(-1, undefined)).to.equal(-1);
+    expect(ethCounters.sinceReset(-1, '7')).to.equal(-1);
+  });
+
+  it('should never report a negative count', () => {
+    // the total only grows, but a redis restore could leave it under its own baseline
+    expect(ethCounters.sinceReset(3, '10')).to.equal(0);
+  });
+});
+
 describe('EthCounters registry', function () {
 
   it('should not apply a driver-scoped rule to another driver', () => {
@@ -172,17 +342,20 @@ describe('EthCounters registry', function () {
     expect(resolve('igb', 'rxPause', OUTPUTS.r8125)).to.be.undefined;
   });
 
-  it('should give every counter a redis key, a source and rules', () => {
+  it('should give every counter a redis key, a scope and rules', () => {
     for (const metric in ethCounters.ETH_COUNTERS) {
       const spec = ethCounters.ETH_COUNTERS[metric];
       expect(spec.key, metric).to.be.a('string').and.not.empty;
-      expect(spec.source, metric).to.be.a('string').and.not.empty;
-      if (spec.source !== 'ethtool')
-        continue;
+      expect(spec.scope, metric).to.be.oneOf(['eth', 'all']);
       expect(spec.rules, metric).to.be.an('array').and.not.empty;
       for (const rule of spec.rules) {
-        expect(rule.names, metric).to.be.an('array').and.not.empty;
-        expect(rule.agg, metric).to.be.oneOf(['sum', 'first', 'max']);
+        // one place per rule, so that what a number came from is never ambiguous
+        const sources = ['names', 'stat', 'path', 'queues'].filter(kind => kind in rule);
+        expect(sources.length, metric).to.equal(1);
+        if (rule.names) {
+          expect(rule.names, metric).to.be.an('array').and.not.empty;
+          expect(rule.agg, metric).to.be.oneOf(['sum', 'first', 'max']);
+        }
       }
     }
   });
@@ -197,22 +370,13 @@ describe('EthCounters registry', function () {
     }
   });
 
-  it('should only mark a counter cumulative when collect() actually reads it', () => {
-    // NicStateSensor persists the cumulative counters out of collect(), which only fills the
-    // ethtool-sourced ones. A cumulative counter from another source would read as missing
-    // every round and get pinned to the -1 "driver cannot count it" sentinel
-    for (const metric in ethCounters.ETH_COUNTERS) {
-      const spec = ethCounters.ETH_COUNTERS[metric];
-      if (spec.cumulative)
-        expect(spec.source, metric).to.equal('ethtool');
-    }
+  it('should give every counter a key of its own', () => {
+    // the key is the field name in sys:ethInfo, two counters sharing one would overwrite each
+    // other's lifetime total
+    const keys = Object.keys(ethCounters.ETH_COUNTERS).map(m => ethCounters.ETH_COUNTERS[m].key);
+    expect(new Set(keys).size).to.equal(keys.length);
   });
 
-  it('should not collide with the counter keys the cloud already reads', () => {
-    const keys = Object.keys(ethCounters.ETH_COUNTERS).map(m => ethCounters.ETH_COUNTERS[m].key);
-    for (const existing of ['crc', 'speed', 'link_up', 'link_down', 'tx_timeout'])
-      expect(keys, existing).to.not.include(existing);
-  });
 });
 
 describe('EthCounters.parseEthtoolStats', function () {
