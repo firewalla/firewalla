@@ -14,6 +14,7 @@
  */
 'use strict';
 const TimeSeries = require('redis-timeseries')
+const Constants = require('../net2/Constants.js');
 const _ = require('lodash')
 
 const log = require('../net2/logger.js')(__filename, 'info');
@@ -81,15 +82,17 @@ var getRoundedTime = function (precision, time, skipTzCheck) {
  *
  * `timestamp` should be in seconds, and defaults to current time.
  * `increment` should be an integer, and defaults to 1
+ * `granularities` is an optional subset of this.granularities to record to, defaults to all
  */
-TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()=>{}) {
+TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()=>{}, granularities) {
   var self = this;
 
-  Object.keys(this.granularities).forEach(function(gran) {
-    var properties = self.granularities[gran],
-        keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp,true), // high prority: precision
+  (granularities || Object.keys(this.granularities)).forEach(function(gran) {
+    var properties = self.granularities[gran];
+    if (!properties) throw new Error("Unsupported granularity: " + gran);
+    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp,true), // high prority: precision
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
-      hitTimestamp = getRoundedTime(properties.duration, timestamp);
+        hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
     if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
       const pending = self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl, !self.noMulti)
@@ -224,18 +227,18 @@ TimeSeries.prototype.parseQueuedHits = function(queued, resultSlice, count) {
 
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
-  '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
-  '15minutes': { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
-  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.weeks(53) , duration: timeSeries.days(1), precision:timeSeries.weeks(52) },
-  '1month'   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
+  [Constants.TS_GRAN_1MINUTE]  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
+  [Constants.TS_GRAN_15MINUTES]: { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
+  [Constants.TS_GRAN_1HOUR]    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
+  [Constants.TS_GRAN_1DAY]     : { ttl: timeSeries.weeks(53) , duration: timeSeries.days(1), precision:timeSeries.weeks(52) },
+  [Constants.TS_GRAN_1MONTH]   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
 const boneAPITimeSeries = new TimeSeries(rclient, "boneAPIUsage")
 boneAPITimeSeries.granularities = {
-  '1minute'  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
-  '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
-  '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
+  [Constants.TS_GRAN_1MINUTE]  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
+  [Constants.TS_GRAN_1HOUR]    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
+  [Constants.TS_GRAN_1DAY]     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
 }
 boneAPITimeSeries.noMulti = true
 
@@ -249,6 +252,8 @@ const timeSeriesWithTzBeginingTs = "time_series_with_tz_ts";
 })()
 
 module.exports = {
+  // what HostManager.getStats serves; 15minutes is only read for download/upload
+  STATS_GRANULARITIES: [Constants.TS_GRAN_1MINUTE, Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY, Constants.TS_GRAN_1MONTH],
   getTimeSeries: function () { return timeSeries },
   getBoneAPITimeSeries: function () { return boneAPITimeSeries }
 }
