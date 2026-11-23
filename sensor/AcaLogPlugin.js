@@ -92,6 +92,10 @@ class AcaLogPlugin extends Sensor {
       log.warn(`Rule ${rule.name} has an unknown action ${rule.action}`);
       return;
     }
+    // each kind of finding has its own switch under the aca feature
+    if (rule.feature && !fc.isFeatureOn(rule.feature)) {
+      return;
+    }
     // alarms follow the cyber security switch, checked before the cooldown so turning it on again is not held back
     if (rule.action === 'alarm' && !am2.isCyberSecurityEnabled()) {
       return;
