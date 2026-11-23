@@ -92,6 +92,14 @@ done
 
 # get image tag
 function get_image_tag() {
+  # test/debug override from ~/.fwrc
+  if [[ -n "$RADIUS_TAG" ]]; then
+    if [[ "$RADIUS_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+      image_tag=$RADIUS_TAG
+      return
+    fi
+    echo "Ignoring invalid RADIUS_TAG in ~/.fwrc" >&2
+  fi
   image_tag=$(redis-cli hget policy:system freeradius_server | jq -r '.options.image_tag // empty')
   if [ -z "$image_tag" ]; then
       image_tag=$(get_release_type|tail -n 1)

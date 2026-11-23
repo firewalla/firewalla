@@ -266,8 +266,8 @@ cat << EOF
 # restore mark on a REPLY packet of an existing connection
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-# always check first 4 original packets of a new connection, this is mainly for tls match
--A FW_PREROUTING -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
+# check the first 6 original packets of a new connection, so tls match sees a ClientHello split over up to 3 segments
+-A FW_PREROUTING -m connbytes --connbytes 7 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 EOF
 

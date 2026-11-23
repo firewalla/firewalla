@@ -58,6 +58,10 @@ module.exports = {
   REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
+  // where each ethernet port's counters start from for the app, i.e. what the last Reset Stats
+  // set aside, plus when it happened. A key of its own because SysInfo ships sys:ethInfo as it
+  // stands and the cloud keeps reading the lifetime totals there
+  REDIS_KEY_ETH_INFO_BASE: "sys:ethInfo:base",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
   REDIS_KEY_RUN_REBOOT: "run:reboot",
@@ -101,6 +105,12 @@ module.exports = {
   REDIS_KEY_EVENT_SUMMARY_CLOUD_CONFIG: "event_summary_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
   KEY_EVENT_SUMMARY_CONFIG: "event_summary_config",
+  // local redis cache of whatever the cloud hashset below returned
+  REDIS_KEY_ZSSIDS_CLOUD_CONFIG: "zssids_cloud_config",
+  // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
+  KEY_ZSSIDS_CONFIG: "zssids:config",
+  // the part of zssids:config for this platform and release type, read by platform.sh at early boot
+  REDIS_KEY_ZSSIDS_CLOUD_OVERRIDE: "zssids_cloud_override",
   REDIS_KEY_EVENT_SUMMARY_PREFIX: "eventSummary::", // eventSummary::<key>::<du>::<bucketTs>
   // zset tracking which eventSummary bucket keys actually exist (score = bucketTs, member = the
   // full key string), so readers don't have to reconstruct bucket boundaries from the current config
