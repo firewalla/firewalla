@@ -100,6 +100,28 @@ zssids_supports_shared_roles() {
   timeout 10 "$ZSSIDS_BIN" --capabilities 2>/dev/null | grep -qx "shared-roles"
 }
 
+# zssids blocks the servers its drop rules match from the capture, through the
+# set iptables_common.sh creates, until the rule Firewalla saves for the hit takes over.
+# The timeout is passed rather than left to the binary's default, so it stays the
+# set's default timeout below and in iptables_common.sh
+ZSSIDS_BLOCK_TIMEOUT=3600
+ZSSIDS_BLOCK_OPTS="--block-set zssids_block_set --block-timeout $ZSSIDS_BLOCK_TIMEOUT"
+
+# Does the installed zssids know --block-set? An older asset would refuse the
+# option and not start at all.
+zssids_supports_capture_block() {
+  [[ -x $ZSSIDS_BIN ]] || return 1
+  timeout 10 "$ZSSIDS_BIN" --capabilities 2>/dev/null | grep -qx "capture-block"
+}
+
+# The sets also come from iptables_common.sh, but an upgrade can start zssids with
+# --block-set before that runs again; -exist keeps a set that is already there.
+ensure_block_sets() {
+  $LIVE || return 0
+  sudo ipset create -exist zssids_block_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout $ZSSIDS_BLOCK_TIMEOUT \
+    && sudo ipset create -exist zssids_block_set6 hash:ip,port,ip family inet6 hashsize 16384 maxelem 65536 timeout $ZSSIDS_BLOCK_TIMEOUT
+}
+
 # One zssids process under brofish.service serves both roles: it captures once
 # per interface with zeek's own filters and evaluates the suricata rules on
 # those packets, so the IDS sees what zeek sees and nothing else.
@@ -158,6 +180,17 @@ apply() {
   stage=$(mktemp -d) || fail "mktemp -d" || return 1
   local want_brofish="" want_suricata=""
 
+  # what zssids needs to block from the capture, for whichever unit runs the IDS;
+  # without the sets it runs as before and only alerts
+  local block_opts=""
+  if zssids_supports_capture_block; then
+    if ensure_block_sets; then
+      block_opts="$ZSSIDS_BLOCK_OPTS"
+    else
+      log "creating the zssids block sets failed, zssids will not block"
+    fi
+  fi
+
   # ---- render and validate every wanted file before touching anything ----
   if [[ $ZEEK_ENGINE == zssids ]]; then
     # One process for both roles when zssids owns both and the box wants both:
@@ -165,7 +198,7 @@ apply() {
     # evaluated on the packets zeek captures.
     local opts="--no-suricata"
     if shared_roles; then
-      opts=""
+      opts="$block_opts"
     fi
     [[ -f $FIREWALLA_HOME/etc/brofish-zssids.conf ]] \
       || { rm -rf "$stage"; fail "missing $FIREWALLA_HOME/etc/brofish-zssids.conf"; return 1; }
@@ -186,8 +219,11 @@ apply() {
       src="$FIREWALLA_HOME/etc/suricata-zssids-off.conf"
     fi
     [[ -f $src ]] || { rm -rf "$stage"; fail "missing $src"; return 1; }
+    # the ids-only zssids blocks too; the held-off unit has no placeholder to fill
     want_suricata=$stage/suricata.conf
-    cp -f "$src" "$want_suricata" || { rm -rf "$stage"; fail "staging $src"; return 1; }
+    if ! sed "s#@ZSSIDS_OPTS@#$block_opts#" "$src" > "$want_suricata"; then
+      rm -rf "$stage"; fail "staging $src"; return 1
+    fi
   fi
 
   # ---- commit: install or remove, keeping copies to roll back with ----

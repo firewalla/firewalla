@@ -448,6 +448,21 @@ function spawnQuiet(command, args) {
   });
 }
 
+// On Node 24 a plain gc() keeps freed old-space pages pooled; only a last-resort GC returns them,
+// as Node 12 does after any full GC. The `flavor` option exists from V8 12.3, and V8 before 7.9
+// runs a minor GC for any argument.
+const lastResortGCSupported = !versionCompare(process.versions.v8, '12.3');
+
+// returns false when the process runs without --expose-gc
+function gc() {
+  if (!global.gc) return false;
+  if (lastResortGCSupported)
+    global.gc({ type: 'major', execution: 'sync', flavor: 'last-resort' });
+  else
+    global.gc();
+  return true;
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -475,4 +490,5 @@ module.exports = {
   withTimeout,
   spawnQuiet,
   isValidCommonName,
+  gc,
 };

@@ -93,6 +93,7 @@ const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
 const { exec, execFile } = require('child-process-promise');
+const net = require('net');
 const LRU = require('lru-cache');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -132,6 +133,10 @@ const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", 
 
 // the cloud counts every policy feedback as a block, so only blocking policies report
 const intelFeedbackActions = ["block", "app_block"];
+
+// zssids adds "server,proto:port,device" to these the moment a drop rule matches, must match its --block-set
+const ZSSIDS_BLOCK_SET = "zssids_block_set";
+const ZSSIDS_BLOCK_SET6 = "zssids_block_set6";
 
 function submitPolicyIntelFeedback(feedbackAction, policy) {
   if (!intelFeedbackActions.includes(policy.action)) return;
@@ -2483,10 +2488,41 @@ class PolicyManager2 {
     }
   }
 
+  // the "server,proto:port,device" entries zssids added for the hits this rule was saved for, one per device IP
+  async removeZssidsBlockEntry(policy) {
+    const port = Number(policy.remotePort);
+    const protocol = String(policy.protocol || "").toLowerCase();
+    if (!net.isIP(policy.target) || !Number.isInteger(port) || !["tcp", "udp"].includes(protocol)) {
+      log.error(`Policy ${policy.pid} is not a valid zssids block`, policy.target, policy.remotePort, policy.protocol);
+      return;
+    }
+    let setName = ZSSIDS_BLOCK_SET;
+    if (net.isIPv6(policy.target)) {
+      setName = ZSSIDS_BLOCK_SET6;
+    }
+
+    const deviceIPs = String(policy.zssidsDeviceIPs || "").split(",").filter(ip => net.isIP(ip));
+    for (const deviceIP of deviceIPs) {
+      const entry = `${policy.target},${protocol}:${port},${deviceIP}`;
+      log.info(`Policy ${policy.pid}: ipset del ${setName} ${entry}`);
+      try {
+        // -exist: the entry is usually gone already, it only lasts zssids' --block-timeout
+        await execFile("sudo", ["ipset", "-exist", "del", setName, entry]);
+      } catch (err) {
+        log.error(`Policy ${policy.pid}: failed to remove ${entry} from ${setName}`, err.message);
+      }
+    }
+  }
+
   async _unenforce(policy) {
     log.info(`Unenforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
     await this._removeActivatedTime(policy);
+
+    // zssids blocked the server on its own until this rule took over; lift that too, or undo would wait for its timeout
+    if (policy.isZssidsBlock()) {
+      await this.removeZssidsBlockEntry(policy);
+    }
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -3024,12 +3060,14 @@ class PolicyManager2 {
       await qos.deallocateQoSHandlerForPolicy({ pid, subKey: policy.qosSubKey });
   }
 
-  async match(alarm) {
+  // excludePid: a rule that does not count, the one the alarm itself stands for
+  async match(alarm, excludePid = null) {
     log.verbose("Checking policies against", alarm.type, alarm.device, alarm['p.device.id']);
     const policies = await this.loadActivePoliciesAsync()
 
     const matchedPolicies = policies
       .filter(policy =>
+        String(policy.pid) !== String(excludePid) &&
         // excludes pbr and qos, lagacy blocking rule might not have action
         (!policy.action || ["allow", "block", "app_block"].includes(policy.action)) &&
         // low priority rule should not mute alarms

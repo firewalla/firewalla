@@ -816,6 +816,10 @@ class SysManager {
       );
   }
 
+  isLocalOrSearchDomain(d) {
+    return !!(this.isLocalDomain(d) || this.isSearchDomain(d));
+  }
+
   myIp2(intf = this.config.monitoringInterface) {
     const if2 = intf + ':0'
     return this.getInterface(if2) && this.getInterface(if2).ip_address;
