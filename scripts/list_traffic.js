@@ -16,6 +16,7 @@
 'use strict'
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const Constants = require('../net2/Constants.js');
 
 const program = require('commander');
 
@@ -24,7 +25,7 @@ program.version('0.0.2')
 
 program.parse(process.argv)
 
-timeSeries.getHits("download", "1minute", 11, (err, data) => {
+timeSeries.getHits("download", Constants.TS_GRAN_1MINUTE, 11, (err, data) => {
 
   if(data[data.length - 1][1] == 0) {
     data = data.slice(0, 10)
@@ -36,7 +37,7 @@ timeSeries.getHits("download", "1minute", 11, (err, data) => {
     console.log("download", new Date(d[0] * 1000), d[1])
   })
 
-  timeSeries.getHits("upload", "1minute", 11, (err, data) => {
+  timeSeries.getHits("upload", Constants.TS_GRAN_1MINUTE, 11, (err, data) => {
     if(data[data.length - 1][1] == 0) {
       data = data.slice(0, 10)
     } else {

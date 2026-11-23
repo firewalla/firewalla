@@ -215,8 +215,8 @@ class DataUsageSensor extends Sensor {
         const downloadKey = `download${mac ? ':' + mac : ''}`;
         const uploadKey = `upload${mac ? ':' + mac : ''}`;
         // latest solt is under accumulation, skip that
-        const downloads = await getHitsAsync(downloadKey, "15minutes", slots + 1);
-        const uploads = await getHitsAsync(uploadKey, "15minutes", slots + 1);
+        const downloads = await getHitsAsync(downloadKey, Constants.TS_GRAN_15MINUTES, slots + 1);
+        const uploads = await getHitsAsync(uploadKey, Constants.TS_GRAN_15MINUTES, slots + 1);
         downloads.pop()
         uploads.pop()
 
@@ -243,10 +243,10 @@ class DataUsageSensor extends Sensor {
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
         percentage = percentage * 100;
-        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * 24 + 1)
-        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * 24 + 1)
-        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * this.smWindow + 1)
-        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * this.smWindow + 1)
+        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, Constants.TS_GRAN_15MINUTES, 4 * 24 + 1)
+        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, Constants.TS_GRAN_15MINUTES, 4 * 24 + 1)
+        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, Constants.TS_GRAN_15MINUTES, 4 * this.smWindow + 1)
+        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, Constants.TS_GRAN_15MINUTES, 4 * this.smWindow + 1)
         last24HoursDownloadStats.pop()
         last24HoursUploadStats.pop()
         recentlyDownloadStats.pop()
@@ -449,8 +449,8 @@ class DataUsageSensor extends Sensor {
         const downloadKey = `download`;
         const uploadKey = `upload`;
 
-        const download = await getHitsAsync(`${downloadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, "1day", totalDays);
-        const upload = await getHitsAsync(`${uploadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, "1day", totalDays);
+        const download = await getHitsAsync(`${downloadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, Constants.TS_GRAN_1DAY, totalDays);
+        const upload = await getHitsAsync(`${uploadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, Constants.TS_GRAN_1DAY, totalDays);
         let endIndex = -2;
         const records = [];
         for (const ts of periodTsList) {

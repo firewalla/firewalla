@@ -624,7 +624,7 @@ module.exports = class HostManager extends Monitorable {
     }
     await Promise.all(metrics.map(async metric => {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
-      if (granularities == '1minute') {
+      if (granularities == Constants.TS_GRAN_1MINUTE) {
         if (s[s.length - 1] && s[s.length - 1][1] == 0)
           s.pop()
         else if (s.length > 60)
@@ -641,14 +641,14 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newLast24StatsForInit(json, target, metrics, options) {
-    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target, metrics);
+    json.newLast24 = await this.getStats({granularities: Constants.TS_GRAN_1HOUR, hits: 24}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.newLast24);
     }
   }
 
   async last12MonthsStatsForInit(json, target, metrics, options) {
-    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target, metrics);
+    json.last12Months = await this.getStats({granularities: Constants.TS_GRAN_1MONTH, hits: 12}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last12Months);
     }
@@ -704,8 +704,8 @@ module.exports = class HostManager extends Monitorable {
 
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    const download = await getHitsAsync(downloadKey, Constants.TS_GRAN_1DAY, days) || [];
+    const upload = await getHitsAsync(uploadKey, Constants.TS_GRAN_1DAY, days) || [];
     return Object.assign({
       monthlyBeginTs,
       monthlyEndTs
@@ -734,14 +734,14 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async last60MinStatsForInit(json, target, metrics, options) {
-    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target, metrics);
+    json.last60 = await this.getStats({granularities: Constants.TS_GRAN_1MINUTE, hits: 61}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last60);
     }
   }
 
   async last30daysStatsForInit(json, target, metrics, options) {
-    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target, metrics);
+    json.last30 = await this.getStats({granularities: Constants.TS_GRAN_1DAY, hits: 30}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last30);
     }
@@ -937,7 +937,7 @@ module.exports = class HostManager extends Monitorable {
     // keeps total download/upload only for sorting on app
     await Promise.all([
       asyncNative.eachLimit(hosts, 30, async host => {
-        const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
+        const stats = await this.getStats({granularities: Constants.TS_GRAN_1HOUR, hits: 24}, host.o.mac, ['upload', 'download']);
         host.flowsummary = {
           inbytes: stats.totalDownload,
           outbytes: stats.totalUpload

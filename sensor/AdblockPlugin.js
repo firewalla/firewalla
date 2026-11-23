@@ -231,8 +231,8 @@ class AdblockStats {
     const multi = mclient.multi();
     let results = null, q24h = null, q7d = null;
     try {
-      q24h = timeSeries.queueHits(multi, 'feature:adblock:block', '1hour', 24);
-      q7d = timeSeries.queueHits(multi, 'feature:adblock:block', '1day', 7);
+      q24h = timeSeries.queueHits(multi, 'feature:adblock:block', Constants.TS_GRAN_1HOUR, 24);
+      q7d = timeSeries.queueHits(multi, 'feature:adblock:block', Constants.TS_GRAN_1DAY, 7);
       multi.hgetall('ext.adblock.stats');
       results = await multi.execAsync();
     } catch (err) {

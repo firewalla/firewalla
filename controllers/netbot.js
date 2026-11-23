@@ -2336,7 +2336,7 @@ class netBot extends ControllerBot {
     jsonobj.hosts = {}
     const hits = msg.data.hourblock == 24 ? 24 : Math.ceil((Date.now()/1000 - options.begin) / 3600)
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
-      const stats = await this.hostManager.getStats({ granularities: '1hour', hits }, t, hostMetrics)
+      const stats = await this.hostManager.getStats({ granularities: Constants.TS_GRAN_1HOUR, hits }, t, hostMetrics)
       const host = {}
       for (const m of hostMetrics) {
         host[m] = msg.data.hourblock == 24

@@ -14,6 +14,7 @@
  */
 'use strict';
 const TimeSeries = require('redis-timeseries')
+const Constants = require('../net2/Constants.js');
 const _ = require('lodash')
 
 const log = require('../net2/logger.js')(__filename, 'info');
@@ -224,18 +225,18 @@ TimeSeries.prototype.parseQueuedHits = function(queued, resultSlice, count) {
 
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
-  '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
-  '15minutes': { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
-  '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.weeks(53) , duration: timeSeries.days(1), precision:timeSeries.weeks(52) },
-  '1month'   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
+  [Constants.TS_GRAN_1MINUTE]  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
+  [Constants.TS_GRAN_15MINUTES]: { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
+  [Constants.TS_GRAN_1HOUR]    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
+  [Constants.TS_GRAN_1DAY]     : { ttl: timeSeries.weeks(53) , duration: timeSeries.days(1), precision:timeSeries.weeks(52) },
+  [Constants.TS_GRAN_1MONTH]   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
 const boneAPITimeSeries = new TimeSeries(rclient, "boneAPIUsage")
 boneAPITimeSeries.granularities = {
-  '1minute'  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
-  '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
-  '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
+  [Constants.TS_GRAN_1MINUTE]  : { ttl: boneAPITimeSeries.minutes(60)  , duration: boneAPITimeSeries.minutes(1) },
+  [Constants.TS_GRAN_1HOUR]    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
+  [Constants.TS_GRAN_1DAY]     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
 }
 boneAPITimeSeries.noMulti = true
 

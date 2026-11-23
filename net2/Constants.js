@@ -267,6 +267,13 @@ module.exports = {
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
 
+  // time series granularities, part of the timedTraffic:<key>:<granularity>:<ts> redis keys
+  TS_GRAN_1MINUTE: "1minute",
+  TS_GRAN_15MINUTES: "15minutes",
+  TS_GRAN_1HOUR: "1hour",
+  TS_GRAN_1DAY: "1day",
+  TS_GRAN_1MONTH: "1month",
+
   // a plain file name: no path separators, so a value matching this cannot leave the directory it
   // is resolved against. use it wherever an untrusted value becomes a path component
   REGEX_FILENAME: /^[a-z0-9][a-z0-9._-]*$/i,
