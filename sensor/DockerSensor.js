@@ -111,8 +111,9 @@ class DockerSensor extends Sensor {
 
     try {
       await sysManager.waitTillIptablesReady()
-      await ipset.create(IPSET_DOCKER_WAN_ROUTABLE, 'hash:net')
-      await ipset.create(IPSET_DOCKER_LAN_ROUTABLE, 'hash:net')
+      // the user fills these two sets, so they must keep their content across a restart
+      await ipset.create(IPSET_DOCKER_WAN_ROUTABLE, 'hash:net', false, { inline: true })
+      await ipset.create(IPSET_DOCKER_LAN_ROUTABLE, 'hash:net', false, { inline: true })
       await ipset.add(IPSET_MONITORED_NET, IPSET_DOCKER_LAN_ROUTABLE)
 
       await this.addRoute()

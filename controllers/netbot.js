@@ -141,7 +141,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName, isCategoryDomainValid, gc } = require('../util/util.js');
 const { localDayStart } = require('../util/TimeSlot.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -170,6 +170,20 @@ let sendLogRunning = false;
 const SENDLOG_STORAGE_TIMEOUT_SEC = 60;
 const SENDLOG_TIMEOUT_SEC = 300;
 const WIFI_SWITCH_ERR_IDS = ["WRONG_KEY", "AUTH_FAILED"];
+
+// the ethernet ports a port command was asked to act on, or a 400. Shared by resetPort and
+// resetPortStats so that what a port is called, and which of them can be reset, cannot drift
+// apart between the two commands. firecommit#11022
+function resettableEthernetPorts(value) {
+  if (!_.isArray(_.get(value, "ports")) || _.isEmpty(value.ports))
+    throw { code: 400, msg: "'ports' should be a non-empty array" };
+  const ports = _.uniq(value.ports);
+  const legal = platform.getEthernetNicNames();
+  const illegal = ports.filter(p => !legal.includes(p));
+  if (!_.isEmpty(illegal))
+    throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+  return ports;
+}
 
 class netBot extends ControllerBot {
 
@@ -213,26 +227,21 @@ class netBot extends ControllerBot {
           const json = {};
           await sysManager.updateAsync();
 
-          // fwapcOps and dapOps are optional; individual .catch(() => null) already absorbs failures.
-          const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
-          const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
-          const optionalTasks = fwapcOps.map(async (op) => {
+          // fwapcOps, dapOps and vulcanOps are optional; individual .catch(() => null) already absorbs failures.
+          const runOps = (ops, getDaemon) => (Array.isArray(ops) ? ops : []).map(async (op) => {
             if (!op || typeof op !== 'object') return;
+            const daemon = getDaemon();
+            if (!daemon) return;
             const { key, method, path, body } = op;
-            const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
+            const result = await daemon.apiCall(method || "GET", path, body).catch(() => null);
             if (result && result.code == 200)
               json[key] = result.body;
           });
-          optionalTasks.push(...dapOps.map(async (op) => {
-            if (!op || typeof op !== 'object') return;
-            const { key, method, path, body } = op;
-            const dapSensor = sl.getSensor('DapSensor');
-            if (dapSensor) {
-              const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
-              if (result && result.code == 200)
-                json[key] = result.body;
-            }
-          }));
+          const optionalTasks = [
+            ...runOps(data.fwapcOps, () => fwapc),
+            ...runOps(data.dapOps, () => sl.getSensor('DapSensor')),
+            ...runOps(data.vulcanOps, () => sl.getSensor('OtaSensor')),
+          ];
           await Promise.all(optionalTasks).catch((err) => {
             log.error("Failed to run optional tasks in init", err.message);
             log.debug(err.stack);
@@ -282,6 +291,16 @@ class netBot extends ControllerBot {
             log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
           }
         }));
+
+        // per request, outside the init cache, so a schedule set in between is not served stale
+        const otaSensor = sl.getSensor('OtaSensor');
+        if (otaSensor) {
+          try {
+            json.otaRebootSchedule = await otaSensor.getSchedule();
+          } catch (err) {
+            log.warn("Failed to read OTA reboot schedule for init:", err.message);
+          }
+        }
 
         // rkey and volatile runtime fields are always set per-request.
         if (this.eptcloud) {
@@ -587,9 +606,7 @@ class netBot extends ControllerBot {
 
     setInterval(() => {
       try {
-        if (global.gc) {
-          global.gc();
-        }
+        gc();
       } catch (e) {
       }
     }, 1000 * 60);
@@ -661,7 +678,7 @@ class netBot extends ControllerBot {
       const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastSeen",
         "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
         "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app", "p.dest.app.id",
-        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "result_method", "result", "p.intf.desc",
+        "p.group", "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "result_method", "result", "p.intf.desc",
         "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
@@ -2223,6 +2240,8 @@ class netBot extends ControllerBot {
           }
           options.mac = host.o.mac;
           jsonobj = host.toJson();
+          if (platform.isFireRouterManaged())
+            await this.hostManager.validateAutoGroup(jsonobj);
         }
         break
       }
@@ -3159,15 +3178,14 @@ class netBot extends ControllerBot {
         await f.resetBootingComplete()
         return
       case "resetPort": {
-        if (!_.isArray(value.ports) || _.isEmpty(value.ports))
-          throw { code: 400, msg: "'ports' should be a non-empty array" };
-        const ports = _.uniq(value.ports);
-        const legal = platform.getEthernetNicNames();
-        const illegal = ports.filter(p => !legal.includes(p));
-        if (!_.isEmpty(illegal))
-          throw { code: 400, msg: `not resettable ethernet ports: ${illegal.join(', ')}, valid ports are ${legal.join(', ')}` };
+        const ports = resettableEthernetPorts(value);
         log.info("Resetting link on ethernet ports", ports);
         return await networkTool.resetEthernetPorts(ports);
+      }
+      case "resetPortStats": {
+        const ports = resettableEthernetPorts(value);
+        log.info("Resetting counters on ethernet ports", ports);
+        return await this.hostManager.resetNicCounters(ports);
       }
       case "joinBeta":
         await this.switchBranch("beta")
@@ -4688,8 +4706,7 @@ process.on('uncaughtException', (err) => {
 setInterval(() => {
   let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
   try {
-    if (global.gc) {
-      global.gc();
+    if (gc()) {
       log.info("GC executed ", memoryUsage, " RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
     }
   } catch (e) {

@@ -59,3 +59,40 @@ describe('test sysManager', function(){
         await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, orig);
     });
   });
+
+describe('test sysManager local or search domain', function(){
+    // a prototype copy, so the shared instance keeps its own suffix and interfaces
+    const make = (localDomainSuffix, searchDomains) => {
+        const sm = Object.create(sysManager);
+        sm.localDomainSuffix = localDomainSuffix;
+        sm.getMonitoringInterfaces = () => [{ name: 'br0' }, { name: 'br1', searchDomains }];
+        return sm;
+    };
+
+    it('is true for a name under the local domain suffix', () => {
+        expect(make('lan', []).isLocalOrSearchDomain('foo.lan')).to.equal(true);
+    });
+
+    it('is true for a name under a search domain of an interface', () => {
+        expect(make('lan', ['corp.test']).isLocalOrSearchDomain('foo.corp.test')).to.equal(true);
+    });
+
+    it('matches in any case', () => {
+        const sm = make('lan', ['Corp.Test']);
+        expect(sm.isLocalOrSearchDomain('FOO.lan')).to.equal(true);
+        expect(sm.isLocalOrSearchDomain('Foo.CORP.test')).to.equal(true);
+    });
+
+    it('is false for a name under neither, or the bare suffix itself', () => {
+        const sm = make('lan', ['corp.test']);
+        expect(sm.isLocalOrSearchDomain('foo.example.org')).to.equal(false);
+        expect(sm.isLocalOrSearchDomain('foolan')).to.equal(false);
+        expect(sm.isLocalOrSearchDomain('lan')).to.equal(false);
+    });
+
+    it('is false, as a boolean, for an empty or missing name', () => {
+        const sm = make('lan', ['corp.test']);
+        for (const d of ['', undefined, null])
+            expect(sm.isLocalOrSearchDomain(d)).to.equal(false);
+    });
+});

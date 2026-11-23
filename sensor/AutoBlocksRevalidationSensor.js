@@ -118,7 +118,8 @@ class AutoBlocksRevalidationSensor extends Sensor {
     log.info("Iterating auto blocks...");
     const rules = await pm2.loadActivePoliciesAsync();
 
-    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto' && !rule.shouldDelete);
+    // a zssids block stands for what the IDS engine saw, not for cloud intel, so the cloud has no say on it
+    const autoBlockRules = rules.filter((rule) => rule && rule.method === 'auto' && !rule.shouldDelete && !rule.isZssidsBlock());
 
     if (autoBlockRules.length === 0) {
       log.info("No active auto blocks");
