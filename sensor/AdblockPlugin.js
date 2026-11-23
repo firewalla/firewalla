@@ -68,6 +68,8 @@ const Ipset = require('../net2/Ipset.js');
 const { Rule } = require('../net2/Iptables.js');
 
 const Constants = require('../net2/Constants.js');
+// adblock stats only report the last 24 hours and 7 days
+const ADBLOCK_GRANULARITIES = [Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY];
 
 const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
 const ADBLOCK_TLS_RULE_PID = Constants.RESERVED_PID_ADBLOCK_TLS;
@@ -155,7 +157,7 @@ class AdblockStats {
     if (recordTs <= this.resetTs)
       return;
 
-    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct);
+    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct, undefined, ADBLOCK_GRANULARITIES);
     this.pendingHits += Math.floor(Number(record.ct) || 1);
     if (!this.lastHitTs || record._ts >= this.lastHitTs) {
       const flow = _.cloneDeep(record);

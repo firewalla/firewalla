@@ -252,6 +252,8 @@ const timeSeriesWithTzBeginingTs = "time_series_with_tz_ts";
 })()
 
 module.exports = {
+  // what HostManager.getStats serves; 15minutes is only read for download/upload
+  STATS_GRANULARITIES: [Constants.TS_GRAN_1MINUTE, Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY, Constants.TS_GRAN_1MONTH],
   getTimeSeries: function () { return timeSeries },
   getBoneAPITimeSeries: function () { return boneAPITimeSeries }
 }
