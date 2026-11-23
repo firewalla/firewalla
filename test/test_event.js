@@ -21,6 +21,7 @@ const log = require('../net2/logger.js')(__filename);
 const eventapi = require('../event/EventApi.js');
 const eventhandler = require('../event/EventRequestHandler.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const _ = require('lodash');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -167,17 +168,23 @@ describe('Test event handler state event', function() {
     await rclient.hdelAsync("event:state:cache", cacheKey);
     await rclient.hdelAsync("event:state:cache:error", cacheKey);
 
-    // initial state is sent as an event
+    // initial state is saved but not sent, a no_error event is never an error
     await eventhandler.queueStateEvent(stateEvent(now-2000, 1));
-    expect((await eventapi.getEventByTs(now-2000)).state_value).to.equal(1);
+    expect(await eventapi.getEventByTs(now-2000)).to.be.empty;
+    expect(JSON.parse(await rclient.hgetAsync("event:state:cache", cacheKey)).state_value).to.equal(1);
 
     // repeated state is NOT sent
     await eventhandler.queueStateEvent(stateEvent(now-1000, 1));
     expect(await eventapi.getEventByTs(now-1000)).to.be.empty;
 
-    // changed state is sent, along with the previous value
+    // changed state is sent, along with the previous value. sendEvent() does not wait for the
+    // history write, so wait for the entry instead of reading it right away
     await eventhandler.queueStateEvent(stateEvent(now, 2));
-    const changed = await eventapi.getEventByTs(now);
+    let changed = {};
+    for (let i = 0; i < 40 && _.isEmpty(changed); i++) {
+      changed = await eventapi.getEventByTs(now);
+      if (_.isEmpty(changed)) await new Promise(resolve => setTimeout(resolve, 50));
+    }
     expect(changed.state_value).to.equal(2);
     expect(changed.prev_state_value).to.equal(1);
 

@@ -201,7 +201,7 @@ class EventRequestHandler {
     /*
      * A "no_error" event ONLY tracks state changes, none of its values is an error,
      * e.g. a mode/selection change that has no faulty value.
-     * Unlike other state events, its initial state is sent as an event as well.
+     * Its initial state is only saved, not sent, so the first state change is its first event.
      */
     isNoErrorStateEvent(eventRequest) {
         return Boolean(eventRequest.labels && eventRequest.labels[STATE_NO_ERROR]);
@@ -262,7 +262,7 @@ class EventRequestHandler {
                 }
             } else {
                 // no saved state, record ts0 and ONLY send event if it is ERROR,
-                // or if it is a no_error event, whose initial state is a state change on its own
+                // a no_error event is never an error, so its first message is only saved
                 eventRequest.ts0 = eventRequest.ts;
                 if (isError) {
                     log.debug("send initial error state event:",eventRequest);
