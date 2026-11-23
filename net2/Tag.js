@@ -187,7 +187,8 @@ class Tag extends Monitorable {
     for (const key of Object.keys(this.policy)) {
       if (key === "freeradius_server") {
         // radius server is not enforced in PolicyManager, reset its config directly
-        await freeradius.reconfigServer(this.o.uid, {});
+        const frs = require('../sensor/SensorLoader.js').getSensor('FreeRadiusSensor');
+        await freeradius.reconfigServer(this.o.uid, frs ? await frs.loadOptionsAsync() : {});
         continue;
       }
       // policies not in the list are cleaned up along with the ipsets and config files in destroyEnv()

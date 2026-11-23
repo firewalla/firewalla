@@ -644,8 +644,8 @@ class FreeRadiusSensor extends Sensor {
   async startFreeRadiusServer() {
     try {
       this.processing = true;
-      this.options = await this.loadOptionsAsync();
-      await freeradius.startServer(this._options || {});
+      this._options = await this.loadOptionsAsync();
+      await freeradius.startServer(this._options);
     } catch (err) {
       log.error("failed to start freeradius server", err.message);
     } finally {
@@ -656,8 +656,8 @@ class FreeRadiusSensor extends Sensor {
   async stopFreeRadiusServer() {
     try {
       this.processing = true;
-      this.options = await this.loadOptionsAsync();
-      await freeradius.stopServer(this._options || {});
+      this._options = await this.loadOptionsAsync();
+      await freeradius.stopServer(this._options);
     } catch (err) {
       log.error("failed to stop freeradius server", err.message);
     } finally {
@@ -668,8 +668,8 @@ class FreeRadiusSensor extends Sensor {
   async resetFreeRadiusServer() {
     try {
       this.processing = true;
-      this.options = await this.loadOptionsAsync();
-      await freeradius.resetServer(this._options || {});
+      this._options = await this.loadOptionsAsync();
+      await freeradius.resetServer(this._options);
     } catch (err) {
       log.error("failed to reset freeradius server", err.message);
     } finally {
