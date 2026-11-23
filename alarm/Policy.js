@@ -198,7 +198,9 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "ipOnly", "origDst", "origDport",
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids", "domainExactMatch",
+      // the rule saved for an IDS engine block is never the same as one the user made
+      "zssidsBlock"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -315,6 +317,11 @@ class Policy {
 
   isAutoBlockPolicy() {
     return this.method == 'auto' && this.category == 'intel';
+  }
+
+  // saved for a connection zssids blocked on its own; enforced like any rule, and removing it also lifts the entry zssids added
+  isZssidsBlock() {
+    return this.zssidsBlock == "1";
   }
 
   isSecurityBlockPolicy() {
@@ -633,6 +640,16 @@ class Policy {
   }
 
   matchDomain(domain) {
+    if (!domain || !this.target) return false
+    // a *. target covers subdomains only, exact match or not, the same as every enforcement path
+    // treats it: DomainBlock keeps the pattern lookup and drops the suffix itself, the tls host and
+    // the dnsmasq entry are used as they are
+    if (this.target.startsWith("*."))
+      return minimatch(domain, this.target)
+    // read the flag exactly as enforcement does, so a rule can never be enforced one way and
+    // matched the other. that would mute alarms for traffic it does not block
+    if (this.domainExactMatch)
+      return domain === this.target
     return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 

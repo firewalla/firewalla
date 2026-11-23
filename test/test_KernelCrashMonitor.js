@@ -18,6 +18,7 @@ const { expect } = require('chai');
 const proxyquire = require('proxyquire');
 
 const REDIS_KEY = 'kernel_crash_info';
+const REPORT_KEY = 'kernel_crash_report';
 const PSTORE_PATH = '/sys/fs/pstore';
 const PSTORE_ARCHIVE_PATH = '/log/system/pstore';
 const PSTORE_BACKEND_PARAM = '/sys/module/pstore/parameters/backend';
@@ -99,6 +100,15 @@ function makeExecFile(fixtures) {
     if (file === 'sudo' && args[0] === 'find' && args.includes('-name')) {
       return { stdout: fixtures.dmesgFindOutput || '' };
     }
+    if (file === 'sudo' && args[0] === 'grep' && args[1] === '-l' && args.includes('-e')) {
+      // ['grep','-l','-e',p1,'-e',p2,...,...paths]
+      const patterns = args.filter((a, i) => args[i - 1] === '-e');
+      const paths = args.filter(a => a.startsWith('/'));
+      const matches = paths.filter(p =>
+        patterns.some(pat => (fixtures.fileContents[p] || '').includes(pat)));
+      if (matches.length === 0) throw new Error('grep: no match');
+      return { stdout: matches.join('\n') };
+    }
     if (file === 'sudo' && args[0] === 'grep' && args[1] === '-l') {
       const paths = args.slice(3); // ['grep', '-l', 'Kernel panic', ...paths]
       const matches = paths.filter(p => (fixtures.fileContents[p] || '').includes('Kernel panic'));
@@ -121,6 +131,21 @@ function makeExecFile(fixtures) {
         throw new Error(`test: ${args[1]}: not found`);
       return { stdout: '' };
     }
+    if (file === 'sudo' && args[0] === 'test' && args[1] === '-d') {
+      if (!(fixtures.archiveFiles && fixtures.archiveFiles[args[2]] !== undefined))
+        throw new Error(`test: ${args[2]}: not a directory`);
+      return { stdout: '' };
+    }
+    if (file === 'sudo' && args[0] === 'ls' && args[1] === '-1') {
+      if (fixtures.lsFails) throw new Error('ls: Input/output error');
+      const names = fixtures.archiveFiles && fixtures.archiveFiles[args[2]];
+      if (!names) throw new Error(`ls: ${args[2]}: No such file or directory`);
+      if (names.length === 0) return { stdout: '' };
+      return { stdout: names.join('\n') };
+    }
+    if (file === 'uname') {
+      return { stdout: `${fixtures.kernelVersion || '5.10.160'}\n` };
+    }
     if (file === 'ls') {
       return { stdout: (fixtures.archiveDirs || []).join('\n') };
     }
@@ -130,20 +155,29 @@ function makeExecFile(fixtures) {
   return { execFile, execLog };
 }
 
-function loadKCM(fakeRedis, execFileImpl) {
+function loadKCM(fakeRedis, execFileImpl, boneStub) {
   const logs = { info: [], debug: [], warn: [], error: [] };
+  const boneCalls = [];
+  const bone = boneStub || {
+    logAsync: async (severity, payload, opts) => { boneCalls.push({ severity, payload, opts }); },
+    '@noCallThru': true,
+  };
+  if (!bone['@noCallThru']) bone['@noCallThru'] = true;
   const mod = proxyquire('../net2/KernelCrashMonitor.js', {
+    '../lib/Bone.js': bone,
     '../util/redis_manager.js': { getRedisClient: () => fakeRedis, '@noCallThru': true },
     './logger.js': () => ({
       info: (...a) => logs.info.push(a.join(' ')),
       debug: (...a) => logs.debug.push(a.join(' ')),
       warn: (...a) => logs.warn.push(a.join(' ')),
       error: (...a) => logs.error.push(a.join(' ')),
+      forceInfo: (...a) => logs.info.push(a.join(' ')),
     }),
     './Firewalla.js': { getFirewallaHome: () => '/home/pi/firewalla', '@noCallThru': true },
     'child-process-promise': { execFile: execFileImpl, '@noCallThru': true },
   });
   mod._logs = logs;
+  mod._boneCalls = boneCalls;
   return mod;
 }
 
@@ -1076,4 +1110,234 @@ describe('KernelCrashMonitor', function () {
       expect(cleanups.length).to.be.at.least(1); // the finally-block rm still ran
     });
   });
+
+  // ── reportUdpTlsDisableIfNeeded ───────────────────────────────────────────
+
+  describe('report record migration', function () {
+    // A box disabled before this feature shipped has only kernel_crash_info. The report
+    // record has to be seeded while udpModuleVersion is still the build that crashed - the
+    // re-enable path and the module load that follows both overwrite it, and the delayed
+    // report sensor would otherwise blame the newly installed build.
+    it('seeds a report record for a crash that predates the feature', async function () {
+      const OLD = { version: '0.0.11', srcversion: 'OLD', koId: 'old' };
+      await fakeRedis.setAsync(REDIS_KEY, JSON.stringify({
+        shouldDisableUdpTls: true, lastCrashTS: 1700000000, crashesCount: 1,
+        udpTlsDisabledOn: 1700000005, udpModuleVersion: OLD,
+      }));
+      const kcm = loadKCM(fakeRedis, makeExecFile({ modinfoOutput: modinfoStdout('0.0.13', 'NEW') }).execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', KO_PATH);
+
+      const report = JSON.parse(await fakeRedis.getAsync(REPORT_KEY));
+      expect(report.crashTS).to.equal(1700000000);
+      expect(report.moduleVersion.version).to.equal('0.0.11');
+      expect(report.reportedTS).to.be.undefined;
+    });
+
+    it('does not seed anything on a box that never crashed', async function () {
+      await fakeRedis.setAsync(REDIS_KEY, JSON.stringify({ shouldDisableUdpTls: false }));
+      const kcm = loadKCM(fakeRedis, makeExecFile({}).execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', KO_PATH);
+      expect(await fakeRedis.getAsync(REPORT_KEY)).to.be.null;
+    });
+  });
+
+  describe('reportUdpTlsDisableIfNeeded', function () {
+    const CRASH_TS = 1700000000;
+    const ARCHIVE_DIR = `${PSTORE_ARCHIVE_PATH}/${CRASH_TS}`;
+    const OLD_BUILD = { version: '0.0.11', srcversion: 'OLD', koId: 'old' };
+
+    // kernel_crash_info holds the crash itself; the report record lives in its own key so no
+    // other writer of kernel_crash_info can drop it
+    async function seed(info = {}, report = { crashTS: CRASH_TS, moduleVersion: OLD_BUILD }) {
+      await fakeRedis.setAsync(REDIS_KEY, JSON.stringify(Object.assign({
+        shouldDisableUdpTls: true,
+        lastCrashTS: CRASH_TS,
+        crashesCount: 2,
+        udpTlsDisabledOn: CRASH_TS + 5,
+        udpModuleVersion: { version: '0.0.12', srcversion: 'ABC', koId: 'id' },
+      }, info)));
+      if (report) await fakeRedis.setAsync(REPORT_KEY, JSON.stringify(report));
+    }
+    const readReport = async () => JSON.parse(await fakeRedis.getAsync(REPORT_KEY) || '{}');
+
+    const archived = {
+      archiveFiles: { [ARCHIVE_DIR]: ['dmesg-efi-1', 'dmesg-efi-2'] },
+      fileContents: {
+        [`${ARCHIVE_DIR}/dmesg-efi-1`]: 'Kernel panic - not syncing\n',
+        [`${ARCHIVE_DIR}/dmesg-efi-2`]: 'Modules linked in: xt_udp_tls\n',
+      },
+    };
+
+    it('uploads the crash once and records which crash was reported', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile(archived).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      expect(kcm._boneCalls).to.have.lengthOf(1);
+      const { severity, payload, opts } = kcm._boneCalls[0];
+      expect(severity).to.equal('error');
+      expect(payload.type).to.equal('FIREWALLA.KernelCrashMonitor.udpTlsDisabled');
+      expect(payload.crashTS).to.equal(CRASH_TS);
+      expect(payload.crashesCount).to.equal(2);
+      expect(payload.kernelVersion).to.equal('5.10.160');
+      expect(payload.crashLogAvailable).to.be.true;
+      expect(payload.crashLog).to.contain('Kernel panic');
+      // without rethrow bone.logAsync resolves on an HTTP error and the crash would be
+      // marked reported although it never left the box
+      expect(opts).to.deep.equal({ rethrow: true });
+      expect((await readReport()).reportedTS).to.equal(CRASH_TS);
+    });
+
+    it('does not upload again for a crash already reported', async function () {
+      await seed({}, { crashTS: CRASH_TS, moduleVersion: OLD_BUILD, reportedTS: CRASH_TS });
+      const kcm = loadKCM(fakeRedis, makeExecFile(archived).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.false;
+      expect(kcm._boneCalls).to.have.lengthOf(0);
+    });
+
+    it('uploads again when a newer crash disabled udp_tls after the last report', async function () {
+      const newerTS = CRASH_TS + 86400;
+      const newerDir = `${PSTORE_ARCHIVE_PATH}/${newerTS}`;
+      await seed({ lastCrashTS: newerTS },
+        { crashTS: newerTS, moduleVersion: OLD_BUILD, reportedTS: CRASH_TS });
+      const kcm = loadKCM(fakeRedis, makeExecFile({
+        archiveFiles: { [newerDir]: ['dmesg-efi-1'] },
+        fileContents: { [`${newerDir}/dmesg-efi-1`]: 'Kernel panic again\n' },
+      }).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      expect(kcm._boneCalls[0].payload.crashTS).to.equal(newerTS);
+      expect((await readReport()).reportedTS).to.equal(newerTS);
+    });
+
+    it('does nothing on a box that never had a udp_tls crash', async function () {
+      await seed({ shouldDisableUdpTls: false, lastCrashTS: 0 }, null);
+      const kcm = loadKCM(fakeRedis, makeExecFile({}).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.false;
+      expect(kcm._boneCalls).to.have.lengthOf(0);
+    });
+
+    // checkPstoreAndUpdateRedis clears shouldDisableUdpTls at startup when the module has
+    // been upgraded - before this sensor's delayed run. The crash still has to be reported,
+    // and with the build that actually crashed, not the one installed since.
+    it('still reports a crash whose disable was lifted by a module upgrade', async function () {
+      await seed({
+        shouldDisableUdpTls: false,
+        udpTlsDisabledOn: 0,
+        udpModuleVersion: { version: '0.0.13', srcversion: 'NEW', koId: 'new' },
+      });
+      const kcm = loadKCM(fakeRedis, makeExecFile(archived).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      expect(kcm._boneCalls[0].payload.crashTS).to.equal(CRASH_TS);
+      expect(kcm._boneCalls[0].payload.stillDisabled).to.be.false;
+      expect(kcm._boneCalls[0].payload.udpModuleVersion.version).to.equal('0.0.11');
+      expect((await readReport()).reportedTS).to.equal(CRASH_TS);
+    });
+
+    it('leaves the crash pending when the archive exists but is empty', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile({ archiveFiles: { [ARCHIVE_DIR]: [] } }).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.false;
+      expect(kcm._boneCalls).to.have.lengthOf(0);
+      expect((await readReport()).reportedTS).to.be.undefined;
+    });
+
+    it('leaves the crash pending when the archive exists but cannot be read', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis,
+        makeExecFile(Object.assign({}, archived, { lsFails: true })).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.false;
+      expect(kcm._boneCalls).to.have.lengthOf(0);
+      expect((await readReport()).reportedTS).to.be.undefined;
+    });
+
+    it('reports metadata and marks it done when the archive is gone', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile({}).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      expect(kcm._boneCalls[0].payload.crashLogAvailable).to.be.false;
+      expect((await readReport()).reportedTS).to.equal(CRASH_TS);
+    });
+
+    it('leaves the state untouched when the upload fails, so a later start retries', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile(archived).execFile, {
+        logAsync: async () => { throw new Error('cloud unreachable'); },
+      });
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.false;
+      expect((await readReport()).reportedTS).to.be.undefined;
+    });
+
+    it('strips packet-log lines and blanks addresses out of the dump', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile({
+        archiveFiles: { [ARCHIVE_DIR]: ['part01'] },
+        fileContents: {
+          [`${ARCHIVE_DIR}/part01`]:
+            '<4>[1.0] [FW_ADT]D=W MAC=ff:ff:ff:ff:ff:ff:44:37:0b:f4 SRC=192.168.200.13\n' +
+            '<4>[2.0] [FW_ALM]D=O SRC=2001:db8:1234:5678::1 DST=2606:4700:4700::1111\n' +
+            'Kernel panic - not syncing\n' +
+            'Modules linked in: xt_udp_tls\n' +
+            'peer ::ffff:192.0.2.1 and ::1 and 2001:db8:: via aa:bb:cc:dd:ee:ff\n' +
+            'RSP: 0018:ffffc90000a0fd88 EFLAGS: 00010246\n' +
+            'pci 0000:00:1f.3: enabling device, kernel 5.10.160\n',
+        },
+      }).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      const { crashLog } = kcm._boneCalls[0].payload;
+      // the packet-log lines, which carry the flow data, are gone entirely
+      expect(crashLog).to.not.contain('FW_ADT');
+      expect(crashLog).to.not.contain('FW_ALM');
+      expect(crashLog).to.not.contain('192.168.200.13');
+      expect(crashLog).to.not.contain('2001:db8:1234');
+      // and nothing address-shaped survives elsewhere, including the IPv4-mapped form whose
+      // tail a compressed-only pattern would leave behind
+      expect(crashLog).to.not.contain('192.0.2.1');
+      expect(crashLog).to.not.contain('aa:bb:cc:dd:ee:ff');
+      // things that carry no customer data stay readable
+      expect(crashLog).to.contain('RSP: 0018:ffffc90000a0fd88');
+      expect(crashLog).to.contain('0000:00:1f.3');
+      expect(crashLog).to.contain('5.10.160');
+      expect(crashLog).to.contain('Kernel panic');
+      expect(crashLog).to.contain('xt_udp_tls');
+    });
+
+    it('spends the truncation budget on the parts that carry crash evidence', async function () {
+      await seed();
+      const noise = 'n'.repeat(12 * 1024);
+      const kcm = loadKCM(fakeRedis, makeExecFile({
+        archiveFiles: { [ARCHIVE_DIR]: ['part01', 'part02', 'part03'] },
+        fileContents: {
+          [`${ARCHIVE_DIR}/part01`]: noise,
+          [`${ARCHIVE_DIR}/part02`]: noise,
+          [`${ARCHIVE_DIR}/part03`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls\n',
+        },
+      }).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      const { crashLog } = kcm._boneCalls[0].payload;
+      expect(crashLog.length).to.equal(16 * 1024);
+      expect(crashLog.startsWith('Kernel panic')).to.be.true;
+    });
+
+    it('sends the log untouched when it fits in the budget', async function () {
+      await seed();
+      const kcm = loadKCM(fakeRedis, makeExecFile(archived).execFile);
+
+      expect(await kcm.reportUdpTlsDisableIfNeeded()).to.be.true;
+      expect(kcm._boneCalls[0].payload.crashLog)
+        .to.equal('Kernel panic - not syncing\nModules linked in: xt_udp_tls\n');
+    });
+  });
+
 });

@@ -630,7 +630,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     if (!record.dn ||
       record.ac == 'allow' &&
-        (record.dn.endsWith('.arpa') || sysManager.isLocalDomain(record.dn) || sysManager.isSearchDomain(record.dn))
+        (record.dn.endsWith('.arpa') || sysManager.isLocalOrSearchDomain(record.dn))
     ) return
 
     // in dnsmasq log, policy id of -1 means global domain or ip rules that we need to analyze further.

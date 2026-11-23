@@ -21,8 +21,16 @@ const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
 const { delay } = require('../util/util.js');
 const path = require('path');
+const bone = require('../lib/Bone.js');
 
 const REDIS_KEY = "kernel_crash_info";
+// The report state lives in a key of its own on purpose. kernel_crash_info is read-modified-
+// written by checkPstoreAndUpdateRedis, by onUdpTlsModuleLoaded and by platform.sh's jq
+// merge, none of which hold the lock against each other; keeping the marker out of it means
+// no writer can drop it and no new locking has to be threaded through them.
+// { crashTS, moduleVersion, reportedTS } - moduleVersion is the build that crashed, pinned
+// here because udpModuleVersion is overwritten by the next successful load.
+const REPORT_KEY = "kernel_crash_report";
 const LOCK_KEY = "kernel_crash_info:lock";
 const LOCK_TTL_SEC = 60;
 // how long a lock-losing process waits for the lock holder to finish its pstore
@@ -43,6 +51,61 @@ const PSTORE_SOURCES = [
 ];
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// Cloud report for a udp_tls disable. The type is what makes these aggregatable across the
+// fleet, so it is a fixed string; so is the message, because fishbone stores it as a Redis
+// zset member (extension/prom/prom.js recordErrorLog) and a per-box value there would blow
+// up its cardinality. Everything that varies goes in its own field.
+const UDP_TLS_DISABLE_REPORT_TYPE = 'FIREWALLA.KernelCrashMonitor.udpTlsDisabled';
+const UDP_TLS_DISABLE_REPORT_MSG = 'xt_udp_tls disabled after kernel crash';
+// An archive holds one file per pstore part and can hold more than one crash - 152KB over
+// 37 files on a box we tested. Cutting that at a byte offset is not safe in either
+// direction: part 1 of a record is the *newest* chunk (the panic and the end of the
+// backtrace) and higher parts are progressively older, so the evidence sits at the front of
+// a record while the tail is whatever kernel log noise preceded the crash. Keep the parts
+// that carry the evidence and drop the rest - see readArchivedCrashLog.
+const CRASH_LOG_REPORT_MAX_BYTES = 16 * 1024;
+// Deliberately not 'Oops': every part of an oops record starts with an "Oops#1 PartN"
+// header, so it matches all of them and the budget goes to headers instead of the crash.
+// On the archive we tested these five pick 5 parts out of 37, and all of Kernel panic,
+// Modules linked in, Call Trace and RIP: survive the cut.
+const CRASH_EVIDENCE_PATTERNS = ['Kernel panic', 'Modules linked in', 'Call Trace', 'RIP:', 'BUG:'];
+// The kernel ring buffer that pstore captured carries our own iptables audit records, and
+// those hold client MACs and both ends of a flow (see sensor/ACLAuditLogPlugin.js). None of
+// it says anything about the crash, so drop those lines before the dump leaves the box, and
+// blank out any MAC or IPv4 address left in what remains. Dropping them also stops firewall
+// noise from eating the byte budget.
+// Matches every kernel packet-log prefix we emit, not just the audit one: [FW_ADT] carries
+// flow records, [FW_ALM] carries alarm packet logs with IPv6 SRC/DST. A prefix added later
+// is covered by the same shape.
+const PACKET_LOG_LINE = /\[FW_[A-Z0-9_]+\]/;
+// Addresses are matched with a captured leading boundary instead of a lookbehind: Node 8 on
+// the oldest platforms cannot parse a lookbehind literal, and this module is required at
+// every FireMain start, so the file would fail to load there.
+// Order matters. ::ffff:192.0.2.1 has to go first: the compressed-form pattern would eat
+// only "::ffff:192" and leave ".0.2.1" behind.
+const BOUND = '(^|[^0-9a-fA-F:.])';
+const NOT_HEX_AHEAD = '(?![0-9a-fA-F:])';
+const MAC_RE = /\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b/g;
+const IPV4_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IPV4_MAPPED_RE = new RegExp(`${BOUND}((?:[0-9a-fA-F]{0,4}:)+:?(?:\\d{1,3}\\.){3}\\d{1,3})`, 'g');
+// Any hex/colon run containing "::" - ::1, ::abcd:1234, 2001:db8:: .
+const IPV6_COMPRESSED_RE = new RegExp(`${BOUND}([0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4})*::(?:[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4})*)?)${NOT_HEX_AHEAD}`, 'g');
+// Full form needs four or more groups, i.e. three colons or more. That catches every real
+// address while leaving PCI ids ("0000:00:1f.3", two colons) and register dumps
+// ("RSP: 0018:ffffc900...", one colon) alone - both are worth keeping in a crash dump.
+const IPV6_FULL_RE = new RegExp(`${BOUND}((?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4})${NOT_HEX_AHEAD}`, 'g');
+
+function scrubCrashLog(text) {
+  return text.split('\n')
+    .filter(line => !PACKET_LOG_LINE.test(line))
+    .join('\n')
+    .replace(MAC_RE, '<mac>')
+    .replace(IPV4_MAPPED_RE, '$1<ip6>')
+    .replace(IPV6_COMPRESSED_RE, '$1<ip6>')
+    .replace(IPV6_FULL_RE, '$1<ip6>')
+    .replace(IPV4_RE, '<ip>');
+}
 
 // Some platforms ship a pstore backend as a module that is never auto-loaded, so crash
 // records sit in the backend's storage but never surface under /sys/fs/pstore. The main
@@ -255,6 +318,21 @@ async function readCrashInfo() {
     log.warn("Failed to parse kernel_crash_info, resetting:", e.message);
     return {};
   }
+}
+
+async function readReportState() {
+  const raw = await rclient.getAsync(REPORT_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) || {};
+  } catch (err) {
+    log.warn(`Invalid ${REPORT_KEY}, resetting:`, err.message);
+    return {};
+  }
+}
+
+async function saveReportState(state) {
+  await rclient.setAsync(REPORT_KEY, JSON.stringify(state));
 }
 
 async function saveCrashInfo(info) {
@@ -506,6 +584,19 @@ async function checkPstoreAndUpdateRedis(modName, koPath) {
     // already harvested it - from systemd's archive (see PSTORE_SOURCES).
     const { sourcePath, lines } = await findPstoreSource();
 
+    // A box disabled before this feature shipped has no report record. Seed one now, while
+    // crashInfo.udpModuleVersion is still the build that crashed: the re-enable path below
+    // and the module load that follows it both overwrite that field, and the delayed report
+    // sensor would otherwise blame the newly installed build for the old crash.
+    const reportState = await readReportState();
+    if (!reportState.crashTS && crashInfo.lastCrashTS) {
+      await saveReportState({
+        crashTS: crashInfo.lastCrashTS,
+        moduleVersion: crashInfo.udpModuleVersion || null,
+      });
+      log.info(`Recorded pre-existing udp_tls crash ${crashInfo.lastCrashTS} as pending a cloud report`);
+    }
+
     const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
     let updateCrashInfoNeed = false;
@@ -588,6 +679,13 @@ async function checkPstoreAndUpdateRedis(modName, koPath) {
 
             crashInfo.shouldDisableUdpTls = true;
             crashInfo.udpTlsDisabledOn = Math.round(Date.now() / 1000);
+            // Pin the build that crashed. udpModuleVersion is overwritten by the next
+            // successful load, which on the upgrade path happens before the crash has been
+            // reported - the report would then blame the new build for the old one's crash.
+            await saveReportState({
+              crashTS: latestCrashTSSec,
+              moduleVersion: currentVersion || crashInfo.udpModuleVersion || null,
+            });
             const versionInfo = currentVersion ? ` (module version ${currentVersion.version}/${currentVersion.srcversion}/${currentVersion.koId})` : '';
             log.warn(`UDP TLS crash detected${versionInfo}, disabling UDP TLS`);
             updateCrashInfoNeed = true;
@@ -640,6 +738,138 @@ function shouldDisableUdpTls() {
 // Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
 // modName is the module name (e.g. "xt_udp_tls"); koPath is the .ko file path if
 // insmod was used (may be null when loaded by name).
+// Concatenated contents of the archived crash records for a given crash, tail-truncated.
+// Returns '' when the archive is not there any more (rotated out by cleanupOldPstoreArchives,
+// or the box was disabled by a build that predates archiving).
+async function readArchivedCrashLog(crashTS) {
+  if (!crashTS) return '';
+  const archiveDir = path.join(PSTORE_ARCHIVE_PATH, String(crashTS));
+  // Absent and unreadable are different answers. Absent is final - the records are never
+  // coming back, so the report goes out with metadata only. Unreadable may be a crash whose
+  // archiving failed and will be retried on a later start (archiveAndClearPstore leaves the
+  // records in pstore in that case), so return null and let the caller try again rather
+  // than burning the one report on an empty dump.
+  const exists = await execFile('sudo', ['test', '-d', archiveDir]).then(() => true).catch(() => false);
+  if (!exists) {
+    log.info(`No archived pstore records for crash ${crashTS} under ${archiveDir}`);
+    return '';
+  }
+  const listed = await execFile('sudo', ['ls', '-1', archiveDir]).catch((err) => {
+    log.error(`Cannot list archived crash log for ${crashTS}:`, err.message);
+    return null;
+  });
+  if (!listed) return null;
+  // archiveAndClearPstore creates the directory before it copies into it, so an existing but
+  // empty one means the copy failed and the records are still in pstore for a later start.
+  const files = listed.stdout.trim().split('\n').filter(Boolean)
+    .map(name => path.join(archiveDir, name));
+  if (files.length === 0) {
+    log.warn(`Archive ${archiveDir} is empty, the copy probably failed; leaving the report pending`);
+    return null;
+  }
+  const readAll = async (list) => execFile('sudo', ['cat', ...list], { maxBuffer: 10 * 1024 * 1024 })
+    .then(r => r.stdout)
+    .catch((err) => {
+      log.error(`Failed to read archived crash log for ${crashTS}:`, err.message);
+      return null;
+    });
+
+  const raw = await readAll(files);
+  if (raw === null) return null;
+  const content = scrubCrashLog(raw);
+  if (content.length <= CRASH_LOG_REPORT_MAX_BYTES)
+    return content;
+
+  // Too big to send whole: put the parts that mention a crash first so the budget is spent
+  // on them, and keep the rest in order behind for context.
+  const grepArgs = ['grep', '-l'];
+  for (const pattern of CRASH_EVIDENCE_PATTERNS) grepArgs.push('-e', pattern);
+  const evidence = await execFile('sudo', [...grepArgs, ...files])
+    .then(r => new Set(r.stdout.trim().split('\n').filter(Boolean)))
+    .catch(() => new Set());
+  const ordered = evidence.size
+    ? [...files.filter(f => evidence.has(f)), ...files.filter(f => !evidence.has(f))]
+    : files;
+  let reordered = content;
+  if (ordered !== files) {
+    const rawOrdered = await readAll(ordered);
+    if (rawOrdered === null) return null;
+    reordered = scrubCrashLog(rawOrdered);
+  }
+  log.info(`Crash log for ${crashTS} is ${content.length}B over ${files.length} parts, truncating to ${CRASH_LOG_REPORT_MAX_BYTES}B (${evidence.size} parts carry crash evidence)`);
+  return reordered.slice(0, CRASH_LOG_REPORT_MAX_BYTES);
+}
+
+// Upload the crash that disabled udp_tls, once per crash.
+//
+// Called from a sensor rather than from checkPstoreAndUpdateRedis: that one runs in run0()
+// before the cloud is known to be up (net2/main.js), and bone.log drops everything silently
+// while cloudready() is false. Sensors only start after that check passes.
+//
+// reportedTS records which crash has been reported. Keying on the crash timestamp rather
+// than a boolean means a later crash that disables udp_tls again reports again, while a
+// restart with the same crash does not. It is deliberately NOT keyed on the current
+// shouldDisableUdpTls: startup clears that when the module has been upgraded, which is
+// exactly the migration case this has to cover.
+async function reportUdpTlsDisableIfNeeded() {
+  const state = await readReportState().catch((err) => {
+    log.error("Failed to read udp_tls crash report state:", err.message);
+    return null;
+  });
+  if (!state || !state.crashTS) return false;
+  const crashTS = state.crashTS;
+  if (state.reportedTS === crashTS) {
+    log.debug(`udp_tls disable for crash ${crashTS} already reported`);
+    return false;
+  }
+
+  const crashLog = await readArchivedCrashLog(crashTS);
+  if (crashLog === null) {
+    log.warn(`Crash log for ${crashTS} could not be read, leaving the report pending`);
+    return false;
+  }
+
+  const crashInfo = await readCrashInfo().catch(() => ({}));
+  const kernelVersion = await execFile('uname', ['-r'])
+    .then(r => r.stdout.trim()).catch(() => '');
+
+  const payload = {
+    type: UDP_TLS_DISABLE_REPORT_TYPE,
+    msg: UDP_TLS_DISABLE_REPORT_MSG,
+    crashTS,
+    crashesCount: crashInfo.crashesCount || 0,
+    udpTlsDisabledOn: crashInfo.udpTlsDisabledOn || 0,
+    stillDisabled: crashInfo.shouldDisableUdpTls === true,
+    udpModuleVersion: state.moduleVersion || null,
+    kernelVersion,
+    crashLogAvailable: crashLog.length > 0,
+    crashLog,
+  };
+
+  try {
+    // rethrow: bone.logAsync swallows transport errors by default and resolves anyway, so
+    // without this a cloud outage would look like a success and the crash would be marked
+    // reported and never sent.
+    await bone.logAsync("error", payload, { rethrow: true });
+  } catch (err) {
+    // leave the record pending so the next start retries
+    log.error("Failed to report udp_tls disable to cloud:", err.message);
+    return false;
+  }
+
+  // Record it even when the archive was gone: the log is never coming back, and retrying
+  // on every start would upload the same metadata forever.
+  try {
+    state.reportedTS = crashTS;
+    await saveReportState(state);
+  } catch (err) {
+    log.error("Failed to persist udp_tls disable report state:", err.message);
+  }
+
+  log.forceInfo(`Reported udp_tls disable to cloud, crashTS=${crashTS} logBytes=${crashLog.length}`);
+  return true;
+}
+
 async function onUdpTlsModuleLoaded(modName, koPath) {
   try {
     const version = await getModuleVersion(modName || 'xt_udp_tls', koPath);
@@ -664,5 +894,6 @@ module.exports = {
   checkPstoreAndUpdateRedis,
   shouldDisableUdpTls,
   onUdpTlsModuleLoaded,
+  reportUdpTlsDisableIfNeeded,
   getCrashInfo: readCrashInfo,
 };

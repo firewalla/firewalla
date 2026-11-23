@@ -27,7 +27,7 @@ const platform = PlatformLoader.getPlatform();
 const fsp = require('fs').promises;
 const { fileExist, fileRemove } = require('../util/util.js');
 const Config = require('../net2/config.js');
-const rp = util.promisify(require('request'));
+const localApi = require('../util/localApi.js');
 const extensionManager = require('./ExtensionManager.js');
 
 // internal properties
@@ -40,29 +40,7 @@ class DapSensor extends Sensor {
   }
 
   async apiCall(method, path, body) {
-    const options = {
-      method: method,
-      headers: {
-        "Accept": "application/json"
-      },
-      timeout: 5000,
-      url: dapInterface + path,
-      json: true
-    };
-
-    if(body) {
-      options.body = body;
-    }
-    try {
-      const resp = await rp(options);
-      let r =  {code: resp.statusCode, body: resp.body};
-      if (resp.statusCode === 500) {
-        r.msg = resp.body;
-      }
-      return r;
-    } catch (e) {
-      return {code: 500, msg: e.message};
-    }
+    return localApi.call(dapInterface, method, path, body, { timeout: 5000, errorCode: () => 500 });
   }
 
   // a no-op while DAP is off, as fwdap is stopped then

@@ -34,6 +34,7 @@ const bone = require("../lib/Bone.js");
 
 const fs = require('fs');
 const { timeout } = require('../util/asyncNative.js')
+const { gc } = require('../util/util.js');
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../net2/SysManager.js');
@@ -114,15 +115,6 @@ process.on('unhandledRejection', (reason, p)=>{
     log.error("Failed to log unhandled rejection", err.message);
   });
 });
-
-function gc() {
-  try {
-    if (global.gc) {
-      global.gc();
-    }
-  } catch (err) {
-  }
-}
 
 let status = {
   dlp: {
