@@ -43,6 +43,16 @@ const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
 const fwrcFile = `${f.getUserHome()}/.fwrc`
+// .fwrc is sourced by bash, so the last assignment wins
+function parseFwrc(lines, name) {
+  const re = new RegExp(`^\\s*(?:export\\s+)?${name}=(.*)$`);
+  let value;
+  for (const line of lines) {
+    const m = line.trimEnd().match(re);
+    if (m) value = m[1].split(/\s+#/, 1)[0].trimEnd().replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return value;
+}
 
 // shared with scripts/update_freeradius.sh so cron and firemain honor the same backoff window
 const PULL_BACKOFF_KEY = "freeradius:image:pull:backoff";
@@ -86,9 +96,16 @@ class FreeRadius {
   }
 
   async getFreeRadiusDataForInit(options = {}) {
-    return {
-      certHash: await this.getCertsHash(false),
-    };
+    const [certHash, image] = await Promise.all([
+      this.getCertsHash(false),
+      this.getImageInfo().catch((e) => {
+        log.warn("Failed to get freeradius image info,", e.message);
+        return null;
+      }),
+    ]);
+    const data = { certHash };
+    if (image) data.image = image;
+    return data;
   }
 
   async _prepare(options = {}) {
@@ -212,6 +229,8 @@ class FreeRadius {
     }
     log.info("Starting container freeradius-server...");
     try {
+      // compose may still name the previous image if the selected one changed since it was written
+      await this.generateDockerCompose(options);
       await this.generateOptions(options);
       if (!await this._start()) {
         return false;
@@ -541,7 +560,8 @@ class FreeRadius {
       });
     }
     // generate new file
-    const lines = Object.entries(options).filter(([key, _value]) => key !== 'secret').map(([key, value]) => `${key}=${value}`);
+    // fwrc_image_tag is a local override from ~/.fwrc, keep it out of .env
+    const lines = Object.entries(options).filter(([key, _value]) => key !== 'secret' && key !== 'fwrc_image_tag').map(([key, value]) => `${key}=${value}`);
     const content = lines.join("\n");
     await fs.writeFileAsync(configPath, content, 'utf8');
     return true;
@@ -559,7 +579,7 @@ class FreeRadius {
       await this.generateDockerCompose(options);
 
       // check if container is up
-      if (!await this._checkContainer(options)) {
+      if (!await this._isContainerRunning(options)) {
         log.info("container freeradius-server is not running, fallback to generate radius config from old version");
         return await this._generateRadiusConfig(options);
       }
@@ -600,12 +620,16 @@ class FreeRadius {
         const envLines = content.split('\n').filter(line =>
           line.trim() && !line.trim().startsWith('#')
         );
-        for (const line of envLines) {
-          const [key, value] = line.split('=');
-          if (key == "RADIUS_REPO" && value) {
-            options.image_repo = value;
-            break;
-          }
+        // test/debug overrides only
+        const imageRepo = parseFwrc(envLines, "RADIUS_REPO");
+        const imageTag = parseFwrc(envLines, "RADIUS_TAG");
+        if (imageRepo) {
+          options.image_repo = imageRepo;
+        }
+        if (/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(imageTag || "")) {
+          options.fwrc_image_tag = imageTag;
+        } else if (imageTag) {
+          log.warn("Ignoring invalid RADIUS_TAG in ~/.fwrc");
         }
       }
     } catch (error) {
@@ -623,7 +647,7 @@ class FreeRadius {
     }
     try {
       // check if container is running
-      if (!await this._checkContainer(options)) {
+      if (!await this._isContainerRunning(options)) {
         log.warn("container freeradius-server is not running, cannot process radius command");
         return false;
       }
@@ -1008,6 +1032,9 @@ class FreeRadius {
   }
 
   _getImageTag(options = {}) {
+    if (options.fwrc_image_tag) {
+      return options.fwrc_image_tag;
+    }
     if (options.image_tag) {
       return options.image_tag;
     }
@@ -1045,23 +1072,69 @@ class FreeRadius {
     return await this._checkImage(options);
   }
 
+  // running and on the expected image; use _isContainerRunning when any image will do
   async _checkContainer(options = {}) {
     const image = this.getImage(options);
-    const result = await exec(`sudo docker ps | grep ${image}`).then(r => r.stdout.trim()).catch((e) => {
-      log.warn("Failed to check container freeradius,", e.message)
-      return false;
-    });
-    log.info("Container freeradius-server status:", result);
-    return result && result.includes("freeradius");
+    const current = await this._getContainerImage(options);
+    log.info(`Container freeradius-server image: ${current}, expected ${image}`);
+    return current === image;
   }
 
-  // running image (repo:tag) of the freeradius container by compose service label, or null
-  async _getContainerImage(options = {}) {
-    const raw = await execFile("sudo", ["docker", "ps", "--filter", "label=com.docker.compose.service=freeradius", "--format", "{{.Image}}"]).then(r => r.stdout.trim()).catch((e) => {
-      log.warn("Failed to get freeradius container image,", e.message);
+  // running freeradius container {id, image} by compose service label, or null
+  async _getContainer() {
+    const raw = await execFile("sudo", ["docker", "ps", "--filter", "label=com.docker.compose.service=freeradius", "--format", "{{.ID}} {{.Image}}"]).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get freeradius container,", e.message);
       return "";
     });
-    return raw.split("\n").map(i => i.trim()).find(Boolean) || null;
+    const line = raw.split("\n").map(i => i.trim()).find(Boolean);
+    if (!line) return null;
+    const [id, image] = line.split(" ");
+    return { id, image };
+  }
+
+  // running image (repo:tag) of the freeradius container, or null
+  async _getContainerImage(options = {}) {
+    const container = await this._getContainer();
+    return container ? container.image : null;
+  }
+
+  // image info of the running container, cached per container id since init data is polled often
+  async getImageInfo() {
+    if (!await this.ready()) return null;
+    const container = await this._getContainer();
+    if (!container) return null;
+    if (this.imageInfo && this.imageInfo.containerId === container.id) return this.imageInfo.info;
+
+    // inspect the container's image id, the tag may already point to a newer pulled image
+    const inspect = await execFile("sudo", ["docker", "inspect", "--format", "{{.Image}}", container.id])
+      .then(r => execFile("sudo", ["docker", "image", "inspect", r.stdout.trim(), "--format", "{{json .}}"]))
+      .then(r => JSON.parse(r.stdout)).catch((e) => {
+        log.warn(`Failed to inspect freeradius image ${container.image},`, e.message);
+        return null;
+      });
+    if (!inspect) return null;
+    const labels = (inspect.Config && inspect.Config.Labels) || {};
+    const repoDigest = (inspect.RepoDigests || [])[0];
+    // OCI labels are set by the image build; older images only carry the VERSION file
+    let version = labels["org.opencontainers.image.version"];
+    if (!version) {
+      version = await execFile("sudo", ["docker", "exec", container.id, "cat", "/root/freeradius/VERSION"])
+        .then(r => r.stdout.trim()).catch((e) => {
+          log.warn("Failed to read freeradius VERSION,", e.message);
+          return null;
+        });
+      if (!version) return null; // e.g. container restarting, retry on next init
+    }
+    const info = {
+      name: container.image,
+      digest: repoDigest ? repoDigest.split("@")[1] : undefined,
+      created: inspect.Created,
+      version,
+      branch: labels["org.opencontainers.image.ref.name"],
+      revision: labels["org.opencontainers.image.revision"],
+    };
+    this.imageInfo = { containerId: container.id, info };
+    return info;
   }
 
   async recoverImageMismatch(options = {}) {
@@ -1195,7 +1268,7 @@ class FreeRadius {
 
       const result = await execFile("sudo", ["docker-compose", "-f", `${dockerDir}/docker-compose.yml`, "exec", "-T", "freeradius", "pidof", "freeradius"]).then(r => r.stdout.trim()).catch(async (e) => {
         log.warn("Cannot get freeradius pid from container,", e.message)
-        if (!await this._checkContainer(options)) {
+        if (!await this._isContainerRunning(options)) {
           this.running = false;
           log.info("Container freeradius-server is not running");
           return;
@@ -1309,7 +1382,6 @@ class FreeRadius {
       }
       log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
-      await this.generateDockerCompose(options);
       if (!await this._startServer(options)) {
         return false;
       }

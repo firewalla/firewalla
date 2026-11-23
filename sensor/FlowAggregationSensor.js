@@ -318,7 +318,10 @@ class FlowAggregationSensor extends Sensor {
         } else {
           if (!dp)
             return;
-          const key = `${mac}:${dir=='L'?dmac:fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
+          // the host ACLAuditLogPlugin found for the blocked connection, the only name an ipB
+          // top flow can show once query-time intel lookups are skipped
+          const domain = flow.af && Object.keys(flow.af)[0];
+          const key = `${mac}:${dir=='L'?dmac:fd=="out"?flow.sh:flow.dh}:${fd}:${dp}${domain ? `:${domain}` : ""}`
           for (const uidTickKey of uidTickKeys) {
             if (!this.ipBlockCache[uidTickKey])
               this.ipBlockCache[uidTickKey] = {};
@@ -350,6 +353,8 @@ class FlowAggregationSensor extends Sensor {
                 t.c = flow.c;
               if (flow.cc)
                 t.cc = flow.cc;
+              if (domain)
+                t.domain = domain;
               this.ipBlockCache[uidTickKey][key] = t;
             }
             t.count += flow.ct;

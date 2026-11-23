@@ -66,6 +66,7 @@ class EventRequestApi {
         }
     }
 
+    // resolves to whether the event was published, a failure is logged and not thrown
     async addActionEvent(action_type,action_value,labels=null, ts=Date.now()) {
         log.debug("add action event");
 
@@ -85,8 +86,10 @@ class EventRequestApi {
             }
             const event_json = JSON.stringify(event_obj);
             await pclient.publishAsync(KEY_EVENT_REQUEST_ACTION,event_json);
+            return true;
         } catch (err) {
             log.error(`failed to publish action event(${action_type} ${action_value}): ${err}`);
+            return false;
         }
     }
 

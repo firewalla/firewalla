@@ -133,6 +133,11 @@ class Alarm {
     return this.type;
   }
 
+  // the action event logged to event:log when the alarm activates, null for none
+  toActionEvent() {
+    return null;
+  }
+
   getIdentitySuffix() {
     if (this["p.device.guid"]) {
       const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
@@ -628,6 +633,53 @@ class SuricataNoticeAlarm extends Alarm {
   }
 }
 
+// an abnormal connection finding of zssids (aca.log) that a rule of AcaLogPlugin turned into an alarm
+class AcaAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_ACA", timestamp, device, info);
+    this["p.showMap"] = false;
+  }
+
+  // the evidence can list LAN addresses, which must not go to the cloud
+  needCloudArbitration() {
+    return false;
+  }
+
+  // a blocked flow raises no alarm, but a scan has no destination and a device-wide internet block misses its LAN targets
+  needPolicyMatch() {
+    if (this["p.dest.ip"] || this["p.dest.name"]) {
+      return true;
+    }
+    return false;
+  }
+
+  // muted and notified together with the other security alarms, like the IDS alarms
+  isSecurityAlarm() {
+    return true;
+  }
+
+  getNotifPolicyKey() {
+    return "ALARM_INTEL";
+  }
+
+  keysToCompareForDedup() {
+    return ["p.aca.dedup"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.aca.type", "p.aca.message", "p.aca.dedup"];
+  }
+
+  // the rule's own cooldown runs in AcaLogPlugin, this only stops repeats within the hour
+  getExpirationTime() {
+    return 3600;
+  }
+
+  localizedNotificationContentArray() {
+    return [this.getDeviceNameInNotification(), this["p.aca.message"]];
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -882,6 +934,22 @@ class BroNoticeAlarm extends Alarm {
     if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
       return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
+  }
+
+  toActionEvent() {
+    if (this['p.noticeType'] != 'SSL::Invalid_Server_Cert')
+      return null;
+    const labels = {
+      aid: this.aid,
+      device: this['p.device.mac'],
+      deviceName: this.getDeviceNameInNotification(),
+      dest: this['p.dest.name'],
+      error: this['p.dest.ssl.validation_status'],
+    };
+    const user = this.getUserName();
+    if (user)
+      labels.user = user;
+    return { action_type: 'alarm_invalid_cert', action_value: 1, labels };
   }
 
   needPolicyMatch(){
@@ -1721,9 +1789,6 @@ class FwApcAlarm extends Alarm {
   }
 }
 
-// the categories come from the cloud, one without a title in the app would show as a raw key
-const CATEGORY_BLOCK_TITLE_SUBTYPES = new Set(['nrd', 'lookalike_domain']);
-
 // informational, the category rule has already blocked the flow. Never set p.action.block or
 // p.cloud.decision here: shouldAutoBlock turns either into a global dns block rule that allowing the alarm cannot undo
 class CategoryAlarm extends Alarm {
@@ -1731,9 +1796,29 @@ class CategoryAlarm extends Alarm {
     super('ALARM_CATEGORY', timestamp, device, info);
   }
 
+  // the category, such as nrd, tells the blocks apart in the push strings
+  getNotifKeyPrefix() {
+    const prefix = super.getNotifKeyPrefix();
+    return this['p.dest.category'] ? `${prefix}.${this['p.dest.category']}` : prefix;
+  }
+
+  localizedNotificationTitleKey() {
+    const key = super.localizedNotificationTitleKey();
+    return this['p.dest.category'] ? `${key}.${this['p.dest.category']}` : key;
+  }
+
   // nothing for the cloud to decide, and arbitration would upload the domain with the device ip and mac
   needCloudArbitration() {
     return false;
+  }
+
+  // Send Alarm Only and the ALARM_INTEL exception are the switches of the security alarms
+  getNotifPolicyKey() {
+    return 'ALARM_INTEL';
+  }
+
+  isSecurityAlarm() {
+    return true;
   }
 
   keysToCompareForDedup() {
@@ -1746,12 +1831,6 @@ class CategoryAlarm extends Alarm {
 
   getExpirationTime() {
     return this['p.cooldown'] || super.getExpirationTime();
-  }
-
-  localizedNotificationTitleKey() {
-    const key = super.localizedNotificationTitleKey();
-    const subtype = this['p.noticeType'];
-    return CATEGORY_BLOCK_TITLE_SUBTYPES.has(subtype) ? `${key}.${subtype}` : key;
   }
 
   localizedNotificationContentArray() {
@@ -1853,6 +1932,7 @@ const classMapping = {
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
   ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
+  ALARM_ACA: AcaAlarm.prototype,
   ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
   ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
@@ -1881,6 +1961,7 @@ module.exports = {
   VPNDisconnectAlarm,
   BroNoticeAlarm,
   SuricataNoticeAlarm,
+  AcaAlarm,
   IntelAlarm,
   VulnerabilityAlarm,
   IntelReportAlarm,

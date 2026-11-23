@@ -107,7 +107,8 @@ function get_zeek_log_dir {
 #   pcap_zeek_zssids      zssids runs as brofish.service instead of zeek
 #   pcap_suricata_zssids  zssids evaluates the suricata rule set instead of suricata
 # Same sources as net2/config.js: the runtime value in redis sys:features (set
-# by the app / enableDynamicFeature), else the platform's files/config.json
+# by the app / enableDynamicFeature), else the zssids:config cloud override,
+# else the platform's files/config.json
 # userFeatures, else net2/config.json, else off. See scripts/zssids-engine.sh.
 # net2/config.js merges cloud, MSP and version configuration too, which no
 # shell can reproduce; ZssidsEnginePlugin writes the effective values of the
@@ -145,6 +146,13 @@ function _fw_feature_on {
   case "$v" in
     1) return 0 ;;
     0) return 1 ;;
+  esac
+  # then the zssids:config cloud override, already narrowed to this platform
+  # and release type by ZssidsEnginePlugin
+  v=$(timeout 3 redis-cli get zssids_cloud_override 2>/dev/null | jq -r --arg n "$name" 'if has($n) then (.[$n] | tostring) else empty end' 2>/dev/null)
+  case "$v" in
+    true) return 0 ;;
+    false) return 1 ;;
   esac
   # then the same file precedence as net2/config.js: user config, the platform
   # default, the checked-in default. `has` keeps an explicit false, which
