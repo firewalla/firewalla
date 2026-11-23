@@ -77,6 +77,7 @@
     "sumflow:*",
     "syssumflow:*",
     "lastsumflow:*",
+    "dailysyssumflow:*",
     "categoryflow:*",
     "timedTraffic:*"
   ],

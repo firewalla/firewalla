@@ -35,6 +35,7 @@ const platform = platformLoader.getPlatform();
 
 const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
+const { localDayStart } = require('../util/TimeSlot.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
 const FlowAggrTool = require('./FlowAggrTool');
@@ -51,6 +52,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
+const { countUniqueDests, countUniqueDestFields } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -109,6 +111,16 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 const EVENT_SUMMARY_RETENTION_DAYS = 7;
 const EVENT_SUMMARY_MAX_RECORDS = 50; // per bucket, this is inlined in every init response
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
+// block stats inlined in every init response, per entry
+const BLOCK_STATS_INIT_MAX_IDENTITIES = 5;
+const BLOCK_STATS_INIT_MAX_DESTS = 5;
+// daily inbound block records inlined in every init response, per day
+const DAILY_INBOUND_BLOCK_INIT_RECORDS = 10;
+
+// the n records with the highest cnt, without reordering the input
+function topByCnt(records, n) {
+  return records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, n);
+}
 
 let instance = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -119,6 +131,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
+const TAG_RULE_PREFIXES = Object.values(Constants.TAG_TYPE_MAP).map(t => t.ruleTagPrefix);
 const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
@@ -993,20 +1006,20 @@ module.exports = class HostManager extends Monitorable {
     json.internetSpeedtestResults = results;
   }
 
-  async listLatestAllStateEvents(json) {
+  async listLatestAllStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest all state events");
-      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true);
+      const latestAllStateEvents = await eventApi.listLatestStateEventsAll(true, stateEventTypeFilter);
       if (latestAllStateEvents) json.latestAllStateEvents = latestAllStateEvents;
     } catch (err) {
       log.error("failed to get latest all state events:",err);
     }
   }
 
-  async listLatestErrorStateEvents(json) {
+  async listLatestErrorStateEvents(json, stateEventTypeFilter) {
     try {
       log.debug("Listing latest error state events");
-      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true);
+      const latestErrorStateEvents = await eventApi.listLatestStateEventsError(true, stateEventTypeFilter);
       if (latestErrorStateEvents) json.latestStateEventsError = latestErrorStateEvents;
     } catch (err) {
       log.error("failed to get latest error state events:",err);
@@ -1707,8 +1720,8 @@ module.exports = class HostManager extends Monitorable {
       this.ruleGroupsForInit(json),
       this.virtWanGroupsForInit(json),
       this.getLatestConnStates(json),
-      this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json),
+      this.listLatestAllStateEvents(json, options.stateEventTypeFilter),
+      this.listLatestErrorStateEvents(json, options.stateEventTypeFilter),
       this.loadDDNSForInit(json),
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
@@ -1722,13 +1735,15 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
-      this.recentBlockStatsForInit(json),
+      this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
       this.eventSummaryForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
     if (options.legacySystemFlows)
       requiredPromises.push(this.loadStats(json))
+    if (platform.isAuditLogSupported())
+      requiredPromises.push(this.dailyInboundBlockStatsForInit(json))
 
     for (const i in requiredPromises) {
       requiredPromises[i] = (async() => {
@@ -1785,18 +1800,72 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  // drops records for devices that no longer exist, adds a `${field}Cnt` distinct-value count for
-  // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
-  // record set, and caps the returned records to the top 5 by cnt
-  summarizeBlockStatsEntry(entry) {
-    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device) || IdentityManager.getIdentityByGUID(r.device));
-    const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
-    const fieldCounts = {};
-    for (const field of fields) {
-      fieldCounts[`${field}Cnt`] = new Set(records.map(r => r[field]).filter(v => v != null)).size;
+  // the readable name of a block stats identity or device, null when it no longer exists
+  _getBlockStatsName(id) {
+    const tagPrefix = TAG_RULE_PREFIXES.find(p => id.startsWith(p));
+    if (tagPrefix) {
+      const tag = TagManager.getTagByUid(id.substring(tagPrefix.length));
+      return tag ? tag.getReadableName() : null;
     }
-    const topRecords = records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, 5);
-    return Object.assign({}, entry, { records: topRecords }, fieldCounts);
+    const monitorable = this.getHostFastByMAC(id) || IdentityManager.getIdentityByGUID(id);
+    return monitorable ? monitorable.getReadableName() : null;
+  }
+
+  // the init filter for block stats from the init option blockStatsAggrFilter. A non-empty
+  // includedKeys keeps only those keys, otherwise excludedKeys drops its keys. keyCaps sets the
+  // caps per key, each falling back to the default when it isn't a positive integer
+  _getBlockStatsInitFilter(filter) {
+    if (!_.isPlainObject(filter)) filter = {};
+    const included = !_.isEmpty(filter.includedKeys) && Array.isArray(filter.includedKeys) ? new Set(filter.includedKeys) : null;
+    const excluded = Array.isArray(filter.excludedKeys) ? new Set(filter.excludedKeys) : new Set();
+    const keyCaps = _.isPlainObject(filter.keyCaps) ? filter.keyCaps : {};
+    const isValid = v => Number.isInteger(v) && v > 0;
+    return {
+      includes: key => included ? included.has(key) : !excluded.has(key),
+      capOf: key => {
+        const cap = _.has(keyCaps, key) && _.isPlainObject(keyCaps[key]) ? keyCaps[key] : {};
+        return {
+          identitiesCap: isValid(cap.identitiesCap) ? cap.identitiesCap : BLOCK_STATS_INIT_MAX_IDENTITIES,
+          destsCap: isValid(cap.destsCap) ? cap.destsCap : BLOCK_STATS_INIT_MAX_DESTS
+        };
+      }
+    };
+  }
+
+  // drops records of identities and devices that no longer exist and resolves their names. For
+  // init (initCap set), which inlines every entry, devices are left out and identities and dests
+  // are capped. The entry counts unique values of each dest field across records, e.g. deviceCnt, destCnt
+  resolveBlockStatsEntry(entry, initCap) {
+    const records = [];
+    const destLists = []; // before the init cap, for the entry level counts
+    for (const r of entry.records || []) {
+      const name = this._getBlockStatsName(r.identity);
+      if (name === null) continue;
+      const deviceNames = new Map();
+      const getDeviceName = mac => {
+        if (!deviceNames.has(mac)) deviceNames.set(mac, this._getBlockStatsName(mac));
+        return deviceNames.get(mac);
+      };
+      const devices = r.devices.filter(d => getDeviceName(d.mac) !== null)
+        .map(d => ({ mac: d.mac, name: getDeviceName(d.mac) }));
+      // a removed device's dests go with it. Dests have no device when it isn't in the setting's destKeys
+      const dests = r.dests.filter(d => !d.device || getDeviceName(d.device) !== null)
+        .sort((a, b) => b.cnt - a.cnt);
+      destLists.push(dests);
+      const record = Object.assign({}, r, { name, dests, devices, deviceCnt: devices.length, destCnt: countUniqueDests(dests) });
+      if (initCap) {
+        delete record.devices;
+        record.dests = dests.slice(0, initCap.destsCap);
+      }
+      records.push(record);
+    }
+    const topRecords = initCap ? topByCnt(records, initCap.identitiesCap) : records;
+    return Object.assign({}, entry, {
+      records: topRecords.map(r => _.omit(r, 'name')),
+      identities: topRecords.map(r => ({ id: r.identity, name: r.name })),
+      identityCnt: records.length,
+      ...countUniqueDestFields(_.flatten(destLists))
+    });
   }
 
   // reads raw persisted block stats bucket payloads for index entries with score in
@@ -1807,13 +1876,13 @@ module.exports = class HostManager extends Monitorable {
     let bucketTimestamps;
     try {
       // ZREVRANGEBYSCORE takes max before min
-      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, maxScore, minScore);
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_INDEX, maxScore, minScore);
     } catch (err) {
       log.error(`Failed to load block stats index: ${err.message}`);
       return [];
     }
     if (_.isEmpty(bucketTimestamps)) return [];
-    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
+    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_AGGR_PREFIX}${ts}`);
     const buckets = [];
     try {
       const values = await rclient.mgetAsync(keys);
@@ -1831,31 +1900,65 @@ module.exports = class HostManager extends Monitorable {
     return buckets;
   }
 
-  async recentBlockStatsForInit(json) {
+  async recentBlockStatsForInit(json, blockStatsAggrFilter) {
     const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
-    json.recentBlockStats = buckets.map(payload => {
-      if (Array.isArray(payload.blockStats))
-        payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
-      return payload;
-    });
+    json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
   }
 
-  // raw (unsummarized - no device filtering, no top-N truncation, no derived counts) block
-  // stats buckets whose ts falls in [begin, end), newest first
+  // inbound blocks of today and the previous local days, newest first; the counts cover every
+  // stored member, records only the top ones
+  async dailyInboundBlockStatsForInit(json) {
+    const tz = sysManager.getTimezone();
+    const dayStarts = [localDayStart(Date.now() / 1000, tz)];
+    while (dayStarts.length < FlowAggrTool.DAILY_SUMFLOW_DAYS)
+      dayStarts.push(localDayStart(dayStarts[dayStarts.length - 1] - 1, tz));
+
+    json.dailyInboundBlockStats = await Promise.all(dayStarts.map(async ts => {
+      const [ipB, ifB] = await Promise.all(['ipB', 'ifB'].map(dimension =>
+        flowAggrTool.getTopSumFlowByKey(flowAggrTool.getDailySumFlowKey('global', dimension, 'out', ts), 400)
+      ));
+      // by country only, so blocks spread over several WANs or devices add up to one region
+      const records = new Map();
+      for (const flow of ipB.concat(ifB)) {
+        const c = country.getCountry(flow.ip) || '';
+        if (!records.has(c))
+          records.set(c, c ? {country: c, cnt: 0} : {cnt: 0});
+        records.get(c).cnt += Number(flow.count);
+      }
+      return {
+        ts,
+        records: topByCnt(Array.from(records.values()), DAILY_INBOUND_BLOCK_INIT_RECORDS),
+        deviceCnt: new Set(ipB.map(f => f.device)).size,
+        intfCnt: new Set(ifB.map(f => f.device)).size,
+        countryCnt: records.size - (records.has('') ? 1 : 0),
+      };
+    }));
+  }
+
+  // block stats buckets whose ts falls in [begin, end), newest first, with every identity and
+  // device that still exists
   async getBlockStatsInRange(begin, end) {
-    return this._getBlockStatsBuckets(begin, `(${end}`);
+    const buckets = await this._getBlockStatsBuckets(begin, `(${end}`);
+    return this._resolveBlockStatsBuckets(buckets, null);
+  }
+
+  // initFilter (from _getBlockStatsInitFilter) is set for init only
+  _resolveBlockStatsBuckets(buckets, initFilter) {
+    return buckets.map(payload => Object.assign(payload, {
+      blockStats: payload.blockStats
+        .filter(entry => !initFilter || initFilter.includes(entry.key))
+        .map(entry => this.resolveBlockStatsEntry(entry, initFilter && initFilter.capOf(entry.key)))
+    }));
   }
 
   // strips the sensor's internal bookkeeping fields (record group key, first/last event ts) and
   // caps the record count to the busiest ones - MAX_RECORDS_PER_KEY x buckets x settings would
-  // otherwise be inlined in every init response, the same concern summarizeBlockStatsEntry
-  // addresses by truncating to top-5 by cnt
+  // otherwise be inlined in every init response, the same concern resolveBlockStatsEntry
+  // addresses by truncating identities and dests
   summarizeEventSummaryBucket(payload) {
-    const records = (payload.records || []).slice()
-      .sort((a, b) => b.cnt - a.cnt)
-      .slice(0, EVENT_SUMMARY_MAX_RECORDS)
+    const records = topByCnt(payload.records || [], EVENT_SUMMARY_MAX_RECORDS)
       .map(r => _.omit(r, ['_k', '_firstTs', '_lastTs']));
     return { ts: payload.ts, du: payload.du, key: payload.key, records };
   }
