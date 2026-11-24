@@ -25,6 +25,7 @@ const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter, countUniqueDests, effectiveBlockStatsSettings, TAG_PREFIX_BY_FLOW_KEY } = require('./BlockStatsFilter.js');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries();
 
 const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
 const BUCKET_TTL = 86400 * 7; // 7 days
@@ -32,6 +33,9 @@ const FLUSH_INTERVAL = 60 * 1000; // 1 minute
 // caps per key per bucket across all identities, to bound the redis payload size
 const MAX_DESTS_PER_BUCKET = 400;
 const MAX_DEVICES_PER_BUCKET = 400;
+// aggrCounters only report the last 24 hours and 7 days
+const COUNTER_GRANULARITIES = [Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY];
+const COUNTER_INDEX_RETENTION = 86400 * 7;
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
@@ -40,6 +44,7 @@ class BlockStatsSensor extends Sensor {
     //   identities: Map<identity, { identity, cnt, dests: Map<joinedKey, {...destFields, cnt}>, devices: Set<mac> }> } } }
     this.buckets = {};
     this.dirty = new Set(); // `${bucketTs}:${settingKey}` touched since last flush
+    this.counterIndex = new Map(); // aggrCounter key => last hit ts, since last flush
     this.blockStatsConfs = { blockStatsSettings: [], slotSecs: DEFAULT_SLOT_SECS };
     this.slotSecs = DEFAULT_SLOT_SECS;
     this.ignoredDests = { fqdns: new Set(), suffixes: [] };
@@ -141,6 +146,8 @@ class BlockStatsSensor extends Sensor {
       // a client appends its search domain to a blocked name, and the bare name is counted already
       if (skip === undefined) skip = SysManager.isLocalOrSearchDomain(event.dest);
       if (skip) return;
+      if (setting.aggrCounter) this._countHit(setting, event, ct);
+      if (!setting.identityKey) continue;
       const identity = this._getIdentity(setting.identityKey, event);
       if (!identity) continue;
       const settingKey = setting.key;
@@ -176,6 +183,25 @@ class BlockStatsSensor extends Sensor {
     }
   }
 
+  // the counter key is the setting key followed by the event's value of each dimension, e.g.
+  // block::country::RU. The hits go to the metrics buffer, written by the audit log's timeSeries.exec()
+  _countHit(setting, event, ct) {
+    let counterKey = setting.key;
+    for (const dimension of setting.aggrCounter.dimensions) {
+      const value = event[dimension];
+      if (_.isNil(value) || value === '') return;
+      // the audit log turns an unknown pid (-1) into 0
+      if (dimension === 'pid' && !(value > 0)) return;
+      counterKey += `::${value}`;
+    }
+    timeSeries.recordHit(`${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${counterKey}`, event._ts, ct, undefined, COUNTER_GRANULARITIES);
+    this._touchCounter(counterKey, event._ts);
+  }
+
+  _touchCounter(counterKey, ts) {
+    this.counterIndex.set(counterKey, Math.max(this.counterIndex.get(counterKey) || 0, ts));
+  }
+
   _serializeBucket(bucket) {
     return Array.from(bucket.identities.values()).map(r => {
       const dests = Array.from(r.dests.values());
@@ -191,7 +217,8 @@ class BlockStatsSensor extends Sensor {
   }
 
   async _flushAndPurge() {
-    const nowBucket = this._slotStart(Math.floor(Date.now() / 1000));
+    const now = Math.floor(Date.now() / 1000);
+    const nowBucket = this._slotStart(now);
     const staleCutoff = nowBucket - this.slotSecs * 2; // keep current + previous bucket only
 
     const multi = rclient.multi();
@@ -219,10 +246,24 @@ class BlockStatsSensor extends Sensor {
     // drop index entries whose underlying bucket key has already expired (TTL is BUCKET_TTL from
     // wall-clock write time, so anything older than that is definitely gone). The legacy index
     // is no longer written, this drains it
-    const indexCutoff = Math.floor(Date.now() / 1000) - BUCKET_TTL;
+    const indexCutoff = now - BUCKET_TTL;
     multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_AGGR_INDEX, '-inf', indexCutoff);
     multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_INDEX, '-inf', indexCutoff);
-    await multi.execAsync();
+
+    const counters = this.counterIndex;
+    this.counterIndex = new Map();
+    for (const [counterKey, ts] of counters)
+      multi.zadd(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, ts, counterKey);
+    multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, '-inf', now - COUNTER_INDEX_RETENTION);
+    if (counters.size)
+      multi.expire(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, COUNTER_INDEX_RETENTION + 86400);
+    try {
+      await multi.execAsync();
+    } catch (err) {
+      // keep the counters touched since the last flush for the next one
+      for (const [counterKey, ts] of counters) this._touchCounter(counterKey, ts);
+      throw err;
+    }
 
     for (const bucketTs of Object.keys(this.buckets)) {
       if (Number(bucketTs) < staleCutoff) delete this.buckets[bucketTs];
