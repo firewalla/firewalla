@@ -225,6 +225,34 @@ TimeSeries.prototype.parseQueuedHits = function(queued, resultSlice, count) {
   return parseHits(queued.plan, _.flatten(resultSlice), count);
 };
 
+// Queues the hourly hits of the last 24 hours and the daily hits of the last 7 days of key
+TimeSeries.prototype.queueRecentSummary = function(multi, key) {
+  const q24h = this.queueHits(multi, key, Constants.TS_GRAN_1HOUR, 24);
+  const q7d = this.queueHits(multi, key, Constants.TS_GRAN_1DAY, 7);
+  return { q24h, q7d, resultSlots: q24h.resultSlots + q7d.resultSlots };
+};
+
+// { total24h, total7d, daily7d } from the results of a queueRecentSummary() call, no results
+// (a failed read) count as no hits
+TimeSeries.prototype.parseRecentSummary = function(queued, resultSlice, label) {
+  let buckets24h = [], buckets7d = [];
+  if (resultSlice) {
+    buckets24h = this.parseQueuedHits(queued.q24h, resultSlice.slice(0, queued.q24h.resultSlots), 24);
+    buckets7d = this.parseQueuedHits(queued.q7d, resultSlice.slice(queued.q24h.resultSlots, queued.resultSlots), 7);
+  }
+  const total24h = buckets24h.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+  let total7d = buckets7d.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+  const daily7d = buckets7d;
+  if (total24h > total7d) {
+    const delta = total24h - total7d;
+    log.warn(`${label} total24h (${total24h}) is ahead of total7d (${total7d})`);
+    total7d = total24h;
+    if (daily7d.length)
+      daily7d[daily7d.length - 1][1] += delta;
+  }
+  return { total24h, total7d, daily7d };
+};
+
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
   [Constants.TS_GRAN_1MINUTE]  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
