@@ -23,7 +23,7 @@ const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
 const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
-const { matchFilter, countUniqueDests } = require('./BlockStatsFilter.js');
+const { matchFilter, countUniqueDests, effectiveBlockStatsSettings, TAG_PREFIX_BY_FLOW_KEY } = require('./BlockStatsFilter.js');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
 
 const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
@@ -32,9 +32,6 @@ const FLUSH_INTERVAL = 60 * 1000; // 1 minute
 // caps per key per bucket across all identities, to bound the redis payload size
 const MAX_DESTS_PER_BUCKET = 400;
 const MAX_DEVICES_PER_BUCKET = 400;
-// identityKey entries: 'device' (the mac or VPN GUID itself) or a tag flowKey, e.g. userTags
-const TAG_PREFIX_BY_FLOW_KEY = _.fromPairs(Object.values(Constants.TAG_TYPE_MAP).map(t => [t.flowKey, t.ruleTagPrefix]));
-const IDENTITY_KEYS = ['device', ...Object.keys(TAG_PREFIX_BY_FLOW_KEY)];
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
@@ -69,17 +66,12 @@ class BlockStatsSensor extends Sensor {
   }
 
   applyConfig(cloudConfig) {
-    // blockStatsSettings is an array of objects, _.merge on arrays merges by index rather than
-    // concatenating/keying by "key", so the cloud config (when present) fully replaces the local
-    // default array rather than being deep-merged with it
-    const cloudSettings = cloudConfig && cloudConfig.blockStatsSettings;
-    const localSettings = this.config && this.config.blockStatsSettings;
     const cloudSlotSecs = cloudConfig && cloudConfig.slotSecs;
     const localSlotSecs = this.config && this.config.slotSecs;
     const cloudIgnoredDests = cloudConfig && cloudConfig.ignoredDests;
     const localIgnoredDests = this.config && this.config.ignoredDests;
     this.blockStatsConfs = {
-      blockStatsSettings: this._validateSettings((!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || []),
+      blockStatsSettings: effectiveBlockStatsSettings(cloudConfig, this.config, log),
       slotSecs: cloudSlotSecs || localSlotSecs || DEFAULT_SLOT_SECS,
       // an empty cloud list clears the local default
       ignoredDests: cloudIgnoredDests || localIgnoredDests || []
@@ -95,30 +87,6 @@ class BlockStatsSensor extends Sensor {
     // slotSecs is already deployed and silently changing a configured value would be worse
     if (!tilesLocalDay(this.slotSecs))
       log.warn(`slotSecs(${this.slotSecs}) does not divide 86400 evenly, the last slot of each local day will be short`);
-  }
-
-  // drops unusable settings, so a bad cloud push disables that setting rather than throwing on every event
-  _validateSettings(settings) {
-    if (!_.isArray(settings)) {
-      log.error('Ignoring block stats settings that are not an array', settings);
-      return [];
-    }
-    return settings.filter(setting => {
-      if (!_.isObject(setting) || !setting.key || _.isEmpty(setting.filter)) {
-        log.error('Ignoring block stats setting without a key or filter', setting);
-        return false;
-      }
-      const { identityKey, destKeys } = setting;
-      if (!_.isArray(identityKey) || _.isEmpty(identityKey) || !identityKey.every(k => IDENTITY_KEYS.includes(k))) {
-        log.error(`Ignoring block stats setting ${setting.key} with invalid identityKey`, identityKey);
-        return false;
-      }
-      if (!_.isArray(destKeys) || _.isEmpty(destKeys) || !destKeys.every(k => _.isString(k) && k.length > 0)) {
-        log.error(`Ignoring block stats setting ${setting.key} with invalid destKeys`, destKeys);
-        return false;
-      }
-      return true;
-    });
   }
 
   // entries are an fqdn, matched exactly, or "*.<domain>", matched on the ".<domain>" suffix

@@ -14,6 +14,13 @@
  */
 'use strict';
 
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
+
+// identityKey entries: 'device' (the mac or VPN GUID itself) or a tag flowKey, e.g. userTags
+const TAG_PREFIX_BY_FLOW_KEY = _.fromPairs(Object.values(Constants.TAG_TYPE_MAP).map(t => [t.flowKey, t.ruleTagPrefix]));
+const IDENTITY_KEYS = ['device', ...Object.keys(TAG_PREFIX_BY_FLOW_KEY)];
+
 // node:
 //   { field, value }              -- leaf: exact-equality test
 //   { and: [node, node, ...] }    -- all children must match
@@ -54,4 +61,42 @@ function countUniqueDestFields(dests) {
   return counts;
 }
 
-module.exports = { matchFilter, isValidFilter, countUniqueDests, countUniqueDestFields };
+// drops unusable block stats settings, so a bad cloud push disables that setting rather than
+// throwing on every event. Problems are logged only when log is given
+function validateBlockStatsSettings(settings, log) {
+  const report = log ? (...args) => log.error(...args) : () => {};
+  if (!_.isArray(settings)) {
+    report('Ignoring block stats settings that are not an array', settings);
+    return [];
+  }
+  return settings.filter(setting => {
+    if (!_.isObject(setting) || !setting.key || _.isEmpty(setting.filter)) {
+      report('Ignoring block stats setting without a key or filter', setting);
+      return false;
+    }
+    const { identityKey, destKeys } = setting;
+    if (!_.isArray(identityKey) || _.isEmpty(identityKey) || !identityKey.every(k => IDENTITY_KEYS.includes(k))) {
+      report(`Ignoring block stats setting ${setting.key} with invalid identityKey`, identityKey);
+      return false;
+    }
+    if (!_.isArray(destKeys) || _.isEmpty(destKeys) || !destKeys.every(k => _.isString(k) && k.length > 0)) {
+      report(`Ignoring block stats setting ${setting.key} with invalid destKeys`, destKeys);
+      return false;
+    }
+    return true;
+  });
+}
+
+// the valid settings in effect: blockStatsSettings is an array of objects, and _.merge on arrays
+// merges by index rather than concatenating/keying by "key", so the cloud config (when present)
+// fully replaces the local default array rather than being deep-merged with it
+function effectiveBlockStatsSettings(cloudConfig, localConfig, log) {
+  const cloudSettings = cloudConfig && cloudConfig.blockStatsSettings;
+  const localSettings = localConfig && localConfig.blockStatsSettings;
+  return validateBlockStatsSettings((!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || [], log);
+}
+
+module.exports = {
+  matchFilter, isValidFilter, countUniqueDests, countUniqueDestFields,
+  effectiveBlockStatsSettings, TAG_PREFIX_BY_FLOW_KEY
+};
