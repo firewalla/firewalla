@@ -82,7 +82,7 @@ function validateBlockStatsSettings(settings, log) {
   }
   const valid = [];
   for (let setting of settings) {
-    if (!_.isObject(setting) || !setting.key || _.isEmpty(setting.filter)) {
+    if (!_.isObject(setting) || !_.isString(setting.key) || !setting.key || _.isEmpty(setting.filter)) {
       report('Ignoring block stats setting without a key or filter', setting);
       continue;
     }
