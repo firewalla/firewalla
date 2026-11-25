@@ -1531,6 +1531,15 @@ class netBot extends ControllerBot {
         const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
         return { blockStats };
       }
+      case "categoryAggrCounter": {
+        //  value.key: an aggrCounter key in the block stats config, returns its stats per dimension value
+        const value = msg.data.value || {};
+        if (!_.isString(value.key) || !value.key) {
+          throw new Error('Invalid key');
+        }
+        const dimensions = await this.hostManager.getCategoryAggrCounterDimensions(value.key);
+        return { key: value.key, dimensions };
+      }
       case "dailyInboundBlockStats": {
         //  value.ts: any time in the local day to return, within the last 7 days
         const value = msg.data.value || {};

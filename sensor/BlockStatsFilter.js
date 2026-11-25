@@ -68,7 +68,7 @@ function parseAggrCounter(aggrCounter) {
   if (!_.isPlainObject(aggrCounter)) return null;
   const dimensions = aggrCounter.dimensions === undefined ? [] : aggrCounter.dimensions;
   if (!_.isArray(dimensions) || !dimensions.every(d => COUNTER_DIMENSIONS.includes(d))) return null;
-  return { dimensions };
+  return { dimensions: _.uniq(dimensions) };
 }
 
 // drops unusable block stats settings, so a bad cloud push disables that setting rather than
@@ -114,7 +114,7 @@ function validateBlockStatsSettings(settings, log) {
     }
     valid.push(setting);
   }
-  // a counter key is the setting key plus "::<value>" per dimension, so a setting key nested under
+  // a dimension counter key is the setting key plus "::<dimension>::<value>", so a setting key nested under
   // another counter's key could write that counter's keys
   const counterKeys = valid.filter(s => s.aggrCounter).map(s => s.key);
   return valid.flatMap(setting => {
