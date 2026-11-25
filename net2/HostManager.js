@@ -52,7 +52,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
-const { countUniqueDests, countUniqueDestFields } = require('../sensor/BlockStatsFilter.js');
+const { countUniqueDests, countUniqueDestFields, effectiveBlockStatsSettings } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -1815,6 +1815,7 @@ module.exports = class HostManager extends Monitorable {
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
       this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
+      this.categoryAggrCounterForInit(json),
       this.eventSummaryForInit(json),
       execFile("sudo", ["systemctl", "is-active", "firekick"]).then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
@@ -1984,6 +1985,41 @@ module.exports = class HostManager extends Monitorable {
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
     json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
+  }
+
+  // { [counterKey]: { total24h, total7d, daily7d } } of the aggrCounters in the current block stats
+  // config, so a counter removed from it is gone at once. One without dimensions is listed before its first hit
+  async categoryAggrCounterForInit(json) {
+    try {
+      const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
+      const localConfig = _.get(fc.getConfig(), ['sensors', 'BlockStatsSensor']);
+      const settings = effectiveBlockStatsSettings(cloudConfig, localConfig).filter(s => s.aggrCounter);
+      if (_.isEmpty(settings)) {
+        json.categoryAggrCounter = {};
+        return;
+      }
+      const counterKeys = new Set(settings.filter(s => _.isEmpty(s.aggrCounter.dimensions)).map(s => s.key));
+      // a member counts for a setting with exactly one "::<value>" per dimension, values never hold "::"
+      const withDimensions = settings.filter(s => !_.isEmpty(s.aggrCounter.dimensions));
+      const since = Math.floor(Date.now() / 1000) - 86400 * 7;
+      const members = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, `(${since}`, '+inf');
+      for (const member of members) {
+        if (counterKeys.has(member) || withDimensions.some(s => member.startsWith(`${s.key}::`)
+          && member.slice(s.key.length + 2).split('::').length === s.aggrCounter.dimensions.length))
+          counterKeys.add(member);
+      }
+      const multi = timeSeries.redis.multi();
+      const queued = Array.from(counterKeys, k => [k, timeSeries.queueRecentSummary(multi, `${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${k}`)]);
+      const results = await multi.execAsync();
+      const counters = {};
+      let offset = 0;
+      for (const [k, q] of queued)
+        counters[k] = timeSeries.parseRecentSummary(q, results.slice(offset, offset += q.resultSlots), `block stats counter ${k}`);
+      json.categoryAggrCounter = counters;
+    } catch (err) {
+      log.error(`Failed to load block stats counters: ${err.message}`);
+      json.categoryAggrCounter = {};
+    }
   }
 
   // inbound blocks of today and the previous local days, newest first; the counts cover every

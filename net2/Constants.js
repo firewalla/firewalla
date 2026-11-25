@@ -97,6 +97,10 @@ module.exports = {
   REDIS_KEY_BLOCK_STATS_AGGR_INDEX: "blockStatsAggr:index",
   // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // time series key prefix of a block stats aggrCounter, followed by its counter key, e.g. block::country::RU
+  TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX: "blockStatsAggrCounter:",
+  // zset of the aggrCounter keys hit in the last 7 days, score = the last hit ts
+  REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX: "blockStatsAggrCounter:index",
   // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_BLOCK_ALARM_CLOUD_CONFIG: "block_alarm_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync

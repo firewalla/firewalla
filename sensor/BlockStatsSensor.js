@@ -23,8 +23,9 @@ const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
 const CloudConfigLoader = require('./CloudConfigLoader.js');
 const SysManager = require('../net2/SysManager.js');
-const { matchFilter, countUniqueDests } = require('./BlockStatsFilter.js');
+const { matchFilter, countUniqueDests, effectiveBlockStatsSettings, TAG_PREFIX_BY_FLOW_KEY } = require('./BlockStatsFilter.js');
 const { localSlotStart, tilesLocalDay } = require('../util/TimeSlot.js');
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries();
 
 const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
 const BUCKET_TTL = 86400 * 7; // 7 days
@@ -32,9 +33,9 @@ const FLUSH_INTERVAL = 60 * 1000; // 1 minute
 // caps per key per bucket across all identities, to bound the redis payload size
 const MAX_DESTS_PER_BUCKET = 400;
 const MAX_DEVICES_PER_BUCKET = 400;
-// identityKey entries: 'device' (the mac or VPN GUID itself) or a tag flowKey, e.g. userTags
-const TAG_PREFIX_BY_FLOW_KEY = _.fromPairs(Object.values(Constants.TAG_TYPE_MAP).map(t => [t.flowKey, t.ruleTagPrefix]));
-const IDENTITY_KEYS = ['device', ...Object.keys(TAG_PREFIX_BY_FLOW_KEY)];
+// aggrCounters only report the last 24 hours and 7 days
+const COUNTER_GRANULARITIES = [Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY];
+const COUNTER_INDEX_RETENTION = 86400 * 7;
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
@@ -43,6 +44,7 @@ class BlockStatsSensor extends Sensor {
     //   identities: Map<identity, { identity, cnt, dests: Map<joinedKey, {...destFields, cnt}>, devices: Set<mac> }> } } }
     this.buckets = {};
     this.dirty = new Set(); // `${bucketTs}:${settingKey}` touched since last flush
+    this.counterIndex = new Map(); // aggrCounter key => last hit ts, since last flush
     this.blockStatsConfs = { blockStatsSettings: [], slotSecs: DEFAULT_SLOT_SECS };
     this.slotSecs = DEFAULT_SLOT_SECS;
     this.ignoredDests = { fqdns: new Set(), suffixes: [] };
@@ -69,17 +71,12 @@ class BlockStatsSensor extends Sensor {
   }
 
   applyConfig(cloudConfig) {
-    // blockStatsSettings is an array of objects, _.merge on arrays merges by index rather than
-    // concatenating/keying by "key", so the cloud config (when present) fully replaces the local
-    // default array rather than being deep-merged with it
-    const cloudSettings = cloudConfig && cloudConfig.blockStatsSettings;
-    const localSettings = this.config && this.config.blockStatsSettings;
     const cloudSlotSecs = cloudConfig && cloudConfig.slotSecs;
     const localSlotSecs = this.config && this.config.slotSecs;
     const cloudIgnoredDests = cloudConfig && cloudConfig.ignoredDests;
     const localIgnoredDests = this.config && this.config.ignoredDests;
     this.blockStatsConfs = {
-      blockStatsSettings: this._validateSettings((!_.isEmpty(cloudSettings) ? cloudSettings : localSettings) || []),
+      blockStatsSettings: effectiveBlockStatsSettings(cloudConfig, this.config, log),
       slotSecs: cloudSlotSecs || localSlotSecs || DEFAULT_SLOT_SECS,
       // an empty cloud list clears the local default
       ignoredDests: cloudIgnoredDests || localIgnoredDests || []
@@ -95,30 +92,6 @@ class BlockStatsSensor extends Sensor {
     // slotSecs is already deployed and silently changing a configured value would be worse
     if (!tilesLocalDay(this.slotSecs))
       log.warn(`slotSecs(${this.slotSecs}) does not divide 86400 evenly, the last slot of each local day will be short`);
-  }
-
-  // drops unusable settings, so a bad cloud push disables that setting rather than throwing on every event
-  _validateSettings(settings) {
-    if (!_.isArray(settings)) {
-      log.error('Ignoring block stats settings that are not an array', settings);
-      return [];
-    }
-    return settings.filter(setting => {
-      if (!_.isObject(setting) || !setting.key || _.isEmpty(setting.filter)) {
-        log.error('Ignoring block stats setting without a key or filter', setting);
-        return false;
-      }
-      const { identityKey, destKeys } = setting;
-      if (!_.isArray(identityKey) || _.isEmpty(identityKey) || !identityKey.every(k => IDENTITY_KEYS.includes(k))) {
-        log.error(`Ignoring block stats setting ${setting.key} with invalid identityKey`, identityKey);
-        return false;
-      }
-      if (!_.isArray(destKeys) || _.isEmpty(destKeys) || !destKeys.every(k => _.isString(k) && k.length > 0)) {
-        log.error(`Ignoring block stats setting ${setting.key} with invalid destKeys`, destKeys);
-        return false;
-      }
-      return true;
-    });
   }
 
   // entries are an fqdn, matched exactly, or "*.<domain>", matched on the ".<domain>" suffix
@@ -173,6 +146,8 @@ class BlockStatsSensor extends Sensor {
       // a client appends its search domain to a blocked name, and the bare name is counted already
       if (skip === undefined) skip = SysManager.isLocalOrSearchDomain(event.dest);
       if (skip) return;
+      if (setting.aggrCounter) this._countHit(setting, event, ct);
+      if (!setting.identityKey) continue;
       const identity = this._getIdentity(setting.identityKey, event);
       if (!identity) continue;
       const settingKey = setting.key;
@@ -208,6 +183,25 @@ class BlockStatsSensor extends Sensor {
     }
   }
 
+  // the counter key is the setting key followed by the event's value of each dimension, e.g.
+  // block::country::RU. The hits go to the metrics buffer, written by the audit log's timeSeries.exec()
+  _countHit(setting, event, ct) {
+    let counterKey = setting.key;
+    for (const dimension of setting.aggrCounter.dimensions) {
+      const value = event[dimension];
+      if (_.isNil(value) || value === '') return;
+      // the audit log turns an unknown pid (-1) into 0
+      if (dimension === 'pid' && !(value > 0)) return;
+      counterKey += `::${value}`;
+    }
+    timeSeries.recordHit(`${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${counterKey}`, event._ts, ct, undefined, COUNTER_GRANULARITIES);
+    this._touchCounter(counterKey, event._ts);
+  }
+
+  _touchCounter(counterKey, ts) {
+    this.counterIndex.set(counterKey, Math.max(this.counterIndex.get(counterKey) || 0, ts));
+  }
+
   _serializeBucket(bucket) {
     return Array.from(bucket.identities.values()).map(r => {
       const dests = Array.from(r.dests.values());
@@ -223,7 +217,8 @@ class BlockStatsSensor extends Sensor {
   }
 
   async _flushAndPurge() {
-    const nowBucket = this._slotStart(Math.floor(Date.now() / 1000));
+    const now = Math.floor(Date.now() / 1000);
+    const nowBucket = this._slotStart(now);
     const staleCutoff = nowBucket - this.slotSecs * 2; // keep current + previous bucket only
 
     const multi = rclient.multi();
@@ -251,10 +246,24 @@ class BlockStatsSensor extends Sensor {
     // drop index entries whose underlying bucket key has already expired (TTL is BUCKET_TTL from
     // wall-clock write time, so anything older than that is definitely gone). The legacy index
     // is no longer written, this drains it
-    const indexCutoff = Math.floor(Date.now() / 1000) - BUCKET_TTL;
+    const indexCutoff = now - BUCKET_TTL;
     multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_AGGR_INDEX, '-inf', indexCutoff);
     multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_INDEX, '-inf', indexCutoff);
-    await multi.execAsync();
+
+    const counters = this.counterIndex;
+    this.counterIndex = new Map();
+    for (const [counterKey, ts] of counters)
+      multi.zadd(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, ts, counterKey);
+    multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, '-inf', now - COUNTER_INDEX_RETENTION);
+    if (counters.size)
+      multi.expire(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, COUNTER_INDEX_RETENTION + 86400);
+    try {
+      await multi.execAsync();
+    } catch (err) {
+      // keep the counters touched since the last flush for the next one
+      for (const [counterKey, ts] of counters) this._touchCounter(counterKey, ts);
+      throw err;
+    }
 
     for (const bucketTs of Object.keys(this.buckets)) {
       if (Number(bucketTs) < staleCutoff) delete this.buckets[bucketTs];
