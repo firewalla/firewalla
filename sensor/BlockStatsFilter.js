@@ -68,7 +68,7 @@ function parseAggrCounter(aggrCounter) {
   if (!_.isPlainObject(aggrCounter)) return null;
   const dimensions = aggrCounter.dimensions === undefined ? [] : aggrCounter.dimensions;
   if (!_.isArray(dimensions) || !dimensions.every(d => COUNTER_DIMENSIONS.includes(d))) return null;
-  return { dimensions };
+  return { dimensions: _.uniq(dimensions) };
 }
 
 // drops unusable block stats settings, so a bad cloud push disables that setting rather than
