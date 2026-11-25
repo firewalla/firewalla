@@ -481,11 +481,9 @@ module.exports = class HostManager extends Monitorable {
 
   async enrichSTAInfo(hosts) {
     const staStatus = await this._getAllSTAStatus();
-    if (!staStatus)
-      return;
     for (const host of hosts) {
       const mac = host.mac;
-      if (mac && staStatus[mac])
+      if (staStatus && mac && staStatus[mac])
         host.staInfo = staStatus[mac];
       await this._validateAutoGroup(host, staStatus);
     }
@@ -495,9 +493,7 @@ module.exports = class HostManager extends Monitorable {
   async validateAutoGroup(host) {
     if (!host.autoGroup)
       return;
-    const staStatus = await this._getAllSTAStatus();
-    if (staStatus)
-      await this._validateAutoGroup(host, staStatus);
+    await this._validateAutoGroup(host, await this._getAllSTAStatus());
   }
 
   async _validateAutoGroup(host, staStatus) {
@@ -505,6 +501,14 @@ module.exports = class HostManager extends Monitorable {
       return;
     const mac = host.mac;
     const hostObj = this.getHostFastByMAC(mac);
+    // without staStatus the connection is unknown, only a deleted group is dropped
+    if (!staStatus) {
+      if (hostObj && await hostObj.resetAutoGroupIfTagGone())
+        delete host.autoGroup;
+      else if (hostObj && hostObj.o.autoGroup)
+        host.autoGroup = hostObj.o.autoGroup;
+      return;
+    }
     const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
     if (autoGroup) {
       host.autoGroup = autoGroup;
