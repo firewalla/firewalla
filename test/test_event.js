@@ -21,6 +21,7 @@ const log = require('../net2/logger.js')(__filename);
 const eventapi = require('../event/EventApi.js');
 const eventhandler = require('../event/EventRequestHandler.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const _ = require('lodash');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -117,6 +118,8 @@ describe('Test event handler state event', function() {
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_state"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_speed_change"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_connect_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"switch_port_stp_state"})).to.be.true;
+    expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"bridge_port_stp_state"})).to.be.true;
     expect(eventhandler.needsSerializedQueue({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
   });
 
@@ -165,17 +168,23 @@ describe('Test event handler state event', function() {
     await rclient.hdelAsync("event:state:cache", cacheKey);
     await rclient.hdelAsync("event:state:cache:error", cacheKey);
 
-    // initial state is sent as an event
+    // initial state is saved but not sent, a no_error event is never an error
     await eventhandler.queueStateEvent(stateEvent(now-2000, 1));
-    expect((await eventapi.getEventByTs(now-2000)).state_value).to.equal(1);
+    expect(await eventapi.getEventByTs(now-2000)).to.be.empty;
+    expect(JSON.parse(await rclient.hgetAsync("event:state:cache", cacheKey)).state_value).to.equal(1);
 
     // repeated state is NOT sent
     await eventhandler.queueStateEvent(stateEvent(now-1000, 1));
     expect(await eventapi.getEventByTs(now-1000)).to.be.empty;
 
-    // changed state is sent, along with the previous value
+    // changed state is sent, along with the previous value. sendEvent() does not wait for the
+    // history write, so wait for the entry instead of reading it right away
     await eventhandler.queueStateEvent(stateEvent(now, 2));
-    const changed = await eventapi.getEventByTs(now);
+    let changed = {};
+    for (let i = 0; i < 40 && _.isEmpty(changed); i++) {
+      changed = await eventapi.getEventByTs(now);
+      if (_.isEmpty(changed)) await new Promise(resolve => setTimeout(resolve, 50));
+    }
     expect(changed.state_value).to.equal(2);
     expect(changed.prev_state_value).to.equal(1);
 
@@ -213,10 +222,12 @@ describe('Test latest state events', function() {
     // a switch went offline 2 days ago and came back a day ago
     all.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 86400000, 0));
     error.push(entry("switch_connect_state", "20:6D:31:AF:00:41", now - 2 * 86400000, 1));
-    // 300 newer keys of every other type, 150 of them of types excluded by default
+    // 320 newer keys of every other type, 170 of them of types excluded by default
     for (let i = 0; i < 50; i++) all.push(entry("switch_port_state", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
     for (let i = 0; i < 100; i++) all.push(entry("dap_state", `AA:BB:CC:00:00:${i}`, now - 1000 * i));
     for (let i = 0; i < 50; i++) all.push(entry("switch_port_speed_change", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 10; i++) all.push(entry("switch_port_stp_state", `20:6D:31:A0:01:5F_${i}`, now - 1000 * i));
+    for (let i = 0; i < 10; i++) all.push(entry("bridge_port_stp_state", `br0_eth${i}`, now - 1000 * i));
     for (let i = 0; i < 100; i++) all.push(entry("ping", `fe80::${i}`, now - 1000 * i));
     hashes["event:state:cache"] = Object.fromEntries(all);
     hashes["event:state:cache:error"] = Object.fromEntries(error);
