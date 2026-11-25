@@ -1987,39 +1987,55 @@ module.exports = class HostManager extends Monitorable {
     json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
   }
 
-  // { [counterKey]: { total24h, total7d, daily7d } } of the aggrCounters in the current block stats
-  // config, so a counter removed from it is gone at once. One without dimensions is listed before its first hit
+  async _getAggrCounterSettings() {
+    const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
+    const localConfig = _.get(fc.getConfig(), ['sensors', 'BlockStatsSensor']);
+    return effectiveBlockStatsSettings(cloudConfig, localConfig).filter(s => s.aggrCounter);
+  }
+
+  // { [counterKey]: { total24h, total7d, daily7d } }, read in one MULTI
+  async _getAggrCounterSummaries(counterKeys) {
+    if (_.isEmpty(counterKeys)) return {};
+    const multi = timeSeries.redis.multi();
+    const queued = counterKeys.map(k => [k, timeSeries.queueRecentSummary(multi, `${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${k}`)]);
+    const results = await multi.execAsync();
+    const counters = {};
+    let offset = 0;
+    for (const [k, q] of queued)
+      counters[k] = timeSeries.parseRecentSummary(q, results.slice(offset, offset += q.resultSlots), `block stats counter ${k}`);
+    return counters;
+  }
+
+  // { [settingKey]: { total24h, total7d, daily7d } } of every aggrCounter in the current block stats
+  // config, zeros before its first hit. Dimension values are left to getCategoryAggrCounterDimensions
   async categoryAggrCounterForInit(json) {
     try {
-      const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
-      const localConfig = _.get(fc.getConfig(), ['sensors', 'BlockStatsSensor']);
-      const settings = effectiveBlockStatsSettings(cloudConfig, localConfig).filter(s => s.aggrCounter);
-      if (_.isEmpty(settings)) {
-        json.categoryAggrCounter = {};
-        return;
-      }
-      const counterKeys = new Set(settings.filter(s => _.isEmpty(s.aggrCounter.dimensions)).map(s => s.key));
-      // a member counts for a setting with exactly one "::<value>" per dimension, values never hold "::"
-      const withDimensions = settings.filter(s => !_.isEmpty(s.aggrCounter.dimensions));
-      const since = Math.floor(Date.now() / 1000) - 86400 * 7;
-      const members = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, `(${since}`, '+inf');
-      for (const member of members) {
-        if (counterKeys.has(member) || withDimensions.some(s => member.startsWith(`${s.key}::`)
-          && member.slice(s.key.length + 2).split('::').length === s.aggrCounter.dimensions.length))
-          counterKeys.add(member);
-      }
-      const multi = timeSeries.redis.multi();
-      const queued = Array.from(counterKeys, k => [k, timeSeries.queueRecentSummary(multi, `${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${k}`)]);
-      const results = await multi.execAsync();
-      const counters = {};
-      let offset = 0;
-      for (const [k, q] of queued)
-        counters[k] = timeSeries.parseRecentSummary(q, results.slice(offset, offset += q.resultSlots), `block stats counter ${k}`);
-      json.categoryAggrCounter = counters;
+      const settings = await this._getAggrCounterSettings();
+      json.categoryAggrCounter = await this._getAggrCounterSummaries(settings.map(s => s.key));
     } catch (err) {
       log.error(`Failed to load block stats counters: ${err.message}`);
       json.categoryAggrCounter = {};
     }
+  }
+
+  // { [dimension]: { [value]: { total24h, total7d, daily7d } } } of a configured aggrCounter key,
+  // for the values hit in the last 7 days. Only the dimensions in the current config are listed
+  async getCategoryAggrCounterDimensions(key) {
+    const setting = (await this._getAggrCounterSettings()).find(s => s.key === key);
+    if (!setting || _.isEmpty(setting.aggrCounter.dimensions)) return {};
+    const since = Math.floor(Date.now() / 1000) - 86400 * 7;
+    const members = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, `(${since}`, '+inf');
+    const values = {}; // counter key => [dimension, value]
+    for (const dimension of setting.aggrCounter.dimensions) {
+      const prefix = `${key}::${dimension}::`;
+      for (const member of members)
+        if (member.startsWith(prefix)) values[member] = [dimension, member.slice(prefix.length)];
+    }
+    const summaries = await this._getAggrCounterSummaries(Object.keys(values));
+    const dimensions = _.fromPairs(setting.aggrCounter.dimensions.map(d => [d, {}]));
+    for (const [counterKey, [dimension, value]] of Object.entries(values))
+      dimensions[dimension][value] = summaries[counterKey];
+    return dimensions;
   }
 
   // inbound blocks of today and the previous local days, newest first; the counts cover every

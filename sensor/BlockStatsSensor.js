@@ -183,19 +183,20 @@ class BlockStatsSensor extends Sensor {
     }
   }
 
-  // the counter key is the setting key followed by the event's value of each dimension, e.g.
-  // block::country::RU. The hits go to the metrics buffer, written by the audit log's timeSeries.exec()
+  // every hit counts for the setting key, and for each dimension under the event's value of it, e.g.
+  // block::country::bTarget::RU. The hits go to the metrics buffer, written by the audit log's timeSeries.exec()
   _countHit(setting, event, ct) {
-    let counterKey = setting.key;
+    timeSeries.recordHit(`${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${setting.key}`, event._ts, ct, undefined, COUNTER_GRANULARITIES);
     for (const dimension of setting.aggrCounter.dimensions) {
       const value = event[dimension];
-      if (_.isNil(value) || value === '') return;
+      if (_.isNil(value) || value === '') continue;
       // the audit log turns an unknown pid (-1) into 0
-      if (dimension === 'pid' && !(value > 0)) return;
-      counterKey += `::${value}`;
+      if (dimension === 'pid' && !(value > 0)) continue;
+      const counterKey = `${setting.key}::${dimension}::${value}`;
+      timeSeries.recordHit(`${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${counterKey}`, event._ts, ct, undefined, COUNTER_GRANULARITIES);
+      // only dimension values are indexed, setting keys come from the config
+      this._touchCounter(counterKey, event._ts);
     }
-    timeSeries.recordHit(`${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${counterKey}`, event._ts, ct, undefined, COUNTER_GRANULARITIES);
-    this._touchCounter(counterKey, event._ts);
   }
 
   _touchCounter(counterKey, ts) {

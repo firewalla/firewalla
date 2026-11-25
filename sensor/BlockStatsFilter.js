@@ -114,7 +114,7 @@ function validateBlockStatsSettings(settings, log) {
     }
     valid.push(setting);
   }
-  // a counter key is the setting key plus "::<value>" per dimension, so a setting key nested under
+  // a dimension counter key is the setting key plus "::<dimension>::<value>", so a setting key nested under
   // another counter's key could write that counter's keys
   const counterKeys = valid.filter(s => s.aggrCounter).map(s => s.key);
   return valid.flatMap(setting => {
