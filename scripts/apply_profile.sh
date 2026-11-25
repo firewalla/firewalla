@@ -555,7 +555,8 @@ if ! $PROFILE_CHECK && [[ "$prev_profile" == "$active_profile" ]] && ((cur_ts - 
   exit 0
 fi
 logger "FIREWALLA:APPLY_PROFILE:START"
-if ! $PROFILE_CHECK; then
+# a partial apply (FW_PROFILE_KEYS) must not hold off the next full apply
+if ! $PROFILE_CHECK && [[ -z "$FW_PROFILE_KEYS" ]]; then
   echo -n "$active_profile" > $PREV_APPLY_PROFILE_NAME
   echo -n $cur_ts > $PREV_APPLY_PROFILE_TS
 fi
