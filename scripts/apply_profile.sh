@@ -108,18 +108,23 @@ set_smp_affinity() {
     done
 }
 
+# write value to every existing path the glob matches; in check mode print the current values
+write_sysfs() {
+    local paths=$1 value=$2
+    for path in $paths; do
+        test -e $path || continue
+        if $PROFILE_CHECK; then
+            cat $path
+        else
+            echo $value > $path
+        fi
+    done
+}
+
 set_rps_cpus() {
     while read intf q rps_cpus
     do
-        rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
-        for rps_cpus_path in $rps_cpus_paths; do
-            test -e $rps_cpus_path || continue
-            if $PROFILE_CHECK; then
-                cat $rps_cpus_path
-            else
-                echo $rps_cpus > $rps_cpus_path
-            fi
-        done
+        write_sysfs "/sys/class/net/$intf/queues/$q/rps_cpus" $rps_cpus
     done
 }
 
