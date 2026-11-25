@@ -29,6 +29,15 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const { exec, execFile } = require('child-process-promise')
 
+const { delay } = require('../util/util.js');
+
+// mirrors the switch port reset's Duration::from_secs(1) (ap/fwswitch/src/api.rs)
+const PORT_LINK_RESET_DOWN_MS = 1000;
+// 'ip link set' returns in milliseconds, it only blocks this long if the netlink call itself wedges
+const PORT_LINK_CMD_TIMEOUT_MS = 3000;
+// budget for the whole reset, shared by all the ports being reset in parallel
+const PORT_RESET_TIMEOUT_MS = 10000;
+
 let instance = null;
 
 class NetworkTool {
@@ -181,6 +190,49 @@ class NetworkTool {
     });
 
     return list
+  }
+
+  async _resetEthernetPort(port) {
+    let success = true;
+    let message = "OK";
+    try {
+      await execFile("sudo", ["ip", "link", "set", port, "down"], { timeout: PORT_LINK_CMD_TIMEOUT_MS });
+      await delay(PORT_LINK_RESET_DOWN_MS);
+    } catch (err) {
+      success = false;
+      message = err.message;
+      log.error(`Failed to bring down ethernet port ${port}`, err.message);
+    }
+    // unconditional: firerouter's ifplugd runs with -a and will not re-enable
+    // a port left administratively down, so the up must run even after a down failure
+    const upErr = await execFile("sudo", ["ip", "link", "set", port, "up"], { timeout: PORT_LINK_CMD_TIMEOUT_MS }).then(() => null).catch(err => err);
+    if (upErr) {
+      success = false;
+      message = upErr.message;
+      log.error(`Failed to bring up ethernet port ${port}`, upErr.message);
+    }
+    log.info(`Reset ethernet port ${port}`, { success, message });
+    return { port, success, message };
+  }
+
+  // bounce the link on the given ethernet ports, all of them in parallel, and report per-port
+  // results. Whether the link actually comes back is left to the caller to judge - a port with
+  // no cable in it is a legitimate thing to reset. The whole call is bounded by timeoutMs.
+  async resetEthernetPorts(ports, timeoutMs = PORT_RESET_TIMEOUT_MS) {
+    const results = await Promise.all(ports.map(port => {
+      // the timer has to be cancelled once the port is done, a lost race is not cancelled on
+      // its own and would report a timeout on a reset that already succeeded
+      let timer = null;
+      const timeout = new Promise(resolve => {
+        timer = setTimeout(() => {
+          const message = `port reset did not finish within ${timeoutMs}ms`;
+          log.error(`Ethernet port ${port} ${message}`);
+          resolve({ port, success: false, message });
+        }, timeoutMs);
+      });
+      return Promise.race([this._resetEthernetPort(port), timeout]).finally(() => clearTimeout(timer));
+    }));
+    return { results };
   }
 
   capSubnet(cidrAddr) {

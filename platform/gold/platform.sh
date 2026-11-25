@@ -26,6 +26,12 @@ HAVE_FWAPC=yes
 HAVE_FWDAP=yes
 WAN_INPUT_DROP_RATE_LIMIT=12
 
+# GoldPlatform.isSuricataFromAssetsSupported: only the 6.5 kernel image can run
+# the suricata asset on gold
+function suricata_from_assets_supported {
+  [[ $(uname -r) == 6.5.0-25-generic ]]
+}
+
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }

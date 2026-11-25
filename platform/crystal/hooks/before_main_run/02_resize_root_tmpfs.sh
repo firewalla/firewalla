@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/02_resize_root_tmpfs.sh

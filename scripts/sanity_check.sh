@@ -7,18 +7,27 @@ shopt -s lastpipe
 
 UNAME=$(uname -m)
 ROUTER_MANAGED='yes'
+# BOARD is the label in /etc/firewalla-release, PLATFORM the platform/ directory name,
+# so the boards whose two spellings differ are mapped below. Reading the board on x86_64
+# as well keeps gold pro and crystal apart from gold.
+BOARD=$( [[ -e /etc/firewalla-release ]] && { . /etc/firewalla-release 2>/dev/null && echo "$BOARD" || cat /etc/firewalla-release; } )
 case "$UNAME" in
   "x86_64")
-    PLATFORM='gold'
+    case "$BOARD" in
+      'gold-pro') PLATFORM='goldpro' ;;
+      'crystal') PLATFORM='crystal' ;;
+      *) PLATFORM='gold' ;;
+    esac
     ;;
   "aarch64")
-    if [[ -e /etc/firewalla-release ]]; then
-      PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-      if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
-        ROUTER_MANAGED='no'
-      fi
-    else
-      PLATFORM='unknown'
+    case "$BOARD" in
+      'gold-se') PLATFORM='gse' ;;
+      'purple-se') PLATFORM='pse' ;;
+      '') PLATFORM='unknown' ;;
+      *) PLATFORM="$BOARD" ;;
+    esac
+    if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
+      ROUTER_MANAGED='no'
     fi
     ;;
   "armv7l")
@@ -628,9 +637,6 @@ check_tc_classes() {
         local DISABLED=$(redis-cli hget policy:${RULE_ID} disabled)
         local parent_classid=1
         echo "PID: ${RULE_ID}, traffic direction: ${TRAFFIC_DIRECTION}, rate limit: ${RATE_LIMIT}, priority: ${PRIORITY}, disabled: ${DISABLED}"
-        if [[ $PLATFORM == "gold" ]]; then
-          parent_classid=10
-        fi
         if [[ $TRAFFIC_DIRECTION == "upload" ]]; then
           tc class show dev ifb0 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         else
@@ -1613,14 +1619,19 @@ check_iptables() {
 }
 
 check_eth_count() {
-  ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
+  ports=$(find /sys/class/net/ | grep -c "\\eth[0-9]\\+$")
 
-  if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
-    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
-    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
-      printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
-    else
-      echo "all good: $ports eth interfaces"
+  if [[ "$PLATFORM" == 'crystal' ]]; then
+    # runs on hardware we don't make, so there is no expected port count
+    echo "$ports eth interfaces"
+  elif [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'goldpro' || "$PLATFORM" == 'gse') && $ports -ne 4 ||
+    "$PLATFORM" == 'goldplus2' && $ports -ne 5 ||
+    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'pse' || "$PLATFORM" == 'orange') && $ports -ne 2 ||
+    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]];
+  then
+    printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
+  else
+    echo "all good: $ports eth interfaces"
   fi
   echo ""
   echo ""
@@ -1632,7 +1643,7 @@ check_events() {
   if [[ "$1" == 'utc' || "$JQ_HAS_LOCALTIME" != 'yes' ]]; then
     TIME_FUNC='strftime'
   fi
-  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
+  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | (if .last_ts then .last_ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) else . end) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
   # hint on stderr so won't impact stuff being piped
   if [[ "$TIME_FUNC" == 'strftime' ]]; then
     >&2 echo -e "\e[43m\e[30m  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<\e[0m"

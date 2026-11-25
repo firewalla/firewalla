@@ -11,6 +11,7 @@ totalmem=$(free -m | awk '/Mem:/{print $2}')
 mem=$(( ($totalmem / 4 / 2 )* 1024 * 1024 ))
 
 for i in `seq 0 3`; do
+  [[ -e /sys/block/zram${i} ]] || continue
   echo $mem > /sys/block/zram${i}/disksize 2>/dev/null
   mkswap /dev/zram${i} &>/dev/null
   swapon -p 5 /dev/zram${i} &>/dev/null

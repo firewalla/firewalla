@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,6 +30,7 @@ const _ = require('lodash');
 const flat = require('flat');
 const iptool = require('ip');
 const Constants = require('../net2/Constants.js');
+const { hasControlChar } = require('../util/util.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -137,6 +138,14 @@ class Policy {
       this.target = this['i.target'];
       delete this['i.target'];
     }
+
+    // rule fields are written into dnsmasq config files that root parses, into the ipset restore
+    // stream and onto iptables command lines, all of which are line oriented, so a control
+    // character in any field can start a directive or a command of its own. notes is free text and
+    // may hold a line break. this runs after the array and object fields are parsed so that nested
+    // values are checked too
+    if (hasControlChar(this))
+      throw new Error(`Invalid control character in policy id: ${this.pid}`);
 
     if (this.target && this.type) {
       switch (this.type) {

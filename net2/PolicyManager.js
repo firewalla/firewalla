@@ -49,6 +49,7 @@ const { Rule } = require('../net2/Iptables.js');
 
 const { exec } = require('child-process-promise');
 const Constants = require("./Constants.js");
+const { hasControlChar } = require('../util/util.js');
 
 class PolicyManager {
 
@@ -366,6 +367,8 @@ class PolicyManager {
   }
 
   async execute(target, ip, policy) {
+    // `target.oper` is this function's own cache of what it last applied, keyed by policy name, so an
+    // unchanged policy is not re-applied on every round.
     if (target.oper == null) {
       target.oper = {};
     }
@@ -391,6 +394,8 @@ class PolicyManager {
       policy['ipAllocation'] = {};
 
     const policyKeys = Object.keys(policy);
+
+    const invalidPolicyKeys = new Set();
     const tagPolicyKeys = Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].policyKey);
     // vpnClient and tag policy enforcement may affect OSI verification, so they should be applied first, check OSIPlugin.js for more details.
     const prioritizedPolicyKeys = ["vpnClient", ...tagPolicyKeys, "dnsmasq", "acl", "aclTimer"].filter(p => policyKeys.includes(p));
@@ -404,6 +409,16 @@ class PolicyManager {
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
       t1 = Date.now() / 1000;
+
+      // policy content might end up in command line or config file, filtering it here as a safety
+      // guard. wrap in an object so the walk sees the policy name as the key, which decides whether
+      // a line break is allowed
+      if (hasControlChar({ [p]: policy[p] })) {
+        log.error(`Invalid control character in policy of ${target.constructor.name} ${ip}, skip applying ${p}`);
+        invalidPolicyKeys.add(p);
+        continue;
+      }
+
       const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
 
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
@@ -467,6 +482,8 @@ class PolicyManager {
         }
       }
 
+      // reached only when the handler above did not throw. dnsmasq is excluded because it has not
+      // run yet -- it is applied after this loop and records its own entry there
       if (p !== "dnsmasq") {
         target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
@@ -480,7 +497,7 @@ class PolicyManager {
 
     // put dnsmasq logic at the end, as it is foundation feature
 
-    if (policy["dnsmasq"]) {
+    if (policy["dnsmasq"] && !invalidPolicyKeys.has("dnsmasq")) {
       if (target.oper["dnsmasq"] != null &&
         JSON.stringify(target.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
         // do nothing

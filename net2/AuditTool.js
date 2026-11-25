@@ -57,7 +57,7 @@ class AuditTool extends LogQuery {
       if (macs[0] === 'system')
         feedsArray.push(this.expendFeeds({macs, block: true, local: true }))
       else
-        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: this.localCopyExclude(macs) }))
     }
 
     return [].concat(... feedsArray)
