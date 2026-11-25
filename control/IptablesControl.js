@@ -488,7 +488,9 @@ class IptablesControl extends ModuleControl {
       if (operation !== '-N') {
         const undeclared = [rule.chain, rule.jump].find(c => this.isFWChain(c) && !agg.chains[c]);
         if (undeclared) {
-          log.error(`v${family} ${table}: refers to undeclared chain ${undeclared}, skipped`, operation, essential);
+          // a delete from a chain that does not exist is a no-op, as -C && -D is in the autonomous phase
+          const logLevel = ['-D', '-F', '-X'].includes(operation) ? log.debug : log.error;
+          logLevel(`v${family} ${table}: refers to undeclared chain ${undeclared}, skipped`, operation, essential);
           continue;
         }
       }

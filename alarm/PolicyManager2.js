@@ -1509,7 +1509,7 @@ class PolicyManager2 {
       targets = [target];
     }
 
-    const commonOptions = { pid, affectedPids, targets, type, tags, intfs, scope, guids, action };
+    const commonOptions = { pid, affectedPids, targets, type, tags, intfs, scope, guids, action, newDeviceTagUids: this.getNewDeviceTagUids(tags) };
 
     let needBypassDNS = false;
     let needBypassIptables = false;
@@ -2350,6 +2350,19 @@ class PolicyManager2 {
     }
   }
 
+  // the quarantine groups among a rule's tags: their rules are rendered once more for devices on a
+  // quarantine-on network the box has not decided about yet
+  getNewDeviceTagUids(tags) {
+    if (_.isEmpty(tags))
+      return [];
+    if (!hostManager) {
+      const HostManager = require('../net2/HostManager.js');
+      hostManager = new HostManager();
+    }
+    const { tagUids } = hostManager.getNewDeviceTagConfig();
+    return tags.filter(uid => tagUids.has(String(uid)));
+  }
+
   async _applyRules(options) {
     const { tags, intfs, scope, guids, parentRgId, type } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
@@ -2363,7 +2376,7 @@ class PolicyManager2 {
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules({ ...ruleOptions, uids: tags, fwScope: targetScopeIfMoreSpecificThan(GROUP) });
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags, newDeviceTagUids: this.getNewDeviceTagUids(tags), fwScope: targetScopeIfMoreSpecificThan(GROUP) });
       if (!_.isEmpty(intfs))
         await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs, fwScope: targetScopeIfMoreSpecificThan(NETWORK) });
       if (!_.isEmpty(scope))

@@ -438,6 +438,48 @@ describe('Bypass', function () {
       expect(addRuleCalls).to.have.length(10); // 2 (-N) + 8 (devSet/netSet × src/dst × fam4/fam6)
     });
 
+    // a quarantine group's exceptions also cover devices on a quarantine-on network the box has not
+    // decided about yet: the network set with the decided devices excluded, as in Block.setupTagsRules
+    it('enforce with a quarantine tag: two more RETURN rules per family, both naming the bypass policy', async () => {
+      const C = require('../net2/Ipset.js').CONSTANTS;
+      policyMap = { ip_tag_nd: makePolicy() };
+      await Bypass.bypassIptablesRules({
+        pid: 'bp1', affectedPids: ['ip_tag_nd'],
+        tags: ['tag1'], intfs: [], scope: [], guids: [], action: 'enforce', targets: [], type: 'category',
+        newDeviceTagUids: ['tag1'],
+      });
+      expect(addRuleCalls).to.have.length(14); // 2 (-N) + 8 + 4 (network set × src/dst × fam4/fam6)
+      const copies = addRuleCalls.filter(rule => rule.essential().includes(C.IPSET_NEW_DEV_NETWORK));
+      expect(copies).to.have.length(4);
+      for (const rule of copies) {
+        const text = rule.essential();
+        expect(text).to.include('--comment "rule_bp1"');
+        expect(text).to.match(/-j RETURN$/);
+        if (text.includes(`${C.IPSET_NEW_DEV_NETWORK} src,src`)) {
+          expect(text).to.include(`-m set ! --match-set ${C.IPSET_NEW_DEV_EXEMPT_MAC} src`);
+          expect(text).to.not.include('--ctdir');
+        } else {
+          expect(text).to.include(`${C.IPSET_NEW_DEV_NETWORK} dst,dst`);
+          expect(text).to.include(`-m set ! --match-set ${C.IPSET_NEW_DEV_EXEMPT} dst`);
+          expect(text).to.include('--ctdir ORIGINAL');
+        }
+      }
+      expect(copies.map(rule => rule.family)).to.have.members([4, 4, 6, 6]);
+    });
+
+    it('unenforce with tags deletes the quarantine copies without being told the quarantine groups', async () => {
+      const C = require('../net2/Ipset.js').CONSTANTS;
+      policyMap = { ip_tag: makePolicy() };
+      await Bypass.bypassIptablesRules({
+        pid: 'bp1', affectedPids: ['ip_tag'],
+        tags: ['tag1'], intfs: [], scope: [], guids: [], action: 'unenforce', targets: [], type: 'category',
+      });
+      const copies = addRuleCalls.filter(rule => rule.essential().includes(C.IPSET_NEW_DEV_NETWORK));
+      expect(copies).to.have.length(4);
+      for (const rule of copies)
+        expect(rule.operation).to.equal('-D');
+    });
+
     it('enforce with scope: chain + src and dst rules per mac × 2 families', async () => {
       policyMap = { ip_scope: makePolicy() };
       await Bypass.bypassIptablesRules({

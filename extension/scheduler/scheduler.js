@@ -156,10 +156,11 @@ class PolicyScheduler {
 
     const pid = policy.pid
 
-    if (runningCronJobs[pid]) { // already have a running job for this pid
-      const err = `Already have cron job running for policy ${pid}`
-      log.error(err)
-      throw new Error(err);
+    if (runningCronJobs[pid]) {
+      // a second enforce of the same rule: the start enforcement, queued behind a re-enforce of the rule,
+      // carries the rule as it was loaded, so the job in place is the newer one
+      log.info(`Cron job already running for policy ${pid}, keeping it`)
+      return;
     }
 
     try {

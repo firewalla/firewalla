@@ -108,6 +108,13 @@ create qos_off_set list:set
 
 create ntp_off_set list:set
 
+create new_dev_network_set list:set
+# devices new-device quarantine has decided about: their MACs, and their per-host IP sets for the
+# destination side. Never flushed here: the previous run's rules stay in the kernel across a FireMain
+# restart and would block every device until the refill
+create new_dev_exempt_mac_set hash:mac
+create new_dev_exempt_set list:set
+
 create match_dns_port_set bitmap:port range 0-65535
 
 flush acl_off_mac_set
@@ -124,6 +131,7 @@ flush qos_off_set
 add qos_off_set qos_off_mac_set
 
 flush ntp_off_set
+flush new_dev_network_set
 
 EOF
 
@@ -218,6 +226,10 @@ cat << EOF > "$filter_file"
 -N FW_INPUT_ACCEPT
 
 -N FW_INPUT_DROP
+# no DNS for a device on a quarantine-on network until new-device quarantine has decided about it.
+# acl_off_set is exempt as in FW_DROP, so a network with enforcement off keeps DNS
+-A FW_INPUT_DROP ! -i lo -p udp --dport 53 -m set --match-set new_dev_network_set src,src -m set ! --match-set new_dev_exempt_mac_set src -m set ! --match-set acl_off_set src,src -j DROP
+-A FW_INPUT_DROP ! -i lo -p tcp --dport 53 -m set --match-set new_dev_network_set src,src -m set ! --match-set new_dev_exempt_mac_set src -m set ! --match-set acl_off_set src,src -j DROP
 
 -N FW_PLAIN_DROP
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x200/0x80000200

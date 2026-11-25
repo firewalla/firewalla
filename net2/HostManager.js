@@ -3130,6 +3130,35 @@ module.exports = class HostManager extends Monitorable {
     return this.policy;
   }
 
+  // where new-device quarantine applies: the quarantine groups, and for each quarantine-on network
+  // its own group (the network switch wins over the system switch), read by the rule renderers and
+  // the sensor. empty while the feature is off.
+  // o.monitoring is not the Monitoring switch: NetworkProfileManager sets it from the mode's list of
+  // monitored interfaces (LANs in router mode, the WAN too in bridge mode), and it says whether the
+  // box discovers devices on that network. Only those networks are covered: no decision ever runs
+  // for a device elsewhere, so it would stay blocked. VPN networks are in that list but left out:
+  // their clients are identities without a MAC, which never go through the decision.
+  // the Monitoring switch (isMonitoring()) is not read here: as for a group's own rules, acl_off_set
+  // is what stops enforcement on a network that has it off
+  getNewDeviceTagConfig() {
+    const tagUids = new Set();
+    const networks = {};
+    if (!fc.isFeatureOn('new_device_tag'))
+      return { tagUids, networks };
+    const systemPolicy = this.policy && this.policy.newDeviceTag || {};
+    for (const network of Object.values(NetworkProfileManager.networkProfiles)) {
+      if (network.o.monitoring !== true || network.isVPNInterface())
+        continue;
+      const networkPolicy = network.policy && network.policy.newDeviceTag || {};
+      const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null;
+      if (!policy || !policy.tag)
+        continue;
+      tagUids.add(String(policy.tag));
+      networks[network.getUniqueId()] = String(policy.tag);
+    }
+    return { tagUids, networks };
+  }
+
   getActiveHosts() {
     const activeTimestampThreshold = Date.now() / 1000 - 7 * 86400;
     return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)

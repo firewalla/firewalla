@@ -43,13 +43,32 @@ const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
 const initializedRuleGroups = {};
 const routeLogRateLimitPerSecond = 10;
 
-function addDisturbBypassJumpRules(rawRules, { chain, target, op, comment, set4, set6 = set4, specs = [] }) {
+// marks the copy of a quarantine group's rules that covers devices on a quarantine-on network the box has
+// not decided about yet, see setupTagsRules. its local match comes from undecidedDeviceMatch, not localSet
+const NEW_DEV_LOCAL = { localSet: null, undecided: true };
+
+// the network set less the decided devices, which their own group sets match. with the device as source
+// the exception is by MAC; as destination the frame carries the router's MAC, so it is by address, and
+// only connections initiated towards the device are meant. a caller that renders --ctdir itself passes it
+function undecidedDeviceMatch(rule, side, ctDir) {
+  rule.set(Ipset.CONSTANTS.IPSET_NEW_DEV_NETWORK, `${side},${side}`);
+  if (side === "src")
+    return rule.set(Ipset.CONSTANTS.IPSET_NEW_DEV_EXEMPT_MAC, "src", true);
+  rule.set(Ipset.CONSTANTS.IPSET_NEW_DEV_EXEMPT, "dst", true);
+  if (!ctDir)
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
+  return rule;
+}
+
+function addDisturbBypassJumpRules(rawRules, { chain, target, op, comment, set4, set6 = set4, specs = [], undecided }) {
   for (const family of [4, 6]) {
     const setName = family === 4 ? set4 : set6;
     for (const spec of specs) {
       const rule = new Rule("mangle").fam(family).chn(chain);
       if (setName)
         rule.set(setName, spec);
+      if (undecided)
+        undecidedDeviceMatch(rule, spec.split(",")[0]);
       if (comment)
         rule.comment(comment);
       rawRules.push(rule.jmp(target).opr(op));
@@ -1084,7 +1103,8 @@ async function setupTagsRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate,
+    newDeviceTagUids = []
   } = options
   // a device target is more specific than this group scope
   const devGChainScope = fwScope || "DEV_G";
@@ -1109,10 +1129,15 @@ async function setupTagsRules(options) {
       chainSuffix = "";
   }
   const Tag = require('../net2/Tag.js');
+  let newDevCopied = false;
   for (const uid of uids) {
     await Tag.ensureCreateEnforcementEnv(uid);
     const devSet = Tag.getTagDeviceSetName(uid);
     const netSet = Tag.getTagNetSetName(uid);
+    // a quarantine group also covers devices on a quarantine-on network that the box has not decided
+    // about yet: the same rules once more with the undecided-device match as the local match. on destroy the copies
+    // are always deleted, so the delete does not depend on the quarantine config at create time
+    const newDev = createOrDestroy === "destroy" || newDeviceTagUids.map(String).includes(String(uid));
     switch (action) {
       case "qos": {
         qdisc = qdisc || "fq_codel";
@@ -1172,6 +1197,15 @@ async function setupTagsRules(options) {
               set4: netSet,
               specs: ["src,src", "dst,dst"],
             });
+            if (newDev && !newDevCopied)
+              addDisturbBypassJumpRules(rawRules, {
+                chain: "FW_DISTURB_QOS_DEV_G",
+                target: options.byPassChain,
+                op,
+                comment: `rule_${pid}`,
+                specs: ["src,src", "dst,dst"],
+                undecided: true,
+              });
             parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: netSet, localFlagCount: 2 });
             table = "mangle";
@@ -1302,6 +1336,11 @@ async function setupTagsRules(options) {
         }
       }
     }
+    if (newDev && !newDevCopied) {
+      newDevCopied = true;
+      for (const parameter of parameters.filter(p => p.localSet === devSet))
+        parameters.push(Object.assign({}, parameter, NEW_DEV_LOCAL));
+    }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
@@ -1320,13 +1359,14 @@ async function setupTagsRules(options) {
   const rules = [];
 
   for (const parameter of parameters) {
-    const { table, chain, target, limit, localSet, localFlagCount } = parameter;
+    const { table, chain, target, limit, localSet, localFlagCount, undecided } = parameter;
     const local = {
       set: localSet,
       set6: localSet,
       specs: new Array(localFlagCount).fill("src"),
       positive: true,
       portSet: localPortSet,
+      undecided,
     }
     ruleOptions.src = local;
     rules.push(... await generateRules(Object.assign({}, ruleOptions, {table, chain, target, limit})))
@@ -1819,12 +1859,20 @@ async function manipulateFiveTupleRule(options) {
     rule.pro(proto);
   if (srcSet)
     rule.set(srcSet, src.specs.join(","), src.negate);
+  if (src.undecided)
+    undecidedDeviceMatch(rule, 'src');
   if (src.portSet)
     rule.set(src.portSet, 'src', src.portNegate);
   if (src.ifSet)
     rule.set(src.ifSet, 'src,src');
   if (dstSet)
     rule.set(dstSet, dst.specs.join(","), dst.negate);
+  if (dst.undecided) {
+    // replies to a connection a decided device opened never meet the address exception
+    if (ctDir === 'REPLY')
+      return;
+    undecidedDeviceMatch(rule, 'dst', ctDir);
+  }
   if (dst.portSet)
     rule.set(dst.portSet, 'dst', dst.portNegate);
   if (dst.ifSet)
@@ -1906,6 +1954,7 @@ module.exports = {
   setupIntfsRules,
   setupRuleGroupRules,
   manipulateFiveTupleRule,
+  undecidedDeviceMatch,
   VPN_CLIENT_WAN_PREFIX,
   VIRT_WAN_GROUP_PREFIX
 }

@@ -19,6 +19,7 @@ const log = require("../net2/logger.js")(__filename);
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const domainBlock = require('../control/DomainBlock.js');
+const { undecidedDeviceMatch } = require('../control/Block.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const Constants = require('../net2/Constants.js');
@@ -184,7 +185,7 @@ async function bypassDNSRules(options) {
 }
 
 async function bypassIptablesRules(options) {
-  const {affectedPids, tags, intfs, action, pid, targets, scope, guids, type} = options;
+  const {affectedPids, tags, intfs, action, pid, targets, scope, guids, type, newDeviceTagUids = []} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
   const pm2 = new PolicyManager2();
   const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
@@ -229,6 +230,9 @@ async function bypassIptablesRules(options) {
           await Tag.ensureCreateEnforcementEnv(uid);
           const devSet = Tag.getTagDeviceSetName(uid);
           const netSet = Tag.getTagNetSetName(uid);
+          // a quarantine group's exceptions also apply to devices on a quarantine-on network the box has not
+          // decided about yet (same shape as the copies in Block.setupTagsRules); always deleted on unenforce
+          const newDev = action === "unenforce" || newDeviceTagUids.map(String).includes(String(uid));
           for (const table of tables) {
             for (const family of [4, 6]) {
               // outbound rule to bypass traffic from devices in the tag
@@ -237,6 +241,13 @@ async function bypassIptablesRules(options) {
               // inbound rule to bypass traffic to devices in the tag
               rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(devSet, "dst").comment(`rule_${pid}`).jmp("RETURN"));
               rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(netSet, "dst,dst").comment(`rule_${pid}`).jmp("RETURN"));
+              if (newDev) {
+                // the comment names the bypass policy, so the delete on unenforce (issued for every
+                // uid) cannot remove the copies of another bypass policy on the same chain
+                const copy = new Rule(table).fam(family).chn(bypassChain).comment(`rule_${pid}`).jmp("RETURN");
+                rulesToAdd.push(undecidedDeviceMatch(copy.clone(), "src"));
+                rulesToAdd.push(undecidedDeviceMatch(copy.clone(), "dst"));
+              }
             }
           }
         }
