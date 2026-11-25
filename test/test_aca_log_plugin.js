@@ -357,6 +357,44 @@ describe('AcaLogPlugin', function () {
     });
   });
 
+  describe('new country from dap', () => {
+    const blockedLine = () => findingLine(CAMERA_MAC, {
+      type: 'new_country', msg: 'Blocked a connection to a new country RU (www.example.ru)',
+      domain: 'www.example.ru',
+      evidence: { country: 'RU', destination: 'www.example.ru', blocked: true },
+    });
+
+    it('alarms with the destination and skips the policy match', async () => {
+      await plugin.processLine(blockedLine());
+
+      expect(alarms).to.have.length(1);
+      const alarm = alarms[0];
+      expect(alarm['p.aca.rule']).to.equal('new_country');
+      expect(alarm['p.dest.name']).to.equal('www.example.ru');
+      expect(alarm['p.aca.skipPolicyMatch']).to.be.true;
+      expect(alarm.needPolicyMatch()).to.be.false;
+    });
+
+    it('alarms once per device and country', async () => {
+      await plugin.processLine(blockedLine());
+      await plugin.processLine(findingLine(CAMERA_MAC, {
+        type: 'new_country', msg: 'Connected to a new country RU (cdn.example.ru)',
+        domain: 'cdn.example.ru',
+        evidence: { country: 'RU', destination: 'cdn.example.ru', blocked: false },
+      }));
+
+      expect(alarms).to.have.length(1);
+    });
+
+    it('is silent while its own switch is off', async () => {
+      features.aca_new_country = false;
+
+      await plugin.processLine(blockedLine());
+
+      expect(alarms).to.have.length(0);
+    });
+  });
+
   describe('device of the destination', () => {
     // a rule for brute_force is not in the default config yet, so the tests add one
     function pluginWithBruteForceRule() {
