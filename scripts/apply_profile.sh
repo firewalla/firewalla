@@ -128,6 +128,16 @@ set_rps_cpus() {
     done
 }
 
+# rows: <interface> <value>, written to /sys/class/net/<interface>/<attr>
+# used by napi_defer_hard_irqs and gro_flush_timeout; interface may be a glob (e.g. eth*)
+set_netdev_attr() {
+    local attr=$1
+    while read intf value
+    do
+        write_sysfs "/sys/class/net/$intf/$attr" $value
+    done
+}
+
 get_pids() {
     mode=$1
     pname=$2
@@ -462,6 +472,9 @@ process_profile() {
                 ;;
             rps_cpus)
                 echo "$input_json" | jq -r '.rps_cpus[]|@tsv' | set_rps_cpus
+                ;;
+            napi_defer_hard_irqs|gro_flush_timeout)
+                echo "$input_json" | jq -r ".${key}[]|@tsv" | set_netdev_attr $key
                 ;;
             taskset)
                 echo "$input_json" | jq -r '.taskset[]|@tsv' | do_taskset
