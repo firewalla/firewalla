@@ -647,6 +647,9 @@ class AcaAlarm extends Alarm {
 
   // a blocked flow raises no alarm, but a scan has no destination and a device-wide internet block misses its LAN targets
   needPolicyMatch() {
+    if (this["p.aca.skipPolicyMatch"]) {
+      return false;
+    }
     if (this["p.dest.ip"] || this["p.dest.name"]) {
       return true;
     }

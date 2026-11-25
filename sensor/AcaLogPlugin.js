@@ -22,6 +22,8 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const fc = require('../net2/config.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 const LogReader = require('../util/LogReader.js');
 const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
@@ -38,7 +40,7 @@ const DEFAULT_COOLDOWN = 3600;
 const COOLDOWN_KEY_PREFIX = 'aca:cooldown:';
 const EVENT_TYPE = 'aca_finding';
 
-// Turns zssids abnormal connection findings (aca.log) into alarms and events
+// Turns abnormal connection findings into alarms and events: zssids writes them to aca.log, dap publishes them
 class AcaLogPlugin extends Sensor {
   constructor(config) {
     super(config);
@@ -51,6 +53,17 @@ class AcaLogPlugin extends Sensor {
     this.logReader = new LogReader(logFile);
     this.logReader.on('line', this.processLine.bind(this));
     this.logReader.watch();
+
+    // a published finding has the same JSON shape as a line of aca.log
+    sclient.on('message', (channel, message) => {
+      if (channel !== Message.MSG_ACA_FINDING) {
+        return;
+      }
+      this.processLine(message).catch((err) => {
+        log.error('Failed to process a published finding', err);
+      });
+    });
+    sclient.subscribe(Message.MSG_ACA_FINDING);
   }
 
   async processLine(line) {
@@ -65,7 +78,7 @@ class AcaLogPlugin extends Sensor {
     try {
       finding = JSON.parse(line);
     } catch (err) {
-      log.warn('Failed to parse aca.log line', line);
+      log.warn('Failed to parse finding', line);
       return;
     }
     if (!finding || !finding.type || !finding.src || typeof finding.ts !== 'number') {
@@ -286,6 +299,9 @@ class AcaLogPlugin extends Sensor {
       'p.aca.evidence': JSON.stringify(finding.evidence || {}),
       'p.aca.dedup': cooldownKey,
     });
+    if (rule.skipPolicyMatch) {
+      payload['p.aca.skipPolicyMatch'] = true;
+    }
     const cleanPayload = _.omitBy(payload, _.isNil);
 
     const alarm = new Alarm.AcaAlarm(finding.ts, context.device.alarmFields['p.device.ip'], cleanPayload);

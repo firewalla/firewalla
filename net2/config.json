@@ -925,6 +925,15 @@
           "dedupBy": ["device.id", "finding.dst", "finding.dst_p", "finding.proto"]
         },
         {
+          "name": "new_country",
+          "match": { "finding.type": "new_country" },
+          "action": "alarm",
+          "feature": "aca_new_country",
+          "skipPolicyMatch": true,
+          "cooldown": 2592000,
+          "dedupBy": ["device.id", "finding.evidence.country"]
+        },
+        {
           "name": "drop_others",
           "match": {},
           "action": "drop"
@@ -1495,6 +1504,7 @@
     "aca_fan_out": true,
     "aca_lan_new_contact": true,
     "aca_beacon": false,
+    "aca_new_country": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
