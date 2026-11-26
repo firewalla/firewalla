@@ -647,6 +647,9 @@ class AcaAlarm extends Alarm {
 
   // a blocked flow raises no alarm, but a scan has no destination and a device-wide internet block misses its LAN targets
   needPolicyMatch() {
+    if (this["p.aca.skipPolicyMatch"]) {
+      return false;
+    }
     if (this["p.dest.ip"] || this["p.dest.name"]) {
       return true;
     }
@@ -907,6 +910,14 @@ class VulnerabilityAlarm extends Alarm {
   }
 }
 
+const NOTICE_TYPES_WITH_TITLE = new Set([
+  'SSL::Invalid_Server_Cert',
+  'SSH::Password_Guessing',
+  'Scan::Port_Scan',
+  'Heartbleed::SSL_Heartbeat_Attack',
+  'Heartbleed::SSL_Heartbeat_Attack_Success',
+]);
+
 class BroNoticeAlarm extends Alarm {
   constructor(timestamp, device, notice, message, info) {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
@@ -932,7 +943,7 @@ class BroNoticeAlarm extends Alarm {
   }
   getExpirationTime() {
     if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
-      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
+      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 86400
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
   }
 
@@ -986,9 +997,19 @@ class BroNoticeAlarm extends Alarm {
     return category;
   }
 
+  localizedNotificationTitleKey() {
+    if (NOTICE_TYPES_WITH_TITLE.has(this["p.noticeType"]))
+      return `notif.title.${this.getNoticeKeyBase()}`;
+    return super.localizedNotificationTitleKey();
+  }
+
+  getNoticeKeyBase() {
+    return `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+  }
+
   getNotifKeyPrefix() {
     if (this["p.noticeType"]) {
-      let prefix = `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+      let prefix = this.getNoticeKeyBase();
       if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
         prefix += ".v2";
       if (this["p.local_is_client"] != undefined) {

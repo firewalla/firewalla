@@ -35,6 +35,8 @@ const DEFAULT_OK_VALUE = 0;
 const STATE_OK_VALUE='ok_value';
 const STATE_ERROR_VALUE='error_value';
 const STATE_NO_ERROR='no_error';
+// state types whose events for one key can arrive back-to-back, see needsSerializedQueue()
+const SERIALIZED_STATE_TYPE_PREFIXES = ["ap_", "switch_", "bridge_"];
 
 /*
  * EventRequestHandler accepts event requests from redis channels and processes them accordingly
@@ -134,7 +136,7 @@ class EventRequestHandler {
         // same state_key arrive close together — required for any state_type whose
         // events can be emitted back-to-back for the same key, not just "ap_"-prefixed ones.
         return (eventRequest.state_type &&
-            (eventRequest.state_type.startsWith("ap_") || eventRequest.state_type.startsWith("switch_")));
+            SERIALIZED_STATE_TYPE_PREFIXES.some(prefix => eventRequest.state_type.startsWith(prefix)));
     }
 
     async queueStateEvent(message) {
@@ -199,7 +201,7 @@ class EventRequestHandler {
     /*
      * A "no_error" event ONLY tracks state changes, none of its values is an error,
      * e.g. a mode/selection change that has no faulty value.
-     * Unlike other state events, its initial state is sent as an event as well.
+     * Its initial state is only saved, not sent, so the first state change is its first event.
      */
     isNoErrorStateEvent(eventRequest) {
         return Boolean(eventRequest.labels && eventRequest.labels[STATE_NO_ERROR]);
@@ -260,7 +262,7 @@ class EventRequestHandler {
                 }
             } else {
                 // no saved state, record ts0 and ONLY send event if it is ERROR,
-                // or if it is a no_error event, whose initial state is a state change on its own
+                // a no_error event is never an error, so its first message is only saved
                 eventRequest.ts0 = eventRequest.ts;
                 if (isError) {
                     log.debug("send initial error state event:",eventRequest);

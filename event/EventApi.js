@@ -30,9 +30,9 @@ const KEY_EVENT_LAST_CACHE = "event:last:cache";
 
 const STATE_CACHE_MAX_KEYS_RETURN = 200;
 // state types no client reads from the latest state maps. Each churns through many keys (one per
-// DAP device, per switch port) and would crowd the types apps do read out of
+// DAP device, per switch or bridge port) and would crowd the types apps do read out of
 // the cap above, firecommit#10398
-const DEFAULT_EXCLUDED_STATE_TYPES = ["dap_state", "switch_port_speed_change"];
+const DEFAULT_EXCLUDED_STATE_TYPES = ["dap_state", "switch_port_speed_change", "switch_port_stp_state", "bridge_port_stp_state"];
 // cap on distinct types tracked in KEY_EVENT_LAST_CACHE, to bound its size. Entries also expire
 // via cleanLatestStateEventsByTime(), but that is scheduled inside EventSensor.startCollectEvents()
 // and therefore gated on the event_collect feature, while events are written regardless - so this
