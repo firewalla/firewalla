@@ -3,13 +3,13 @@
     ["eth0-0", 8 ],
     [ "eth1", 4 ],
     [ "eth2", 2 ],
-    ["eth3-0", 1 ]
+    ["eth3-0", 8 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", "0" ],
-    [ "eth1", "rx-0", "6" ],
-    [ "eth2", "rx-0", "6" ],
-    [ "eth3", "rx-0", "0" ],
+    [ "eth0", "rx-0", "7" ],
+    [ "eth1", "rx-0", "c" ],
+    [ "eth2", "rx-0", "a" ],
+    [ "eth3", "rx-0", "7" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
@@ -47,5 +47,13 @@
       [ "eth0", "txqueuelen", 1000]
   ],
   "tc": [
+  ],
+  "napi_defer_hard_irqs": [
+    [ "eth0", 2 ],
+    [ "eth3", 2 ]
+  ],
+  "gro_flush_timeout": [
+    [ "eth0", 20000 ],
+    [ "eth3", 20000 ]
   ]
 }

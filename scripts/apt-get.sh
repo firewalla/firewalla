@@ -91,7 +91,7 @@ fi
 
 if [ "$NOUPDATE" != 1 ]; then
   logger "$TAG:APT_UPDATE:START"
-  sudo timeout 60 /usr/bin/apt-get $APT_UPDATE_OPTS update \
+  sudo timeout 60 /usr/bin/apt-get update \
     || { logger "$TAG:ERROR:APT_UPDATE_FAILED code $?"; exit 1; }
 fi
 

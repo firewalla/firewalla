@@ -1,0 +1,10 @@
+# redis.conf logs here, while the redis-server package's rule matches /var/log/redis.
+# no copytruncate: redis reopens the file for every line, and a copy needs free space on /log
+/log/redis/redis-server.log {
+  weekly
+  maxsize 2M
+  rotate 4
+  compress
+  missingok
+  notifempty
+}
