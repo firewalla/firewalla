@@ -223,6 +223,10 @@ class BroNotice {
       return false;
     }
     alarm["p.dest.ssl.validation_status"] = CERT_ERRORS[status] || "cert_invalid";
+    if (!fc.isFeatureOn(`cyber_security.invalidServerCert.${alarm["p.dest.ssl.validation_status"]}`)) {
+      log.verbose("Ignoring invalid server cert notice of a disabled validation status", alarm["p.dest.ssl.validation_status"]);
+      return false;
+    }
     // the server's port, the orig side being the local client
     if (broObj["id.resp_p"]) alarm["p.dest.port"] = broObj["id.resp_p"];
     // a CN that is no domain, e.g. "Mijia Cloud", is a private CA's device cert, never meant for public CA validation
