@@ -106,6 +106,114 @@ describe('Test InternalScanSensor', function() {
 
 });
 
+// policy:tag:<uid> and the tag ipsets are keyed by uid alone, so a deviceTag sharing its uid with a
+// group is hidden behind the group and gets created again under a new uid on every device detection
+describe('Test TagManager deviceTag sharing its uid with another tag type', function() {
+  const proxyquire = require('proxyquire');
+
+  // TagManager against an in-memory redis, the tags of the box running the test are not touched
+  function loadTagManager(isMain, sets, hashes) {
+    const calls = { srem: [], unlink: [], destroyed: [] };
+    const redis = {
+      smembersAsync: async (key) => Array.from(sets[key] || []),
+      hgetallAsync: async (key) => hashes[key] ? Object.assign({}, hashes[key]) : null,
+      sremAsync: async (key, uid) => { calls.srem.push([key, uid]); sets[key] && sets[key].delete(uid); },
+      unlinkAsync: async (key) => { calls.unlink.push(key); delete hashes[key]; },
+    };
+    class FakeTag {
+      constructor(o) { this.o = o; }
+      static parse(o) { return o; }
+      async update(o) { this.o = o; }
+      getTagType() { return this.o.type || 'group'; }
+      async destroy() { calls.destroyed.push(this.o.uid); }
+      async resetPolicies() {}
+      async destroyEnv() {}
+    }
+    const tm = proxyquire('../net2/TagManager.js', {
+      '../util/redis_manager.js': { getRedisClient: () => redis },
+      './Firewalla.js': { isMain: () => isMain, isApi: () => false },
+      './SysManager.js': { isIptablesReady: () => false, waitTillIptablesReady: async () => {} },
+      './Tag.js': FakeTag,
+      '../extension/dnsmasq/dnsmasq.js': class { async writeAllocationOption() {} },
+      './MessageBus.js': class { subscribeOnce() {} publish() {} },
+    });
+    clearTimeout(tm.refreshTask);
+    return { tm, calls };
+  }
+
+  function collidingBox() {
+    return {
+      sets: {
+        'tag:group:active': new Set(['10']),
+        'tag:device:active': new Set(['10', '11']),
+      },
+      hashes: {
+        'tag:uid:10': { uid: '10', name: 'Cameras' },
+        'deviceTag:uid:10': { uid: '10', name: 'desktop', type: 'device' },
+        'deviceTag:uid:11': { uid: '11', name: 'phone', type: 'device' },
+      }
+    };
+  }
+
+  it('should remove the deviceTag and keep the group in FireMain', async () => {
+    const { sets, hashes } = collidingBox();
+    const { tm, calls } = loadTagManager(true, sets, hashes);
+    await tm.refreshTags();
+
+    expect(calls.srem).to.eql([['tag:device:active', '10']]);
+    expect(calls.unlink).to.eql(['deviceTag:uid:10']);
+    expect(hashes['tag:uid:10']).to.eql({ uid: '10', name: 'Cameras' });
+    expect(Array.from(sets['tag:group:active'])).to.eql(['10']);
+    expect(tm.getTagByUid('10').o.name).to.equal('Cameras');
+    expect(tm.getTagByUid('10').getTagType()).to.equal('group');
+    expect(tm.getTagByUid('11').o.name).to.equal('phone');
+    // the group still owns uid 10, its policy and ipsets must not be torn down
+    expect(calls.destroyed).to.eql([]);
+  });
+
+  it('should keep the deviceTag that is created again under a new uid', async () => {
+    const { sets, hashes } = collidingBox();
+    const { tm, calls } = loadTagManager(true, sets, hashes);
+    await tm.refreshTags();
+    expect(tm.getTagByName('desktop', 'device')).to.be.null;
+
+    // what createTag does for the next detected desktop
+    sets['tag:device:active'].add('12');
+    hashes['deviceTag:uid:12'] = { uid: '12', name: 'desktop', type: 'device' };
+    await tm.refreshTags();
+
+    expect(Array.from(sets['tag:device:active']).sort()).to.eql(['11', '12']);
+    expect(tm.getTagByName('desktop', 'device').o.uid).to.equal('12');
+    expect(calls.unlink).to.eql(['deviceTag:uid:10']);
+    expect(calls.destroyed).to.eql([]);
+  });
+
+  it('should hide the deviceTag without changing redis outside FireMain', async () => {
+    const { sets, hashes } = collidingBox();
+    const { tm, calls } = loadTagManager(false, sets, hashes);
+    await tm.refreshTags();
+
+    expect(calls.srem).to.eql([]);
+    expect(calls.unlink).to.eql([]);
+    expect(tm.getTagByUid('10').o.name).to.equal('Cameras');
+    expect(tm.getTagByName('desktop', 'device')).to.be.null;
+  });
+
+  it('should leave tags alone when no uid is shared', async () => {
+    const { sets, hashes } = collidingBox();
+    sets['tag:group:active'] = new Set(['9']);
+    hashes['tag:uid:9'] = { uid: '9', name: 'Cameras' };
+    delete hashes['tag:uid:10'];
+    const { tm, calls } = loadTagManager(true, sets, hashes);
+    await tm.refreshTags();
+
+    expect(calls.srem).to.eql([]);
+    expect(calls.unlink).to.eql([]);
+    expect(Object.keys(tm.tags).sort()).to.eql(['10', '11', '9']);
+    expect(tm.getTagByName('desktop', 'device').o.uid).to.equal('10');
+  });
+});
+
 // destroyEnv() used to only flush tag ipsets, leaving empty orphaned ipsets behind forever
 describe('Test Tag destroyEnv ipset cleanup', function() {
   this.timeout(5000);
