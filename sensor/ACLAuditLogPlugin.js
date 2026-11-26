@@ -29,7 +29,8 @@ const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
 const TagManager = require('../net2/TagManager.js');
-const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const { getTimeSeries, STATS_GRANULARITIES } = require("../util/TimeSeries.js")
+const timeSeries = getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
@@ -939,31 +940,31 @@ class ACLAuditLogPlugin extends Sensor {
             }
 
             const hitType = type + (block ? 'B' : '')
-            timeSeries.recordHit(`${hitType}:lo:intra`, _ts, ct)
-            timeSeries.recordHit(`${hitType}:lo:${fd}:${mac}`, _ts, ct)
+            timeSeries.recordHit(`${hitType}:lo:intra`, _ts, ct, undefined, STATS_GRANULARITIES)
+            timeSeries.recordHit(`${hitType}:lo:${fd}:${mac}`, _ts, ct, undefined, STATS_GRANULARITIES)
             if (intf && record.dIntf == record.intf) {
-              timeSeries.recordHit(`${hitType}:lo:intra:intf:${intf}`, _ts, ct)
+              timeSeries.recordHit(`${hitType}:lo:intra:intf:${intf}`, _ts, ct, undefined, STATS_GRANULARITIES)
             } else {
-              timeSeries.recordHit(`${hitType}:lo:${fd}:intf:${intf}`, _ts, ct)
+              timeSeries.recordHit(`${hitType}:lo:${fd}:intf:${intf}`, _ts, ct, undefined, STATS_GRANULARITIES)
             }
             for (const key in tags) {
               for (const tag of tags[key]) {
                 if (_.get(record, ['dstTags',key], []).includes(tag)) {
-                  timeSeries.recordHit(`${hitType}:lo:intra:tag:${tag}`, _ts, ct)
+                  timeSeries.recordHit(`${hitType}:lo:intra:tag:${tag}`, _ts, ct, undefined, STATS_GRANULARITIES)
                 } else {
-                  timeSeries.recordHit(`${hitType}:lo:${fd}:tag:${tag}`, _ts, ct)
+                  timeSeries.recordHit(`${hitType}:lo:${fd}:tag:${tag}`, _ts, ct, undefined, STATS_GRANULARITIES)
                 }
               }
             }
           } else // use dns_flow as a prioirty for statistics
             if (type != 'dns' || block || disturb || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
               const hitType = type + (block ? 'B' : disturb ? 'D' : '')
-              timeSeries.recordHit(`${hitType}`, _ts, ct)
-              timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
-              if (intf) timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+              timeSeries.recordHit(`${hitType}`, _ts, ct, undefined, STATS_GRANULARITIES)
+              timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct, undefined, STATS_GRANULARITIES)
+              if (intf) timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct, undefined, STATS_GRANULARITIES)
               for (const key in tags) {
                 for (const tag of tags[key]) {
-                  timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+                  timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct, undefined, STATS_GRANULARITIES)
                 }
               }
             }

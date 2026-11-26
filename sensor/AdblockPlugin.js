@@ -68,6 +68,8 @@ const Ipset = require('../net2/Ipset.js');
 const { Rule } = require('../net2/Iptables.js');
 
 const Constants = require('../net2/Constants.js');
+// adblock stats only report the last 24 hours and 7 days
+const ADBLOCK_GRANULARITIES = [Constants.TS_GRAN_1HOUR, Constants.TS_GRAN_1DAY];
 
 const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
 const ADBLOCK_TLS_RULE_PID = Constants.RESERVED_PID_ADBLOCK_TLS;
@@ -155,7 +157,7 @@ class AdblockStats {
     if (recordTs <= this.resetTs)
       return;
 
-    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct);
+    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct, undefined, ADBLOCK_GRANULARITIES);
     this.pendingHits += Math.floor(Number(record.ct) || 1);
     if (!this.lastHitTs || record._ts >= this.lastHitTs) {
       const flow = _.cloneDeep(record);
@@ -229,26 +231,17 @@ class AdblockStats {
   async getStats() {
     // One real MULTI/EXEC for all three reads.
     const multi = mclient.multi();
-    let results = null, q24h = null, q7d = null;
+    let results = null, summary = null;
     try {
-      q24h = timeSeries.queueHits(multi, 'feature:adblock:block', '1hour', 24);
-      q7d = timeSeries.queueHits(multi, 'feature:adblock:block', '1day', 7);
+      summary = timeSeries.queueRecentSummary(multi, 'feature:adblock:block');
       multi.hgetall('ext.adblock.stats');
       results = await multi.execAsync();
     } catch (err) {
       log.error('Failed to read adblock stats', err.message);
     }
 
-    let buckets24h = [], buckets7d = [], stored = null;
-    if (results) {
-      let offset = 0;
-      buckets24h = timeSeries.parseQueuedHits(q24h, results.slice(offset, offset += q24h.resultSlots), 24);
-      buckets7d = timeSeries.parseQueuedHits(q7d, results.slice(offset, offset += q7d.resultSlots), 7);
-      stored = results[offset];
-    }
-    const total24h = buckets24h.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
-    let total7d = buckets7d.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
-    const daily7d = buckets7d;
+    const { total24h, total7d, daily7d } = timeSeries.parseRecentSummary(summary, results && results.slice(0, summary.resultSlots), 'adblock');
+    const stored = results ? results[summary.resultSlots] : null;
     let totalHits = 0;
     let lastResetTs = null;
     let lastHitTs = null;
@@ -265,13 +258,6 @@ class AdblockStats {
       }
     }
 
-    if (total24h > total7d) {
-      const delta = total24h - total7d;
-      log.warn(`adblock total24h (${total24h}) is ahead of total7d (${total7d})`);
-      total7d = total24h;
-      if (daily7d.length)
-        daily7d[daily7d.length - 1][1] += delta;
-    }
     if (totalHits < total7d) {
       log.warn(`adblock totalHits (${totalHits}) is behind total7d (${total7d})`);
       totalHits = total7d;
