@@ -1,0 +1,17 @@
+<h1>You're online</h1>
+<h2>Enjoy the Internet. Access lasts {{hours}} hours.</h2>
+<h2>Continuing in <span id="n">{{secs}}</span>s&hellip;</h2>
+<h2><a id="go" href="{{url}}">Continue now</a></h2>
+<meta http-equiv="refresh" content="{{secs}};url={{url}}">
+<script>
+  (function () {
+    var n = {{secs}};
+    var el = document.getElementById('n');
+    var t = setInterval(function () {
+      n -= 1;
+      if (n > 0) { el.textContent = n; return; }
+      clearInterval(t);
+      location.href = document.getElementById('go').href;
+    }, 1000);
+  })();
+</script>

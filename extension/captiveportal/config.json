@@ -1,0 +1,12 @@
+{
+  "port": 8890,
+  "fwapc": "http://127.0.0.1:8841",
+  "successSeconds": 5,
+  "page": {
+    "title": "Wi-Fi access",
+    "heading": "Welcome",
+    "text": "Tap OK to get Internet access.",
+    "button": "OK",
+    "logo": ""
+  }
+}
