@@ -473,9 +473,23 @@ class APCMsgSensor extends Sensor {
           log.debug(`mac ${mac} ssid ${ssid} profile ${uuid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
           return;
         }
-        // map to a group of a default segment if sta does not belong to a dynamic vlan
-        if (!groupId && !dvlanId)
+        if (!groupId && !dvlanId) {
+          // a MAB join (WPA3 PPSK on 5G/6G) gets the key network's real vlan, not the key's wifi vlan,
+          // so its group is the Filter-Id freeradius returns, not the ssid's default group
+          const filterId = await this._getRadiusFilterId(mac, ssid);
+          const radius = filterId && sl.getSensor("FreeRadiusSensor");
+          if (radius) {
+            await radius.setDeviceTagByUid(mac.toUpperCase(), filterId, ssid, { auth: "mab" });
+            await this.updateHostSSID(mac, uuid, null, ssid, null, true);
+            return;
+          }
+          if (await this._hasRadiusAutoGroup(mac, ssid)) {
+            await this.updateHostSSID(mac, uuid, null, ssid, null, true);
+            return;
+          }
+          // map to a group of a default segment if sta does not belong to a dynamic vlan
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
+        }
         await this.updateHostSSID(mac, uuid, groupId, ssid, dvlanId);
       }
     }).catch((err) => {
@@ -483,7 +497,32 @@ class APCMsgSensor extends Sensor {
     });
   }
 
-  async updateHostSSID(mac, uuid, groupId, ssid, dvlanId = null) {
+  // RADIUS record of mac on ssid as fwapc writes it for freeradius: an allow or captive record
+  // carries the Filter-Id, an onboarded one points to its PPSK key
+  async _getRadiusFilterId(mac, ssid) {
+    if (!ssid)
+      return null;
+    const ssidHex = Buffer.from(ssid).toString("hex");
+    const record = await rclient.hgetallAsync(`radius:mac:${mac.toUpperCase()}:${ssidHex}`);
+    if (!record || record.deny === "1")
+      return null;
+    if (record.filter_id)
+      return record.filter_id;
+    if (!record.keyid)
+      return null;
+    return await rclient.hgetAsync(`radius:ppsk:${ssidHex}:${record.keyid}`, "filter_id") || null;
+  }
+
+  // group RADIUS assigned to mac on this ssid; a join without a wifi vlan doesn't void it
+  async _hasRadiusAutoGroup(mac, ssid) {
+    const host = await hostManager.getHostAsync(mac.toUpperCase());
+    const autoGroup = host ? host.o.autoGroup : await hostTool.getWirelessAutoGroup(mac.toUpperCase());
+    return _.isObject(autoGroup) && !!autoGroup.tag && ["mab", "dot1x"].includes(autoGroup.auth) &&
+      (!autoGroup.ssid || autoGroup.ssid === ssid);
+  }
+
+  // keepGroup: only record the wifi join, the group is RADIUS's
+  async updateHostSSID(mac, uuid, groupId, ssid, dvlanId = null, keepGroup = false) {
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
@@ -492,6 +531,8 @@ class APCMsgSensor extends Sensor {
     // Record in memory the last time this device was seen on a wireless network.
     // BroDetect reads this to determine if a device is currently wireless.
     if (host) host.setLastSeenOnWifi(Date.now());
+    if (keepGroup)
+      return;
     /* uncomment this if there is ssid based management in future releases
     const profile = this.ssidProfiles[uuid];
     if (!profile) {
@@ -528,6 +569,12 @@ class APCMsgSensor extends Sensor {
         await hostTool.setWirelessDeviceTagCandidate(mac.toUpperCase(), String(newTagId));
         if (!_.isEmpty(newTagId)) {
           await hostTool.setWirelessAutoGroup(mac.toUpperCase(), String(newTagId), ssid, options);
+        } else {
+          // otherwise the host, once created, restores the old ssid's group from this cache.
+          // A RADIUS (mab/dot1x) one is applied by FreeRadiusSensor after discovery, joining doesn't void it
+          const cached = await hostTool.getWirelessAutoGroup(mac.toUpperCase());
+          if (cached && !["mab", "dot1x"].includes(cached.auth))
+            await hostTool.resetWirelessAutoGroup(mac.toUpperCase());
         }
       }
       if (_.isEmpty(newTagId) && host) {

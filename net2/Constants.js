@@ -97,6 +97,10 @@ module.exports = {
   REDIS_KEY_BLOCK_STATS_AGGR_INDEX: "blockStatsAggr:index",
   // index of the older per-device blockStats::<ts> buckets, no longer written, only trimmed
   REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
+  // time series key prefix of a block stats aggrCounter, followed by its counter key, e.g. block::country::RU
+  TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX: "blockStatsAggrCounter:",
+  // zset of the aggrCounter keys hit in the last 7 days, score = the last hit ts
+  REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX: "blockStatsAggrCounter:index",
   // local redis cache of whatever the cloud hashset below returned
   REDIS_KEY_BLOCK_ALARM_CLOUD_CONFIG: "block_alarm_cloud_config",
   // NOT a redis key - the name of the cloud hashset fetched via bone.hashsetAsync
@@ -266,6 +270,13 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
+
+  // time series granularities, part of the timedTraffic:<key>:<granularity>:<ts> redis keys
+  TS_GRAN_1MINUTE: "1minute",
+  TS_GRAN_15MINUTES: "15minutes",
+  TS_GRAN_1HOUR: "1hour",
+  TS_GRAN_1DAY: "1day",
+  TS_GRAN_1MONTH: "1month",
 
   // a plain file name: no path separators, so a value matching this cannot leave the directory it
   // is resolved against. use it wherever an untrusted value becomes a path component

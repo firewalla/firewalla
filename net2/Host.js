@@ -350,40 +350,70 @@ class Host extends Monitorable {
   async initAutoGroup() {
     if (this.o.autoGroup)
       return;
-    const autoGroup = await hostTool.getWirelessAutoGroup(this.o.mac);
-    if (!autoGroup)
+    const parsed = await hostTool.getWirelessAutoGroup(this.o.mac);
+    if (!parsed || !parsed.tag || (!parsed.ssid && parsed.auth !== "mab"))
       return;
-    try {
-      const parsed = JSON.parse(autoGroup);
-      if (!parsed || !parsed.tag || (!parsed.ssid && parsed.auth !== "mab"))
-        return;
-      this.o.autoGroup = parsed;
-      await this.save(["autoGroup"]);
-    } catch (err) {
-      log.warn(`Invalid wireless auto group cache for ${this.o.mac}`, err.message);
-    }
+    this.o.autoGroup = parsed;
+    await this.save(["autoGroup"]);
   }
 
-  // 1. if not connected (no staStatus), keep autoGroup until expire (10 minutes for dot1x, 30 days otherwise)
+  // deleting a group doesn't touch autoGroup, which would otherwise lock the device to it
+  async _isAutoGroupTagGone(autoGroup) {
+    return !await TagManager.tagUidExists(autoGroup.tag) ||
+      !!autoGroup.userTag && !await TagManager.tagUidExists(autoGroup.userTag);
+  }
+
+  // FireApi's host object can be a minute old: reset only if the stored lock is still this one,
+  // otherwise load the stored one. Returns true if reset
+  async _resetAutoGroupIfStored(autoGroup) {
+    let stored = null;
+    try {
+      stored = JSON.parse(await rclient.hgetAsync(hostTool.getMacKey(this.o.mac), "autoGroup"));
+    } catch (err) {}
+    if (_.isObject(stored) && (String(stored.tag) !== String(autoGroup.tag) ||
+      (stored.userTag || "") !== (autoGroup.userTag || "") || stored.ts !== autoGroup.ts)) {
+      this.o.autoGroup = stored;
+      return false;
+    }
+    await this.resetAutoGroupAsync();
+    return true;
+  }
+
+  // needs no station status, so it also runs when fwapc can't be reached
+  async resetAutoGroupIfTagGone() {
+    const autoGroup = this.o.autoGroup;
+    if (!_.isObject(autoGroup) || !autoGroup.tag || !await this._isAutoGroupTagGone(autoGroup))
+      return false;
+    return this._resetAutoGroupIfStored(autoGroup);
+  }
+
+  // 0. reset if its group no longer exists
+  // 1. if not connected (no staStatus), keep autoGroup until expire (30 days for mab, 10 minutes otherwise)
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
   // 3. otherwise (ppsk/default/mab), reset if connected on a different ssid, mab may have no ssid
-  async getHostAutoGroup(staStatus) {
-    if (!this.o.autoGroup)
-      return null;
+  async getHostAutoGroup(staStatus, recheck = true) {
     const autoGroup = this.o.autoGroup;
-    if (!_.isObject(autoGroup) || !autoGroup.tag || (!autoGroup.ssid && autoGroup.auth !== "mab")) {
-      await this.resetAutoGroupAsync();
+    if (!autoGroup)
       return null;
-    }
+    // a newer stored lock is checked once more
+    const reset = async () => {
+      if (await this._resetAutoGroupIfStored(autoGroup))
+        return null;
+      return recheck ? this.getHostAutoGroup(staStatus, false) : this.o.autoGroup;
+    };
+    if (!_.isObject(autoGroup) || !autoGroup.tag || (!autoGroup.ssid && autoGroup.auth !== "mab"))
+      return reset();
+
+    if (await this._isAutoGroupTagGone(autoGroup))
+      return reset();
 
     if (!staStatus) {
-      // ts only advances on Access-Accept or while fwapc sees the station, so an old dot1x ts
-      // means the device left Firewalla RADIUS; a later Access-Accept sets it again
-      const maxAge = autoGroup.auth === "dot1x" ? 600 : 2592000;
-      if (!autoGroup.ts || autoGroup.ts < Date.now() - maxAge * 1000) {
-        await this.resetAutoGroupAsync();
-        return null;
-      }
+      // ts advances on join, Access-Accept and while fwapc sees the station, so an old ts
+      // means the device left Firewalla Wi-Fi/RADIUS; rejoining sets it again.
+      // mab keeps 30 days: an Access-Accept without a tag undoes the group only while autoGroup marks it as mab's
+      const maxAge = autoGroup.auth === "mab" ? 2592000 : 600;
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - maxAge * 1000)
+        return reset();
       return autoGroup;
     }
 
@@ -392,27 +422,14 @@ class Host extends Monitorable {
     // (e.g. "AA-BB-CC-DD-EE-FF:MyWifi"), which won't match fwapc's plain ssid
     // name, so validate by the station still being 802.1x authenticated instead.
     if (autoGroup.auth === "dot1x") {
-      if (!staStatus.dot1xUserName) {
-        await this.resetAutoGroupAsync();
-        return null;
-      }
+      if (!staStatus.dot1xUserName)
+        return reset();
       return autoGroup;
     }
 
     // connected but on a different ssid, reset autoGroup
-    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid) {
-      await this.resetAutoGroupAsync();
-      return null;
-    }
-
-    // // check if tag matches, "tags": ["14"] means tag 14
-    // if (this.o.tags && _.isArray(this.o.tags) && this.o.tags.length > 0 && !this.o.tags.includes(autoGroup.tag)) {
-    //   await this.resetAutoGroupAsync();
-    //   return null;
-    // } else if (!this.o.tags || !_.isArray(this.o.tags) || this.o.tags.length === 0) {
-    //   await this.resetAutoGroupAsync();
-    //   return null;
-    // }
+    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid)
+      return reset();
 
     return autoGroup;
   }
@@ -857,6 +874,9 @@ class Host extends Monitorable {
         for (const ip6 of this.ipv6Addr)
           await hostTool.deleteIPEntryIfOwner(ip6, this.o.mac)
       }
+      // policies were reset above, a rediscovered device must not restore the old group's lock,
+      // so the cache goes before the host record
+      await hostTool.resetWirelessAutoGroup(this.o.mac);
       await hostTool.deleteMac(this.o.mac)
       await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
       await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);

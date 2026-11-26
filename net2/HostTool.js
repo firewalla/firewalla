@@ -794,11 +794,21 @@ class HostTool {
     }
   }
 
+  // the cached auto group object, null if none or unparsable
   async getWirelessAutoGroup(mac) {
     if (_.isEmpty(mac))
       return null;
     const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
-    return rclient.getAsync(key);
+    const cached = await rclient.getAsync(key);
+    if (!cached)
+      return null;
+    try {
+      const parsed = JSON.parse(cached);
+      return _.isObject(parsed) ? parsed : null;
+    } catch (err) {
+      log.warn(`Invalid wireless auto group cache for ${mac}`, err.message);
+      return null;
+    }
   }
 
   async setWirelessAutoGroup(mac, tagUid, ssid, options = {}) {
