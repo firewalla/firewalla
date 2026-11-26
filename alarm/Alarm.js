@@ -910,6 +910,14 @@ class VulnerabilityAlarm extends Alarm {
   }
 }
 
+const NOTICE_TYPES_WITH_TITLE = new Set([
+  'SSL::Invalid_Server_Cert',
+  'SSH::Password_Guessing',
+  'Scan::Port_Scan',
+  'Heartbleed::SSL_Heartbeat_Attack',
+  'Heartbleed::SSL_Heartbeat_Attack_Success',
+]);
+
 class BroNoticeAlarm extends Alarm {
   constructor(timestamp, device, notice, message, info) {
     super("ALARM_BRO_NOTICE", timestamp, device, info);
@@ -987,6 +995,12 @@ class BroNoticeAlarm extends Alarm {
     }
 
     return category;
+  }
+
+  localizedNotificationTitleKey() {
+    if (NOTICE_TYPES_WITH_TITLE.has(this["p.noticeType"]))
+      return `notif.title.${this.getNoticeKeyBase()}`;
+    return super.localizedNotificationTitleKey();
   }
 
   getNoticeKeyBase() {
