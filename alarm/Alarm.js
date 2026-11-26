@@ -935,7 +935,7 @@ class BroNoticeAlarm extends Alarm {
   }
   getExpirationTime() {
     if (this['p.noticeType'] == 'SSL::Invalid_Server_Cert')
-      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 60 * 60
+      return fc.getTimingConfig("alarm.invalidServerCert.cooldown") || 86400
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
   }
 
