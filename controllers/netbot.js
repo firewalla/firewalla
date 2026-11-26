@@ -1531,6 +1531,15 @@ class netBot extends ControllerBot {
         const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
         return { blockStats };
       }
+      case "categoryAggrCounter": {
+        //  value.key: an aggrCounter key in the block stats config, returns its stats per dimension value
+        const value = msg.data.value || {};
+        if (!_.isString(value.key) || !value.key) {
+          throw new Error('Invalid key');
+        }
+        const dimensions = await this.hostManager.getCategoryAggrCounterDimensions(value.key);
+        return { key: value.key, dimensions };
+      }
       case "dailyInboundBlockStats": {
         //  value.ts: any time in the local day to return, within the last 7 days
         const value = msg.data.value || {};
@@ -2336,7 +2345,7 @@ class netBot extends ControllerBot {
     jsonobj.hosts = {}
     const hits = msg.data.hourblock == 24 ? 24 : Math.ceil((Date.now()/1000 - options.begin) / 3600)
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
-      const stats = await this.hostManager.getStats({ granularities: '1hour', hits }, t, hostMetrics)
+      const stats = await this.hostManager.getStats({ granularities: Constants.TS_GRAN_1HOUR, hits }, t, hostMetrics)
       const host = {}
       for (const m of hostMetrics) {
         host[m] = msg.data.hourblock == 24

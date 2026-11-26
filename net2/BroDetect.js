@@ -64,7 +64,8 @@ const l2 = require('../util/Layer2.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 
-const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const { getTimeSeries, STATS_GRANULARITIES } = require("../util/TimeSeries.js")
+const timeSeries = getTimeSeries()
 
 const FlowAggrTool = require('./FlowAggrTool')
 const flowAggrTool = new FlowAggrTool()
@@ -92,6 +93,8 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
+// per-WAN usage is only read by the data plan, which sums daily buckets
+const WAN_GRANULARITIES = [Constants.TS_GRAN_1DAY]
 const FireRouter = require('./FireRouter.js');
 const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
 const destIPFoundHook = new DestIPFoundHook();
@@ -2246,9 +2249,9 @@ class BroDetect {
     if (isRouterMode) {
       for (const uuid of Object.keys(wanTraffic)) {
         if (wanTraffic[uuid].rxBytes)
-          timeSeries.recordHit(`download:wan:${uuid}`, lastTS, wanTraffic[uuid].rxBytes)
+          timeSeries.recordHit(`download:wan:${uuid}`, lastTS, wanTraffic[uuid].rxBytes, undefined, WAN_GRANULARITIES)
         if (wanTraffic[uuid].txBytes)
-          timeSeries.recordHit(`upload:wan:${uuid}`, lastTS, wanTraffic[uuid].txBytes)
+          timeSeries.recordHit(`upload:wan:${uuid}`, lastTS, wanTraffic[uuid].txBytes, undefined, WAN_GRANULARITIES)
       }
     }
 
@@ -2259,9 +2262,9 @@ class BroDetect {
       const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
       download && timeSeries.recordHit('download' + subKey, lastTS, download)
       upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
-      toRecord[key].intra && timeSeries.recordHit('intra' + subKey, lastTS, toRecord[key].intra)
-      toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
-      toRecord[key].dns && timeSeries.recordHit('dns' + subKey, lastTS, toRecord[key].dns)
+      toRecord[key].intra && timeSeries.recordHit('intra' + subKey, lastTS, toRecord[key].intra, undefined, STATS_GRANULARITIES)
+      toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn, undefined, STATS_GRANULARITIES)
+      toRecord[key].dns && timeSeries.recordHit('dns' + subKey, lastTS, toRecord[key].dns, undefined, STATS_GRANULARITIES)
     }
 
     timeSeries.exec()

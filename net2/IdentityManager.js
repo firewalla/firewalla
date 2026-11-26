@@ -16,6 +16,7 @@
 'use strict';
 
 const net = require('net');
+const Constants = require('./Constants.js');
 
 const log = require('./logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -401,7 +402,7 @@ class IdentityManager {
         await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {
             const guid = `${c.getNamespace()}:${e.uid}`;
-            const stats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, guid, ['upload', 'download']);
+            const stats = await hostManager.getStats({ granularities: Constants.TS_GRAN_1HOUR, hits: 24 }, guid, ['upload', 'download']);
             e.flowsummary = {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload

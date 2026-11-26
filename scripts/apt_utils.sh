@@ -2,9 +2,6 @@
 
 # shared by apt-get.sh and the apt cron scripts, sourced
 
-# keeps the lists on /log compressed; apt reads them either way
-APT_UPDATE_OPTS="-o Acquire::GzipIndexes=true"
-
 apt_cleanup() {
   sudo apt clean
   # another apt (the app's apt-get, system-updates) still holds the lists lock: removing its
