@@ -47,5 +47,13 @@
       [ "eth0", "txqueuelen", 1000]
   ],
   "tc": [
+  ],
+  "napi_defer_hard_irqs": [
+    [ "eth0", 0 ],
+    [ "eth3", 0 ]
+  ],
+  "gro_flush_timeout": [
+    [ "eth0", 0 ],
+    [ "eth3", 0 ]
   ]
 }
