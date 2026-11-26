@@ -16,6 +16,7 @@
 'use strict';
 
 const Platform = require('../Platform.js');
+const Constants = require('../../net2/Constants.js');
 const firestatusBaseURL = "http://127.0.0.1:9966";
 const f = require('../../net2/Firewalla.js')
 const { execFile } = require('child-process-promise');
@@ -258,7 +259,7 @@ class GoldProPlatform extends Platform {
 
   getStatsSpecs() {
     return [{
-      granularities: '1hour',
+      granularities: Constants.TS_GRAN_1HOUR,
       hits: 72,
       stat: '3d'
     }]

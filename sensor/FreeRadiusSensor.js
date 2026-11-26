@@ -276,14 +276,7 @@ class FreeRadiusSensor extends Sensor {
   async _loadAutoGroup(mac, monitorable = null) {
     if (monitorable && monitorable.o.autoGroup)
       return monitorable.o.autoGroup;
-    const cached = await hostTool.getWirelessAutoGroup(mac);
-    if (!cached)
-      return null;
-    try {
-      return JSON.parse(cached);
-    } catch (err) {
-      return null;
-    }
+    return hostTool.getWirelessAutoGroup(mac);
   }
 
   async setDeviceTag(mac, username, ssid, options = {}) {
@@ -316,6 +309,8 @@ class FreeRadiusSensor extends Sensor {
     let tagId = userTag.getUniqueId();
     if (userTag.getTagType() == Constants.TAG_TYPE_USER) {
       tagId = userTag.afTag && userTag.afTag.getUniqueId();
+      // the device group outlives its user group, so autoGroup keeps the user group to check too
+      options = Object.assign({}, options, { userTag: userTag.getUniqueId() });
     }
 
     if (!tagId) {
