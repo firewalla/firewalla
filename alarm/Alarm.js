@@ -989,9 +989,13 @@ class BroNoticeAlarm extends Alarm {
     return category;
   }
 
+  getNoticeKeyBase() {
+    return `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+  }
+
   getNotifKeyPrefix() {
     if (this["p.noticeType"]) {
-      let prefix = `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+      let prefix = this.getNoticeKeyBase();
       if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
         prefix += ".v2";
       if (this["p.local_is_client"] != undefined) {
