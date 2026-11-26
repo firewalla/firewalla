@@ -314,6 +314,13 @@ class TagManager {
       markMap[uid] = false;
     }
 
+    // policy and ipsets of a tag are keyed by uid alone, a deviceTag can not share its uid with a tag of another type
+    const otherTypeUids = new Set();
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      if (type !== Constants.TAG_TYPE_DEVICE)
+        (await rclient.smembersAsync(Constants.TAG_TYPE_MAP[type].redisIndexKey)).forEach(uid => otherTypeUids.add(uid));
+    }
+
     await Promise.all(Object.keys(Constants.TAG_TYPE_MAP).map(async type => {
       const config = Constants.TAG_TYPE_MAP[type];
       const IDs = await rclient.smembersAsync(config.redisIndexKey);
@@ -325,9 +332,9 @@ class TagManager {
           await rclient.sremAsync(config.redisIndexKey, uid);
           return
         }
-        // remove duplicate deviceTag
+        // remove duplicate deviceTag, it is created again with a new uid when a device needs it
         if (o.type == Constants.TAG_TYPE_DEVICE) {
-          if (nameMap[o.name]) {
+          if (nameMap[o.name] || otherTypeUids.has(uid)) {
             if (f.isMain()) {
               log.info('Remove duplicated deviceTag', uid)
               await rclient.sremAsync(config.redisIndexKey, uid);

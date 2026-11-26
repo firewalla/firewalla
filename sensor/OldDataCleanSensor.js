@@ -33,6 +33,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 const Host = require('../net2/Host.js');
 const HostManager = require('../net2/HostManager.js');
+const TagManager = require('../net2/TagManager.js');
 const hostManager = new HostManager();
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const MessageBus = require('../net2/MessageBus.js');
@@ -199,6 +200,8 @@ class OldDataCleanSensor extends Sensor {
     let batch = []
     const maxMemKeys = []
     const hostTTLCtx = await this.buildHostTTLContext(withHostTTL)
+    // one lookup per tag in a clean, a tag has many time series keys
+    this.tagExists = new Map()
     const execBatch = async () => {
       await rclient.pipelineAndLog(batch)
       batch = []
@@ -290,6 +293,16 @@ class OldDataCleanSensor extends Sensor {
   // rdns:domain:<name>. this is the only place old names are pruned, readers do not prune
   async cleanSubdomains(type, key, batch) {
     batch.push(['zremrangebyscore', key, '-inf', Date.now() / 1000 - 86400]);
+  }
+
+  // traffic stats of a tag that no longer exists are not written or read any more, but its
+  // 1day and 1month keys would stay for years
+  async cleanTagTimeSeries(type, key, batch) {
+    const uid = key.split(':').slice(-3)[0];
+    if (!this.tagExists.has(uid))
+      this.tagExists.set(uid, await TagManager.tagUidExists(uid));
+    if (!this.tagExists.get(uid))
+      batch.push(['unlink', key]);
   }
 
   async cleanFlowGraphWhenInitializng() {
@@ -788,6 +801,9 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("radius_event", (key) => key === Constants.REDIS_KEY_RADIUS_EVENTS);
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
     this._registerFilterFunction("subdomains2", (key) => key.startsWith("subdomains2:"), false, this.cleanSubdomains);
+    // timedTraffic:<stat>[:lo[:<direction>]]:tag:<uid>:<granularity>:<ts>. A blockStatsAggrCounter series is
+    // named from a setting key and event values, which may read "tag:<x>" without being a tag
+    this._registerFilterFunction("tagTimeSeries", (key) => /^timedTraffic:(?!blockStatsAggrCounter:)\w+(:lo(:\w+)?)?:tag:[^:]+:\w+:\d+$/.test(key), false, this.cleanTagTimeSeries.bind(this));
   }
 
   // dropTTL is only for types whose write path no longer sets TTL, otherwise persist fights with it
