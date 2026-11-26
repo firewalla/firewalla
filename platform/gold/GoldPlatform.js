@@ -16,6 +16,7 @@
 'use strict';
 
 const Platform = require('../Platform.js');
+const Constants = require('../../net2/Constants.js');
 const f = require('../../net2/Firewalla.js')
 const { exec, execFile } = require('child-process-promise');
 const fs = require('fs').promises; // available after Node 10
@@ -242,7 +243,7 @@ class GoldPlatform extends Platform {
 
   getStatsSpecs() {
     return [{
-      granularities: '1hour',
+      granularities: Constants.TS_GRAN_1HOUR,
       hits: 72,
       stat: '3d'
     }]

@@ -108,18 +108,33 @@ set_smp_affinity() {
     done
 }
 
+# write value to every existing path the glob matches; in check mode print the current values
+write_sysfs() {
+    local paths=$1 value=$2
+    for path in $paths; do
+        test -e $path || continue
+        if $PROFILE_CHECK; then
+            cat $path
+        else
+            echo $value > $path
+        fi
+    done
+}
+
 set_rps_cpus() {
     while read intf q rps_cpus
     do
-        rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
-        for rps_cpus_path in $rps_cpus_paths; do
-            test -e $rps_cpus_path || continue
-            if $PROFILE_CHECK; then
-                cat $rps_cpus_path
-            else
-                echo $rps_cpus > $rps_cpus_path
-            fi
-        done
+        write_sysfs "/sys/class/net/$intf/queues/$q/rps_cpus" $rps_cpus
+    done
+}
+
+# rows: <interface> <value>, written to /sys/class/net/<interface>/<attr>
+# used by napi_defer_hard_irqs and gro_flush_timeout; interface may be a glob (e.g. eth*)
+set_netdev_attr() {
+    local attr=$1
+    while read intf value
+    do
+        write_sysfs "/sys/class/net/$intf/$attr" $value
     done
 }
 
@@ -458,6 +473,9 @@ process_profile() {
             rps_cpus)
                 echo "$input_json" | jq -r '.rps_cpus[]|@tsv' | set_rps_cpus
                 ;;
+            napi_defer_hard_irqs|gro_flush_timeout)
+                echo "$input_json" | jq -r ".${key}[]|@tsv" | set_netdev_attr $key
+                ;;
             taskset)
                 echo "$input_json" | jq -r '.taskset[]|@tsv' | do_taskset
                 ;;
@@ -550,7 +568,8 @@ if ! $PROFILE_CHECK && [[ "$prev_profile" == "$active_profile" ]] && ((cur_ts - 
   exit 0
 fi
 logger "FIREWALLA:APPLY_PROFILE:START"
-if ! $PROFILE_CHECK; then
+# a partial apply (FW_PROFILE_KEYS) must not hold off the next full apply
+if ! $PROFILE_CHECK && [[ -z "$FW_PROFILE_KEYS" ]]; then
   echo -n "$active_profile" > $PREV_APPLY_PROFILE_NAME
   echo -n $cur_ts > $PREV_APPLY_PROFILE_TS
 fi

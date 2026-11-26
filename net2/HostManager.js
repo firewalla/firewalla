@@ -52,7 +52,7 @@ const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sensorLoader = require('../sensor/SensorLoader.js');
-const { countUniqueDests, countUniqueDestFields } = require('../sensor/BlockStatsFilter.js');
+const { countUniqueDests, countUniqueDestFields, effectiveBlockStatsSettings } = require('../sensor/BlockStatsFilter.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -481,11 +481,9 @@ module.exports = class HostManager extends Monitorable {
 
   async enrichSTAInfo(hosts) {
     const staStatus = await this._getAllSTAStatus();
-    if (!staStatus)
-      return;
     for (const host of hosts) {
       const mac = host.mac;
-      if (mac && staStatus[mac])
+      if (staStatus && mac && staStatus[mac])
         host.staInfo = staStatus[mac];
       await this._validateAutoGroup(host, staStatus);
     }
@@ -495,9 +493,7 @@ module.exports = class HostManager extends Monitorable {
   async validateAutoGroup(host) {
     if (!host.autoGroup)
       return;
-    const staStatus = await this._getAllSTAStatus();
-    if (staStatus)
-      await this._validateAutoGroup(host, staStatus);
+    await this._validateAutoGroup(host, await this._getAllSTAStatus());
   }
 
   async _validateAutoGroup(host, staStatus) {
@@ -505,6 +501,14 @@ module.exports = class HostManager extends Monitorable {
       return;
     const mac = host.mac;
     const hostObj = this.getHostFastByMAC(mac);
+    // without staStatus the connection is unknown, only a deleted group is dropped
+    if (!staStatus) {
+      if (hostObj && await hostObj.resetAutoGroupIfTagGone())
+        delete host.autoGroup;
+      else if (hostObj && hostObj.o.autoGroup)
+        host.autoGroup = hostObj.o.autoGroup;
+      return;
+    }
     const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
     if (autoGroup) {
       host.autoGroup = autoGroup;
@@ -624,7 +628,7 @@ module.exports = class HostManager extends Monitorable {
     }
     await Promise.all(metrics.map(async metric => {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
-      if (granularities == '1minute') {
+      if (granularities == Constants.TS_GRAN_1MINUTE) {
         if (s[s.length - 1] && s[s.length - 1][1] == 0)
           s.pop()
         else if (s.length > 60)
@@ -641,14 +645,14 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newLast24StatsForInit(json, target, metrics, options) {
-    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target, metrics);
+    json.newLast24 = await this.getStats({granularities: Constants.TS_GRAN_1HOUR, hits: 24}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.newLast24);
     }
   }
 
   async last12MonthsStatsForInit(json, target, metrics, options) {
-    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target, metrics);
+    json.last12Months = await this.getStats({granularities: Constants.TS_GRAN_1MONTH, hits: 12}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last12Months);
     }
@@ -704,8 +708,8 @@ module.exports = class HostManager extends Monitorable {
 
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    const download = await getHitsAsync(downloadKey, Constants.TS_GRAN_1DAY, days) || [];
+    const upload = await getHitsAsync(uploadKey, Constants.TS_GRAN_1DAY, days) || [];
     return Object.assign({
       monthlyBeginTs,
       monthlyEndTs
@@ -734,14 +738,14 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async last60MinStatsForInit(json, target, metrics, options) {
-    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target, metrics);
+    json.last60 = await this.getStats({granularities: Constants.TS_GRAN_1MINUTE, hits: 61}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last60);
     }
   }
 
   async last30daysStatsForInit(json, target, metrics, options) {
-    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target, metrics);
+    json.last30 = await this.getStats({granularities: Constants.TS_GRAN_1DAY, hits: 30}, target, metrics);
     if (options.legacyLocalBlock) {
       this.mergeStats(json.last30);
     }
@@ -937,7 +941,7 @@ module.exports = class HostManager extends Monitorable {
     // keeps total download/upload only for sorting on app
     await Promise.all([
       asyncNative.eachLimit(hosts, 30, async host => {
-        const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
+        const stats = await this.getStats({granularities: Constants.TS_GRAN_1HOUR, hits: 24}, host.o.mac, ['upload', 'download']);
         host.flowsummary = {
           inbytes: stats.totalDownload,
           outbytes: stats.totalUpload
@@ -1815,6 +1819,7 @@ module.exports = class HostManager extends Monitorable {
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
       this.recentBlockStatsForInit(json, options.blockStatsAggrFilter),
+      this.categoryAggrCounterForInit(json),
       this.eventSummaryForInit(json),
       execFile("sudo", ["systemctl", "is-active", "firekick"]).then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
@@ -1984,6 +1989,57 @@ module.exports = class HostManager extends Monitorable {
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     const buckets = await this._getBlockStatsBuckets(cutoff, '+inf');
     json.recentBlockStatsAggr = this._resolveBlockStatsBuckets(buckets, this._getBlockStatsInitFilter(blockStatsAggrFilter));
+  }
+
+  async _getAggrCounterSettings() {
+    const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_CLOUD_CONFIG).then(r => r && JSON.parse(r)).catch(() => null);
+    const localConfig = _.get(fc.getConfig(), ['sensors', 'BlockStatsSensor']);
+    return effectiveBlockStatsSettings(cloudConfig, localConfig).filter(s => s.aggrCounter);
+  }
+
+  // { [counterKey]: { total24h, total7d, daily7d } }, read in one MULTI
+  async _getAggrCounterSummaries(counterKeys) {
+    if (_.isEmpty(counterKeys)) return {};
+    const multi = timeSeries.redis.multi();
+    const queued = counterKeys.map(k => [k, timeSeries.queueRecentSummary(multi, `${Constants.TS_KEY_BLOCK_STATS_AGGR_COUNTER_PREFIX}${k}`)]);
+    const results = await multi.execAsync();
+    const counters = {};
+    let offset = 0;
+    for (const [k, q] of queued)
+      counters[k] = timeSeries.parseRecentSummary(q, results.slice(offset, offset += q.resultSlots), `block stats counter ${k}`);
+    return counters;
+  }
+
+  // { [settingKey]: { total24h, total7d, daily7d } } of every aggrCounter in the current block stats
+  // config, zeros before its first hit. Dimension values are left to getCategoryAggrCounterDimensions
+  async categoryAggrCounterForInit(json) {
+    try {
+      const settings = await this._getAggrCounterSettings();
+      json.categoryAggrCounter = await this._getAggrCounterSummaries(settings.map(s => s.key));
+    } catch (err) {
+      log.error(`Failed to load block stats counters: ${err.message}`);
+      json.categoryAggrCounter = {};
+    }
+  }
+
+  // { [dimension]: { [value]: { total24h, total7d, daily7d } } } of a configured aggrCounter key,
+  // for the values hit in the last 7 days. Only the dimensions in the current config are listed
+  async getCategoryAggrCounterDimensions(key) {
+    const setting = (await this._getAggrCounterSettings()).find(s => s.key === key);
+    if (!setting || _.isEmpty(setting.aggrCounter.dimensions)) return {};
+    const since = Math.floor(Date.now() / 1000) - 86400 * 7;
+    const members = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_AGGR_COUNTER_INDEX, `(${since}`, '+inf');
+    const values = {}; // counter key => [dimension, value]
+    for (const dimension of setting.aggrCounter.dimensions) {
+      const prefix = `${key}::${dimension}::`;
+      for (const member of members)
+        if (member.startsWith(prefix)) values[member] = [dimension, member.slice(prefix.length)];
+    }
+    const summaries = await this._getAggrCounterSummaries(Object.keys(values));
+    const dimensions = _.fromPairs(setting.aggrCounter.dimensions.map(d => [d, {}]));
+    for (const [counterKey, [dimension, value]] of Object.entries(values))
+      dimensions[dimension][value] = summaries[counterKey];
+    return dimensions;
   }
 
   // inbound blocks of today and the previous local days, newest first; the counts cover every
