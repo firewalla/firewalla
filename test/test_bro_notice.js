@@ -387,6 +387,28 @@ describe('BroNotice invalid server certificate', function () {
     expect(await broNotice.processNotice(noticeToAlarm(notice), notice)).to.equal(null);
   });
 
+  it('drops only the validation status whose feature is off', async () => {
+    const statuses = {
+      cert_invalid_issuer: 'unable to get local issuer certificate',
+      cert_expired: 'certificate has expired',
+      cert_not_yet_valid: 'certificate is not yet valid',
+      cert_invalid: 'certificate signature failure',
+    };
+    for (const off of Object.keys(statuses)) {
+      features[`cyber_security.invalidServerCert.${off}`] = false;
+      try {
+        for (const [status, msg] of Object.entries(statuses)) {
+          const notice = invalidCert(LAN_DEVICE, REMOTE, msg);
+          const alarm = await broNotice.processNotice(noticeToAlarm(notice), notice);
+          if (status === off) expect(alarm, status).to.equal(null);
+          else expect(alarm && alarm['p.dest.ssl.validation_status'], status).to.equal(status);
+        }
+      } finally {
+        delete features[`cyber_security.invalidServerCert.${off}`];
+      }
+    }
+  });
+
   it('raises nothing for a self-signed leaf, in either openssl spelling', async () => {
     for (const status of ['self signed certificate', 'self-signed certificate']) {
       const notice = invalidCert(LAN_DEVICE, REMOTE, status);
