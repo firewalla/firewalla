@@ -52,6 +52,8 @@ let instance = null;
 const alarmPendingKey = "alarm_pending";
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
+// the zset a query type of loadActiveAlarmsAsync reads, any other type reads the archive
+const queryTypeKeys = { active: alarmActiveKey };
 // alarms of the last 30 calendar days are kept on box, today included, same as MSP, i.e. the
 // window begins at midnight of (today - 29 days)
 const ALARM_WINDOW_DAYS = 30;
@@ -1230,14 +1232,14 @@ module.exports = class {
     return alarmID
   }
 
-  async _activateAlarm(alarm, unarchive = false) {
+  async _activateAlarm(alarm, unarchive = false, key = alarmActiveKey) {
     let score = parseFloat(alarm.alarmTimestamp) || new Date() / 1000;
     if (unarchive) {
       await rclient.zremAsync(alarmArchiveKey, alarm.aid);
     }
     return await rclient.multi()
       .zrem(alarmPendingKey, alarm.aid)
-      .zadd(alarmActiveKey, 'NX', score, alarm.aid)
+      .zadd(key, 'NX', score, alarm.aid)
       .execAsync();
   }
 
@@ -1575,7 +1577,7 @@ module.exports = class {
     return alarms;
   }
 
-  async loadRecentAlarmsAsync(duration) {
+  async loadRecentAlarmsAsync(duration, keys = [alarmPendingKey, alarmActiveKey]) {
     duration = duration || 10 * 60;
 
     let scoreMax = new Date() / 1000 + 1;
@@ -1587,28 +1589,17 @@ module.exports = class {
     }
 
     let recentResults = [];
-    let alarmIDs, results;
 
-    try {
-      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey, scoreMax, scoreMin);
-      results = await this.idsToAlarmsAsync(alarmIDs);
-      if (results) {
-        results = results.filter((a) => a != null);
-        recentResults = recentResults.concat(results);
+    for (const key of keys) {
+      try {
+        const alarmIDs = await rclient.zrevrangebyscoreAsync(key, scoreMax, scoreMin);
+        const results = await this.idsToAlarmsAsync(alarmIDs);
+        if (results) {
+          recentResults = recentResults.concat(results.filter((a) => a != null));
+        }
+      } catch (err) {
+        log.warn(`cannot get alarms from ${key}`, err.message);
       }
-    } catch (err) {
-      log.warn("cannot get pending alarms", err.message);
-    }
-
-    try {
-      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, scoreMax, scoreMin);
-      results = await this.idsToAlarmsAsync(alarmIDs);
-      if (results) {
-        results = results.filter((a) => a != null);
-        recentResults = recentResults.concat(results);
-      }
-    } catch (err) {
-      log.warn("cannot get active alarms", err.message);
     }
     return recentResults;
   }
@@ -1804,7 +1795,7 @@ module.exports = class {
       ids = this._queryCachedAlarmIds(count, ts, asc, type, filters, ts2);
     } else {
       log.debug(`query from redis, cache fallback ${this.indexCache.keys()} disabled ${this.indexCache._disabled}` );
-      let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
+      const key = queryTypeKeys[type] || alarmArchiveKey;
       let query = asc ?
         rclient.zrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count) :
         rclient.zrevrangebyscoreAsync(key, '(' + ts, scoreBound, 'limit', 0, count);
