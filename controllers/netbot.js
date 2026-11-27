@@ -3720,6 +3720,10 @@ class netBot extends ControllerBot {
         if (!host || !host.mac) {
           throw { code: 400, msg: "'host' or 'host.mac' is not specified" }
         }
+        // the MAC becomes a redis key, ipset names and ipset members
+        if (!hostTool.isMacAddress(host.mac)) {
+          throw { code: 400, msg: `Invalid MAC address ${host.mac}` }
+        }
         // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
         const savingKeysMap = {
           mac: "mac",

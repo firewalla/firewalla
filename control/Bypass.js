@@ -19,6 +19,7 @@ const log = require("../net2/logger.js")(__filename);
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const domainBlock = require('../control/DomainBlock.js');
+const { undecidedDeviceMatch } = require('../control/Block.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const Constants = require('../net2/Constants.js');
@@ -184,7 +185,7 @@ async function bypassDNSRules(options) {
 }
 
 async function bypassIptablesRules(options) {
-  const {affectedPids, tags, intfs, action, pid, targets, scope, guids, type} = options;
+  const {affectedPids, tags, intfs, action, pid, targets, scope, guids, type, newDeviceTagUids = []} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
   const pm2 = new PolicyManager2();
   const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
@@ -217,6 +218,8 @@ async function bypassIptablesRules(options) {
     }
 
 
+    // every RETURN rule names the bypass policy: two bypass policies exempting the same scope from
+    // one rule would otherwise render the same rule once, and removing either would remove both exemptions
     const rulesToAdd = [];
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
 
@@ -227,14 +230,24 @@ async function bypassIptablesRules(options) {
           await Tag.ensureCreateEnforcementEnv(uid);
           const devSet = Tag.getTagDeviceSetName(uid);
           const netSet = Tag.getTagNetSetName(uid);
+          // a quarantine group's exceptions also apply to devices on a quarantine-on network the box has not
+          // decided about yet (same shape as the copies in Block.setupTagsRules); always deleted on unenforce
+          const newDev = action === "unenforce" || newDeviceTagUids.map(String).includes(String(uid));
           for (const table of tables) {
             for (const family of [4, 6]) {
               // outbound rule to bypass traffic from devices in the tag
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(devSet, "src").comment(`rule_${pid}`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(netSet, "src,src").comment(`rule_${pid}`).jmp("RETURN"));
               // inbound rule to bypass traffic to devices in the tag
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} dst,dst`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(devSet, "dst").comment(`rule_${pid}`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(netSet, "dst,dst").comment(`rule_${pid}`).jmp("RETURN"));
+              if (newDev) {
+                // the comment names the bypass policy, so the delete on unenforce (issued for every
+                // uid) cannot remove the copies of another bypass policy on the same chain
+                const copy = new Rule(table).fam(family).chn(bypassChain).comment(`rule_${pid}`).jmp("RETURN");
+                rulesToAdd.push(undecidedDeviceMatch(copy.clone(), "src"));
+                rulesToAdd.push(undecidedDeviceMatch(copy.clone(), "dst"));
+              }
             }
           }
         }
@@ -246,10 +259,10 @@ async function bypassIptablesRules(options) {
           await NetworkProfile.ensureCreateEnforcementEnv(uuid);
           const intfSet = NetworkProfile.getNetListIpsetName(uuid);
           for (const table of tables) {
-            rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).chn(bypassChain).set(intfSet, "src,src").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).set(intfSet, "src,src").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).chn(bypassChain).set(intfSet, "dst,dst").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).set(intfSet, "dst,dst").comment(`rule_${pid}`).jmp("RETURN"));
           }
         }
       }
@@ -261,8 +274,8 @@ async function bypassIptablesRules(options) {
           const devSet = Host.getDeviceSetName(mac);
           for (const table of tables) {
             for (const family of [4, 6]) {
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
-              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(devSet, "src").comment(`rule_${pid}`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).set(devSet, "dst").comment(`rule_${pid}`).jmp("RETURN"));
             }
           }
         }
@@ -278,17 +291,17 @@ async function bypassIptablesRules(options) {
           const set4 = identityClass.getEnforcementIPsetName(uid, 4);
           const set6 = identityClass.getEnforcementIPsetName(uid, 6);
           for (const table of tables) {
-            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} dst`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} dst`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).set(set4, "src").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).set(set4, "dst").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).set(set6, "src").comment(`rule_${pid}`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).set(set6, "dst").comment(`rule_${pid}`).jmp("RETURN"));
           }
         }
       }
     } else { // global bypass without specific match criteria, just jump to RETURN for all traffic in the bypass chain
       for (const table of tables) {
         for (const family of [4, 6]) {
-          rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).jmp("RETURN").opr(op));
+          rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).comment(`rule_${pid}`).jmp("RETURN").opr(op));
         }
       }
     }

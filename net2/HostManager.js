@@ -2480,8 +2480,7 @@ module.exports = class HostManager extends Monitorable {
       for (const mac of await this.getAlwaysVisibleMACs(portforwardConfig, includePinnedHosts))
         visibleMACs.add(mac)
 
-      // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
-      const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
+      const MACs = includeInactiveHosts ? new Set(await hostTool.getMACsByTime(0)) : visibleMACs
       this._totalHosts = MACs.size;
       let multiarray = [];
       for (const mac of MACs) {
@@ -3185,6 +3184,31 @@ module.exports = class HostManager extends Monitorable {
 
   getPolicyFast() {
     return this.policy;
+  }
+
+  // where new-device quarantine applies: the quarantine groups, and for each quarantine-on network
+  // its group (the network switch wins over the system switch). Empty while the feature is off.
+  // Only networks whose devices the box discovers are covered (o.monitoring, which is not the
+  // Monitoring switch): elsewhere no decision ever runs, so a device would stay blocked. VPN networks
+  // are left out because their clients have no MAC. The Monitoring switch is not read: as for a
+  // group's own rules, acl_off_set stops enforcement where it is off
+  getNewDeviceTagConfig() {
+    const tagUids = new Set();
+    const networks = {};
+    if (!fc.isFeatureOn('new_device_tag'))
+      return { tagUids, networks };
+    const systemPolicy = this.policy && this.policy.newDeviceTag || {};
+    for (const network of Object.values(NetworkProfileManager.networkProfiles)) {
+      if (network.o.monitoring !== true || network.isVPNInterface())
+        continue;
+      const networkPolicy = network.policy && network.policy.newDeviceTag || {};
+      const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null;
+      if (!policy || !policy.tag)
+        continue;
+      tagUids.add(String(policy.tag));
+      networks[network.getUniqueId()] = String(policy.tag);
+    }
+    return { tagUids, networks };
   }
 
   getActiveHosts() {

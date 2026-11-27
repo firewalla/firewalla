@@ -150,3 +150,134 @@ describe('test ap assets', function(){
     });
 
 });
+
+// where new-device quarantine applies, as the rule renderers and the sensor read it
+describe('HostManager.getNewDeviceTagConfig', function () {
+  const fc = require('../net2/config.js');
+  const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+  const saved = {};
+  let featureOn;
+
+  function network(uuid, newDeviceTag, { monitoring = true, vpn = false, discovered = true } = {}) {
+    return {
+      o: { monitoring: discovered },
+      policy: newDeviceTag ? { newDeviceTag } : {},
+      isMonitoring: () => monitoring,
+      isVPNInterface: () => vpn,
+      getUniqueId: () => uuid,
+    };
+  }
+
+  before(() => {
+    saved.isFeatureOn = fc.isFeatureOn;
+    saved.networkProfiles = NetworkProfileManager.networkProfiles;
+    saved.policy = hostManager.policy;
+    fc.isFeatureOn = (key, dflt) => key === 'new_device_tag' ? featureOn : saved.isFeatureOn(key, dflt);
+  });
+
+  after(() => {
+    fc.isFeatureOn = saved.isFeatureOn;
+    NetworkProfileManager.networkProfiles = saved.networkProfiles;
+    hostManager.policy = saved.policy;
+  });
+
+  beforeEach(() => {
+    featureOn = true;
+    hostManager.policy = {};
+    NetworkProfileManager.networkProfiles = {};
+  });
+
+  it('is empty while the feature is off, whatever the switches say', () => {
+    featureOn = false;
+    hostManager.policy = { newDeviceTag: { state: true, tag: 16 } };
+    NetworkProfileManager.networkProfiles = { a: network('a') };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect(config.tagUids.size).to.equal(0);
+    expect(config.networks).to.deep.equal({});
+  });
+
+  it('the system switch covers every LAN network without a switch of its own, whatever its monitoring state', () => {
+    hostManager.policy = { newDeviceTag: { state: true, tag: 16 } };
+    NetworkProfileManager.networkProfiles = {
+      a: network('a'),
+      b: network('b', { state: false, tag: 16 }),
+      vpn: network('vpn', null, { vpn: true }),
+      off: network('off', null, { monitoring: false }),
+    };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect([...config.tagUids]).to.deep.equal(['16']);
+    expect(config.networks).to.deep.equal({ a: '16', b: '16', off: '16' });
+  });
+
+  it('leaves out a network whose devices the box does not discover, such as the WAN in router mode', () => {
+    hostManager.policy = { newDeviceTag: { state: true, tag: 16 } };
+    NetworkProfileManager.networkProfiles = {
+      a: network('a'),
+      wan: network('wan', null, { discovered: false }),
+      wanOn: network('wanOn', { state: true, tag: 16 }, { discovered: false }),
+    };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect(config.networks).to.deep.equal({ a: '16' });
+  });
+
+  it('a network switch applies on its own, with its own group', () => {
+    hostManager.policy = { newDeviceTag: { state: false, tag: 16 } };
+    NetworkProfileManager.networkProfiles = {
+      a: network('a', { state: true, tag: '49' }),
+      b: network('b'),
+    };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect([...config.tagUids]).to.deep.equal(['49']);
+    expect(config.networks).to.deep.equal({ a: '49' });
+  });
+
+  it('a network switch wins over the system switch, so two groups can be quarantine groups, each with its networks', () => {
+    hostManager.policy = { newDeviceTag: { state: true, tag: 16 } };
+    NetworkProfileManager.networkProfiles = {
+      a: network('a', { state: true, tag: 49 }),
+      b: network('b'),
+    };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect([...config.tagUids].sort()).to.deep.equal(['16', '49']);
+    expect(config.networks).to.deep.equal({ a: '49', b: '16' });
+  });
+
+  it('a switch without a group selects nothing', () => {
+    hostManager.policy = { newDeviceTag: { state: true } };
+    NetworkProfileManager.networkProfiles = { a: network('a') };
+    const config = hostManager.getNewDeviceTagConfig();
+    expect(config.tagUids.size).to.equal(0);
+    expect(config.networks).to.deep.equal({});
+  });
+});
+
+describe('HostManager.getHostsAsync with inactive hosts', function () {
+  this.timeout(30000);
+  const Constants = require('../net2/Constants.js');
+  const HostTool = require('../net2/HostTool.js');
+  const hostTool = new HostTool();
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const indexed = '00:00:5E:00:53:E4';
+  const unindexed = '00:00:5E:00:53:E5';
+  const inactiveTs = Date.now() / 1000 - 30 * 86400;
+
+  before(async () => {
+    await hostTool.updateMACKey({ mac: indexed, ipv4Addr: '192.0.2.204', lastActiveTimestamp: inactiveTs });
+    await rclient.hmsetAsync(`host:mac:${unindexed}`, { mac: unindexed, ipv4Addr: '192.0.2.205', lastActiveTimestamp: inactiveTs });
+  });
+
+  after(async () => {
+    for (const mac of [indexed, unindexed]) {
+      await rclient.unlinkAsync(`host:mac:${mac}`);
+      await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac);
+      hostTool.invalidateMacEntryCache(mac);
+    }
+  });
+
+  it('should list every MAC in the host index, including ones inactive for longer than host.active', async () => {
+    const hosts = await hostManager.getHostsAsync({ includeInactiveHosts: true, forceReload: true });
+    const macs = hosts.map(host => host.o.mac);
+    expect(macs).to.include(indexed);
+    expect(macs).to.not.include(unindexed);
+  });
+});

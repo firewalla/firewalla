@@ -132,3 +132,32 @@ describe('HostTool.removeDupIPv4FromMacEntry', function() {
     expect(raw.ipv4Addr).to.equal(testIp);
   });
 });
+
+describe('HostTool.getAllMACEntries', function() {
+  const Constants = require('../net2/Constants.js');
+  const rclient = require('../util/redis_manager.js').getRedisClient();
+  const indexed = '00:00:5E:00:53:E1';
+  const unindexed = '00:00:5E:00:53:E2';
+  const recordless = '00:00:5E:00:53:E3';
+
+  before(async() => {
+    await hostTool.updateMACKey({ mac: indexed, ipv4Addr: '192.0.2.201', lastActiveTimestamp: Date.now() / 1000 });
+    await rclient.hmsetAsync(`host:mac:${unindexed}`, { mac: unindexed, ipv4Addr: '192.0.2.202' });
+    await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, Date.now() / 1000, recordless);
+  });
+
+  after(async() => {
+    for (const mac of [indexed, unindexed, recordless]) {
+      await rclient.unlinkAsync(`host:mac:${mac}`);
+      await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac);
+      hostTool.invalidateMacEntryCache(mac);
+    }
+  });
+
+  it('should return the records of the MACs in the index, skipping index members without a record', async() => {
+    const macs = (await hostTool.getAllMACEntries()).map(entry => entry.mac);
+    expect(macs).to.include(indexed);
+    expect(macs).to.not.include(unindexed);
+    expect(macs).to.not.include(recordless);
+  });
+});

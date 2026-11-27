@@ -108,6 +108,13 @@ create qos_off_set list:set
 
 create ntp_off_set list:set
 
+create new_dev_network_set list:set
+# devices new-device quarantine has decided about: their MACs, and their per-host IP sets for the
+# destination side. Never flushed here: the previous run's rules stay in the kernel across a FireMain
+# restart and would block every device until the refill
+create new_dev_exempt_mac_set hash:mac
+create new_dev_exempt_set list:set
+
 create match_dns_port_set bitmap:port range 0-65535
 
 flush acl_off_mac_set
@@ -124,6 +131,7 @@ flush qos_off_set
 add qos_off_set qos_off_mac_set
 
 flush ntp_off_set
+flush new_dev_network_set
 
 EOF
 

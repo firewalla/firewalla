@@ -37,11 +37,15 @@ const REFRESH_BACKOFF_MS = 2000;
 class TLSSetControl extends ModuleControl {
   constructor() {
     super('tlsset');
-    this.queuedRules = { 'xt_tls': {}, 'xt_udp_tls': {} };
+    this.queuedRules = this.emptyQueue();
     // Active TLS set names (files under /proc/net/<module>/hostset/<setName>)
     // e.g. 'c_bd_games_tls_hostset', 'c_bd_default_c_tls_hostset', etc.
     this.activeTCPSets = {}; // set name -> 1
     this.activeUDPSets = {}; // set name -> 1
+    // marks made after BlockControl took the current round's queues. Their iptables rules are in
+    // the next batch, so the refresh at the end of this round finds no /proc file for them yet
+    this.pendingTCPSets = {};
+    this.pendingUDPSets = {};
 
     // activate default TLS sets
     for (const sec of ['', 'sec_']) {
@@ -57,6 +61,11 @@ class TLSSetControl extends ModuleControl {
 
   setPhase(phase) {
     super.setPhase(phase);
+    // in the autonomous phase a rule is applied inline before its set is marked, so /proc is complete
+    if (phase === 'autonomous') {
+      this.pendingTCPSets = {};
+      this.pendingUDPSets = {};
+    }
     // In autonomous mode processRules() is no longer driven by BlockControl,
     // so we periodically reconcile the in-memory active set maps with /proc.
     // PolicyManager2 also triggers a refresh after each TLS unenforce; this
@@ -85,6 +94,12 @@ class TLSSetControl extends ModuleControl {
       this.refreshBackoffTimer = null;
       this.refreshTLSCategoryActivated()
     }, REFRESH_BACKOFF_MS);
+  }
+
+  // true from an unenforce until the backoff refresh has read /proc: in between, a mark may describe
+  // a set the kernel has already purged
+  isRefreshPending() {
+    return !!this.refreshBackoffTimer;
   }
 
   /**
@@ -204,15 +219,24 @@ class TLSSetControl extends ModuleControl {
     return this.addRule(tlsHostSet, 'flush');
   }
 
+  emptyQueue() {
+    return { 'xt_tls': {}, 'xt_udp_tls': {} };
+  }
+
+  takeQueue() {
+    // a mark made before this point has its rule in the batch taken now, so the refresh of this
+    // round finds its file and can judge it from /proc alone
+    this.pendingTCPSets = {};
+    this.pendingUDPSets = {};
+    return super.takeQueue();
+  }
+
   /**
    * Execute queued hostset operations.
    */
-  async processRules() {
+  async processRules(queued) {
     // TLS sets are updated by iptables rules, which should be processed right before this
     await this.refreshTLSCategoryActivated();
-
-    const queued = this.queuedRules;
-    this.queuedRules = { 'xt_tls': {}, 'xt_udp_tls': {} };
 
     for (const module of TLS_MODULES) {
       const proto = module === 'xt_tls' ? 'tcp' : 'udp';
@@ -286,9 +310,11 @@ class TLSSetControl extends ModuleControl {
   activateTLSSet(tlsHostSet, proto = '') {
     if (platform.isTLSBlockSupport() && (proto === 'tcp' || proto === '')) {
       this.activeTCPSets[tlsHostSet] = 1;
+      if (this.phase !== 'autonomous') this.pendingTCPSets[tlsHostSet] = 1;
     }
     if (platform.isUdpTLSBlockSupport() && (proto === 'udp' || proto === '')) {
       this.activeUDPSets[tlsHostSet] = 1;
+      if (this.phase !== 'autonomous') this.pendingUDPSets[tlsHostSet] = 1;
     }
   }
 
@@ -302,9 +328,11 @@ class TLSSetControl extends ModuleControl {
   deactivateTLSSet(tlsHostSet, proto = '') {
     if (proto === 'tcp' || proto === '') {
       delete this.activeTCPSets[tlsHostSet];
+      delete this.pendingTCPSets[tlsHostSet];
     }
     if (proto === 'udp' || proto === '') {
       delete this.activeUDPSets[tlsHostSet];
+      delete this.pendingUDPSets[tlsHostSet];
     }
   }
 
@@ -334,10 +362,10 @@ class TLSSetControl extends ModuleControl {
       };
 
       if (platform.isTLSBlockSupport()) {
-        this.activeTCPSets = await refreshForModule('xt_tls');
+        this.activeTCPSets = Object.assign(await refreshForModule('xt_tls'), this.pendingTCPSets);
       }
       if (platform.isUdpTLSBlockSupport()) {
-        this.activeUDPSets = await refreshForModule('xt_udp_tls');
+        this.activeUDPSets = Object.assign(await refreshForModule('xt_udp_tls'), this.pendingUDPSets);
       }
     } catch (err) {
       log.info("Failed to refresh active TLS sets", err);

@@ -217,6 +217,8 @@ class NetworkProfileManager {
         log.info(`uuid is not defined, ignore this interface`, intf);
         continue;
       }
+      // o.monitoring: the box discovers and polices devices on this interface (FireRouter's list for
+      // the mode). It is not the Monitoring switch, which is the "monitor" policy (isMonitoring())
       const monitoring = monitoringInterfaces.some(i => i.name === intf.name);
       const updatedProfile = {
         uuid: uuid,

@@ -232,13 +232,10 @@ class IpsetControl extends ModuleControl {
    * Execute queued ipset operations: filter into a map by set, then write restore file and run ipset restore
    * to avoid interrupting blocking rules, use swap for existing sets
    */
-  async processRules(fromInitialization = false, dryRun = false) {
+  async processRules(queuedOps, fromInitialization = false, dryRun = false) {
     if (fromInitialization) {
-      await this.readSetupScriptResult();
+      queuedOps = (await this.readSetupScriptResult()).concat(queuedOps);
     }
-
-    const queuedOps = this.queuedRules;
-    this.queuedRules = [];
 
     if (!queuedOps.length) return;
 
@@ -432,11 +429,12 @@ class IpsetControl extends ModuleControl {
       const content = await fsp.readFile(ipsetFile, 'utf8');
       const lines = content.split('\n')
         .filter(line => line.length && !line.startsWith('flush') && !line.startsWith('#'));
-      this.queuedRules = lines.concat(this.queuedRules);
 
-      log.info(`Successfully queued ${lines.length} entries from ipset setup script`);
+      log.info(`Read ${lines.length} entries from ipset setup script`);
+      return lines;
     } catch (err) {
       log.error('Error reading ipset setup script result', err.message)
+      return [];
     }
   }
 

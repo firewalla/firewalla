@@ -653,8 +653,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async activateTLSCategory(category, proto = '') {
     proto = proto || '';
     log.verbose(`activateTLSCategory: ${category}, ${proto}`);
-    // avoid duplicating work if already activated
-    if (this.isTLSActivated(category, proto)) {
+    // the mark proves the hostset is populated only when rules are applied inline and no unenforce is
+    // waiting for its refresh. Otherwise the domains are queued or written again; refreshTLSCategory
+    // starts with a flush, so the result is the same list, not a longer one
+    if (tlsc.phase === 'autonomous' && !tlsc.isRefreshPending() && this.isTLSActivated(category, proto)) {
       return;
     }
     const tlsHostSet = Block.getTLSHostSet(category);
