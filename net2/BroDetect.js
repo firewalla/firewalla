@@ -1939,7 +1939,7 @@ class BroDetect {
         data[Constants.REDIS_HKEY_CONN_HOST] = appCacheObj.host;
         data.proto = "ssl";
         data.ip = dst;
-        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto || "tcp", data, 600);
         this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
       /* this piece of code uses http to map dns */
