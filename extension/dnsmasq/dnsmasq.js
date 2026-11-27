@@ -557,6 +557,24 @@ module.exports = class DNSMASQ {
     return `rg_${uuid}`;
   }
 
+  _policyDirectiveLine(directive, domain, options, tag) {
+    const line = (d, value) => `${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${d}/${value}$${tag}`;
+    // an empty domain is dnsmasq's no-dots server, which skips block/allow arbitration for single-label names; "#" matches all names
+    const filterDomain = domain === "" ? "#" : domain;
+    switch (options.action) {
+      case "block":
+        return line(filterDomain, BLACK_HOLE_IP);
+      case "allow":
+        return line(filterDomain, "#");
+      case "resolve":
+      case "address":
+        // reuse "resolver" field to indicate either upstream server for resolve rule or literal address for address rule
+        return line(domain, options.resolver);
+      default:
+        return null;
+    }
+  }
+
   async cleanUpFilter(type) {
     const file = FILTER_FILE[type];
     log.info("Clean up filter file:", file);
@@ -643,20 +661,9 @@ module.exports = class DNSMASQ {
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
           const commonEntries = [];
-          switch (options.action) {
-            case "block":
-              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-              break;
-            case "allow":
-              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
-              break;
-            case "resolve":
-            case "address":
-              // reuse "resolver" field to indicate either upstream server for resolve rule or literal address for address rule
-              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
-              break;
-            default:
-          }
+          const directiveLine = this._policyDirectiveLine(directive, domain, options, `policy_${options.pid}`);
+          if (directiveLine)
+            commonEntries.push(directiveLine);
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
@@ -746,20 +753,10 @@ module.exports = class DNSMASQ {
           if (!_.isEmpty(options.parentRgId)) {
             const uuid = options.parentRgId;
             const entries = [];
-            switch (options.action) {
-              case "block":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
-                break;
-              case "allow":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
-                break;
-              case "resolve":
-              case "address":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
-                break;
-              // TODO: support "route" for rules in rule group in dnsmasq
-              default:
-            }
+            // TODO: support "route" for rules in rule group in dnsmasq
+            const directiveLine = this._policyDirectiveLine(directive, domain, options, this._getRuleGroupPolicyTag(uuid));
+            if (directiveLine)
+              entries.push(directiveLine);
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
             await this.writeConfig(filePath, entries,  options.append);
           }
@@ -775,20 +772,9 @@ module.exports = class DNSMASQ {
             } else {
               entries.push(`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`);
             }
-            switch (options.action) {
-              case "block":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-                break;
-              case "allow":
-              case "bypass":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
-                break;
-              case "resolve":
-              case "address":
-                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
-                break;
-              default:
-            }
+            const directiveLine = this._policyDirectiveLine(directive, domain, options, `policy_${options.pid}`);
+            if (directiveLine)
+              entries.push(directiveLine);
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await this.writeConfig(filePath, entries, options.append);
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
