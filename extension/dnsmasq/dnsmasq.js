@@ -559,11 +559,13 @@ module.exports = class DNSMASQ {
 
   _policyDirectiveLine(directive, domain, options, tag) {
     const line = (d, value) => `${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${d}/${value}$${tag}`;
+    // an empty domain is dnsmasq's no-dots server, which skips block/allow arbitration for single-label names; "#" matches all names
+    const filterDomain = domain === "" ? "#" : domain;
     switch (options.action) {
       case "block":
-        return line(domain, BLACK_HOLE_IP);
+        return line(filterDomain, BLACK_HOLE_IP);
       case "allow":
-        return line(domain, "#");
+        return line(filterDomain, "#");
       case "resolve":
       case "address":
         // reuse "resolver" field to indicate either upstream server for resolve rule or literal address for address rule
