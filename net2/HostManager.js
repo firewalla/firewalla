@@ -3131,15 +3131,11 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // where new-device quarantine applies: the quarantine groups, and for each quarantine-on network
-  // its own group (the network switch wins over the system switch), read by the rule renderers and
-  // the sensor. empty while the feature is off.
-  // o.monitoring is not the Monitoring switch: NetworkProfileManager sets it from the mode's list of
-  // monitored interfaces (LANs in router mode, the WAN too in bridge mode), and it says whether the
-  // box discovers devices on that network. Only those networks are covered: no decision ever runs
-  // for a device elsewhere, so it would stay blocked. VPN networks are in that list but left out:
-  // their clients are identities without a MAC, which never go through the decision.
-  // the Monitoring switch (isMonitoring()) is not read here: as for a group's own rules, acl_off_set
-  // is what stops enforcement on a network that has it off
+  // its group (the network switch wins over the system switch). Empty while the feature is off.
+  // Only networks whose devices the box discovers are covered (o.monitoring, which is not the
+  // Monitoring switch): elsewhere no decision ever runs, so a device would stay blocked. VPN networks
+  // are left out because their clients have no MAC. The Monitoring switch is not read: as for a
+  // group's own rules, acl_off_set stops enforcement where it is off
   getNewDeviceTagConfig() {
     const tagUids = new Set();
     const networks = {};

@@ -47,9 +47,9 @@ const routeLogRateLimitPerSecond = 10;
 // not decided about yet, see setupTagsRules. its local match comes from undecidedDeviceMatch, not localSet
 const NEW_DEV_LOCAL = { localSet: null, undecided: true };
 
-// the network set less the decided devices, which their own group sets match. with the device as source
-// the exception is by MAC; as destination the frame carries the router's MAC, so it is by address, and
-// only connections initiated towards the device are meant. a caller that renders --ctdir itself passes it
+// matches a device on a quarantine-on network that is not decided about. as source the exception is by
+// MAC; as destination the frame carries the router's MAC, so it is by address, and only for connections
+// opened towards the device. a caller that renders --ctdir itself passes it
 function undecidedDeviceMatch(rule, side, ctDir) {
   rule.set(Ipset.CONSTANTS.IPSET_NEW_DEV_NETWORK, `${side},${side}`);
   if (side === "src")

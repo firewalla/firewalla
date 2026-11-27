@@ -226,10 +226,6 @@ cat << EOF > "$filter_file"
 -N FW_INPUT_ACCEPT
 
 -N FW_INPUT_DROP
-# no DNS for a device on a quarantine-on network until new-device quarantine has decided about it.
-# acl_off_set is exempt as in FW_DROP, so a network with enforcement off keeps DNS
--A FW_INPUT_DROP ! -i lo -p udp --dport 53 -m set --match-set new_dev_network_set src,src -m set ! --match-set new_dev_exempt_mac_set src -m set ! --match-set acl_off_set src,src -j DROP
--A FW_INPUT_DROP ! -i lo -p tcp --dport 53 -m set --match-set new_dev_network_set src,src -m set ! --match-set new_dev_exempt_mac_set src -m set ! --match-set acl_off_set src,src -j DROP
 
 -N FW_PLAIN_DROP
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x200/0x80000200

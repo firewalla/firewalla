@@ -64,14 +64,12 @@ function copyPolicy(policy) {
   }
 }
 
-// the source side matches the MAC; the destination side matches the per-host IP sets, which Host keeps
-// filled with the device's current addresses, as acl_off_set does. Host only adds to them, so an address
-// another device takes over stays exempt on the destination side until the old owner's entry times out
-// (900 s). Accepted: it only lets connections in towards an undecided device that reuses an address
-// within that time, and its own traffic stays blocked. The same timeout drops the address of a decided
-// device no sighting has refreshed in 900 s, so connections towards it are blocked until the next
-// sighting, although it is not quarantined. Known issue, open: its own traffic is never affected, IPv4
-// is refreshed by the nmap scan, and group rules match the same way, so it is left for a later change
+// a decided device is exempt by MAC as source, and by its per-host IP sets as destination. The entries
+// of those sets time out after 900 s without a sighting, which leaves two cases on the destination side:
+// - an address another device takes over stays exempt until the entry times out. Accepted: it only
+//   lets connections in, the new device's own traffic stays blocked
+// - Known issue: connections towards a decided device not sighted for 900 s are blocked until its
+//   next sighting. Group rules match the same way
 function exemptOps(op, mac) {
   return [
     `${op} ${EXEMPT_MAC_SET} ${mac}`,
@@ -81,14 +79,14 @@ function exemptOps(op, mac) {
 }
 
 // The kernel blocks a device on a quarantine-on network until this sensor has decided about it: the
-// quarantine group's rules are rendered once more for devices that are neither in the group nor in the
-// exempt sets (Block.setupTagsRules), and FW_INPUT_DROP drops their DNS. This sensor owns the exempt
-// sets: every device that went through the decision, whatever the outcome.
+// quarantine group's iptables rules are rendered once more for devices that are neither in the group
+// nor in the exempt sets (Block.setupTagsRules). The group's DNS (dnsmasq) rules apply only once the
+// device is in the group. This sensor owns the exempt sets: every device that went through the
+// decision, whatever the outcome.
 //
 // Known issue: the decision starts only when the box discovers the device, so the block lasts until
-// then. That is at once for a device that asks for a lease, but up to the next scan (minutes) for one
-// with a fixed address or one deleted while it stays connected, also when the decision then does not
-// quarantine it.
+// then: at once for a device that asks for a lease, up to the next scan (minutes) for one with a
+// fixed address or one deleted while it stays connected.
 class NewDeviceTagSensor extends Sensor {
 
   constructor(config) {
@@ -263,11 +261,9 @@ class NewDeviceTagSensor extends Sensor {
     return tags.some(uid => tagUids.has(String(uid)));
   }
 
-  // the exempt sets are written on the non-deferred path by one writer at a time, so the kernel has
-  // every change in the order this.decided was updated when the call returns. A caller adds its lines
-  // and the devices they name in the same step, and when a write is running it only waits for that
-  // one, which goes on until the queue is empty: a burst of Device:Delete (an expiry run sends
-  // hundreds) becomes a few restores and no caller is turned away
+  // one writer at a time on the non-deferred path, so when the call returns the kernel has the changes
+  // in the order this.decided was updated. Callers that arrive during a write share the next restore,
+  // so a burst of Device:Delete becomes a few restores
   writeExempt(macs, ops) {
     for (const mac of macs)
       this.queuedMacs.add(mac);
@@ -312,13 +308,10 @@ class NewDeviceTagSensor extends Sensor {
     mac = mac && mac.toUpperCase();
     if (!mac)
       return;
-    // a record written for a MAC that never came through Device:Create: a deleted device whose
-    // host:mac was recreated by another writer before its next sighting, which DeviceHook then
-    // takes down its existing-MAC paths, with no NewDeviceFound and no Device:Create. The same
-    // rules apply as to a create with no pending decision, or the device would stay undecided, and
-    // blocked, for good.
-    // With the feature off this only consumes the delete marker, as the create would, so a device that
-    // came back while the feature was off is not quarantined at a later feature-on
+    // a record for a MAC this sensor does not know: a deleted device whose host:mac another writer
+    // recreated, so DeviceHook sends no NewDeviceFound and no Device:Create for it. It is handled as
+    // a create with no pending decision, or it would stay blocked for good. With the feature off
+    // that only consumes the delete marker
     if (!this.pending.has(mac) && !this.decided.has(mac)) {
       this.onDeviceCreate(channel, "Host:Updated", mac, o).catch((err) => {
         log.error(`Failed to decide about ${mac}`, err.message);

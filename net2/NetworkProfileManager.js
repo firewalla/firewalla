@@ -217,10 +217,8 @@ class NetworkProfileManager {
         log.info(`uuid is not defined, ignore this interface`, intf);
         continue;
       }
-      // o.monitoring: the interface is in the mode's list of monitored interfaces (FireRouter.js: LANs
-      // with an IPv4 address in router mode, WANs too in spoof and DHCP/bridge mode), so the box
-      // discovers and polices devices on it. It is not the Monitoring switch: that is the "monitor"
-      // policy, which NetworkProfile keeps in this.spoofing and returns from isMonitoring()
+      // o.monitoring: the box discovers and polices devices on this interface (FireRouter's list for
+      // the mode). It is not the Monitoring switch, which is the "monitor" policy (isMonitoring())
       const monitoring = monitoringInterfaces.some(i => i.name === intf.name);
       const updatedProfile = {
         uuid: uuid,
