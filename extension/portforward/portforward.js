@@ -739,13 +739,26 @@ class PortForward {
         if (!suspendedByThis || !currentlyDisabled) continue;
         const newRule = new Policy(Object.assign({}, rule, { disabled: "0", dmzModeSuspended: "", updatedTime: Date.now() / 1000 }));
         const oldRule = new Policy(rule);
-        await pm2.updatePolicyAsync(newRule);
+        try {
+          await pm2.updatePolicyAsync(newRule);
+        } catch (err) {
+          // deleted meanwhile (e.g. from the app), keep syncing the rest
+          if (err.message !== "Policy not exist") throw err;
+          log.info(`DMZ allow rule ${rule.pid} no longer exists, skip`);
+          continue;
+        }
         pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
       } else {
         if (currentlyDisabled) continue;
         const newRule = new Policy(Object.assign({}, rule, { disabled: "1", dmzModeSuspended: "1", updatedTime: Date.now() / 1000 }));
         const oldRule = new Policy(rule);
-        await pm2.updatePolicyAsync(newRule);
+        try {
+          await pm2.updatePolicyAsync(newRule);
+        } catch (err) {
+          if (err.message !== "Policy not exist") throw err;
+          log.info(`DMZ allow rule ${rule.pid} no longer exists, skip`);
+          continue;
+        }
         pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
       }
     }

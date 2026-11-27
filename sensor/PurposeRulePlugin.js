@@ -130,7 +130,14 @@ class PurposeRulePlugin extends Sensor {
     const oldRule = new Policy(rule);
     const PolicyManager2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PolicyManager2();
-    await pm2.updatePolicyAsync(newRule);
+    try {
+      await pm2.updatePolicyAsync(newRule);
+    } catch (err) {
+      // deleted meanwhile (e.g. by fwdap), don't write it back or enforce it
+      if (err.message !== "Policy not exist") throw err;
+      log.info(`Purpose rule ${rule.pid} no longer exists, skip`);
+      return;
+    }
     pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
   }
 
