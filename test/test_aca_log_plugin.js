@@ -581,6 +581,57 @@ describe('AcaLogPlugin', function () {
       expect(alarm.localizedNotification()).to.equal('office printer: outbound ssh to 172.182.252.133:22');
     });
 
+    it('renders a new country with the name of the country dap judged as new', () => {
+      const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.12', {
+        'p.device.ip': '192.168.1.12',
+        'p.device.mac': CAMERA_MAC,
+        'p.device.name': 'front door camera',
+        'p.dest.name': 'www.example.fr',
+        'p.dest.country': 'US',
+        'p.aca.type': 'new_country',
+        'p.aca.message': 'Connected to a new country FR (www.example.fr)',
+        'p.aca.evidence': JSON.stringify({ country: 'FR', destination: 'www.example.fr', blocked: false }),
+        'p.aca.dedup': 'aca:cooldown:new_country:AA:BB:CC:00:00:03|FR',
+      });
+
+      const expected = 'Device front door camera accessed www.example.fr from France, a region it has never accessed before.';
+      expect(alarm.localizedMessage()).to.equal(expected);
+      expect(alarm.localizedNotification()).to.equal(expected);
+    });
+
+    it('renders a blocked new country as blocked', () => {
+      const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.12', {
+        'p.device.ip': '192.168.1.12',
+        'p.device.mac': CAMERA_MAC,
+        'p.device.name': 'front door camera',
+        'p.dest.ip': '128.93.162.123',
+        'p.dest.name': '128.93.162.123',
+        'p.aca.type': 'new_country',
+        'p.aca.message': 'Blocked a connection to a new country FR (128.93.162.123)',
+        'p.aca.evidence': JSON.stringify({ country: 'FR', destination: '128.93.162.123', blocked: true }),
+        'p.aca.dedup': 'aca:cooldown:new_country:AA:BB:CC:00:00:03|FR',
+      });
+
+      expect(alarm.localizedMessage()).to.equal(
+        'Blocked device front door camera from accessing 128.93.162.123 in France, a region it has never accessed before.');
+    });
+
+    it('renders a new country whose evidence jsonToAlarm already parsed', () => {
+      const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.12', {
+        'p.device.ip': '192.168.1.12',
+        'p.device.mac': CAMERA_MAC,
+        'p.device.name': 'front door camera',
+        'p.dest.name': 'www.example.fr',
+        'p.aca.type': 'new_country',
+        'p.aca.message': 'Connected to a new country FR (www.example.fr)',
+        'p.aca.evidence': { country: 'FR', destination: 'www.example.fr', blocked: false },
+        'p.aca.dedup': 'aca:cooldown:new_country:AA:BB:CC:00:00:03|FR',
+      });
+
+      expect(alarm.localizedNotification()).to.equal(
+        'Device front door camera accessed www.example.fr from France, a region it has never accessed before.');
+    });
+
     it('is a duplicate only of an alarm with the same cooldown key', () => {
       const alarm = new Alarm.AcaAlarm(1763371200, '192.168.1.11', payload);
       const same = new Alarm.AcaAlarm(1763371300, '192.168.1.11', payload);

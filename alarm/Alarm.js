@@ -678,6 +678,23 @@ class AcaAlarm extends Alarm {
     return 3600;
   }
 
+  // a new country has its own sentence with the country's name, other findings show dap or zssids' message
+  getI18NCategory() {
+    if (this["p.aca.type"] !== "new_country") {
+      return super.getI18NCategory();
+    }
+
+    let evidence = this["p.aca.evidence"];
+    if (_.isString(evidence)) {
+      evidence = JSON.parse(evidence);
+    }
+    this["p.aca.countryLocalized"] = getCountryName(evidence.country) || evidence.country;
+    if (evidence.blocked) {
+      return `${this.type}_NEW_COUNTRY_BLOCKED`;
+    }
+    return `${this.type}_NEW_COUNTRY`;
+  }
+
   localizedNotificationContentArray() {
     return [this.getDeviceNameInNotification(), this["p.aca.message"]];
   }
