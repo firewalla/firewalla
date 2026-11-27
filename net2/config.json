@@ -605,6 +605,7 @@
     "OldDataCleanSensor": {
       "alarm": {
         "expires": 2592000,
+        "eventExpires": 1209600,
         "count": 1000
       },
       "monitor": {

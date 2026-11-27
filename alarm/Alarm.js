@@ -985,6 +985,10 @@ class BroNoticeAlarm extends Alarm {
     return this['p.noticeType'] == 'SSL::Invalid_Server_Cert';
   }
 
+  shouldGenerateAlarm() {
+    return !this.shouldGenerateEvent();
+  }
+
   toActionEvent() {
     if (!this.shouldGenerateEvent())
       return null;

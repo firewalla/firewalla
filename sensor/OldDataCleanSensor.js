@@ -482,7 +482,7 @@ class OldDataCleanSensor extends Sensor {
   async cleanAlarmIndex() {
     try {
       const batch = []
-      for (const key of ["alarm_active", "alarm_archive"]) {
+      for (const key of ["alarm_active", "alarm_archive", "event_alarm_active"]) {
         const index = await rclient.zrangebyscoreAsync(key, '-inf', '+inf');
         // exists returns a numbers of all existing with provided list, so this has to be done separately
         const data = await rclient.pipelineAndLog(index.map(id => ['exists', '_alarm:'+id]))

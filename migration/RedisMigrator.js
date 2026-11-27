@@ -34,7 +34,8 @@
     "_alarmDetail:*",
     "alarm_pending",
     "alarm_active",
-    "alarm_archive"
+    "alarm_archive",
+    "event_alarm_active"
   ],
   "rules": [
     "policy:id",

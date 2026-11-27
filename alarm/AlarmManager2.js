@@ -52,8 +52,10 @@ let instance = null;
 const alarmPendingKey = "alarm_pending";
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
+// activated event-only alarms, never archived
+const eventAlarmActiveKey = "event_alarm_active";
 // the zset a query type of loadActiveAlarmsAsync reads, any other type reads the archive
-const queryTypeKeys = { active: alarmActiveKey };
+const queryTypeKeys = { active: alarmActiveKey, event: eventAlarmActiveKey };
 // alarms of the last 30 calendar days are kept on box, today included, same as MSP, i.e. the
 // window begins at midnight of (today - 29 days)
 const ALARM_WINDOW_DAYS = 30;
@@ -61,6 +63,7 @@ const ALARM_WINDOW_DAYS = 30;
 // keys have to outlive that, otherwise a counted alarm would have no data behind it. 2 hours is
 // the largest DST offset in the timezone database
 const ALARM_EXPIRE_SLACK = 2 * 60 * 60;
+const EVENT_WINDOW_DAYS = 14;
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
@@ -371,6 +374,10 @@ module.exports = class {
   }
 
   async __updateCache(aid) {
+    if (await this.isEventAlarm(aid)) {
+      await this.indexCache.remove(aid);
+      return;
+    }
     const r = await rclient.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
     const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
     if (await rclient.zscoreAsync(alarmArchiveKey, aid) !== null) a.archived = 1;
@@ -748,7 +755,7 @@ module.exports = class {
     if (!alarm) {
       throw new Error(`Invalid alarm id: ${alarmID}`)
     }
-    if (matchAll) {
+    if (matchAll && !await this.isEventAlarm(alarm.aid)) {
       const relatedAlarmIds = await this.loadRelatedAlarms(alarm, userInput);
       for (const aid of relatedAlarmIds) {
         await this.archiveAlarm(aid)
@@ -799,9 +806,11 @@ module.exports = class {
     return { basic: alarmCopy, extended: extendedInfo };
   }
 
-  async saveAlarm(alarm) {
+  // eventOnly: whether the alarm gets the event TTL, decided from the alarm itself by default
+  async saveAlarm(alarm, eventOnly) {
     if (!(alarm instanceof Alarm.Alarm)) alarm = this.jsonToAlarm(alarm)
     if (!alarm) return
+    if (eventOnly === undefined) eventOnly = alarm.isEventOnly()
     // covnert to string to make it consistent
     if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
@@ -829,7 +838,7 @@ module.exports = class {
 
     await rclient.hmsetAsync(alarmKey, basic)
 
-    let expiring = (fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * ALARM_WINDOW_DAYS) + ALARM_EXPIRE_SLACK;  // a month
+    let expiring = (eventOnly ? this.getEventExpires() : (fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * ALARM_WINDOW_DAYS)) + ALARM_EXPIRE_SLACK;  // a month, 14 days for an event
     await rclient.expireatAsync(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
     // add extended info, extended info are optional
@@ -859,6 +868,7 @@ module.exports = class {
   async removeAlarmAsync(alarmID) {
     await rclient.zremAsync(alarmPendingKey, alarmID);
     await rclient.zremAsync(alarmArchiveKey, alarmID);
+    await rclient.zremAsync(eventAlarmActiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
     await rclient.unlinkAsync(alarmPrefix + alarmID);
@@ -868,7 +878,7 @@ module.exports = class {
   // macs: a mac or guid, or an array of them
   async deleteMacRelatedAlarms(macs) {
     const macSet = new Set([].concat(macs).map(mac => mac.toUpperCase()))
-    let alarms = await this.loadRecentAlarmsAsync(60 * 60 * 24 * 7);
+    let alarms = await this.loadRecentAlarmsAsync(60 * 60 * 24 * 7, [alarmPendingKey, alarmActiveKey, eventAlarmActiveKey]);
     let related = alarms
       .filter(alarm => _.isString(alarm['p.device.mac']) &&
         macSet.has(alarm['p.device.mac'].toUpperCase()))
@@ -876,6 +886,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
+      await rclient.zremAsync(eventAlarmActiveKey, related);
       await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
       pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:related}));
@@ -887,7 +898,7 @@ module.exports = class {
     let duration = profile && profile.cooldown || alarm.getExpirationTime() || 15 * 60; // 15 minutes
     log.debug('dedup', duration, profile)
 
-    const existingAlarms = await this.loadRecentAlarmsAsync(duration)
+    const existingAlarms = await this.loadRecentAlarmsAsync(duration, [alarmPendingKey, alarmActiveKey, eventAlarmActiveKey])
 
     let dups = existingAlarms
       .filter((a) => a != null && alarm.isDup(a));
@@ -1044,7 +1055,8 @@ module.exports = class {
     try {
       alarm['applyTimestamp'] = Date.now()/1000;
       alarm['type'] = orig_alarm.type;
-      await this.saveAlarm(alarm);
+      // a partial update, so the stored alarm decides the TTL
+      await this.saveAlarm(alarm, this.jsonToAlarm(orig_alarm).isEventOnly());
     } catch (err) {
       log.warn('fail to save alarm changes', alarm, err.message);
     }
@@ -1272,9 +1284,11 @@ module.exports = class {
 
     const orig_alarm = await rclient.hgetallAsync(alarmKey);
     alarm = Object.assign({}, orig_alarm, alarm);
-    const result  = await this._activateAlarm(alarm, unarchive);
+    const alarmObj = this.jsonToAlarm(alarm);
+    const eventOnly = alarmObj.isEventOnly();
+    const result  = await this._activateAlarm(alarm, unarchive, eventOnly ? eventAlarmActiveKey : alarmActiveKey);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
-    // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue.
+    // result[1] is the reply of `zadd NX`, 1 only when the alarm actually entered the active or event queue.
     const activated = result && result[1] == 1;
     const mspDecided = _.get(options, 'origin.state') == Constants.ST_PENDING && options['p.msp.decision'] != 'timeout';
     if (activated && !mspDecided) {
@@ -1297,7 +1311,7 @@ module.exports = class {
       }
     }
     // record security alarm count on hostInfo
-    if (alarm['p.device.mac'] && Alarm.isSecurityAlarm(alarm.type)) {
+    if (!eventOnly && alarm['p.device.mac'] && Alarm.isSecurityAlarm(alarm.type)) {
       const mac = alarm['p.device.mac'].toUpperCase();
       try {
         await hostTool.incrFieldInMAC(mac, 'security_alarm', 1);
@@ -1334,7 +1348,8 @@ module.exports = class {
     } catch (err) {
       log.error('Failed on alarm autoblock', err)
     } finally {
-      this.notifAlarm(alarm.aid);
+      if (alarmObj.shouldNotify())
+        this.notifAlarm(alarm.aid);
     }
   }
 
@@ -1640,7 +1655,14 @@ module.exports = class {
     return alarms
   }
 
+  // membership rather than the class decides, so an alarm activated before it became event-only still archives
+  async isEventAlarm(alarmID) {
+    return await rclient.zscoreAsync(eventAlarmActiveKey, alarmID) !== null;
+  }
+
+  // an event stays in its own zset, results set on it included
   async archiveAlarm(alarmID) {
+    if (await this.isEventAlarm(alarmID)) return;
     const result = await rclient.multi()
       .zrem(alarmActiveKey, alarmID)
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
@@ -1709,6 +1731,19 @@ module.exports = class {
 
   async getActiveAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
     return rclient.zcountAsync(alarmActiveKey, beginTs, '+inf');
+  }
+
+  getEventExpires() {
+    return fConfig.sensors.OldDataCleanSensor.alarm.eventExpires || 24 * 60 * 60 * EVENT_WINDOW_DAYS;
+  }
+
+  // the calendar days an event is kept, same as its TTL
+  getEventAlarmWindowBeginTs() {
+    return this.getAlarmWindowBeginTs(Math.round(this.getEventExpires() / 86400));
+  }
+
+  async getEventAlarmCount(beginTs = this.getEventAlarmWindowBeginTs()) {
+    return rclient.zcountAsync(eventAlarmActiveKey, beginTs, '+inf');
   }
 
   async getPendingAlarmCount(beginTs = this.getAlarmWindowBeginTs()) {
@@ -1790,7 +1825,8 @@ module.exports = class {
     const scoreBound = _.isFinite(ts2) ? ts2 : (asc ? '+inf' : '-inf');
 
     let ids;
-    if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
+    // the index cache never holds events
+    if (filters && type != 'event' && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
       log.debug("query from cache, cached keys", this.indexCache.keys());
       ids = this._queryCachedAlarmIds(count, ts, asc, type, filters, ts2);
     } else {
@@ -2170,6 +2206,10 @@ module.exports = class {
     // alarm:block records block even for a rule that allows
     const { policy, alreadyExists } = await this.saveAlarmRule(alarm, p, { result: 'block', auto: value.method === "auto" });
 
+    // a rule from an event covers only the event
+    if (await this.isEventAlarm(alarm.aid))
+      return { policy, blockedAlarms: [], alreadyExists }
+
     log.info("Trying to find if any other active alarms are covered by this new policy")
     const alarms = await this.findSimilarAlarmsByPolicy(p)
     const blockedAlarms = await this.resolveRelatedAlarms(alarms.filter(a => a.aid != alarm.aid), async a => {
@@ -2199,6 +2239,8 @@ module.exports = class {
     const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
 
     await this.resolveAlarm(alarm, { result: 'allow', ref: 'result_exception', refId: exception.eid });
+    if (await this.isEventAlarm(alarm.aid))
+      return { exception, alreadyExists }
     log.info("Trying to find if any other active alarms are covered by this new exception")
     let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
     if (alarms && alarms.length > 0) {
@@ -2254,6 +2296,8 @@ module.exports = class {
 
     // the user decided on this alarm, so it is archived even when an auto block left it active
     const { policy, alreadyExists } = await this.saveAlarmRule(alarm, p, { archive: true });
+    if (await this.isEventAlarm(alarm.aid))
+      return { policy, otherAlarms: [], ...this.ruleSaveFlags(alreadyExists) }
 
     log.info("Trying to find if any other active alarms are covered by this new policy")
     // from the saved rule, a duplicate returns the one in place. The exception is only a matcher and is not saved
