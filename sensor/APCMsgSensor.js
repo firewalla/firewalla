@@ -62,6 +62,8 @@ class APCMsgSensor extends Sensor {
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
     this.wpaEntSSIDs = [];
+    this.macAuthSSIDs = [];
+    this.loadedSSIDs = [];
     this.enforcedRules = {};
     this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
@@ -346,7 +348,6 @@ class APCMsgSensor extends Sensor {
       });
       if (_.isEmpty(ssidStatus))
         return;
-
       const tags = await TagManager.getPolicyTags("ssidPSK");
       const ssidVlanGroupMap = {};
       const ssidGroupMap = {};
@@ -372,7 +373,12 @@ class APCMsgSensor extends Sensor {
       const assets = _.get(config, "assets");
       const templates = _.get(config, "assets_template");
       const ssidProfiles = _.get(config, "profile");
-      this.wpaEntSSIDs = Object.entries(ssidProfiles).filter(item => item[1].encryption === "wpa2" || item[1].wpa3 === true).map(item => item[0]);
+      this._loadSSIDAuthModes(ssidProfiles);
+      // the hidden ssid an OWE transition station authenticated on, only needed for RADIUS lookups
+      const staStatus = _.isEmpty(this.macAuthSSIDs) ? null : await fwapc.getAllSTAStatus(true).catch((err) => {
+        log.warn(`Failed to get STA status from fwapc`, err.message);
+        return null;
+      });
 
       for (const uid of Object.keys(assets)) {
         const templateId = _.get(assets, [uid, "templateId"]);
@@ -408,16 +414,17 @@ class APCMsgSensor extends Sensor {
         for (const key of Object.keys(status)) {
           if (!_.isArray(status[key]))
             continue;
-          if (key === "phy") { // STA MACs that do not belong to a PSK group
-            for (const mac of status[key])
-              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId(), ssid);
-          } else {
-            if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
-              const vid = key.substring("vlan:".length);
-              const ssidVlanId = `${uuid}::${vid}`;
-              for (const mac of status[key])
-                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId(), ssid, vid);
-            }
+          let vid = null; // "phy": STA MACs without a dynamic vlan
+          if (key.startsWith("vlan:"))
+            vid = key.substring("vlan:".length);
+          else if (key !== "phy")
+            continue;
+          for (const mac of status[key]) {
+            const upperMac = mac.toUpperCase();
+            const sta = _.get(staStatus, upperMac);
+            // older fwapc reports the hidden ssid as ssid; null when unknown
+            const radiusSSID = sta ? sta.innerSsid || sta.ssid : null;
+            await this.updateStationGroup(upperMac, uuid, ssid, vid, radiusSSID);
           }
         }
       }
@@ -459,10 +466,6 @@ class APCMsgSensor extends Sensor {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
       if (msg.action === "join") {
         const uuid = msg.id;
-        const dvlanId = _.get(msg, ["station", "dvlanVlanId"]);
-        // map to a group of a microsegment first
-        const tag = this.ssidVlanGroupMap[`${uuid}::${dvlanId}`]
-        let groupId = tag && tag.getUniqueId();
         if (!uuid)
           return;
         const mac = _.get(msg, ["station", "macAddr"]);
@@ -473,52 +476,49 @@ class APCMsgSensor extends Sensor {
           log.debug(`mac ${mac} ssid ${ssid} profile ${uuid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
           return;
         }
-        if (!groupId && !dvlanId) {
-          // a MAB join (WPA3 PPSK on 5G/6G) gets the key network's real vlan, not the key's wifi vlan,
-          // so its group is the Filter-Id freeradius returns, not the ssid's default group
-          const filterId = await this._getRadiusFilterId(mac, ssid);
-          const radius = filterId && sl.getSensor("FreeRadiusSensor");
-          if (radius) {
-            await radius.setDeviceTagByUid(mac.toUpperCase(), filterId, ssid, { auth: "mab" });
-            await this.updateHostSSID(mac, uuid, null, ssid, null, true);
-            return;
-          }
-          if (await this._hasRadiusAutoGroup(mac, ssid)) {
-            await this.updateHostSSID(mac, uuid, null, ssid, null, true);
-            return;
-          }
-          // map to a group of a default segment if sta does not belong to a dynamic vlan
-          groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
+        // whether a profile uses MAC auth is unknown until loaded, the next refresh assigns its group
+        if (!this.loadedSSIDs.includes(uuid)) {
+          log.debug(`mac ${mac} ssid ${ssid} profile ${uuid} is not loaded yet, skip updating host ssid`);
+          return;
         }
-        await this.updateHostSSID(mac, uuid, groupId, ssid, dvlanId);
+        await this.updateStationGroup(mac.toUpperCase(), uuid, ssid, _.get(msg, ["station", "dvlanVlanId"]),
+          _.get(msg, ["station", "innerSsid"]) || ssid);
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
   }
 
-  // RADIUS record of mac on ssid as fwapc writes it for freeradius: an allow or captive record
-  // carries the Filter-Id, an onboarded one points to its PPSK key
-  async _getRadiusFilterId(mac, ssid) {
-    if (!ssid)
-      return null;
-    const ssidHex = Buffer.from(ssid).toString("hex");
-    const record = await rclient.hgetallAsync(`radius:mac:${mac.toUpperCase()}:${ssidHex}`);
-    if (!record || record.deny === "1")
-      return null;
-    if (record.filter_id)
-      return record.filter_id;
-    if (!record.keyid)
-      return null;
-    return await rclient.hgetAsync(`radius:ppsk:${ssidHex}:${record.keyid}`, "filter_id") || null;
+  _loadSSIDAuthModes(ssidProfiles) {
+    const profiles = Object.entries(ssidProfiles);
+    this.wpaEntSSIDs = profiles.filter(item => item[1].encryption === "wpa2" || item[1].wpa3 === true).map(item => item[0]);
+    this.macAuthSSIDs = profiles.filter(item => _.get(item[1], ["radius", "macAuth"]) === true).map(item => item[0]);
+    this.loadedSSIDs = profiles.map(item => item[0]);
   }
 
-  // group RADIUS assigned to mac on this ssid; a join without a wifi vlan doesn't void it
-  async _hasRadiusAutoGroup(mac, ssid) {
-    const host = await hostManager.getHostAsync(mac.toUpperCase());
-    const autoGroup = host ? host.o.autoGroup : await hostTool.getWirelessAutoGroup(mac.toUpperCase());
-    return _.isObject(autoGroup) && !!autoGroup.tag && ["mab", "dot1x"].includes(autoGroup.auth) &&
-      (!autoGroup.ssid || autoGroup.ssid === ssid);
+  // group of a station on a psk ssid, for both joins and the periodic refresh:
+  // its PPSK wifi vlan's group, else on a MAC auth ssid the RADIUS group, else without a vlan the ssid default group.
+  // radiusSSID: the ssid the station authenticated on, the hidden one of an OWE transition profile, null if unknown
+  async updateStationGroup(mac, uuid, ssid, dvlanId, radiusSSID) {
+    const vlanTag = dvlanId && this.ssidVlanGroupMap[`${uuid}::${dvlanId}`];
+    if (vlanTag) {
+      await this.updateHostSSID(mac, uuid, vlanTag.getUniqueId(), ssid, dvlanId);
+      return;
+    }
+    const fallback = () => {
+      const defaultTag = !dvlanId && this.ssidGroupMap[uuid];
+      return this.updateHostSSID(mac, uuid, defaultTag && defaultTag.getUniqueId(), ssid, dvlanId);
+    };
+    const radius = this.macAuthSSIDs.includes(uuid) && sl.getSensor("FreeRadiusSensor");
+    if (!radius) {
+      await fallback();
+      return;
+    }
+    // without the ssid it authenticated on its RADIUS group can't be checked, keep it this round
+    if (!radiusSSID)
+      return;
+    if (await radius.applyStationGroup(mac, radiusSSID, dvlanId, fallback))
+      await this.updateHostSSID(mac, uuid, null, ssid, null, true);
   }
 
   // keepGroup: only record the wifi join, the group is RADIUS's
@@ -611,7 +611,7 @@ class APCMsgSensor extends Sensor {
       }
       const config = await fwapc.getConfig();
       const ssidProfiles = _.get(config, "profile");
-      this.wpaEntSSIDs = Object.entries(ssidProfiles).filter(item => item[1].encryption === "wpa2" || item[1].wpa3 === true).map(item => item[0]);;
+      this._loadSSIDAuthModes(ssidProfiles);
       const removedProfiles = _.pick(this.ssidProfiles, Object.keys(this.ssidProfiles).filter(ssid => !_.has(ssidProfiles, ssid)));
       for (const uuid of Object.keys(removedProfiles)) {
         const profile = removedProfiles[uuid];
