@@ -1337,12 +1337,10 @@ module.exports = class {
   }
 
   async _addActionEvent(alarm) {
-    const proto = Alarm.mapping[alarm.type];
-    if (!proto || proto.toActionEvent === Alarm.Alarm.prototype.toActionEvent)
+    const a = this.jsonToAlarm(alarm);
+    if (!a || !a.shouldGenerateEvent())
       return;
-    const event = this.jsonToAlarm(alarm).toActionEvent();
-    if (!event)
-      return;
+    const event = a.toActionEvent();
     // one event per alarm, an MSP re-decision re-activates the same aid
     if (await rclient.hsetnxAsync(alarmPrefix + alarm.aid, 'eventLogged', 1) != 1)
       return;
