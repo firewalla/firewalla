@@ -34,6 +34,11 @@ const policyPrefix = "policy:";
 const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
 const POLICY_MAX_ID = 65535; // iptables log use last 16 bit MARK as rule id
+// check and write atomically, so a policy deleted by another process is never written back
+const HMSET_IF_EXISTS_LUA = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('HMSET', KEYS[1], unpack(ARGV))
+return 1`;
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_POLICY_ID = "LOCK_POLICY_ID";
@@ -475,7 +480,9 @@ class PolicyManager2 {
     const policyKey = policyPrefix + policy.pid;
 
     if (policy instanceof Policy) {
-      await rclient.hmsetAsync(policyKey, policy.redisfy());
+      const written = await rclient.evalAsync(HMSET_IF_EXISTS_LUA, 1, policyKey, ..._.flatten(Object.entries(policy.redisfy())));
+      if (written != 1)
+        throw new Error("Policy not exist");
       return;
     }
 
