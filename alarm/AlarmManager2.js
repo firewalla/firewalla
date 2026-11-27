@@ -1820,8 +1820,10 @@ module.exports = class {
     ({ count = 50, ts = Date.now() / 1000, ts2, asc = false, type = 'active', filters, withDetails = false } = options);
 
     // ts2 is the other end of the query window, default to the begin of the last 30 days in
-    // calendar date, so that alarms returned are consistent with alarm counts in init data
-    ts2 = !_.isNil(ts2) && !isNaN(ts2) ? Number(ts2) : (asc ? Infinity : this.getAlarmWindowBeginTs());
+    // calendar date (the event window for events), so that alarms returned are consistent
+    // with alarm counts in init data
+    const windowBeginTs = type == 'event' ? this.getEventAlarmWindowBeginTs() : this.getAlarmWindowBeginTs();
+    ts2 = !_.isNil(ts2) && !isNaN(ts2) ? Number(ts2) : (asc ? Infinity : windowBeginTs);
     const scoreBound = _.isFinite(ts2) ? ts2 : (asc ? '+inf' : '-inf');
 
     let ids;
