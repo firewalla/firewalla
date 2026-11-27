@@ -103,7 +103,20 @@ class CategoryUpdateSensor extends Sensor {
       await this.updateFlowSignatureList(true);
     } catch (err) {
       log.error("Failed to update categories", err)
+    } finally {
+      // one restart for all bf updates of this round
+      this.flushBfRestart();
     }
+  }
+
+  // dnsmasq caches a bf filter by path for its whole lifetime, a config reload never re-reads
+  // new bytes, so a bf data change needs a real service restart
+  flushBfRestart() {
+    if (!this.bfRestartPending)
+      return;
+    this.bfRestartPending = false;
+    log.info("Bloom filter data changed, restart dns service");
+    dnsmasq.scheduleRestartDNSService(true, true);
   }
 
   resetCategoryHashsetMapping() {
@@ -332,7 +345,7 @@ class CategoryUpdateSensor extends Sensor {
           const hashsetName = `bf:app.${part}`;
           await cloudcache.disableCache(hashsetName);
           await this.removeData(part).catch((err) => { });
-          updated = true;
+          updated = this.bfRestartPending = true;
         }
         await categoryUpdater.setCategoryBfParts(category, parts);
         for (const part of parts) {
@@ -348,12 +361,13 @@ class CategoryUpdateSensor extends Sensor {
           try {
             const content = await currentCacheItem.getLocalCacheContent();
             if (content) {
-              updated = await this.updateData(part, content) || updated;
+              if (await this.updateData(part, content))
+                updated = this.bfRestartPending = true;
             } else {
               // remove obselete category data
               log.error(`Category ${category} part ${part} data is invalid. Remove it`);
               await this.removeData(part);
-              updated = true;
+              updated = this.bfRestartPending = true;
             }
           } catch (e) {
             log.error(`Fail to update filter data for ${category}.`, e);
@@ -607,6 +621,8 @@ class CategoryUpdateSensor extends Sensor {
             }
           } catch (err) {
             log.error("Failed to update category", category, err.message);
+          } finally {
+            this.flushBfRestart();
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
