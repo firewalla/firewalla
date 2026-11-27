@@ -56,9 +56,11 @@ module.exports = class {
       }
     }
 
-    // decryptRequest parses the { iv, message } envelope once and returns usedIv;
-    // a request that carried an iv gets its reply mirrored with a fresh iv.
-    cloudWrapper.getCloud().decryptRequest(gid, message).then(({ decrypted: decryptedMessage, scheme }) => {
+    // decryptRequest parses the { iv, message } envelope once and reports the
+    // request scheme so the reply mirrors it. enforceGcmPolicy applies the
+    // anti-downgrade rule on this unauthenticated path: once a group has made a
+    // successful GCM request, CBC/legacy requests for it are rejected.
+    cloudWrapper.getCloud().decryptRequest(gid, message, { enforceGcmPolicy: true }).then(({ decrypted: decryptedMessage, scheme }) => {
       req.reqScheme = scheme;
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       req.body = decryptedMessage;
@@ -66,11 +68,11 @@ module.exports = class {
       log.debug(req.id, 'Message decrypted')
       next();
     }).catch((err) => {
-      if(err && err.message === "decrypt_error") {
-        res.status(412).json({"error" : err});
-      } else {
-        res.status(400).json({"error" : err});
-      }
+      // All decrypt/parse failures must be externally indistinguishable — a
+      // status or body that varies with padding validity is a CBC padding
+      // oracle. Log details locally, return one uniform error.
+      log.error('Failed to decrypt request:', err && err.message);
+      res.status(412).json({"error" : "decrypt_error"});
     });
   }
 
@@ -88,9 +90,11 @@ module.exports = class {
       return;
     }
 
-    // Mirror the request scheme (gcm / cbc-iv / legacy) on the reply. Streaming
-    // stays on the legacy zero IV for now (its SSE frame carries no envelope).
-    const scheme = streaming ? 'legacy' : (req.reqScheme || 'legacy');
+    // Mirror the request scheme (gcm / cbc-iv / legacy) on the reply, streaming
+    // included: a client that sent a GCM request gets GCM SSE frames (the data
+    // field carries the JSON envelope; legacy frames were bare base64, which
+    // never starts with '{', so clients can tell them apart).
+    const scheme = req.reqScheme || 'legacy';
 
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
