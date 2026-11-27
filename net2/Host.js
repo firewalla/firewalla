@@ -365,11 +365,16 @@ class Host extends Monitorable {
 
   // FireApi's host object can be a minute old: reset only if the stored lock is still this one,
   // otherwise load the stored one. Returns true if reset
-  async _resetAutoGroupIfStored(autoGroup) {
-    let stored = null;
+  async _getStoredAutoGroup() {
     try {
-      stored = JSON.parse(await rclient.hgetAsync(hostTool.getMacKey(this.o.mac), "autoGroup"));
-    } catch (err) {}
+      return JSON.parse(await rclient.hgetAsync(hostTool.getMacKey(this.o.mac), "autoGroup"));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async _resetAutoGroupIfStored(autoGroup) {
+    const stored = await this._getStoredAutoGroup();
     if (_.isObject(stored) && (String(stored.tag) !== String(autoGroup.tag) ||
       (stored.userTag || "") !== (autoGroup.userTag || "") || stored.ts !== autoGroup.ts)) {
       this.o.autoGroup = stored;
@@ -388,7 +393,7 @@ class Host extends Monitorable {
   }
 
   // 0. reset if its group no longer exists
-  // 1. if not connected (no staStatus), keep autoGroup until expire (30 days for mab, 10 minutes otherwise)
+  // 1. if not connected (no staStatus), keep autoGroup until expire (30 days for mab without a PPSK key, 10 minutes otherwise)
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
   // 3. otherwise (ppsk/default/mab), reset if connected on a different ssid, mab may have no ssid
   async getHostAutoGroup(staStatus, recheck = true) {
@@ -410,8 +415,9 @@ class Host extends Monitorable {
     if (!staStatus) {
       // ts advances on join, Access-Accept and while fwapc sees the station, so an old ts
       // means the device left Firewalla Wi-Fi/RADIUS; rejoining sets it again.
-      // mab keeps 30 days: an Access-Accept without a tag undoes the group only while autoGroup marks it as mab's
-      const maxAge = autoGroup.auth === "mab" ? 2592000 : 600;
+      // mab keeps 30 days: an Access-Accept without a tag undoes the group only while autoGroup marks it as mab's.
+      // A PPSK key (keyid) is Wi-Fi only, so its lock expires like other wifi groups
+      const maxAge = autoGroup.auth === "mab" && !autoGroup.keyid ? 2592000 : 600;
       if (!autoGroup.ts || autoGroup.ts < Date.now() - maxAge * 1000)
         return reset();
       return autoGroup;
@@ -428,17 +434,20 @@ class Host extends Monitorable {
     }
 
     // connected but on a different ssid, reset autoGroup
-    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid)
+    // an OWE transition station's RADIUS group is on the hidden ssid it authenticated on
+    if (autoGroup.ssid && staStatus.ssid && ![staStatus.ssid, staStatus.innerSsid].includes(autoGroup.ssid))
       return reset();
 
     return autoGroup;
   }
 
+  // FireApi's copy can be stale, so only the stored lock's ts is advanced, keeping fields FireMain added since
   async touchAutoGroup(autoGroup) {
-    if (!autoGroup)
+    const stored = await this._getStoredAutoGroup();
+    if (!autoGroup || !_.isObject(stored) || String(stored.tag) !== String(autoGroup.tag))
       return;
-    autoGroup.ts = Date.now();
-    this.o.autoGroup = autoGroup;
+    stored.ts = Date.now();
+    this.o.autoGroup = stored;
     await this.save(["autoGroup"]);
   }
 

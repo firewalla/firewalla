@@ -293,9 +293,73 @@ class FreeRadiusSensor extends Sensor {
 
   async _setDeviceTagByUid(mac, tagUid, ssid, options = {}) {
     const userTag = tagManager.getTagByUid(String(tagUid));
-    await this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
+    return this._applyDeviceTag(mac, userTag, ssid, options, `tag uid ${tagUid}`);
   }
 
+  // RADIUS record of mac on ssid as fwapc writes it for freeradius: an allow or captive record
+  // carries the Filter-Id, an onboarded one points to its PPSK key
+  async _getRadiusRecord(mac, ssid) {
+    const ssidHex = Buffer.from(ssid).toString("hex");
+    const record = await rclient.hgetallAsync(`radius:mac:${mac}:${ssidHex}`);
+    if (!record || record.deny === "1")
+      return null;
+    const tag = record.filter_id ||
+      record.keyid && await rclient.hgetAsync(`radius:ppsk:${ssidHex}:${record.keyid}`, "filter_id");
+    return { tag, keyid: record.keyid };
+  }
+
+  // a station on a MAC auth ssid without a PPSK wifi vlan: MAB puts a PPSK key on the key network's vlan,
+  // not the key's wifi vlan, so its group is RADIUS's. Otherwise fallback assigns it, under the same
+  // device lock so an Access-Accept can't interleave. Returns true if a RADIUS group was applied
+  async applyStationGroup(mac, ssid, dvlanId, fallback) {
+    if (!this.featureOn || !ssid) {
+      await fallback();
+      return false;
+    }
+    return this._withDeviceTagLock(mac, async () => {
+      if (await this._applyStationGroup(mac, ssid, dvlanId))
+        return true;
+      await fallback();
+      return false;
+    });
+  }
+
+  async _applyStationGroup(mac, ssid, dvlanId) {
+    const autoGroup = await this._loadAutoGroup(mac, await hostManager.getHostAsync(mac));
+    const mabLock = _.isObject(autoGroup) && autoGroup.tag && autoGroup.auth === "mab" &&
+      (!autoGroup.ssid || autoGroup.ssid === ssid) ? autoGroup : null;
+    const record = await this._getRadiusRecord(mac, ssid);
+    const fromRedis = mabLock && mabLock.src === "redis";
+    let useLock = false;
+    if (mabLock && mabLock.src && !fromRedis)
+      useLock = true; // a file entry freeradius accepted
+    else if (record && (record.keyid || !mabLock || fromRedis))
+      useLock = false; // fwapc keeps the record on the key in use, also on 2.4G where no Access-Accept comes
+    else if (mabLock && (!fromRedis || mabLock.keyid))
+      useLock = true; // written before src was recorded, or a PPSK key whose record expired while still connected
+    let tagUid = null;
+    let options = { auth: "mab", src: "redis" };
+    if (useLock) {
+      const { tag, userTag, ts, ssid: _ssid, ...rest } = mabLock;
+      tagUid = userTag || tag;
+      options = rest;
+    } else if (record) {
+      tagUid = record.tag;
+      if (record.keyid)
+        options.keyid = record.keyid;
+    }
+    if (dvlanId)
+      options.dvlanId = String(dvlanId);
+    if (tagUid && await this._setDeviceTagByUid(mac, tagUid, ssid, options))
+      return true;
+    // a lock RADIUS no longer backs is undone like a tagless Access-Accept,
+    // by the lock read above since a failed assignment has already cleared the stored one
+    if (mabLock)
+      await this._removeMabAutoGroup(mac, mabLock);
+    return false;
+  }
+
+  // true if the group is applied, or pending discovery
   async _applyDeviceTag(mac, userTag, ssid, options, desc) {
     const monitorable = await hostManager.getHostAsync(mac);
     if (!userTag) {
@@ -303,7 +367,7 @@ class FreeRadiusSensor extends Sensor {
       if (monitorable) {
         await monitorable.resetAutoGroupAsync();
       }
-      return;
+      return false;
     }
 
     let tagId = userTag.getUniqueId();
@@ -318,14 +382,14 @@ class FreeRadiusSensor extends Sensor {
       if (monitorable) {
         await monitorable.resetAutoGroupAsync();
       }
-      return;
+      return false;
     }
 
     if (!monitorable) {
       log.info(`New device ${mac} set candidate tag to ${tagId}`);
       await hostTool.setWirelessDeviceTagCandidate(mac, String(tagId));
       await hostTool.setWirelessAutoGroup(mac, String(tagId), ssid, options);
-      return;
+      return true;
     }
 
     // cleanup candidate tag
@@ -337,7 +401,7 @@ class FreeRadiusSensor extends Sensor {
       log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${mac}`);
       if (monitorable)
         await monitorable.resetAutoGroupAsync();
-      return;
+      return false;
     }
 
     const origPolicy = await monitorable.loadPolicyAsync();
@@ -347,11 +411,12 @@ class FreeRadiusSensor extends Sensor {
 
     if (_.isEqual(origPolicy[policyKey], [tagId])) {
       log.debug(`${mac} already has tag ${tagId} (${desc})`);
-      return;
+      return true;
     }
 
     log.info(`set policy of ${mac} ${policyKey}:[${tagId}]`);
     await monitorable.setPolicyAsync(policyKey, [tagId], true);
+    return true;
   }
 
   // mac no longer in any group's mab list, only undo a group that mab itself assigned
@@ -359,10 +424,11 @@ class FreeRadiusSensor extends Sensor {
     await this._withDeviceTagLock(mac, () => this._removeMabAutoGroup(mac));
   }
 
-  async _removeMabAutoGroup(mac) {
+  async _removeMabAutoGroup(mac, autoGroup = null) {
     await hostTool.deleteWirelessDeviceTagCandidate(mac);
     const monitorable = await hostManager.getHostAsync(mac);
-    const autoGroup = await this._loadAutoGroup(mac, monitorable);
+    if (!autoGroup)
+      autoGroup = await this._loadAutoGroup(mac, monitorable);
     if (!autoGroup || autoGroup.auth !== "mab")
       return;
     if (!monitorable) {
@@ -484,6 +550,12 @@ class FreeRadiusSensor extends Sensor {
           const vlan = msg.vlan || msg.vlan_id;
           if (vlan)
             options.dvlanId = String(vlan);
+          // a PPSK key's group expires off Wi-Fi like other wifi groups
+          if (msg.keyid)
+            options.keyid = String(msg.keyid);
+          // "redis" (fwapc's record) or a file entry, a record's group goes once fwapc drops the record
+          if (msg.src)
+            options.src = String(msg.src);
           if (!tagUid) {
             log.info(`no tag in mab auth event, remove mab auto group of ${mac}`);
             await this.removeMabAutoGroup(mac);
