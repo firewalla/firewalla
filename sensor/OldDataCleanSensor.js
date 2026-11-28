@@ -480,21 +480,15 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanAlarmIndex() {
-    const activeKey = "alarm_active";
-    const archiveKey = "alarm_archive";
     try {
-      let activeIndex = await rclient.zrangebyscoreAsync(activeKey, '-inf', '+inf');
-      let archiveIndex = await rclient.zrangebyscoreAsync(archiveKey, '-inf', '+inf');
       const batch = []
-
-      // exists returns a numbers of all existing with provided list, so this has to be done separately
-      const activeData = await rclient.pipelineAndLog(activeIndex.map(id => ['exists', '_alarm:'+id]))
-      for (let i in activeIndex) {
-        if (!activeData[i]) batch.push(['zrem', activeKey, activeIndex[i]])
-      }
-      const archiveData = await rclient.pipelineAndLog(archiveIndex.map(id => ['exists', '_alarm:'+id]))
-      for (let i in archiveIndex) {
-        if (!archiveData[i]) batch.push(['zrem', archiveKey, archiveIndex[i]])
+      for (const key of ["alarm_active", "alarm_archive", "event_alarm_active"]) {
+        const index = await rclient.zrangebyscoreAsync(key, '-inf', '+inf');
+        // exists returns a numbers of all existing with provided list, so this has to be done separately
+        const data = await rclient.pipelineAndLog(index.map(id => ['exists', '_alarm:'+id]))
+        for (let i in index) {
+          if (!data[i]) batch.push(['zrem', key, index[i]])
+        }
       }
       await rclient.pipelineAndLog(batch)
     } catch(err) {

@@ -826,6 +826,9 @@ module.exports = class HostManager extends Monitorable {
     const beginTs = alarmManager2.getAlarmWindowBeginTs();
     json.activeAlarmCount = await alarmManager2.getActiveAlarmCount(beginTs);
     json.newAlarms = await alarmManager2.loadActiveAlarmsAsync({ ts2: beginTs });
+    const eventBeginTs = alarmManager2.getEventAlarmWindowBeginTs();
+    json.eventAlarmCount = await alarmManager2.getEventAlarmCount(eventBeginTs);
+    json.eventAlarms = await alarmManager2.loadActiveAlarmsAsync({ type: 'event', ts2: eventBeginTs });
   }
 
   async pendingAlarmNumberForInit(json) {

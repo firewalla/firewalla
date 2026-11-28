@@ -138,6 +138,23 @@ class Alarm {
     return null;
   }
 
+  shouldGenerateEvent() {
+    return false;
+  }
+
+  shouldGenerateAlarm() {
+    return true;
+  }
+
+  shouldNotify() {
+    return this.shouldGenerateAlarm();
+  }
+
+  // stored and listed as an event instead of an alarm
+  isEventOnly() {
+    return this.shouldGenerateEvent() && !this.shouldGenerateAlarm();
+  }
+
   getIdentitySuffix() {
     if (this["p.device.guid"]) {
       const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
@@ -964,8 +981,16 @@ class BroNoticeAlarm extends Alarm {
     return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
   }
 
+  shouldGenerateEvent() {
+    return this['p.noticeType'] == 'SSL::Invalid_Server_Cert';
+  }
+
+  shouldGenerateAlarm() {
+    return !this.shouldGenerateEvent();
+  }
+
   toActionEvent() {
-    if (this['p.noticeType'] != 'SSL::Invalid_Server_Cert')
+    if (!this.shouldGenerateEvent())
       return null;
     const labels = {
       aid: this.aid,
