@@ -425,6 +425,14 @@ module.exports = class {
     return false;
   }
 
+  // a pending alarm can be activated as an event while a cache fill runs, after __updateCache
+  // already removed it. Nothing is awaited between the check and the add, so a later activation's
+  // removal still lands after this add
+  async _addLoadedToCache(a, data) {
+    if (data.pendingAlarmIDs.includes(a.aid) && await this.isEventAlarm(a.aid)) return;
+    await this.indexCache.add(a);
+  }
+
   async _syncUnseenAlarmCache() {
     // only check alarms not been cached
     const data = await this.loadAlarmIDs();
@@ -443,7 +451,7 @@ module.exports = class {
       }
       const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
       if (data.archivedAlarmIDs.indexOf(r[1]) >= 0) a.archived = 1;
-      await this.indexCache.add(a);
+      await this._addLoadedToCache(a, data);
     }
   }
 
@@ -480,7 +488,7 @@ module.exports = class {
           const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
           // archived alarms need additional mark
           if (data.archivedAlarmIDs.indexOf(r[1]) >= 0) a.archived = 1;
-          await this.indexCache.add(a);
+          await this._addLoadedToCache(a, data);
         }
         this.indexCache._disabled = 0;
         log.info(`Refresh alarm index ${this.indexCache.length()} items finished in ${Math.floor(Date.now()-start)/1000} (io ${rs_rt}) seconds (approximate size ${this.indexCache.size()} bytes)`)
